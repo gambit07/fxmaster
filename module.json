@@ -81,6 +81,11 @@
       "lang": "zh-tw",
       "name": "正體中文",
       "path": "lang/zh-tw.json"
+    },
+    {
+      "lang": "pl",
+      "name": "Polski",
+      "path": "lang/pl.json"
     }
   ],
   "packs": [
