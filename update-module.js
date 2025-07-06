@@ -12,6 +12,8 @@ if (!version) {
   process.exit(1);
 }
 
+const tagName = `v${version}`;
+
 // ─── 2) Update module.json via manifest-version-updater ────────────────
 const MODULE_JSON = path.join(ROOT, "module.json");
 const pkgContents = fs.readFileSync(MODULE_JSON, "utf8");
@@ -31,14 +33,17 @@ if (fs.existsSync(NOTES_FILE)) {
   const dd = String(dt.getDate()).padStart(2, "0");
   const dateStr = `${yyyy}-${mm}-${dd}`;
 
-  const newEntry = `## [v${version}] - ${dateStr}\n${notesRaw}`;
+  const newEntry = `## [${tagName}] - ${dateStr}\n${notesRaw}`;
+
   let existing = "# Changelog\n\n";
-  if (fs.existsSync(CHANGELOG_FILE)) existing = fs.readFileSync(CHANGELOG_FILE, "utf8");
+  if (fs.existsSync(CHANGELOG_FILE)) {
+    existing = fs.readFileSync(CHANGELOG_FILE, "utf8");
+  }
   const [header, ...restLines] = existing.split(/\r?\n/);
   const rest = restLines.join("\n").replace(/^\s*\n+/, "");
   const updated = [header, newEntry, rest].join("\n\n");
   fs.writeFileSync(CHANGELOG_FILE, updated, "utf8");
-  console.log(`📝  Prepended CHANGELOG.md entry for v${version}`);
+  console.log(`📝  Prepended CHANGELOG.md entry for ${tagName}`);
 } else {
   console.warn(`⚠️  release_notes.txt not found—skipping CHANGELOG update`);
 }
@@ -48,10 +53,11 @@ try {
   execSync('git config user.name "github-actions[bot]"');
   execSync('git config user.email "41898282+github-actions[bot]@users.noreply.github.com"');
   execSync(`git add ${MODULE_JSON} ${CHANGELOG_FILE}`, { stdio: "inherit" });
-  execSync(`git commit -m "chore(release): v${version}"`, { stdio: "inherit" });
-  console.log("💾  Committed module.json and CHANGELOG.md");
+  execSync(`git commit -m "chore(release): ${tagName}"`, { stdio: "inherit" });
+  execSync(`git tag ${tagName}`, { stdio: "inherit" });
+  console.log(`🏷  Created git tag ${tagName}`);
 } catch {
-  console.log("ℹ️  Nothing to commit");
+  console.log("ℹ️  Nothing to commit/tag");
 }
 
 // ─── 5) Build & minify via Rollup ───────────────────────────────────────
@@ -70,23 +76,26 @@ const zipPath = path.join(ROOT, "module.zip");
 
 const output = fs.createWriteStream(zipPath);
 const archive = archiver("zip", { zlib: { level: 9 } });
+archive.pipe(output);
+archive.directory(DIST_DIR, false);
+archive.finalize();
 
 output.on("close", () => {
   console.log(`✅ module.zip created (${archive.pointer()} bytes)`);
 
   // ─── 7) Create GitHub Release & upload assets ────────────────────────────
   try {
-    console.log(`🏷  Creating GitHub release v${version}`);
+    console.log(`🏷  Creating GitHub release ${tagName}`);
     const ghCmd = [
       "gh release create",
-      version,
-      `--title "Release ${version}"`,
+      tagName,
+      `--title "Release ${tagName}"`,
       `--notes-file ${NOTES_FILE}`,
       "module.zip",
       "module.json",
     ].join(" ");
     execSync(ghCmd, { cwd: ROOT, stdio: "inherit" });
-    console.log(`✅  GitHub release ${version} created with module.zip & module.json`);
+    console.log(`✅  GitHub release ${tagName} created with module.zip & module.json`);
   } catch (err) {
     console.error("❌  gh release create failed", err);
     process.exit(1);
@@ -94,10 +103,3 @@ output.on("close", () => {
 
   console.log("🎉  Release script complete!");
 });
-
-archive.on("error", (err) => {
-  throw err;
-});
-archive.pipe(output);
-archive.directory(DIST_DIR, false);
-archive.finalize();
