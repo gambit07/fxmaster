@@ -32,11 +32,8 @@ if (fs.existsSync(NOTES_FILE)) {
   const dateStr = `${yyyy}-${mm}-${dd}`;
 
   const newEntry = `## [v${version}] - ${dateStr}\n${notesRaw}`;
-
   let existing = "# Changelog\n\n";
-  if (fs.existsSync(CHANGELOG_FILE)) {
-    existing = fs.readFileSync(CHANGELOG_FILE, "utf8");
-  }
+  if (fs.existsSync(CHANGELOG_FILE)) existing = fs.readFileSync(CHANGELOG_FILE, "utf8");
   const [header, ...restLines] = existing.split(/\r?\n/);
   const rest = restLines.join("\n").replace(/^\s*\n+/, "");
   const updated = [header, newEntry, rest].join("\n\n");
@@ -65,16 +62,24 @@ execSync("npm run build", {
   env: { ...process.env, NODE_ENV: "production" },
 });
 
-// ─── 6) Package dist/ into module.zip via git archive ───────────────────
-console.log("📦  Creating module.zip from dist (using git archive)");
-try {
-  // Note: dist/ must be committed or staged for git archive to include it.
-  execSync("git archive --format=zip --output module.zip HEAD dist", { cwd: ROOT, stdio: "inherit" });
-  console.log("✅ module.zip created");
-} catch (err) {
-  console.error("❌  Failed to create module.zip", err);
-  process.exit(1);
-}
+// ─── 6) Package dist/ into module.zip via archiver ──────────────────────
+console.log("📦  Creating module.zip from dist (using archiver)");
+const archiver = require("archiver");
+const DIST_DIR = path.join(ROOT, "dist");
+const output = fs.createWriteStream(path.join(ROOT, "module.zip"));
+const archive = archiver("zip", { zlib: { level: 9 } });
+
+output.on("close", () => {
+  console.log(`✅ module.zip created (${archive.pointer()} bytes)`);
+});
+archive.on("error", (err) => {
+  throw err;
+});
+
+archive.pipe(output);
+// false = “don’t include the dist/ prefix inside the zip”
+archive.directory(DIST_DIR, false);
+archive.finalize();
 
 // ─── 7) Create GitHub Release & upload assets ────────────────────────────
 try {
@@ -93,5 +98,3 @@ try {
   console.error("❌  gh release create failed", err);
   process.exit(1);
 }
-
-console.log("🎉  Release script complete!");
