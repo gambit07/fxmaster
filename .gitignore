@@ -1,13 +1,11 @@
 .idea/
 .vscode/
-
 node_modules/
-
 dist/
-
 /client
 /common
 /foundry.js
 /commons.js
 foundryconfig.json
 fxmaster.lock
+module.zip

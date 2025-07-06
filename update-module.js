@@ -101,5 +101,5 @@ archive.on("error", (err) => {
   throw err;
 });
 archive.pipe(output);
-archive.directory(DIST_DIR, false);
+archive.directory(DIST_DIR, "fxmaster");
 archive.finalize();

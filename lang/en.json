@@ -139,7 +139,8 @@
     "SearchAnimations": "Search Animations",
     "SearchQueries": "Advanced queries supported, ex: (eldritch OR arrow) AND NOT blast",
     "SequencerPath": "Sequencer DB Path",
-    "Update": "Update Animation Effect"
+    "Update": "Update Animation Effect",
+    "RefreshDbError": "FXMaster | No animation effects found in FXMaster DB. Wait for the current Animation Scan to complete, or go to 'Module Settings -> FXMaster -> Refresh Animations Database' to re-run the Animation Scan."
   },
   "FXMASTER.FilterEffectTypeNotFound": "No filter effect found for type: {type}",
   "FXMASTER.FilterEffectTypeUnknown": "Filter effect '{id}' is of unknown type '{type}', skipping it.",

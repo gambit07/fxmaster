@@ -40,6 +40,16 @@ export class SpecialEffectsManagement extends FXMasterBaseFormV2 {
 
   async _prepareContext() {
     const buckets = CONFIG.fxmaster.userSpecials;
+
+    if (!buckets || Object.keys(buckets).length === 0) {
+      ui.notifications.error(game.i18n.localize("FXMASTER.AnimationEffect.RefreshDbError"));
+      this.close();
+      return {
+        effects: [],
+        tags: [],
+      };
+    }
+
     const overrides = game.settings.get(packageId, "customSpecialEffects") || {};
 
     const effects = [];

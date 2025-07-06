@@ -47,9 +47,8 @@ export const registerHooks = function () {
     const content = `
       <div class="fxmaster-announcement" style="border:2px solid #4A90E2; border-radius:8px; padding:12px; background:#f4faff;">
         <h3 style="margin:0; color:#2a4365;">🎉Welcome to Gambit's FXMaster!</h3>
-          <p style="color: #2a4365; font-size: 1em;">This V${version} release overhauls FXMaster for AppV2 and brings many other updates and changes. Please wait for the Animation Scan to complete. Check out the readme and release notes on <a href="https://github.com/gambit07/fxmaster" target="_blank" style="color: #3182ce; text-decoration: none; font-weight: bold;">GitHub</a>.</p>
+          <p style="color: #2a4365; font-size: 1em;">This V${version} release resolves a few V6 release bugs. Check out the readme and release notes on <a href="https://github.com/gambit07/fxmaster" target="_blank" style="color: #3182ce; text-decoration: none; font-weight: bold;">GitHub</a>.</p>
           <p style="color: #2a4365; font-size: 1em;">If you'd like to support my development time and get access to new Particle Effects <span style="color:#C11C84">Sakura Bloom & Sakura Blossoms</span>, please consider supporting the project on <a href="https://patreon.com/GambitsLounge" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Patreon</a>.</p>
-          <p style="color: #2a4365; font-size: 1em;">Finally, ClayGolem on Youtube has been nice enough to put together an overview of FXMaster for the V6 release <a href="https://youtu.be/7hBu0gJgf1I" target="_blank" style="color: red; text-decoration: none; font-weight: bold;">here</a></p>
         </div>
       `;
     ChatMessage.create({ content });
