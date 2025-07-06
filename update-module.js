@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
@@ -66,10 +65,16 @@ execSync("npm run build", {
   env: { ...process.env, NODE_ENV: "production" },
 });
 
-// ─── 6) Package dist/ into module.zip ───────────────────────────────────
-console.log("📦  Creating module.zip from dist");
-const DIST_DIR = path.join(ROOT, "dist");
-execSync(`cd ${DIST_DIR} && zip -r ../module.zip .`, { stdio: "inherit" });
+// ─── 6) Package dist/ into module.zip via git archive ───────────────────
+console.log("📦  Creating module.zip from dist (using git archive)");
+try {
+  // Note: dist/ must be committed or staged for git archive to include it.
+  execSync("git archive --format=zip --output module.zip HEAD dist", { cwd: ROOT, stdio: "inherit" });
+  console.log("✅ module.zip created");
+} catch (err) {
+  console.error("❌  Failed to create module.zip", err);
+  process.exit(1);
+}
 
 // ─── 7) Create GitHub Release & upload assets ────────────────────────────
 try {
