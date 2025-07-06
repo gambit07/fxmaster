@@ -1,14 +1,61 @@
 import { packageId } from "./constants.js";
-import { onWorldMigrated } from "./migration/migration.js";
+import { registerAnimations } from "./animation-files.js";
 
 export function registerSettings() {
   game.settings.register(packageId, "enable", {
-    name: "FXMASTER.Enable",
+    name: "FXMASTER.EnableEffects",
     default: true,
     scope: "client",
     type: Boolean,
     config: true,
     requiresReload: true,
+  });
+
+  game.settings.register(packageId, "customEffectsDirectory", {
+    name: "FXMASTER.AnimationEffect.CustomDirectoryName",
+    hint: "FXMASTER.AnimationEffect.CustomDirectoryHint",
+    scope: "world",
+    config: true,
+    type: String,
+    default: "",
+  });
+
+  game.settings.register(packageId, "refreshDb", {
+    name: "FXMASTER.AnimationEffect.RefreshDbName",
+    hint: "FXMASTER.AnimationEffect.RefreshDbHint",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false,
+    onChange: async (value) => {
+      if (!value) return;
+
+      console.time("FXMaster.refreshDb");
+
+      const newMap = await registerAnimations();
+      await game.settings.set(packageId, "dbSpecialEffects", newMap);
+      CONFIG.fxmaster.userSpecials = newMap;
+      await game.settings.set(packageId, "refreshDb", false);
+
+      console.timeEnd("FXMaster.refreshDb");
+    },
+  });
+
+  game.settings.register(packageId, "resetPassives", {
+    name: "FXMASTER.ResetPassiveParameters",
+    hint: "FXMASTER.ResetPassiveParametersHint",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false,
+    onChange: async (value) => {
+      if (!value) return;
+
+      game.settings.set(packageId, "passiveParticleConfig", {});
+      game.settings.set(packageId, "passiveFilterConfig", {});
+      await game.settings.set(packageId, "resetPassives", false);
+      ui.notifications.info(game.i18n.localize("FXMASTER.ResetPassiveSuccess"));
+    },
   });
 
   game.settings.register(packageId, "specialEffects", {
@@ -19,20 +66,35 @@ export function registerSettings() {
     config: false,
   });
 
-  game.settings.register(packageId, "migration", {
-    name: "migration",
-    default: -1,
+  game.settings.register(packageId, "customSpecialEffects", {
+    name: "customSpecialEffects",
     scope: "world",
-    type: Number,
     config: false,
-    onChange: onWorldMigrated,
+    type: Object,
+    default: {},
   });
 
-  game.settings.register(packageId, "clientMigration", {
-    name: "clientMigration",
-    default: -1,
-    scope: "client",
-    type: Number,
+  game.settings.register(packageId, "dbSpecialEffects", {
+    name: "dbSpecialEffects",
+    scope: "world",
+    config: false,
+    type: Object,
+    default: {},
+  });
+
+  game.settings.register(packageId, "passiveFilterConfig", {
+    name: "passiveFilterConfig",
+    default: [],
+    scope: "world",
+    type: Object,
+    config: false,
+  });
+
+  game.settings.register(packageId, "passiveParticleConfig", {
+    name: "passiveParticleConfig",
+    default: [],
+    scope: "world",
+    type: Object,
     config: false,
   });
 
@@ -59,6 +121,13 @@ export function registerSettings() {
     scope: "world",
     type: Boolean,
     config: true,
+  });
+
+  game.settings.register(packageId, "releaseMessage", {
+    default: "",
+    scope: "world",
+    type: String,
+    config: false,
   });
 }
 

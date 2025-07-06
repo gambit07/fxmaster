@@ -1,6 +1,5 @@
 import { packageId } from "../constants.js";
 import { logger } from "../logger.js";
-import { executeWhenWorldIsMigratedToLatest, isOnTargetMigration } from "../migration/migration.js";
 import { isEnabled } from "../settings.js";
 import { resetFlag } from "../utils.js";
 
@@ -64,7 +63,7 @@ export class FilterManager {
     const filterInfos = Object.fromEntries(
       Object.entries(canvas.scene.getFlag(packageId, "filters") ?? {}).filter(([id, filterInfo]) => {
         if (!(filterInfo.type in CONFIG.fxmaster.filterEffects)) {
-          logger.warn(`Filter effect '${id}' is of unknown type '${filterInfo.type}', skipping it.`);
+          logger.warn(game.i18n.format("FXMASTER.FilterEffectTypeUnknown", { id: id, type: filterInfo.type }));
           return false;
         }
         return true;
@@ -200,16 +199,14 @@ export class FilterManager {
       }
     });
 
-    Hooks.on("canvasReady", () => {
-      executeWhenWorldIsMigratedToLatest(async () => {
-        if (isEnabled()) {
-          await this.#activate();
-        }
-      });
+    Hooks.on("canvasReady", async () => {
+      if (isEnabled()) {
+        await this.#activate();
+      }
     });
 
     Hooks.on("updateScene", (scene, data) => {
-      if (!isEnabled() || !isOnTargetMigration() || scene !== canvas.scene) {
+      if (!isEnabled() || scene !== canvas.scene) {
         return;
       }
       if (

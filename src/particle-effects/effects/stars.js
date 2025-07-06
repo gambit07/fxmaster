@@ -9,7 +9,12 @@ export class StarsParticleEffect extends FXMasterParticleEffect {
 
   /** @override */
   static get icon() {
-    return "modules/fxmaster/assets/particle-effects/icons/stars.png";
+    return "modules/fxmaster/assets/particle-effects/icons/stars.webp";
+  }
+
+  /** @override */
+  static get group() {
+    return "ambient";
   }
 
   /** @override */
@@ -69,7 +74,7 @@ export class StarsParticleEffect extends FXMasterParticleEffect {
         type: "textureRandom",
         config: {
           textures: Array.fromRange(8).map(
-            (n) => `modules/fxmaster/assets/particle-effects/effects/stars/star${n + 1}.png`,
+            (n) => `modules/fxmaster/assets/particle-effects/effects/stars/star${n + 1}.webp`,
           ),
         },
       },

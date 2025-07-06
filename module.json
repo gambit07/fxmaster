@@ -1,9 +1,13 @@
 {
   "id": "fxmaster",
-  "name": "fxmaster",
-  "title": "FXMaster",
+  "name": "Gambit's FXMaster",
+  "title": "Gambit's FXMaster",
   "description": "Adds various particle and filter effects",
   "authors": [
+    {
+      "name": "Gambit",
+      "discord": "gambit"
+    },
     {
       "name": "Johannes Loher (ghost)",
       "email": "johannes.loher@fg4f.de",
@@ -15,11 +19,16 @@
       "discord": "U~man"
     }
   ],
-  "url": "https://github.com/ghost-fvtt/fxmaster",
-  "license": "https://raw.githubusercontent.com/ghost-fvtt/fxmaster/v5.0.1/LICENSE.md",
-  "readme": "https://raw.githubusercontent.com/ghost-fvtt/fxmaster/v5.0.1/README.md",
-  "bugs": "https://github.com/ghost-fvtt/fxmaster/issues",
-  "changelog": "https://raw.githubusercontent.com/ghost-fvtt/fxmaster/v5.0.1/CHANGELOG.md",
+  "documentTypes": {
+    "RegionBehavior": {
+      "particleEffectsRegion": {}
+    }
+  },
+  "url": "https://github.com/gambit07/fxmaster",
+  "license": "https://raw.githubusercontent.com/gambit07/fxmaster/v5.0.1/LICENSE.md",
+  "readme": "https://raw.githubusercontent.com/gambit07/fxmaster/v5.0.1/README.md",
+  "bugs": "https://github.com/gambit07/fxmaster/issues",
+  "changelog": "https://raw.githubusercontent.com/gambit07/fxmaster/v5.0.1/CHANGELOG.md",
   "flags": {
     "hotReload": {
       "extensions": ["css", "hbs", "json"],
@@ -28,13 +37,11 @@
   },
   "version": "5.0.1",
   "compatibility": {
-    "minimum": "11.299",
+    "minimum": "12",
     "verified": "13"
   },
-  "minimumCoreVersion": "11.299",
-  "compatibleCoreVersion": "13",
   "scripts": ["libs/filters/pixi-filters.js"],
-  "esmodules": ["fxmaster.js"],
+  "esmodules": ["libs/namespace-migration.js", "fxmaster.js"],
   "styles": ["css/fxmaster.css"],
   "languages": [
     {
@@ -97,6 +104,6 @@
     }
   ],
   "socket": true,
-  "manifest": "https://github.com/ghost-fvtt/fxmaster/releases/latest/download/module.json",
-  "download": "https://github.com/ghost-fvtt/fxmaster/releases/download/v5.0.1/module.zip"
+  "manifest": "https://github.com/gambit07/fxmaster/releases/latest/download/module.json",
+  "download": "https://github.com/gambit07/fxmaster/releases/download/v5.0.1/module.zip"
 }

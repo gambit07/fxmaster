@@ -1,3 +1,101 @@
-.fxmaster-groups-list--particle-effects {
-  height: 370px;
+/* fxmaster-app window uncapping */
+.fxmaster-app.window-app,
+.fxmaster-app.ui-dialog {
+  height: auto !important;
+  max-height: var(--fxmaster-max-height) !important;
+  overflow: visible !important;
+}
+
+/* inner content */
+.fxmaster-app .window-content {
+  height: auto !important;
+  max-height: var(--fxmaster-max-height) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
+/* Grid container */
+.fxmaster-particles-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+  padding: 1rem;
+  box-sizing: border-box;
+  height: auto;
+  max-height: var(--fxmaster-max-height);
+  overflow: visible;
+}
+
+/* Column scrolling */
+.fxmaster-particles-group-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: var(--fxmaster-max-height);
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+/* Group header pointer */
+.fxmaster-particles-group {
+  cursor: pointer;
+}
+
+/* Open‐state boxing */
+#particle-effects-config .fxmaster-particles-row.open {
+  border: 1px solid var(--color-warm-2) !important;
+  border-bottom: none !important;
+  border-radius: var(--fxmaster-radius) var(--fxmaster-radius) 0 0 !important;
+}
+#particle-effects-config .fxmaster-particles-row.open + .fxmaster-particle-expand {
+  border: 1px solid var(--color-warm-2) !important;
+  border-top: none !important;
+  border-radius: 0 0 var(--fxmaster-radius) var(--fxmaster-radius) !important;
+  margin-bottom: 0.25rem !important;
+}
+
+/* Parameter grid */
+.fxmaster-particle-params {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.75rem 1rem;
+}
+.fxmaster-particle-params label {
+  display: flex;
+  flex-direction: column;
+  font-size: var(--font-size-12);
+  gap: 0.25rem;
+}
+
+/* Collapse‐arrow offsets */
+.fxmaster-arrow-group {
+  right: 0.5rem;
+}
+.fxmaster-arrow-row {
+  right: 3.2rem;
+}
+
+/* Expand‐panels: no scrolling */
+#particle-effects-config .fxmaster-particle-expand,
+#particle-effects-config .fxmaster-particles-group-expand {
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+/* Region-behavior config */
+.region-behavior-config .behavior-settings {
+  display: none !important;
+  margin-left: 1.5em;
+  border-left: 2px solid var(--color-border);
+  padding-left: 0.5em;
+}
+.region-behavior-config .behavior-header {
+  display: flex !important;
+  cursor: pointer;
+  font-weight: bold;
+}
+.region-behavior-config .behavior-header:has(input[type="checkbox"]:checked) ~ .behavior-settings {
+  display: flex !important;
 }

@@ -1,6 +1,6 @@
 const stringifyPackage = require("stringify-package");
 
-const repository = "ghost-fvtt/fxmaster";
+const repository = "gambit07/fxmaster";
 const githubURL = "https://github.com";
 const githubRawURL = "https://raw.githubusercontent.com";
 

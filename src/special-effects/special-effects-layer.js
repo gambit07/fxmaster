@@ -1,8 +1,7 @@
 import { packageId } from "../constants.js";
-import { easeFunctions } from "../ease.js";
 import { SpecialEffectMesh } from "./mesh.js";
 
-export class SpecialEffectsLayer extends InteractionLayer {
+export class SpecialEffectsLayer extends CONFIG.fxmaster.InteractionLayerNS {
   constructor() {
     super();
     this.videos = [];
@@ -38,80 +37,6 @@ export class SpecialEffectsLayer extends InteractionLayer {
     return super._tearDown();
   }
 
-  _configureProjectile(mesh, data) {
-    if (data.distance && (!data.speed || data.speed == "auto")) {
-      data.speed = data.distance / data.duration;
-    }
-    // Compute final position
-    const delta = data.duration * data.speed;
-    const deltaX = delta * Math.cos(data.rotation);
-    const deltaY = delta * Math.sin(data.rotation);
-
-    // Move the sprite
-    const attributes = [
-      {
-        parent: mesh,
-        attribute: "x",
-        to: data.position.x + deltaX,
-      },
-      {
-        parent: mesh,
-        attribute: "y",
-        to: data.position.y + deltaY,
-      },
-    ];
-
-    let animationDuration = data.duration * 1000;
-    if (foundry.utils.hasProperty(data, "animationDelay")) {
-      animationDuration -= Math.max(0, 1000 * (data.animationDelay.end + data.animationDelay.start));
-    }
-    const animationName = `${packageId}.video.${foundry.utils.randomID()}.move`;
-    const animate = function () {
-      CanvasAnimation.animate(attributes, {
-        name: animationName,
-        context: this,
-        duration: animationDuration,
-        easing: easeFunctions[data.ease],
-      });
-    };
-    if (foundry.utils.hasProperty(data, "animationDelay.start")) {
-      setTimeout(animate, data.animationDelay.start * 1000.0);
-    } else {
-      animate();
-    }
-    return () => CanvasAnimation.terminateAnimation(animationName);
-  }
-
-  _configureRotate(mesh, data) {
-    const attributes = [
-      {
-        parent: mesh,
-        attribute: "angle",
-        to: 90 * data.rotationSpeed,
-      },
-    ];
-    let animationDuration = data.duration * 1000;
-    if (foundry.utils.hasProperty(data, "animationDelay")) {
-      animationDuration -= Math.max(0, 1000 * (data.animationDelay.end + data.animationDelay.start));
-    }
-    const animationName = `${packageId}.video.${foundry.utils.randomID()}.rotate`;
-
-    const animate = function () {
-      CanvasAnimation.animate(attributes, {
-        name: animationName,
-        context: this,
-        duration: animationDuration,
-        easing: easeFunctions[data.ease],
-      });
-    };
-    if (foundry.utils.hasProperty(data, "animationDelay.start")) {
-      setTimeout(animate, data.animationDelay.start * 1000.0);
-    } else {
-      animate();
-    }
-    return () => CanvasAnimation.terminateAnimation(animationName);
-  }
-
   #configureSpecialEffectMesh(mesh, data) {
     mesh.anchor.set(data.anchor.x, data.anchor.y);
     mesh.rotation = Math.normalizeRadians(data.rotation - Math.toRadians(data.angle));
@@ -127,21 +52,7 @@ export class SpecialEffectsLayer extends InteractionLayer {
       mesh.width = data.width;
     }
 
-    /** @type {(() => void) | undefined} */
-    let terminateMovementAnimation;
-    if (data.speed || data.distance) {
-      terminateMovementAnimation = this._configureProjectile(mesh, data);
-    }
-    /** @type {(() => void) | undefined} */
-    let terminateRotationtAnimation;
-    if (data.rotationSpeed) {
-      terminateRotationtAnimation = this._configureRotate(mesh, data);
-    }
-
-    return () => {
-      terminateMovementAnimation?.();
-      terminateRotationtAnimation?.();
-    };
+    return () => {};
   }
 
   playVideo(data) {
@@ -197,101 +108,10 @@ export class SpecialEffectsLayer extends InteractionLayer {
     });
   }
 
-  static _createMacro(effectData) {
-    return `
-      const data = {
-        file: "${effectData.file}",
-        position: {
-          x: canvas.scene.dimensions.width / 2,
-          y: canvas.scene.dimensions.height / 2
-        },
-        anchor : {
-          x: ${effectData.anchor.x},
-          y: ${effectData.anchor.y}
-        },
-        angle: ${effectData.angle},
-        speed: ${effectData.speed},
-        scale: {
-          x: ${effectData.scale.x},
-          y: ${effectData.scale.y}
-        }
-      };
-      const tokens = canvas.tokens.controlled;
-      // No tokens are selected, play in a random position
-      if (tokens.length === 0) {
-        canvas.specials.playVideo(data);
-        game.socket.emit("module.${packageId}", data);
-        return;
-      }
-      const targets = game.user.targets;
-      if (targets.size !== 0) {
-        tokens.forEach(t1 => {
-          targets.forEach(t2 => {
-            canvas.specials.drawFacing(data, t1, t2);
-          })
-        })
-        return;
-      }
-      // Play effect on each token
-      tokens.forEach(t => {
-        data.position = {
-          x: t.position.x + t.w / 2,
-          y: t.position.y + t.h / 2
-        };
-        canvas.specials.playVideo(data);
-        game.socket.emit("module.${packageId}", data);
-      })
-
-    `;
-  }
-
-  drawSpecialToward(effect, tok1, tok2) {
-    const origin = {
-      x: tok1.position.x + tok1.w / 2,
-      y: tok1.position.y + tok1.h / 2,
-    };
-    const effectData = foundry.utils.mergeObject(effect, {
-      position: {
-        x: origin.x,
-        y: origin.y,
-      },
-    });
-    const target = {
-      x: tok2.position.x + tok2.w / 2,
-      y: tok2.position.y + tok2.h / 2,
-    };
-    // Compute angle
-    const ray = new Ray(origin, target);
-    effectData.distance = ray.distance;
-    effectData.rotation = ray.angle;
-    // Play to other clients
-    game.socket.emit(`module.${packageId}`, effectData);
-    // Play effect locally
-    return this.playVideo(effectData);
-  }
-
-  drawFacing(effect, tok1, tok2) {
-    const origin = {
-      x: tok1.position.x + tok1.w / 2,
-      y: tok1.position.y + tok1.h / 2,
-    };
-    const effectData = foundry.utils.mergeObject(effect, {
-      position: {
-        x: origin.x,
-        y: origin.y,
-      },
-    });
-    const target = {
-      x: tok2.position.x + tok2.w / 2,
-      y: tok2.position.y + tok2.h / 2,
-    };
-    // Compute angle
-    const ray = new Ray(origin, target);
-    effectData.rotation = ray.angle;
-    // Play to other clients
-    game.socket.emit(`module.${packageId}`, effectData);
-    // Play effect locally
-    return this.playVideo(effectData);
+  static _createMacro(_effectData) {
+    return ui.notifications.warn(
+      "FXMaster no longer supports custom animations macros. For an alternative, use the Sequencer module.",
+    );
   }
 
   /**
@@ -310,6 +130,7 @@ export class SpecialEffectsLayer extends InteractionLayer {
     const windows = Object.values(ui.windows);
     const effectConfig = windows.find((w) => w.id == "specials-config");
     if (!effectConfig) return;
+
     const active = effectConfig.element.find(".special-effects.active");
     if (active.length == 0) return;
 
@@ -329,32 +150,6 @@ export class SpecialEffectsLayer extends InteractionLayer {
     if (!event.interactionData.destination) {
       game.socket.emit(`module.${packageId}`, data);
       return this.playVideo(data);
-    }
-
-    // Handling different casting modes
-    const actionToggle = effectConfig.element.find(".action-toggle.active a");
-    const mode = actionToggle[0].dataset.action;
-    const ray = new Ray(event.interactionData.origin, event.interactionData.destination);
-    switch (mode) {
-      case "cast-throw":
-        data.distance = ray.distance;
-        data.speed = "auto";
-        break;
-      case "cast-extend":
-        data.width = ray.distance || data.width;
-        data.speed = 0;
-        break;
-      case "cast-expand":
-        data.width = ray.distance || data.width;
-        data.keepAspect = true;
-        data.speed = 0;
-        break;
-      case "cast-rotate":
-        data.rotationSpeed = ray.distance / canvas.grid[game.release.generation >= 12 ? "sizeX" : "w"];
-        data.speed = 0;
-        break;
-      case "cast-static":
-        break;
     }
 
     game.socket.emit(`module.${packageId}`, data);

@@ -2,7 +2,7 @@ import { packageId } from "./constants.js";
 import { FilterManager } from "./filter-effects/filter-manager.js";
 import { ParticleEffectsManagement } from "./particle-effects/applications/particle-effects-management.js";
 import { SpecialEffectsManagement } from "./special-effects/applications/special-effects-management.js";
-import { FilterEffectsManagementConfig } from "./filter-effects/applications/filter-effects-management.js";
+import { FilterEffectsManagement } from "./filter-effects/applications/filter-effects-management.js";
 import { saveParticleAndFilterEffectsAsMacro } from "./macro.js";
 
 export function registerGetSceneControlButtonsHook() {
@@ -27,17 +27,14 @@ function getSceneControlButtons(t) {
       visible: true,
       order: 1,
     },
-    specials: {
-      name: "specials",
-      title: "CONTROLS.SpecialFX",
-      icon: "fas fa-hat-wizard",
-      order: 10,
+    filters: {
+      name: "filters",
+      title: "CONTROLS.Filters",
+      icon: "fas fa-filter",
+      order: 40,
       button: true,
-      [onEvent]: (_event, active) => {
-        if (!active && foundry.utils.isNewerVersion(game.version, "13.0.0")) return;
-        new SpecialEffectsManagement().render(true);
-      },
-      visible: true,
+      [onEvent]: () => new FilterEffectsManagement().render(true),
+      visible: game.user.isGM,
     },
     "particle-effects": {
       name: "particle-effects",
@@ -61,14 +58,17 @@ function getSceneControlButtons(t) {
       },
       visible: game.user.isGM,
     },
-    filters: {
-      name: "filters",
-      title: "CONTROLS.Filters",
-      icon: "fas fa-filter",
-      order: 40,
+    specials: {
+      name: "specials",
+      title: "CONTROLS.SpecialFX",
+      icon: "fas fa-hat-wizard",
+      order: 10,
       button: true,
-      [onEvent]: () => new FilterEffectsManagementConfig().render(true),
-      visible: game.user.isGM,
+      [onEvent]: (_event, active) => {
+        if (!active && foundry.utils.isNewerVersion(game.version, "13.0.0")) return;
+        new SpecialEffectsManagement().render(true);
+      },
+      visible: true,
     },
     save: {
       name: "save",

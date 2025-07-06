@@ -1,16 +1,16 @@
 import { FXMasterParticleEffect } from "./effect.js";
-import { DefautlRectangleSpawnMixin } from "./mixins/default-retangle-spawn.js";
+import { DefaultRectangleSpawnMixin } from "./mixins/default-rectangle-spawn.js";
 
 /**
  * A full-screen particle effect which renders scurrying rats.
  */
-export class RatsParticleEffect extends DefautlRectangleSpawnMixin(FXMasterParticleEffect) {
+export class RatsParticleEffect extends DefaultRectangleSpawnMixin(FXMasterParticleEffect) {
   /** @override */
   static label = "FXMASTER.ParticleEffectRats";
 
   /** @override */
   static get icon() {
-    return "modules/fxmaster/assets/particle-effects/icons/rats.png";
+    return "modules/fxmaster/assets/particle-effects/icons/rats.webp";
   }
 
   /** @override */
@@ -79,7 +79,7 @@ export class RatsParticleEffect extends DefautlRectangleSpawnMixin(FXMasterParti
             framerate: "10",
             loop: true,
             textures: Array.fromRange(5).map(
-              (n) => `modules/fxmaster/assets/particle-effects/effects/rats/rat${n + 1}.png`,
+              (n) => `modules/fxmaster/assets/particle-effects/effects/rats/rat${n + 1}.webp`,
             ),
           },
         },

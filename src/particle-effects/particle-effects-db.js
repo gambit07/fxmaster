@@ -31,7 +31,7 @@ export const particleEffects = {
   embers: EmbersParticleEffect,
   stars: StarsParticleEffect,
 
-  leaves: AutumnLeavesParticleEffect,
+  autumnleaves: AutumnLeavesParticleEffect,
   clouds: CloudsParticleEffect,
   fog: FogParticleEffect,
   rain: RainParticleEffect,

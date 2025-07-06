@@ -9,7 +9,7 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
 
   /** @override */
   static get icon() {
-    return "modules/fxmaster/assets/particle-effects/icons/clouds.png";
+    return "modules/fxmaster/assets/particle-effects/icons/clouds.webp";
   }
 
   /** @override */
@@ -50,7 +50,7 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
         type: "textureRandom",
         config: {
           textures: Array.fromRange(4).map(
-            (n) => `modules/fxmaster/assets/particle-effects/effects/clouds/cloud${n + 1}.png`,
+            (n) => `modules/fxmaster/assets/particle-effects/effects/clouds/cloud${n + 1}.webp`,
           ),
         },
       },

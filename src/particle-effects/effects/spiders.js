@@ -1,16 +1,16 @@
 import { FXMasterParticleEffect } from "./effect.js";
-import { DefautlRectangleSpawnMixin } from "./mixins/default-retangle-spawn.js";
+import { DefaultRectangleSpawnMixin } from "./mixins/default-rectangle-spawn.js";
 
 /**
  * A full-screen particle effect which renders crawling spiders.
  */
-export class SpiderParticleEffect extends DefautlRectangleSpawnMixin(FXMasterParticleEffect) {
+export class SpiderParticleEffect extends DefaultRectangleSpawnMixin(FXMasterParticleEffect) {
   /** @override */
   static label = "FXMASTER.ParticleEffectSpiders";
 
   /** @override */
   static get icon() {
-    return "modules/fxmaster/assets/particle-effects/icons/spiders.png";
+    return "modules/fxmaster/assets/particle-effects/icons/spiders.webp";
   }
 
   /** @override */
@@ -91,7 +91,7 @@ export class SpiderParticleEffect extends DefautlRectangleSpawnMixin(FXMasterPar
               texture: `modules/fxmaster/assets/particle-effects/effects/spiders/spider${String(n + 1).padStart(
                 2,
                 "0",
-              )}.png`,
+              )}.webp`,
             })),
           },
         },

@@ -9,7 +9,7 @@ export class SnowstormParticleEffect extends FXMasterParticleEffect {
 
   /** @override */
   static get icon() {
-    return "modules/fxmaster/assets/particle-effects/icons/snow-storm.png";
+    return "modules/fxmaster/assets/particle-effects/icons/snow-storm.webp";
   }
 
   /** @override */
@@ -68,7 +68,7 @@ export class SnowstormParticleEffect extends FXMasterParticleEffect {
         type: "textureRandom",
         config: {
           textures: Array.fromRange(2).map(
-            (n) => `modules/fxmaster/assets/particle-effects/effects/snowstorm/snow${n + 1}.png`,
+            (n) => `modules/fxmaster/assets/particle-effects/effects/snowstorm/snow${n + 1}.webp`,
           ),
         },
       },

@@ -1,0 +1,11 @@
+if (!CONFIG.fxmaster) CONFIG.fxmaster = {};
+CONFIG.fxmaster.FilePickerNS = foundry.applications?.apps?.FilePicker?.implementation ?? FilePicker;
+CONFIG.fxmaster.SearchFilterNS = foundry.applications?.ux?.SearchFilter ?? SearchFilter;
+CONFIG.fxmaster.CanvasAnimationNS = foundry.canvas?.animation?.CanvasAnimation ?? CanvasAnimation;
+CONFIG.fxmaster.FullCanvasObjectMixinNS = foundry.canvas?.containers?.FullCanvasObjectMixin ?? FullCanvasObjectMixin;
+CONFIG.fxmaster.ParticleEffectNS = foundry.canvas?.containers?.ParticleEffect ?? ParticleEffect;
+CONFIG.fxmaster.SpriteMeshNS = foundry.canvas?.containers?.SpriteMesh ?? SpriteMesh;
+CONFIG.fxmaster.CanvasLayerNS = foundry.canvas?.layers?.CanvasLayer ?? CanvasLayer;
+CONFIG.fxmaster.InteractionLayerNS = foundry.canvas?.layers?.InteractionLayer ?? InteractionLayer;
+CONFIG.fxmaster.DrawingNS = foundry.canvas?.placeables?.Drawing ?? Drawing;
+CONFIG.fxmaster.WeatherOcclusionMaskFilterNS = foundry.canvas?.rendering?.filters?.WeatherOcclusionMaskFilter ?? WeatherOcclusionMaskFilter;

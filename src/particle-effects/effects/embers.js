@@ -10,7 +10,12 @@ export class EmbersParticleEffect extends FXMasterParticleEffect {
 
   /** @override */
   static get icon() {
-    return "modules/fxmaster/assets/particle-effects/icons/embers.png";
+    return "modules/fxmaster/assets/particle-effects/icons/embers.webp";
+  }
+
+  /** @override */
+  static get group() {
+    return "ambient";
   }
 
   /** @override */
@@ -68,7 +73,7 @@ export class EmbersParticleEffect extends FXMasterParticleEffect {
       },
       {
         type: "textureSingle",
-        config: { texture: "modules/fxmaster/assets/particle-effects/effects/embers/ember.png" },
+        config: { texture: "modules/fxmaster/assets/particle-effects/effects/embers/ember.webp" },
       },
       {
         type: "color",

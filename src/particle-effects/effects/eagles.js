@@ -16,7 +16,7 @@ export class EaglesParticleEffect extends FXMasterParticleEffect {
 
   /** @override */
   static get icon() {
-    return "modules/fxmaster/assets/particle-effects/icons/crows.png";
+    return "modules/fxmaster/assets/particle-effects/icons/eagles.webp";
   }
 
   /** @override */
@@ -179,146 +179,148 @@ export class EaglesParticleEffect extends FXMasterParticleEffect {
    */
   get _textures() {
     if (!this.constructor._textureCache) {
-      const spriteSheetTexture = PIXI.Texture.from("modules/fxmaster/assets/particle-effects/effects/eagles/eagle.png");
+      const spriteSheetTexture = PIXI.Texture.from(
+        "modules/fxmaster/assets/particle-effects/effects/eagles/eagle.webp",
+      );
       const spriteSheetData = {
         meta: {
           scale: "1",
         },
         frames: {
-          "eagle0000.png": {
+          "eagle0000.webp": {
             frame: { x: 0, y: 0, w: 512, h: 512 },
             rotated: false,
             trimmed: false,
             spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
             sourceSize: { w: 512, h: 512 },
           },
-          "eagle0001.png": {
+          "eagle0001.webp": {
             frame: { x: 512, y: 0, w: 512, h: 512 },
             rotated: false,
             trimmed: false,
             spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
             sourceSize: { w: 512, h: 512 },
           },
-          "eagle0002.png": {
+          "eagle0002.webp": {
             frame: { x: 0, y: 512, w: 512, h: 512 },
             rotated: false,
             trimmed: false,
             spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
             sourceSize: { w: 512, h: 512 },
           },
-          "eagle0003.png": {
+          "eagle0003.webp": {
             frame: { x: 512, y: 512, w: 512, h: 512 },
             rotated: false,
             trimmed: false,
             spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
             sourceSize: { w: 512, h: 512 },
           },
-          "eagle0004.png": {
+          "eagle0004.webp": {
             frame: { x: 1024, y: 0, w: 512, h: 512 },
             rotated: false,
             trimmed: false,
             spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
             sourceSize: { w: 512, h: 512 },
           },
-          "eagle0005.png": {
+          "eagle0005.webp": {
             frame: { x: 1024, y: 512, w: 512, h: 512 },
             rotated: false,
             trimmed: false,
             spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
             sourceSize: { w: 512, h: 512 },
           },
-          "eagle0006.png": {
+          "eagle0006.webp": {
             frame: { x: 0, y: 1024, w: 512, h: 512 },
             rotated: false,
             trimmed: false,
             spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
             sourceSize: { w: 512, h: 512 },
           },
-          "eagle0007.png": {
+          "eagle0007.webp": {
             frame: { x: 512, y: 1024, w: 512, h: 512 },
             rotated: false,
             trimmed: false,
             spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
             sourceSize: { w: 512, h: 512 },
           },
-          "eagle0008.png": {
+          "eagle0008.webp": {
             frame: { x: 1024, y: 1024, w: 512, h: 512 },
             rotated: false,
             trimmed: false,
             spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
             sourceSize: { w: 512, h: 512 },
           },
-          "eagle0009.png": {
+          "eagle0009.webp": {
             frame: { x: 1536, y: 0, w: 512, h: 512 },
             rotated: false,
             trimmed: false,
             spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
             sourceSize: { w: 512, h: 512 },
           },
-          "eagle0010.png": {
+          "eagle0010.webp": {
             frame: { x: 1536, y: 512, w: 512, h: 512 },
             rotated: false,
             trimmed: false,
             spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
             sourceSize: { w: 512, h: 512 },
           },
-          "eagle0011.png": {
+          "eagle0011.webp": {
             frame: { x: 1536, y: 1024, w: 512, h: 512 },
             rotated: false,
             trimmed: false,
             spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
             sourceSize: { w: 512, h: 512 },
           },
-          "eagle0012.png": {
+          "eagle0012.webp": {
             frame: { x: 0, y: 1536, w: 512, h: 512 },
             rotated: false,
             trimmed: false,
             spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
             sourceSize: { w: 512, h: 512 },
           },
-          "eagle0013.png": {
+          "eagle0013.webp": {
             frame: { x: 512, y: 1536, w: 512, h: 512 },
             rotated: false,
             trimmed: false,
             spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
             sourceSize: { w: 512, h: 512 },
           },
-          "eagle0014.png": {
+          "eagle0014.webp": {
             frame: { x: 1024, y: 1536, w: 512, h: 512 },
             rotated: false,
             trimmed: false,
             spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
             sourceSize: { w: 512, h: 512 },
           },
-          "eagle0015.png": {
+          "eagle0015.webp": {
             frame: { x: 1536, y: 1536, w: 512, h: 512 },
             rotated: false,
             trimmed: false,
             spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
             sourceSize: { w: 512, h: 512 },
           },
-          "eagle0016.png": {
+          "eagle0016.webp": {
             frame: { x: 2048, y: 0, w: 512, h: 512 },
             rotated: false,
             trimmed: false,
             spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
             sourceSize: { w: 512, h: 512 },
           },
-          "eagle0017.png": {
+          "eagle0017.webp": {
             frame: { x: 2048, y: 512, w: 512, h: 512 },
             rotated: false,
             trimmed: false,
             spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
             sourceSize: { w: 512, h: 512 },
           },
-          "eagle0018.png": {
+          "eagle0018.webp": {
             frame: { x: 2048, y: 1024, w: 512, h: 512 },
             rotated: false,
             trimmed: false,
             spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
             sourceSize: { w: 512, h: 512 },
           },
-          "eagle0019.png": {
+          "eagle0019.webp": {
             frame: { x: 2048, y: 1536, w: 512, h: 512 },
             rotated: false,
             trimmed: false,

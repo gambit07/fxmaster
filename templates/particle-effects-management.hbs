@@ -1,39 +1,65 @@
-<form>
-  <ol class="fxmaster-groups-list fxmaster-groups-list--particle-effects">
-    {{#each particleEffectGroups as |group groupId|}}
-    <li class="fxmaster-groups-list__item">
-      <header class="flexrow">
-        <label class="fxmaster-groups-list__collapse">{{localize group.label}} <i
-            class="fxmaster-groups-list__collapse-icon fa fa-angle-{{#if group.expanded}}down{{else}}up{{/if}}"></i></label>
-      </header>
-      <ol
-        class="fxmaster-groups-list__collapsible{{#unless group.expanded}} fxmaster-groups-list__collapsible--collapsed{{/unless}} fxmaster-list">
+<section class="fxmaster-particles-container">
+  {{#each particleEffectGroups as |group groupId|}}
+    <div class="fxmaster-particles-group-wrapper">
+        <div
+          class="fxmaster-particles-group{{#if (or group.expanded (lt @index 3))}} open{{/if}}"
+          data-action="toggleCollapse"
+        >
+        <div class="fxmaster-particles-group-name">
+          {{localize group.label}}
+        </div>
+        <span class="fxmaster-collapse-arrow fxmaster-arrow-group">
+          <i class="fa-solid fa-chevron-down"></i>
+        </span>
+      </div>
+
+      <div class="fxmaster-particles-group-expand">
         {{#each group.effects as |effect type|}}
-        <li class="fxmaster-list__item">
-          <header class="fxmaster-list__item-header">
-            {{#if effect.icon}}<img class="fxmaster-list__icon" width="24" height="24" src="{{effect.icon}}">{{/if}}
-            <label class="fxmaster-list__collapse">{{localize effect.label}} <i
-                class="fxmaster-list__collapse-icon fa fa-angle-{{#if (lookup @root.activeEffects type)}}down{{else}}up{{/if}}"></i></label>
-            <input type="checkbox" name="{{type}}" {{checked (lookup @root.activeEffects type)}} />
-          </header>
-          <ul
-            class="fxmaster-list__collapsible{{#unless (lookup @root.activeEffects type)}} fxmaster-list__collapsible--collapsed{{/unless}}">
-            {{#each effect.parameters as |parameterConfig parameterName|}}
-            <li class="flexrow">
-              <span>{{localize parameterConfig.label}}</span>
-              {{{fxmasterParameter effect parameterConfig parameterName (lookup @root.activeEffects type)}}}
-            </li>
-            {{/each}}
-          </ul>
-        </li>
+          <div class="fxmaster-particles-row{{#if (lookup ../../activeEffects type)}} open{{/if}}"
+               data-type="{{type}}"
+               data-action="toggleCollapse">
+            <div class="fxmaster-particle-name">
+              {{#if effect.icon}}
+                <img class="fxmaster-particle-icon"
+                     src="{{effect.icon}}"
+                     width="30" height="30"
+                     alt="{{localize effect.label}} Icon">
+              {{else}}
+                <i class="fa-solid fa-circle-notch"></i>
+              {{/if}}
+              {{localize effect.label}}
+            </div>
+
+            <span class="fxmaster-collapse-arrow fxmaster-arrow-row">
+              <i class="fa-solid fa-chevron-down"></i>
+            </span>
+
+            <button type="button"
+                    class="fxmaster-particle-toggle {{#if (lookup ../../activeEffects type)}}enabled{{/if}}"
+                    data-action="toggleFilter"
+                    data-filter="{{type}}">
+              <span class="fa-solid fa-power-off"></span>
+            </button>
+          </div>
+
+          <div class="fxmaster-particle-expand">
+            <div class="fxmaster-particle-params">
+              {{#each effect.parameters as |parameterConfig parameterName|}}
+                <label class="fxmaster-param-label">
+                  {{localize parameterConfig.label}}
+
+                  {{{fxmasterParameter
+                        effect
+                        parameterConfig
+                        parameterName
+                        (lookup ../../../passiveEffects type)
+                     }}}
+                </label>
+              {{/each}}
+            </div>
+          </div>
         {{/each}}
-      </ol>
-    </li>
-    {{/each}}
-  </ol>
-  <footer class="fxmaster-form-footer">
-    <button class="fxmaster-form-footer__button" type="submit" name="submit" disabled>
-      <i class="fas fa-floppy-disk"></i> {{localize "FXMASTER.SaveChanges"}}
-    </button>
-  </footer>
-</form>
+      </div>
+    </div>
+  {{/each}}
+</section>

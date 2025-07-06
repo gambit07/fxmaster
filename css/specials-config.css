@@ -1,77 +1,183 @@
-.fxmaster .directory-header {
-  box-shadow: 0 0 5px var(--color-shadow-dark);
-  color: var(--color-text-light-2);
-  line-height: var(--line-height-12);
-  font-size: var(--font-size-12);
-  margin: 0;
-  padding: 4px 0;
+/* Adjust collapse‐arrow for specials */
+.fxmaster-filters-container .fxmaster-collapse-arrow {
+  right: 3.2rem;
+  opacity: 0.6;
+}
+
+/* Specials filters bar */
+.specials-filters-container {
+  padding: 0.75rem 0;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+}
+.specials-filters-container > * {
+  margin-right: 0.5rem;
+}
+.specials-filters-container > *:last-child {
+  margin-right: 0;
+}
+
+/* Popout layout */
+.fxmaster.specials-management.application-popout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.fxmaster.specials-management.application-popout .directory-header {
+  flex: 0 0 auto;
+}
+.fxmaster.specials-management.application-popout .specials-filters-container {
+  flex: 0 0 auto;
+}
+.fxmaster.specials-management.application-popout .specials-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* Thumbnails */
+.special-effects {
+  position: relative;
+  flex: 0 0 calc((100% - 5 * 0.5rem) / 6);
+  aspect-ratio: 1/1;
+  background: #000;
+  border: 1px solid var(--color-text-light-7);
+  overflow: hidden;
+  cursor: grab;
+}
+.special-effects video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0.8;
+}
+.special-effects:hover video {
+  opacity: 1;
+}
+.specials-list .hidden {
+  display: none;
+}
+
+/* Controls overlay */
+.special-effects .controls {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  display: flex;
+  gap: 0.25rem;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 2px;
+  border-radius: 0.25rem;
+}
+.special-effects .controls a i {
+  color: var(--color-text-light-0);
+  font-size: 1rem;
+}
+
+/* Action toggles */
+.fxmaster.specials-management .action-toggle {
+  margin-left: 0.5rem;
+}
+.fxmaster.specials-management .directory-header .action-toggle:first-of-type {
+  margin-left: auto;
+}
+
+/* Placeholders */
+.special-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  border: 1px solid var(--color-text-light-7);
+  color: var(--color-text-light-7);
+  font-size: 2rem;
+  opacity: 0.4;
+}
+.special-effects:hover .special-placeholder {
+  opacity: 1;
+}
+.special-placeholder img {
+  max-width: 50%;
+  max-height: 50%;
+}
+
+/* Fallback media */
+.special-effects img.special-thumbnail,
+.special-effects video.special-fallback-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+/* Search & tags */
+.specials-search-input {
+  margin-right: 0.5rem;
+}
+.specials-tag-filter {
+  margin-left: 0.5rem;
+}
+
+/* Align inputs and copy-buttons in one row */
+.fxmaster.specials-config .form-group .form-fields {
+  display: flex;
   align-items: center;
 }
 
-.fxmaster-directory-header-attribute--elevation {
-  margin-left: 4px;
-  flex-basis: 5px;
-  position: relative;
+/* Let the text input take up all available width */
+.fxmaster.specials-config .form-fields input[type="text"] {
+  flex: 1;
 }
 
-.fxmaster-directory-header-attribute__icon {
-  position: absolute;
-  top: -3px;
-  left: -1px;
+/* Give the copy button a bit of breathing room */
+.fxmaster.specials-config .form-fields .fxmaster-special-copy {
+  margin-left: 0.5rem;
+  flex-shrink: 0;
 }
 
-.fxmaster-directory-header-attribute__input[type="number"] {
-  color: var(--color-text-light-2);
-  line-height: var(--line-height-12);
-  font-size: var(--font-size-12);
+/* Space out side-by-side inputs (e.g. Scale X/Y, Anchor X/Y) */
+.fxmaster.specials-config .form-group .form-fields input + input {
+  margin-left: 0.5rem;
 }
 
-.fxmaster.specials .directory-item.folder h3 {
-  border: none;
+/* Space out each form-group vertically */
+.fxmaster.specials-config .form-group {
+  margin-bottom: 0.5rem;
 }
 
-.fxmaster .directory-item.active {
-  background: #ff640066;
+/* Tweak footer spacing */
+.fxmaster.specials-config .sheet-footer {
+  margin-top: 0.5rem;
 }
 
-.fxmaster.specials .directory-item.special-effects {
-  line-height: inherit;
+/* Ensure labels sit a bit above their inputs */
+.fxmaster.specials-config .form-group label {
+  display: block;
+  margin-bottom: 0.25rem;
 }
 
-.fxmaster.specials .special-effects .description {
-  padding: 4px;
-  overflow: hidden;
+/* Favorite row: full-width flex container */
+.fxmaster.specials-config .form-group.favorite-row .form-fields {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
 }
 
-.fxmaster.specials .special-effects .description h4 {
-  line-height: var(--line-height-16, 16px);
-  text-indent: 5px;
-  font-size: var(--font-size-14, 14px);
-  height: 32px;
+/* Remove any bottom-margin on that label */
+.fxmaster.specials-config .form-group.favorite-row label {
+  margin: 0;
+  align-self: center;
 }
 
-.fxmaster.specials .special-effects .description .author {
-  line-height: calc(var(--line-height-12) / 12 * 10);
-  color: var(--color-text-light-7);
-  text-align: right;
-  font-size: calc(var(--font-size-12) / 12 * 10);
-  flex: 0 calc(var(--line-height-12) / 12 * 10);
-}
-
-.fxmaster.specials .special-effects .controls {
-  padding: 0 3px;
-  line-height: 48px;
-  flex: 0 0 40px;
-  text-align: right;
-}
-
-.fxmaster.specials .special-effects .preview {
-  height: 48px;
-  flex: 0 0 48px;
-  background: black;
-  border: 1px solid var(--color-text-light-7);
-}
-
-.fxmaster.specials .action-toggle.active {
-  color: var(--color-border-highlight);
+/* Ensure the checkbox itself is centered */
+.fxmaster.specials-config .form-group.favorite-row input[type="checkbox"] {
+  margin: 0;
+  align-self: center;
+  vertical-align: middle;
 }

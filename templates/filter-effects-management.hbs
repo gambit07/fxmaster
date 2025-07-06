@@ -1,28 +1,43 @@
-<form>
-  <ol class="fxmaster-list fxmaster-list--filters">
-    {{#each filters as |filter type|}}
-    <li class="fxmaster-list__item">
-      <header class="fxmaster-list__item-header">
-        <div class="fxmaster-list__icon"><i class="{{filter.icon}}"></i></div>
-        <label class="fxmaster-list__collapse">{{localize filter.label}} <i
-            class="fxmaster-list__collapse-icon fa fa-angle-{{#if (lookup @root.activeFilters type)}}down{{else}}up{{/if}}"></i></label>
-        <input type="checkbox" name="{{type}}" {{checked (lookup @root.activeFilters type)}} />
-      </header>
-      <ul
-        class="fxmaster-list__collapsible{{#unless (lookup @root.activeFilters type)}} fxmaster-list__collapsible--collapsed{{/unless}}">
+<section class="fxmaster-filters-container">
+  {{#each filters as |filter type|}}
+    <div
+      class="fxmaster-filters-row{{#if (lookup ../activeFilters type)}} open{{/if}}"
+      data-type="{{type}}"
+      data-action="toggleCollapse"
+    >
+      <div class="fxmaster-filter-name">
+        <i class="{{filter.icon}}"></i>
+        {{localize filter.label}}
+      </div>
+
+      <span class="fxmaster-collapse-arrow">
+        <i class="fa-solid fa-chevron-down"></i>
+      </span>
+
+      <button
+        type="button"
+        class="fxmaster-filter-toggle {{#if (lookup ../activeFilters type)}}enabled{{/if}}"
+        data-action="toggleFilter"
+        data-filter="{{type}}"
+      >
+        <span class="fa-solid fa-power-off"></span>
+      </button>
+    </div>
+
+    <div class="fxmaster-filter-expand">
+      <div class="fxmaster-filter-params">
         {{#each filter.parameters as |parameterConfig parameterName|}}
-        <li class="flexrow">
-          <span>{{localize parameterConfig.label}}</span>
-          {{{fxmasterParameter filter parameterConfig parameterName (lookup @root.activeFilters type)}}}
-        </li>
+          <label>
+            {{localize parameterConfig.label}}
+            {{{fxmasterParameter
+                  filter
+                  parameterConfig
+                  parameterName
+                  (lookup ../../passiveFilters type)
+               }}}
+          </label>
         {{/each}}
-      </ul>
-    </li>
-    {{/each}}
-  </ol>
-  <footer class="fxmaster-form-footer">
-    <button class="fxmaster-form-footer__button" type="submit" name="submit" disabled>
-      <i class="fas fa-floppy-disk"></i> {{localize "FXMASTER.SaveChanges"}}
-    </button>
-  </footer>
-</form>
+      </div>
+    </div>
+  {{/each}}
+</section>

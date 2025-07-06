@@ -1,34 +1,54 @@
 export function registerHandlebarsHelpers() {
   Handlebars.registerHelper("fxmasterParameter", (effectCls, parameterConfig, parameterName, options = {}) => {
-    const _default = options[parameterName] ?? effectCls.default[parameterName];
+    const defaultValue = effectCls.default?.[parameterName] ?? parameterConfig.value ?? "";
+    const raw = options?.[parameterName];
+
+    const _default = raw == null || raw === "" ? defaultValue : raw;
+    const nameBase = `${effectCls.label}_${parameterName}`;
 
     switch (parameterConfig.type) {
-      case "color":
+      case "color": {
+        const colorValue = typeof _default === "object" ? _default.value : "#000000";
+        const applyChecked = _default?.apply ? "checked" : "";
+
         return `
-              <input type="checkbox" name="${effectCls.label}_${parameterName}_apply" ${
-          _default.apply ? "checked" : ""
-        }/>
-              <input type="color" name="${effectCls.label}_${parameterName}" value="${_default.value}">
-              `;
-      case "range":
+          <div class="fxmaster-input-color">
+            <input type="checkbox" name="${nameBase}_apply" ${applyChecked} data-action="updateParam" />
+            <input type="color" name="${nameBase}" value="${colorValue}" data-action="updateParam" />
+          </div>
+        `;
+      }
+
+      case "range": {
+        const val = Number(_default);
+
         return `
-              <input class="fxmaster-range-input" type="range" step="${parameterConfig.step}" min="${parameterConfig.min}" max="${parameterConfig.max}" name="${effectCls.label}_${parameterName}" value="${_default}">
-              <span class="range-value">${_default}</span>
-              `;
+          <div class="fxmaster-input-range">
+            <input type="range" name="${nameBase}" value="${val}" min="${parameterConfig.min}" max="${parameterConfig.max}" step="${parameterConfig.step}" data-action="updateParam" />
+            <output class="range-value" for="${nameBase}">${val}</output>
+          </div>
+        `;
+      }
+
       case "number":
-        return `
-              <input class="fxmaster-text-input" type="text" data-dtype="Number" name="${effectCls.label}_${parameterName}" value="${_default}">
-              `;
-      case "multi-select":
-        return `<select class="fxmaster-multi-select" multiple name="${
-          effectCls.label
-        }_${parameterName}">${Object.entries(parameterConfig.options).map(
-          ([key, name]) =>
-            `<option class="fxmaster-multi-select__option" value="${key}"${
-              _default.includes(key) ? " selected" : ""
-            }>${game.i18n.localize(name)}</option>`,
-        )}</select>`;
+        return `<input type="number" name="${nameBase}" value="${_default}" step="${
+          parameterConfig.step ?? 1
+        }" data-action="updateParam" />`;
+
+      case "multi-select": {
+        const config = {
+          name: nameBase,
+          value: Array.isArray(_default) ? _default : [_default],
+          options: Object.entries(parameterConfig.options || {}).map((i) => ({ value: i[0], label: i[1] })),
+          dataset: { action: "updateParam" },
+          localize: true,
+        };
+        const select = foundry.applications.fields.createMultiSelectInput(config);
+        return select.outerHTML;
+      }
+
+      default:
+        return `<input type="text" name="${nameBase}" value="${_default}" data-action="updateParam">`;
     }
-    return "";
   });
 }

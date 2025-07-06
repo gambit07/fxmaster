@@ -1,109 +1,156 @@
 :root {
-  --fxmaster-color-bg-button: rgba(255, 255, 240, 0.8);
+  --fxmaster-radius: 0.5rem;
+  --fxmaster-border: 1px solid var(--color-border-dark-4);
+  --fxmaster-max-height: 85vh;
+  --fxmaster-max-height: 85dvh;
 }
 
-.fxmaster-groups-list,
-.fxmaster-list {
-  overflow-y: auto;
-  padding: 0;
-  margin: 0;
-}
-
-.fxmaster-groups-list__item,
-.fxmaster-list__item {
-  padding: 4px;
-  list-style: none;
-}
-
-.fxmaster-groups-list__item {
-  border-bottom: 2px solid var(--color-border-dark-3);
-}
-
-.fxmaster-list__item {
-  border-bottom: 1px solid var(--color-border-dark-3);
-}
-
-.fxmaster-groups-list__item:last-of-type,
-.fxmaster-list__item:last-of-type {
-  border-bottom: none;
-}
-
-.fxmaster-list__item-header {
+/* Base styles for headers & rows */
+.fxmaster-filters-header,
+.fxmaster-filters-row,
+.fxmaster-particles-group,
+.fxmaster-particles-row {
   display: flex;
-  flex-direction: row;
-  justify-content: flex-start;
   align-items: center;
+  padding: 0.25rem 0.5rem;
+  gap: 1rem;
+  border-radius: var(--fxmaster-radius);
+  background: rgba(255, 255, 255, 0.025);
+  transition: background 0.2s ease;
+  position: relative;
 }
 
-.fxmaster-list__item-header > * {
-  flex: 1;
+/* Header variations */
+.fxmaster-filters-header,
+.fxmaster-particles-group {
+  font-weight: bold;
+  border-bottom: 2px solid var(--color-border-dark-2);
+  background: rgba(255, 255, 255, 0.05);
 }
 
-.fxmaster-groups-list__collapse,
-.fxmaster-list__collapse {
-  font-size: var(--font-size-16);
+/* Hover for rows */
+.fxmaster-filters-row:hover,
+.fxmaster-particles-row:hover {
+  background: rgba(255, 255, 255, 0.05);
   cursor: pointer;
-  text-indent: 5px;
 }
 
-.fxmaster-groups-list__collapse:hover,
-.fxmaster-list__collapse:hover {
-  text-shadow: 0 0 4px var(--color-shadow-primary);
+/* Name flex */
+.fxmaster-filter-name,
+.fxmaster-particle-name,
+.fxmaster-particles-group-name {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  white-space: nowrap;
 }
 
-.fxmaster-groups-list__collapsible,
-.fxmaster-list__collapsible {
-  overflow: hidden;
+/* Toggle buttons */
+.fxmaster-particle-toggle,
+.fxmaster-filter-toggle,
+.fxmaster-special-copy {
+  contain: layout paint;
+  will-change: transform;
+  transform: translateZ(0);
+  width: 1.875rem;
+  height: 1.875rem;
+  position: relative;
   padding: 0;
-  margin: 0;
+  box-sizing: border-box;
+}
+.fxmaster-particle-toggle span,
+.fxmaster-filter-toggle span,
+.fxmaster-special-copy span {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 1.125rem;
+  transform: translateY(1px);
+}
+.fxmaster-filter-toggle.enabled,
+.fxmaster-particle-toggle.enabled {
+  background-color: var(--color-warm-2);
+  border-color: var(--color-warm-3);
+}
+.fxmaster-filter-toggle:hover,
+.fxmaster-particle-toggle:hover,
+.fxmaster-special-copy:hover {
+  background-color: var(--color-warm-2);
+}
+.fxmaster-filter-toggle:focus,
+.fxmaster-particle-toggle:focus,
+.fxmaster-special-copy:focus {
+  outline: 2px solid var(--color-warm-3);
+  outline-offset: 2px;
+}
+.fxmaster-filter-toggle:active,
+.fxmaster-particle-toggle:active,
+.fxmaster-special-copy:active {
+  outline: var(--color-warm-3);
 }
 
-.fxmaster-groups-list__collapsible--collapsed,
-.fxmaster-list__collapsible--collapsed {
+/* Expand-panel basics */
+.fxmaster-filter-expand,
+.fxmaster-particles-group-expand,
+.fxmaster-particle-expand {
   display: none;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding: 0.5rem 1.25rem 0.75rem;
+  background: rgba(255, 255, 255, 0.015);
+  border-left: 1px dashed var(--color-border-dark-4);
+  border-right: 1px dashed var(--color-border-dark-4);
+  border-bottom: 1px dashed var(--color-border-dark-4);
+  border-radius: 0 0 var(--fxmaster-radius) var(--fxmaster-radius);
+}
+.fxmaster-filters-row.open + .fxmaster-filter-expand,
+.fxmaster-particles-group.open + .fxmaster-particles-group-expand,
+.fxmaster-particles-row.open + .fxmaster-particle-expand {
+  display: flex;
 }
 
-.fxmaster-list__icon {
-  border: none;
-  flex: 0 0 18px;
-  text-align: center;
-  line-height: var(--line-height-20);
-  font-size: var(--font-size-16);
+/* Collapse-arrow base & rotation */
+.fxmaster-collapse-arrow {
+  position: absolute;
+  pointer-events: none;
+  transition: transform 0.2s ease;
+}
+.fxmaster-filters-row.open .fxmaster-collapse-arrow i,
+.fxmaster-particles-group.open .fxmaster-collapse-arrow i,
+.fxmaster-particles-row.open .fxmaster-collapse-arrow i {
+  transform: rotate(180deg);
 }
 
-.fxmaster-form-footer {
-  padding: 5px;
+/* Range inputs */
+.fxmaster-input-range {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.fxmaster-input-range input[type="range"] {
+  flex: 1;
+  --range-thumb-background-color: var(--color-warm-2);
+  --range-thumb-border-color: var(--color-warm-3);
+}
+.fxmaster-input-range .range-value {
+  min-width: 2ch;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-light-1);
 }
 
-.fxmaster-form-footer__button {
-  background-color: var(--fxmaster-color-bg-button);
-  border: 1px solid var(--color-border-light-primary);
+/* Color pickers */
+.fxmaster-input-color {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
-.fxmaster-multi-select {
-  border: 1px solid var(--color-border-light-primary);
-  color: var(--color-border-light-1);
-  background: transparent;
-  border-radius: 0px;
-}
-
-.fxmaster-multi-select:focus {
-  box-shadow: none;
-}
-
-.fxmaster-multi-select__option {
-  background: transparent;
-}
-
-.fxmaster-multi-select__option:checked {
-  color: var(--color-text-light-highlight);
-  border: 1px solid var(--color-border-highlight);
-}
-
-.fxmaster-text-input[type="text"] {
-  color: var(--color-text-light-0);
-  border: 1px solid var(--color-border-light-primary);
-  text-align: center;
-  padding: 2px;
-  height: 20px;
+/* Generic button reset */
+button {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0;
 }

@@ -1,3 +1,4 @@
+import { getDialogColors } from "./utils.js";
 /**
  * An abstract FormApplication that handles functionality common to multiple FXMaster forms.
  * In particular, it provides the following functionality:
@@ -12,84 +13,87 @@
  * @param {Object} object                     Some object which is the target data structure to be be updated by the form.
  * @param {FormApplicationOptions} [options]  Additional options which modify the rendering of the sheet.
  */
-export class FXMasterBaseForm extends FormApplication {
-  /** @override */
-  activateListeners(html) {
-    super.activateListeners(html);
-    html
-      .find(".fxmaster-groups-list__collapse")
-      .click((event) =>
-        this._onClickCollapse(
-          event,
-          "fxmaster-groups-list__item",
-          "fxmaster-groups-list__collapsible",
-          "fxmaster-groups-list__collapse-icon",
-        ),
-      );
-    html
-      .find(".fxmaster-list__collapse")
-      .click((event) =>
-        this._onClickCollapse(
-          event,
-          "fxmaster-list__item",
-          "fxmaster-list__collapsible",
-          "fxmaster-list__collapse-icon",
-        ),
-      );
-    html.find(".fxmaster-range-input").on("input", this._onChangeRange.bind(this));
+
+const Base = foundry.applications.api.HandlebarsApplicationMixin(foundry.applications.api.ApplicationV2);
+
+export class FXMasterBaseFormV2 extends Base {
+  static DEFAULT_OPTIONS = {
+    actions: {
+      toggleFilter: FXMasterBaseFormV2.toggleFilter,
+      toggleCollapse: FXMasterBaseFormV2.toggleCollapse,
+      updateParam: FXMasterBaseFormV2.updateParam,
+    },
+  };
+  static toggleFilter(event, button) {
+    event.stopPropagation();
+    const type = button.dataset.filter;
+    const isEnabled = button.classList.toggle("enabled");
+    this.updateEnabledState(type, isEnabled);
   }
 
-  /**
-   * Handle toggling a a collapsible. To collapse the collapsible, the class `${collapsibleClass}--collapsed` is
-   * added to it.
-   *
-   * @param {JQuery.ClickEvent} event            The originating click event
-   * @param {string}            parentClass      The CSS class for selecting the parent that contains both the collapse
-   *                                             "button" and the collapsible
-   * @param {string}            collapsibleClass The CSS class for selecting the collapsible inside the parent
-   * @param {string}            [iconClass]      An optional CSS class to select an up/down arrow icon to be toggled
-   * @private
-   */
-  _onClickCollapse(event, parentClass, collapsibleClass, iconClass) {
-    const parentItem = $(event.currentTarget).parents(`.${parentClass}`);
-    const collapsible = parentItem.children(`.${collapsibleClass}`);
-    const icon = iconClass !== undefined ? parentItem.find(`.${iconClass}`) : undefined;
-    this._collapse(collapsible, icon, `${collapsibleClass}--collapsed`);
+  static toggleCollapse(event, element) {
+    if (event.target.closest("[data-action='toggleFilter']")) return;
+    element.classList.toggle("open");
   }
 
-  /**
-   * Toggle the collapsed state of an element.
-   * @param {JQuery}      collapsible                 The element to collapse
-   * @param {JQuery|null} [icon]                      An up/down arrow icon to be toggled
-   * @param {string}      [collapsedClass="collaped"] The CSS clas to use to mark the element as collapsed
-   * @param {number}      [speed=250]                 The speed for sliding the element in and out, in milliseconds
-   * @private
-   */
-  _collapse(collapsible, icon, collapsedClass = "collapsed", speed = 250) {
-    const shouldCollapse = !collapsible.hasClass(collapsedClass);
+  static gatherFilterOptions(filterDB, form) {
+    const label = filterDB.label;
+    const options = {};
 
-    if (shouldCollapse) {
-      collapsible.slideUp(speed, () => {
-        collapsible.addClass(collapsedClass);
-        icon?.removeClass("fa-angle-down").addClass("fa-angle-up");
-      });
-    } else {
-      collapsible.slideDown(speed, () => {
-        collapsible.removeClass(collapsedClass);
-        icon?.removeClass("fa-angle-up").addClass("fa-angle-down");
-      });
+    for (const [key, param] of Object.entries(filterDB.parameters)) {
+      const base = `${label}_${key}`;
+      const input = form.querySelector(`[name="${base}"]`);
+      const apply = form.querySelector(`[name="${base}_apply"]`);
+
+      if (!input) continue;
+
+      if (param.type === "color") {
+        options[key] = {
+          apply: Boolean(apply?.checked),
+          value: input.value || (param.value?.value ?? "#000000"),
+        };
+        continue;
+      } else if (param.type === "multi-select") {
+        const select = input.querySelector("select");
+        options[key] = select ? Array.from(select.selectedOptions, (o) => o.value) : [];
+      } else if (input.type === "number" || param.type === "range") {
+        options[key] = parseFloat(input.value);
+        continue;
+      }
+
+      options[key] = input.value;
     }
+
+    return options;
   }
 
-  /** @override */
-  async _onChangeInput(...args) {
-    this.element.find('button[type="submit"]').prop("disabled", false);
-    return super._onChangeInput(...args);
+  _onRender(options) {
+    super._onRender?.(options);
+    this.animateTitleBar(this);
   }
 
-  /** @override */
-  async _onSubmit(...args) {
-    this.element.find('button[type="submit"]').prop("disabled", true);
-    return super._onSubmit(...args);
+  animateTitleBar(app) {
+    const titleBackground = app?.element?.querySelector(".window-header");
+    if (!titleBackground) return;
+
+    const duration = 20000;
+    let startTime = null;
+
+    titleBackground.style.border = "2px solid";
+    titleBackground.style.borderImageSlice = 1;
+
+    const { baseColor, highlightColor } = getDialogColors();
+
+    function step(timestamp) {
+      if (!startTime) startTime = timestamp;
+      const elapsed = timestamp - startTime;
+      const progress = (elapsed % duration) / duration;
+      const angle = 360 * progress;
+
+      titleBackground.style.borderImage = `linear-gradient(${angle}deg, ${baseColor}, ${highlightColor}, ${baseColor}) 1`;
+      requestAnimationFrame(step);
+    }
+
+    requestAnimationFrame(step);
   }
 }

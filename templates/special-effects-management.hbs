@@ -1,62 +1,19 @@
-<section class="fxmaster sidebar-tab directory flexcol">
-  <header class="directory-header flexrow">
-    <div class="fxmaster-directory-header-attribute fxmaster-directory-header-attribute--elevation" title="{{localize 'Elevation'}}">
-      <i class="fxmaster-directory-header-attribute__icon fas fa-angle-up"></i>
-      <input class="fxmaster-directory-header-attribute__input" type="number" name="elevation" value="1" />
-    </div>
-    <div class="action-toggle active" title="{{localize 'FXMASTER.CastStatic'}}">
-      <a data-action="cast-static"><i class="fas fa-compress"></i></a>
-    </div>
-    <div class="action-toggle" title="{{localize 'FXMASTER.CastThrow'}}">
-      <a data-action="cast-throw"><i class="fas fa-rocket"></i></a>
-    </div>
-    <div class="action-toggle" title="{{localize 'FXMASTER.CastExtend'}}">
-      <a data-action="cast-extend"><i class="fas fa-angles-right"></i></a>
-    </div>
-    <div class="action-toggle" title="{{localize 'FXMASTER.CastExpand'}}">
-      <a data-action="cast-expand"><i class="fas fa-maximize"></i></a>
-    </div>
-    <div class="action-toggle" title="{{localize 'FXMASTER.CastRotate'}}">
-      <a data-action="cast-rotate"><i class="fas fa-arrow-rotate-left"></i></a>
-    </div>
-    <div title="{{localize 'FXMASTER.AddSpecialEffect'}}">
-      <a data-action="add-effect"><i class="fas fa-plus"></i></a>
-    </div>
-  </header>
-  <ol class="directory-list">
-    {{#each folders as |folder id|}}
-    <li class="directory-item folder flexcol collapsed" data-folder-id="{{id}}">
-      <header class="folder-header flexrow">
-        <h3 class="fxmaster-specials-folder-"><i class="fas fa-folder-open fa-fw"></i> {{folder.label}}</h3>
-      </header>
-      <ol class="subdirectory">
-        {{#each folder.effects as |effect effectId|}}
-        <li class="directory-item entity flexrow special-effects" data-effect-id="{{effectId}}" draggable="true">
-          <div class="preview">
-            <video preload="none" width="46" height="46" muted>
-              <source src="{{effect.file}}">
-            </video>
-          </div>
-          <div class="description">
-            <a>
-              <h4 title="{{effect.label}}">
-                {{effect.label}}
-              </h4>
-              <div class="author"><span>{{effect.author}}</span></div>
-            </a>
-          </div>
-          <div class="controls">
-            {{#unless (eq effect.preset false)}}
-            <a class="edit-effect"><i class="fas fa-clone"></i></a>
-            {{else}}
-            <a class="edit-effect"><i class="fas fa-pen-to-square"></i></a>
-            <a class="del-effect"><i class="fas fa-trash"></i></a>
-            {{/unless}}
-          </div>
-        </li>
-        {{/each}}
-      </ol>
-    </li>
+<section class="fxmaster specials-management application-popout">
+  <div class="specials-filters-container flexrow">
+    <input
+      type="text"
+      data-tooltip="{{localize 'FXMASTER.AnimationEffect.SearchQueries'}}"
+      class="specials-search-input"
+      placeholder="{{localize 'FXMASTER.AnimationEffect.SearchAnimations'}}"
+      data-search
+    />
+  <select class="specials-tag-filter">
+    <option value="">{{localize "FXMASTER.AnimationEffect.AllAnimations"}}</option>
+    {{#each tags as |tag|}}
+      <option value="{{tag.key}}">{{tag.label}}</option>
     {{/each}}
-  </ol>
+  </select>
+  </div>
+
+  <div class="specials-list"></div>
 </section>

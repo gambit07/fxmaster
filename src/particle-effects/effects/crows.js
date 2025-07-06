@@ -1,16 +1,16 @@
 import { FXMasterParticleEffect } from "./effect.js";
-import { DefautlRectangleSpawnMixin } from "./mixins/default-retangle-spawn.js";
+import { DefaultRectangleSpawnMixin } from "./mixins/default-rectangle-spawn.js";
 
 /**
  * A full-screen particle effect which renders flying crows.
  */
-export class CrowsParticleEffect extends DefautlRectangleSpawnMixin(FXMasterParticleEffect) {
+export class CrowsParticleEffect extends DefaultRectangleSpawnMixin(FXMasterParticleEffect) {
   /** @override */
   static label = "FXMASTER.ParticleEffectCrows";
 
   /** @override */
   static get icon() {
-    return "modules/fxmaster/assets/particle-effects/icons/crows.png";
+    return "modules/fxmaster/assets/particle-effects/icons/crows.webp";
   }
 
   /** @override */
@@ -93,7 +93,7 @@ export class CrowsParticleEffect extends DefautlRectangleSpawnMixin(FXMasterPart
               { texture: 3, count: 2 },
               { texture: 2, count: 3 },
             ].map(({ texture, count }) => ({
-              texture: `modules/fxmaster/assets/particle-effects/effects/crows/crow${texture}.png`,
+              texture: `modules/fxmaster/assets/particle-effects/effects/crows/crow${texture}.webp`,
               count,
             })),
           },

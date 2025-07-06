@@ -1,22 +1,24 @@
 import { packageId } from "../constants.js";
 import { logger } from "../logger.js";
-import { executeWhenWorldIsMigratedToLatest, isOnTargetMigration } from "../migration/migration.js";
 import { isEnabled } from "../settings.js";
 
-export class ParticleEffectsLayer extends FullCanvasObjectMixin(CanvasLayer) {
+const TYPE = `${packageId}.particleEffectsRegion`;
+
+export class ParticleEffectsLayer extends CONFIG.fxmaster.FullCanvasObjectMixinNS(CONFIG.fxmaster.CanvasLayerNS) {
   constructor() {
     super();
     this.#initializeInverseOcclusionFilter();
     this.mask = canvas.masks.scene;
     this.sortableChildren = true;
     this.eventMode = "none";
+    this.regionEffects = new Map();
   }
 
   /**
    * Initialize the inverse occlusion filter.
    */
   #initializeInverseOcclusionFilter() {
-    this.occlusionFilter = WeatherOcclusionMaskFilter.create({
+    this.occlusionFilter = CONFIG.fxmaster.WeatherOcclusionMaskFilterNS.create({
       occlusionTexture: canvas.masks.depth.renderTexture,
     });
     this.occlusionFilter.enabled = false;
@@ -62,15 +64,8 @@ export class ParticleEffectsLayer extends FullCanvasObjectMixin(CanvasLayer) {
 
   /** @override */
   async _draw() {
-    if (!isEnabled()) {
-      return;
-    }
-    if (isOnTargetMigration()) {
-      await this.#draw();
-    } else {
-      // If migrations need to be performed, defer drawing to when they are done.
-      executeWhenWorldIsMigratedToLatest(this.#draw.bind(this));
-    }
+    if (!isEnabled()) return;
+    await this.#draw();
   }
 
   /** @override */
@@ -98,6 +93,7 @@ export class ParticleEffectsLayer extends FullCanvasObjectMixin(CanvasLayer) {
     if (!canvas.scene) {
       return;
     }
+
     let zIndex = 0;
 
     const stopPromise = Promise.all(
@@ -121,7 +117,7 @@ export class ParticleEffectsLayer extends FullCanvasObjectMixin(CanvasLayer) {
     }
     for (const [id, { type, options: flagOptions }] of Object.entries(flags)) {
       if (!(type in CONFIG.fxmaster.particleEffects)) {
-        logger.warn(`Particle effect '${id}' is of unknown type '${flags[id].type}', skipping it.`);
+        logger.warn(game.i18n.format("FXMASTER.ParticleEffectTypeUnknown", { id: id, type: flags[id].type }));
         continue;
       }
       const options = Object.fromEntries(
@@ -141,6 +137,79 @@ export class ParticleEffectsLayer extends FullCanvasObjectMixin(CanvasLayer) {
 
     if (this.particleEffects.size === 0) {
       this.occlusionFilter.enabled = false;
+    }
+  }
+
+  /**
+   * Draw FX for a single region placeable, reading its RegionBehavior flags.
+   * @param {RegionPlaceable} placeable Our region object
+   * @param {object} options   { soft: boolean } – if true, fade out old effects
+   */
+
+  async drawRegionParticleEffects(placeable, { soft = false } = {}) {
+    const regionId = placeable.id;
+
+    const old = this.regionEffects.get(regionId) || [];
+    await Promise.all(
+      old.map(async (fx) => {
+        if (soft) await fx.fadeOut({ timeout: 2000 });
+        else fx.stop();
+        fx.destroy();
+      }),
+    );
+    this.regionEffects.set(regionId, []);
+
+    const behaviors = placeable.document.behaviors.filter((b) => b.type === TYPE && !b.disabled);
+    for (const behavior of behaviors) {
+      const flags = behavior.getFlag(packageId, "particleEffects") || {};
+
+      for (const [type, params] of Object.entries(flags)) {
+        const EffectClass = CONFIG.fxmaster.particleEffects[type];
+        if (!EffectClass) continue;
+
+        const container = new PIXI.Container();
+
+        const mask = new PIXI.Graphics().beginFill(0xffffff);
+        for (const s of placeable.document.shapes) {
+          const drawShape = () => {
+            switch (s.type) {
+              case "polygon":
+                mask.drawShape(new PIXI.Polygon(s.points));
+                break;
+              case "ellipse":
+                mask.drawEllipse(s.x, s.y, s.radiusX, s.radiusY);
+                break;
+              case "rectangle":
+                mask.drawRect(s.x, s.y, s.width, s.height);
+                break;
+              default:
+                mask.drawShape(new PIXI.Polygon(s.points));
+            }
+          };
+
+          if (s.hole) {
+            mask.beginHole();
+            drawShape();
+            mask.endHole();
+          } else {
+            drawShape();
+          }
+        }
+        mask.endFill();
+
+        container.mask = mask;
+        container.addChild(mask);
+
+        const options = Object.fromEntries(Object.entries(params).map(([k, v]) => [k, { value: v }]));
+        const fx = new EffectClass(options);
+        fx.blendMode = PIXI.BLEND_MODES.NORMAL;
+
+        container.addChild(fx);
+        this.addChild(container);
+        fx.play({ prewarm: !soft });
+
+        this.regionEffects.get(regionId).push(fx);
+      }
     }
   }
 }

@@ -3,8 +3,12 @@
 <h2 style="text-align: center;">Supporting The Module</h2>
 <p style="text-align: center;"><a href="https://ko-fi.com/gambit07" target="_blank" rel="nofollow noopener"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="ko-fi" /></a> <a href="https://www.patreon.com/GambitsLounge" target="_blank" rel="nofollow noopener"> <img src="https://img.shields.io/badge/Patreon-Gambits Lounge-F96854?style=for-the-badge&amp;logo=patreon" alt="Patreon Gambits Lounge" /> </a></p>
 <hr/>
-<p>Welcome to all FXMaster users, my name is Gambit and I've taken over the FXMaster module! Huge thanks to the creator of the module, SecretFire, and the previous maintainer Ghost for all their wonderful work supporting this module.</p>
-<p>I've released a V13 compatible version of the module with bugfixes for most of the outstanding issues on the github repo. Moving forward I'll be converting FXMaster to Foundry's appV2 infrastructure for a dedicated V13 release with design improvements. Feel free to join my Discord above if you have any questions or would like to keep track of that progress!</p>
+<p>Welcome to the official release of the application V2 overhaul for FXMaster! A lot of time and effort went into this conversion and new functionality has been added, including Region particle masking, as well as the addition of Region specific Particle Effects. The Special Effects control has been re-named to Animation Effects, and functionality has been broadly changed. FXMaster no longer supports features that overlapped with Sequencer. The FXMaster implementation was extremely dated, and Sequencer has superior functionality. Instead, the Animation Effects app has been converted to a more functional menu for searching, previewing, and favoriting animations from all major animation modules, while still allowing static tile placement via drag and drop.</p>
+
+**<p>Any support via the <a href="https://ko-fi.com/gambit07" target="_blank" rel="nofollow noopener">Patreon</a> or <a href="https://ko-fi.com/gambit07" target="_blank" rel="nofollow noopener">Ko-fi</a> is greatly appreciated! If you are a Patreon subscriber you will receive access to the FXMaster+ module. FXMaster+ can be downloaded from Patreon, and it's where I will be adding new particle effects and filters moving forward. For the intial release, it will get you access to the <span style="color:pink">Sakura Bloom</span> and <span style="color:pink">Sakura Blossoms</span> Particle Effects previewed below:</p>**
+
+<video autoplay muted playsinline loop preload="auto" src="https://github.com/user-attachments/assets/dfc880e7-f148-4db1-b509-2ef2332ede7a"></video>
+
 <hr/>
 
 FXMaster is a module for [Foundry Virtual Tabletop] that provides various types of effects:
@@ -12,7 +16,7 @@ FXMaster is a module for [Foundry Virtual Tabletop] that provides various types 
 - _Particle Effects_, including weather (rain, clouds, fog, snow, etc.), animals (crows, bats, spiders, etc.), and a few
   others.
 - _Filter Effects_, including color overlays, underwater, and lightning.
-- Clickable _Special Effects_, using video files provided by external sources.
+- _Animation Effects_, using video files provided by external sources.
 
 This module also provides ways to easily configure these effects.
 
@@ -23,30 +27,22 @@ This module also provides ways to easily configure these effects.
   - [Installation Instructions](#installation-instructions)
   - [FAQ](#faq)
   - [Usage](#usage)
-    - [Special Effects <img src="./media/font-awesome/hat-wizard.svg" alt="Special Effects Icon" height="20" />](#special-effects-)
-      - [Playing Special Effects](#playing-special-effects)
-      - [Elevation](#elevation)
-      - [Cast Modes](#cast-modes)
-      - [Managing Custom Special Effects](#managing-custom-special-effects)
-    - [Particle Effects <img src="./media/font-awesome/cloud-rain.svg" alt="Particle Effects Icon" height="20" />](#particle-effects-)
+    - [Animation Effects&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/hat-wizard-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/hat-wizard-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/hat-wizard-dark.svg" alt="Animation Effects Icon" height="20" width="20" style="vertical-align:middle;"></picture>](#animation-effects)
+      - [Placing Animation Effects](#placing-animation-effects)
+      - [Managing Animation Effects](#managing-animation-effects)
+    - [Particle Effects&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/cloud-rain-light.svg" media="(prefers-color-scheme: dark)"><source srcset="./media/font-awesome/cloud-rain-dark.svg" media="(prefers-color-scheme: light)"><img src="./media/font-awesome/cloud-rain-dark.svg" alt="Particle Effects Icon" height="20" width="20" style="display:inline-block; vertical-align:bottom;"></picture>](#particle-effects)
       - [Masking Particle Effects](#masking-particle-effects)
       - [⚠ Warning Regarding Large Scenes](#-warning-regarding-large-scenes)
-    - [Invert Particle Effect Mask <img src="./media/font-awesome/mask.svg" alt="Invert Particle Effect Mask Icon" height="20" />](#invert-particle-effect-mask-)
-    - [Filter Effects <img src="./media/font-awesome/filter.svg" alt="Filter Effects Icon" height="20" />](#filter-effects-)
-    - [Save Particle and Filter Effects as Macro <img src="./media/font-awesome/floppy-disk.svg" alt="Save Particle and Filter Effects as Macro Icon" height="20" />](#save-particle-and-filter-effects-as-macro-)
-    - [Clear Particle and Filter Effects <img src="./media/font-awesome/trash.svg" alt="Clear Particle and Filter Effects Icon" height="20" />](#clear-particle-and-filter-effects-)
+    - [Invert Particle Effect Mask&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/mask-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/mask-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/mask-dark.svg" alt="Invert Particle Effect Mask Icon" height="20" width="20" style="vertical-align:middle;"></picture>](#invert-particle-effect-mask)
+    - [Filter Effects&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/filter-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/filter-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/filter-dark.svg" alt="Filter Effects Icon" height="20" width="20" style="vertical-align:middle;"></picture>](#filter-effects)
+    - [Save Particle and Filter Effects as a Macro&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/floppy-disk-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/floppy-disk-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/floppy-disk-dark.svg" alt="Save Particle and Filter Effects as a Macro Icon" height="20" width="20" style="vertical-align:middle;"></picture>](#save-particle-and-filter-effects-as-macro)
+    - [Clear Particle and Filter Effects&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/trash-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/trash-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/trash-dark.svg" alt="Clear Particle and Filter Effects Icon" height="20" width="20" style="vertical-align:middle;"></picture>](#clear-particle-and-filter-effects)
   - [Developer API](#developer-api)
     - [Filter Effects](#filter-effects)
       - [Available Filter Effects With Supported Options](#available-filter-effects-with-supported-options)
     - [Particle Effects](#particle-effects)
       - [Available Particle Effects With Supported Options](#available-particle-effects-with-supported-options)
       - [Particle Effect Options](#particle-effect-options)
-    - [Special Effects](#special-effects)
-      - [Playing a Video File on the Canvas](#playing-a-video-file-on-the-canvas)
-      - [Retrieving Effect Presets](#retrieving-effect-presets)
-      - [Playing a Video File Between Two Tokens](#playing-a-video-file-between-two-tokens)
-      - [Animation Easing](#animation-easing)
-    - [Adding Your Own Special Effects to FXMaster](#adding-your-own-special-effects-to-fxmaster)
   - [Contributing](#contributing)
   - [Acknowledgement](#acknowledgement)
   - [Licensing](#licensing)
@@ -57,144 +53,90 @@ To install FXMaster, find FXMaster in the module browser, or paste the following
 the Setup menu of Foundry Virtual Tabletop:
 
 ```
-https://github.com/ghost-fvtt/fxmaster/releases/latest/download/module.json
+https://github.com/gambit07/fxmaster/releases/latest/download/module.json
 ```
 
 ## FAQ
 
-- Q: I have put a special effect onto a scene, and now I can't get rid of it anymore. How do I remove it?
+- Q: I have put a animation effect onto a scene, and now I can't get rid of it. How do I remove it?
 
-  A: Most likely, your created a permanently playing special effect by dragging a special effect onto the canvas, which
+  A: Most likely, you created a permanently playing animation effect by dragging an animation effect onto the canvas, which
   is just a regular [Tile](https://foundryvtt.com/article/tiles/) and not managed by FXMaster. To remove it, go to the
   Tile Controls and remove the Tile there.
 
-- Q: What is the difference between Particle Effects, Filter Effects, and Special Effects?
+- Q: What is the difference between Particle Effects, Filter Effects, and Animation Effects?
 
   A: Particle Effects are global effects that display particles on the whole scene. Mostly they are weather effects, but
   they also include animals and some other effects.<br>
   Filter Effects are filters that adjust the whole scene in some way, e.g. by adjusting the color or distorting the
   scene to look like it's underwater.<br>
-  Special Effects are animations (video files) that can be played on your chosen location on the canvas.
+  Animation Effects are animations (video files) that can be played on your chosen location on the canvas.
 
 - Q: Can I provide my own effects?
 
-  A: You can provide your own Special Effects, as described in [Managing Custom Special Effects](#managing-custom-special-effects).
-  It's not possible to provide your own Particle Effects or Filter Effects at this point.
-
-- Q: I have installed a module that provides additional animation files, but they are not showing up as Special Effects.
-  What do I need to do?
-
-  A: Some of these modules (e.g. [JB2A]) provide a setting to activate their integration with FXMaster, which is
-  disabled by default. You can enable that setting in the module settings. If there is no such setting, the module may
-  not provide direct integration with FXMaster. In that case, you can still use the animation files provided by the
-  module, but you need to configure them by yourself as described in [Managing Custom Special Effects](#managing-custom-special-effects).
+  A: You can provide your own Animation Effects via the Custom folder in the module's settings.
+  It's not possible to provide your own Particle Effects or Filter Effects.
 
 ## Usage
 
-The functionality of FXMaster can be accessed via the _Effect Controls_
-(<img src="./media/font-awesome/wand-magic-sparkles.svg" alt="Effect Controls Incon" height="20" />) in the scene controls. Each
-individual functionality of FXMaster has its own tool inside this scene control.
+The functionality of FXMaster can be accessed via _Effect Controls_ <picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/wand-magic-sparkles-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/wand-magic-sparkles-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/wand-magic-sparkles-dark.svg" alt="Effect Controls Icon" height="20" width="20" style="vertical-align:middle;"></picture> in scene controls. Each FXMaster app has its own tool inside scene controls.
 
-### Special Effects <img src="./media/font-awesome/hat-wizard.svg" alt="Special Effects Icon" height="20" />
+### Animation Effects&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/hat-wizard-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/hat-wizard-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/hat-wizard-dark.svg" alt="Animation Effects Icon" height="20" width="20" style="vertical-align:bottom;"></picture>
 
-_Special Effects_ are essentially video files that can be played on the canvas via clicking or dragging. FXMaster
-includes only a couple of example effects. If you want more, you will need to install a module providing animation files
-like [JB2A], [Jinker's Animated Art], or [Jack Kerouac's Animated Spell Effects]. All of them integrate with FXMaster.
-Alternatively, you can also [add your own _Special Effects_](#managing-custom-special-effects).
+_Animation Effects_ are video files that can be previewed and/or placed on the canvas via clicking and dragging. FXMaster aggregates animations from popular animation module providers including: [JB2A], [Jinker's Animated Art], [Jack Kerouac's Animated Spell Effects], [Jack Kerouac's Animated Spell Effects Cartoon], [Boss Loot Animated Assets], and [Wild Magic Surge]. Along side the built in module support, you can also add your own Custom folder of animations from the modules settings.
 
-Clicking on this tool opens the _Special Effects Management_ dialog:
+On first world load after updating or installing FXMaster, the animation effects database will be built. You will see an active UI notification window while this process runs. It can take anywhere from 5 to 10 minutes depending on how many animations exist in your world. Once the process completes, you are ready to use the Animation Effects window. If you ever add or remove animations, either from a Custom folder or an Animation module, you can re-build the animations database at any time via the Settings menu option "Refresh Animations Database."
 
-![Special Effects Management](./media/screenshots/special-effects-management.png)
+Clicking on this tool opens the _Animation Effects Management_ app:
 
-In this dialog, you can see folders containing different sets of _Special Effects_. By clicking on a folder, you expand
-it:
+![Animation Effects Management](./media/screenshots/animation-effects-management.webp)
 
-![Special Effects Management Folders Expanded](./media/screenshots/special-effects-management-folders-expanded.png)
+In this app, you can filter based on specific animation providers and search for specific animations. Searching supports advanced queries using AND, OR, and NOT, e.g.: (eldritch OR arrow) AND NOT blast
 
-You can preview the effects by hovering over the black box with your mouse.
+You can preview each effect by hovering over the black box with your mouse.
 
-Predefined _Special Effects_ have a clone icon
-(<img src="./media/font-awesome/clone.svg" alt="Clone Special Effect Icon" height="20" />) on the right. By clicking it,
-you open a dialog to create a custom _Special Effect_, prefilled with the data from this _Special Effect_. For more
-information on creating custom _Special Effects_, see
-[Managing Custom Special Effects](#managing-custom-special-effects).
+#### Placing Animation Effects
 
-#### Playing Special Effects
+In order to place an _Animation Effect_, simply drag it from the window to the canvas which will create a [Tile](https://foundryvtt.com/article/tiles/) on the canvas that includes your animation.
 
-In order to play a special effect, simply select it from the list and click on the canvas while having the _Effects
-Controls_ active (it doesn't work if you have any other control such as the Token Controls active). Alternatively, you
-can drag on the canvas, which shows a red line from the start point to your mouse pointer. Releasing the mouse button
-then results in the effect being played, facing the direction you dragged towards. Depending on the selected
-[_Cast Mode_](#cast-modes), the _Special Effect_ might also move or scale towards that direction.
+#### Managing Animation Effects
 
-You can also create permanently playing variants of _Special Effects_. In order to do so, simply drag the
-_Special Effect_ from the _Special Effects Management_ onto the scene. This creates a [Tile](https://foundryvtt.com/article/tiles/)
-with the video of the _Special Effect_. The Tile is not managed by FXMaster, it is just a regular Foundry Core Tile. In
-particular, this means that, in order to move, resize, or adjust it in any other way, or also to remove it, you need to
-go to the Tile Controls and perform the desired action there.
+_Animation Effects_ details can be viewed by right clicking an animation icon in the window. Details included are the Author, File Name, File Path, and Sequencer Path. Additionally, you can adjust the Scale and Anchor of a placed tile within this menu. Finally, you can Favorite an animation within this window, which will create a Favorites tag in the main window dropdown. If you make a change, hit the "Save Changes" button to save the _Animation Effect_ and close the app.
 
-#### Elevation
+![Animation Effect Update](./media/screenshots/update-animation-effect.webp)
 
-The elevation input field in the top row of the _Special Effects Management_ allows you to specify at which elevation
-_Special Effects_ are being played. The default elevation is 1, which is just above the default elevation of tokens,
-tiles, and drawings (they sit at 0, by default).
+### Particle Effects&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/cloud-rain-light.svg" media="(prefers-color-scheme: dark)"><source srcset="./media/font-awesome/cloud-rain-dark.svg" media="(prefers-color-scheme: light)"><img src="./media/font-awesome/cloud-rain-dark.svg" alt="Particle Effects Icon" height="20" width="20" style="display:inline-block; vertical-align:bottom;"></picture>
 
-#### Cast Modes
+_Particle Effects_ include weather effects like rain, fog, clouds, and snow, but also other global particle effects such as birds flying across the scene or spiders crawling around. 
 
-The first five icons in the top row of the _Special Effects Management_ provide a way to switch between the different
-_Cast Modes_ for _Special Effects_, simply by clicking on them. Here is an overview of the available modes:
+There are two ways to implement _Particle Effects_: via the _Effect Controls_ menu for global _Particle Effects_, or via a [Region](https://foundryvtt.com/article/scene-regions/) using the _FXMaster: Particle Effects_ Region behavior.
 
-| _Cast Mode_      |                                            Icon                                             | Description                                                                                                             |
-| ---------------- | :-----------------------------------------------------------------------------------------: | ----------------------------------------------------------------------------------------------------------------------- |
-| Face Target      |     <img src="./media/font-awesome/compress.svg" alt="Face Target Icon" height="20" />      | _Special Effects_ face towards the target.                                                                              |
-| Move to Target   |     <img src="./media/font-awesome/rocket.svg" alt="Move to Target Icon" height="20" />     | _Special Effects_ face and move towards the target.                                                                     |
-| Extend to Target | <img src="./media/font-awesome/angles-right.svg" alt="Extend to Target Icon" height="20" /> | _Special Effects_ face towards the target and extend to it.                                                             |
-| Expand to Target |   <img src="./media/font-awesome/maximize.svg" alt="Expand to Target Icon" height="20" />   | _Special Effects_ face towards the target and expand to it, scaling the whole effect up while keeping the aspect ratio. |
-| Rotate           |   <img src="./media/font-awesome/arrow-rotate-left.svg" alt="Rotate Icon" height="20" />    | _Special Effects_ rotate clockwise. The dragged distance specifies the rotation speed.                                  |
+### Particle Effects via Effect Controls App&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/cloud-rain-light.svg" media="(prefers-color-scheme: dark)"><source srcset="./media/font-awesome/cloud-rain-dark.svg" media="(prefers-color-scheme: light)"><img src="./media/font-awesome/cloud-rain-dark.svg" alt="Particle Effects Icon" height="20" width="20" style="display:inline-block; vertical-align:bottom;"></picture>
 
-#### Managing Custom Special Effects
+Clicking on the _Effect Controls_ tool opens the _Particle Effects Management_ app:
 
-Custom _Special Effects_ can be added in two ways: By cloning a predefined one as explained above, or by clicking the
-plus icon (<img src="./media/font-awesome/plus.svg" alt="Rotate Icon" height="20" />) in the top row of the
-_Special Effects Management_. In both cases, a dialog to create a new custom _Special Effect_ is opened:
+![Particle Effects Management](./media/screenshots/particle-effects-management.webp)
 
-![Special Effect Creation](./media/screenshots/special-effect-creation.png)
+In this app, you can configure individual _Particle Effects_. They are sorted into different groups ("Weather", "Animals",
+and "Other").
 
-In this dialog, you can choose the name of the _Special Effect_, specify the folder it should be created in (you can
-also specify a new folder name), select the video file to use, and configure the various options. Once you are done, hit
-the “Save Changes” button to save the _Special Effect_ and close the dialog.
-
-![Custom Special Effects](media/screenshots/custom-special-effects.png)
-
-Instead of the clone icon that predefined _Special Effects_ have, custom ones have edit
-(<img src="./media/font-awesome/pen-to-square.svg" alt="Edit Special Effect Icon" height="20" />) and delete
-(<img src="./media/font-awesome/trash.svg" alt="Delete Special Effect Icon" height="20" />) icons. Clicking the edit
-icon opens the dialog to create a custom _Special Effect_, prefilled with the data from this one. You can overwrite the
-existing one by keeping the name and folder the same. Clicking the delete icon simply deletes the _Special Effect_.
-
-### Particle Effects <img src="./media/font-awesome/cloud-rain.svg" alt="Particle Effects Icon" height="20" />
-
-_Particle Effects_ are global effects that are displayed all across the scene. They include weather effects like rain,
-fog, clouds, and snow, but also other global particle effects such as birds flying across the scene or spiders crawling
-around.
-
-Clicking on this tool opens the _Particle Effects Management_ dialog:
-
-![Particle Effects Management](./media/screenshots/particle-effects-management.png)
-
-In this dialog, you can configure individual _Particle Effects_. They are sorted into different groups (“Animals”,
-“Other”, and “Weather”). By clicking on a group, you expand it, showing all effects in that group:
-
-![Particle Effects Management With Group Expanded](./media/screenshots/particle-effects-management-group-expanded.png)
-
-You can activate individual _Particle Effects_ by checking the corresponding checkbox and then clicking on “Save Changes”.
+You can activate individual _Particle Effects_ by clicking the corresponding toggle button.
 
 By clicking on the name of a _Particle Effect_, you expand it, showing the options for that effect:
 
-![Particle Effect Options](./media/screenshots/particle-effect-options.png)
+![Particle Effect Options](./media/screenshots/particle-effect-options.webp)
 
-The available options differ slightly between _Particle Effects_ because not all options make sense for all of them. The
-options are:
+### Particle Effects via Region Behavior
+
+After adding a Region, open the Region config menu and navigate to the Behaviors tab. Add a new behavior and select the option 'FXMaster: Particle Effects': 
+
+![Particle Effects Management](./media/screenshots/particle-effects-region-management.webp)
+
+In this menu, you can configure individual _Particle Effects_ in the same way as in the main app. Selecting the checkbox next to a _Particle Effect_ will display a dropdown of its options. Saving the Region behavior will add the selected _Particle Effects_ to the region.
+
+In addition, you can subscribe the Region behavior to specific events. In V12, these events are "Token Enter" and "Token Exit." In V13, these events are "Token Animates In" and "Token Animates Out." These events will cause the particle effect to not display immediately, only occur when a token enters, and be removed when a token exits. Keep in mind, these events will display the _Particle Effects_ to all tokens when a token enters. In Foundry V14, there may be additional height functionality to only display the particles for a specific elevation level.
+
+The available options differ slightly between _Particle Effects_ because not all options make sense across effects. The options are:
 
 | Option     | Description                                                                                                                 |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------- |
@@ -207,21 +149,18 @@ options are:
 | Tint       | Tint the effect with this color.                                                                                            |
 | Animations | A selection of animations from the list of animations for the effect to use. If it is empty, the default animation is used. |
 
-Once you are finished with adjusting the options, you can apply them by clicking the “Save Changes” button.
+When a toggle for a particle effect is turned on, adjustments to that _Particle Effect_'s options will be implemented in real time.
 
 #### Masking Particle Effects
 
-By default, _Particle Effects_ are displayed all across the entire scene. However, it is possible to constrain them to
-specific areas. This can be achieved by creating drawings and then marking them as _Particle Effect Mask_. To do that,
-open the HUD for the drawing (by right-clicking the drawing) and then click on the “Mask FXMaster Particle Effects”
-control icon (<img src="./media/font-awesome/cloud.svg" alt="Mask FXMaster Particle Effects Control Icon" height="20" />)
-on the left of the drawing HUD:
+By default, _Particle Effects_ added via the app are displayed across the entire scene. However, it is possible to constrain them to
+specific areas. This can be achieved within Drawings by marking them as _Particle Effect Mask_. To do that,
+open the HUD for the drawing (by right-clicking the drawing) and then click on the "Mask FXMaster Particle Effects"
+control icon <picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/cloud-light.svg" media="(prefers-color-scheme: dark)"><source srcset="./media/font-awesome/cloud-dark.svg" media="(prefers-color-scheme: light)"><img src="./media/font-awesome/cloud-dark.svg" alt="Mask FXMaster Particle Effects Control Icon" height="20" width="20" style="display:inline-block; vertical-align:bottom;"></picture>
 
-![Drawing HUD with Particle Effect Mask](./media/screenshots/drawing-hud-weather-mask.png)
+Additionally, Regions can be masked by using the Region behavior "Suppress Weather."
 
-You can mark as many drawings as mask as you want.
-
-By default, the _Particle Effects_ are only displayed outside the marked areas. This can be inverted via the
+By default, _Particle Effects_ are only displayed outside the marked areas when masked. This can be inverted via the
 [_Invert Particle Effect Mask_](#invert-particle-effect-mask-) tool.
 
 #### ⚠ Warning Regarding Large Scenes
@@ -238,7 +177,7 @@ canvas.scene.unsetFlag("fxmaster", "effects");
 
 You can then safely reactivate your modules.
 
-### Invert Particle Effect Mask <img src="./media/font-awesome/mask.svg" alt="Invert Particle Effect Mask Icon" height="20" />
+### Invert Particle Effect Mask&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/mask-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/mask-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/mask-dark.svg" alt="Invert Particle Effect Mask Icon" height="20" width="20" style="vertical-align:middle;"></picture>
 
 Clicking on this tool inverts the _Particle Effect Mask_ for the current scene. This tool acts as a toggle and the color
 indicates whether it is currently active or not.
@@ -246,44 +185,43 @@ indicates whether it is currently active or not.
 Inverting the _Particle Effect Mask_ can be very useful when the goal is to display _Particle Effects_ only in specific
 smaller areas, instead of specifying the areas in which they should not be displayed, which is the default.
 
-### Filter Effects <img src="./media/font-awesome/filter.svg" alt="Filter Effects Icon" height="20" />
+### Filter Effects&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/filter-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/filter-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/filter-dark.svg" alt="Filter Effects Icon" height="20" width="20" style="vertical-align:middle;"></picture>
 
-_Filter Effects_ work similarly to _Particle Effects_. They are also displayed all across the entire scene but unlike
+_Filter Effects_ work similarly to _Particle Effects_. They are also displayed all across the entire scene, but unlike
 _Particle Effects_ it's _not_ possible to confine them to certain areas with a mask.
 
-Clicking on this tool open the _Filter Effects Management_ dialog:
+Clicking on this tool opens the _Filter Effects Management_ app:
 
-![Filter Effects Management](./media/screenshots/filter-effects-management.png)
+![Filter Effects Management](./media/screenshots/filter-effects-management.webp)
 
-You can activate individual _Filter Effects_ by checking the corresponding checkbox and then clicking on “Save Changes”.
+You can activate individual _Filter Effects_ by checking the corresponding checkbox and then clicking on "Save Changes."
 
 By clicking on the name of a _Filter Effect_, you expand it, showing the options for that effect:
 
-![Filter Effect Options](./media/screenshots/filter-effect-options.png)
+![Filter Effect Options](./media/screenshots/filter-effect-options.webp)
 
 The available options differ heavily between individual _Filter Effects_, so it doesn't make much sense to list them
 here.
 
-Once you are finished with adjusting the options, you can apply them by clicking the “Save Changes” button.
+Once you are finished with adjusting the options, you can apply them by clicking the "Save Changes" button.
 
-### Save Particle and Filter Effects as Macro <img src="./media/font-awesome/floppy-disk.svg" alt="Save Particle and Filter Effects as Macro Icon" height="20" />
+### Save Particle and Filter Effects as a Macro&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/floppy-disk-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/floppy-disk-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/floppy-disk-dark.svg" alt="Save Particle and Filter Effects as a Macro Icon" height="20" width="20" style="vertical-align:middle;"></picture>
 
 This tool allows you to create a macro from the currently active _Particle Effects_ and _Filter Effects_. When clicking
-this tool, a macro is created in the macro directory. It's not put into the hotbar, so you need to drag it there
+this tool, a macro is created in the macro directory. It's not put onto the hotbar, so you need to drag it there
 yourself if you want to.
 
-When executed, the macro sets the _Particle Effects_ and _Filter Effects_ of the current scene to the state from when the
-macro was created.
+When executed, the macro sets the _Particle Effects_ and _Filter Effects_ of the current scene to the state they were in
+when the macro was created.
 
-### Clear Particle and Filter Effects <img src="./media/font-awesome/trash.svg" alt="Clear Particle and Filter Effects Icon" height="20" />
+### Clear Particle and Filter Effects&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/trash-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/trash-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/trash-dark.svg" alt="Clear Particle and Filter Effects Icon" height="20" width="20" style="vertical-align:middle;"></picture>
 
 When clicked, this tool shows a confirmation dialog to delete all _Particle Effects_ and _Filter Effects_ from the
 current scene.
 
 ## Developer API
 
-FXMaster provides functionality to interact with _Filter Effects_, _Particle Effects_, and _Special Effects_ from other
-packages and macros.
+FXMaster provides functionality to interact with _Filter Effects_ and _Particle Effects_ from other packages and macros.
 
 ### Filter Effects
 
@@ -400,167 +338,9 @@ You can get a complete list by typing `CONFIG.fxmaster.filters` in your web cons
 | `speed`      | `number`                          | A factor that adjusts the speed of the effect relative to its base speed.                                                           |
 | `lieftime`   | `number`                          | A factor that adjusts the lifetime of the individual particles.                                                                     |
 | `density`    | `number`                          | The density of the effect. For most effects, it represents the number of particles per grid unit.                                   |
-| `alpha`      | `number`                          | A factor between 0 and 1 that adjusts the opacity of the particles (this is called “Opacity” in the Particle Effects Management).   |
+| `alpha`      | `number`                          | A factor between 0 and 1 that adjusts the opacity of the particles (this is called "Opacity" in Particle Effects Management).       |
 | `tint`       | `{value: string, apply: boolean}` | Tint the effect with this color.                                                                                                    |
 | `animations` | `string[]`                        | An array of animations from list of animations for the effect to use. If it is empty or not defined, the default animation is used. |
-
-### Special Effects
-
-Special effects are essentially temporary video files that are being played on the canvas. They are defined by several
-parameters:
-
-| Parameter        | Type                           | Description                                                                                                                                                                             |
-| ---------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `file`           | `string`                       | The video file path.                                                                                                                                                                    |
-| `anchor`         | `{x: number, y: number}`       | The starting point of the effect. `x` and `y` are values between `0` and `1.0`, representing fractions of the width and height of the video file.                                       |
-| `position`       | `{x: number, y: number}`       | The position at which the anchor of the effect is to be placed.                                                                                                                         |
-| `angle`          | `number`                       | The initial direction of the effect in degrees. The default assumption is that the effect direction from left to right. If that's not the case, you need to set this value accordingly. |
-| `speed`          | `number \| "auto"`             | The speed at which the effect plays and moves.                                                                                                                                          |
-| `scale`          | `{x: number, y: number}`       | The scale of the effect. `x` and `y` are numbers between `0` and `1`, representing by how much the width and height of the effect are scaled.                                           |
-| `animationDelay` | `{start: number, end: number}` | Delays before and after the effect plays (if `speed > 0`).                                                                                                                              |
-| `ease`           | `string`                       | The easing function to use in order for the movement animation to look more natural. You can find the valid values in `easeFunctions` in [ease.js](./src/ease.js).                      |
-| `width`          | `number`                       | Sets the width of the sprite. For example, this can be used to stretch a beam towards a specific target.                                                                                |
-| `elevation`      | `number`                       | Sets the elevation at which the effect is played.                                                                                                                                       |
-
-#### Playing a Video File on the Canvas
-
-```javascript
-const data = {
-  file: "myfile.webm",
-  position: {
-    x: 1200,
-    y: 1200,
-  },
-  anchor: {
-    x: 0,
-    y: 1,
-  },
-  angle: 90,
-  speed: 0,
-  scale: {
-    x: 0.7,
-    y: 0.7,
-  },
-};
-canvas.specials.playVideo(data);
-game.socket.emit("module.fxmaster", data);
-```
-
-#### Retrieving Effect Presets
-
-From module presets
-
-```js
-const effectData = CONFIG.fxmaster.specialEffects.fxmaster.effects.find((ef) => ef.label === "Blood Splatter");
-```
-
-From custom presets
-
-```js
-const effectData = CONFIG.fxmaster.specialEffects.custom.effects.find((ef) => ef.label === "Energy Circle");
-```
-
-#### Playing a Video File Between Two Tokens
-
-You can use the `canvas.specials.drawSpecialToward` method with the speed set to `"auto"` to adapt the speed so that the
-video ends when the target is reached.
-
-```javascript
-function castSpell(effect) {
-  const tokens = canvas.tokens.controlled;
-  if (tokens.length == 0) {
-    ui.notifications.error("Please select a token");
-    return;
-  }
-  game.user.targets.forEach((i, t) => {
-    canvas.specials.drawSpecialToward(effect, tokens[0], t);
-  });
-}
-
-castSpell({
-  file: "modules/fxmaster/assets/specialEffects/jinker/dragonBornBlack-CopperAcid30x5Line.webm",
-  anchor: {
-    x: -0.08,
-    y: 0.5,
-  },
-  speed: "auto",
-  angle: 0,
-  scale: {
-    x: 1,
-    y: 1,
-  },
-});
-```
-
-#### Animation Easing
-
-You can customize the `canvas.specials.drawSpecialToward` to ease the animation toward the target. Here is some example
-data. The easing options are given in the `ease.js` file.
-
-```javascript
-{
-  file: "modules/fxmaster/assets/specialEffects/jinker/dragonBornBlack-CopperAcid30x5Line.webm",
-    anchor: {
-      x: -.08,
-      y: 0.5
-    },
-  speed: "auto",
-  angle: 0,
-  scale: {
-    x: 1,
-    y: 1
-  }
-  animationDelay: {
-    start: 0.5,
-    end: 0.2
-  },
-  ease: "InCirc"
-}
-```
-
-### Adding Your Own Special Effects to FXMaster
-
-Here is a demo module you can use as a template: [FoundryVTT FXMaster Specials Demo Template].
-
-In one file, you configure each of your special effects:
-
-```javascript
-export const effects = {
-  label: "MYMODULE",
-  effects: [
-    {
-      label: "Smoke Bomb",
-      file: "modules/fxmaster/assets/specialEffects/fxmaster/smokeBomb.webm",
-      scale: {
-        x: 1.0,
-        y: 1.0,
-      },
-      angle: 0,
-      anchor: {
-        x: 0.5,
-        y: 0.5,
-      },
-      speed: 0,
-      author: "U~man",
-    },
-  ],
-};
-```
-
-Then, in a second file, you add the previously created effects by merging them into the `CONFIG.fxmaster.specialEffects`
-object as follows:
-
-```javascript
-import { effects } from "./effects.js";
-
-Hooks.once("init", function () {
-  // Adding special effects
-  if (!CONFIG.fxmaster) CONFIG.fxmaster = {};
-  foundry.utils.mergeObject(CONFIG.fxmaster, { specialEffects: { MYMODULE: effects } });
-});
-```
-
-The effects should now appear in the Specials selection dialog.
 
 ## Contributing
 
@@ -571,7 +351,8 @@ requests for code changes.
 
 Many thanks to:
 
-- [U~man] for the original work on this module. Really, most of this is his work.
+- [U~man] for the original work on this module.
+- [ghost] for maintaining functionality on this module for the past few years.
 - [theripper93] for contributing his ideas regarding handling particle effect masking elegantly.
 - [Wasp] for providing the [Sequencer] module that will inspire future updates.
 - [SecretFire] for exchanging ideas, providing help, and shaders for the filter effects. Donate
@@ -580,9 +361,6 @@ Many thanks to:
 ## Licensing
 
 - The software component of FXMaster is licensed under [BSD 3-Clause].
-- Jinker's Acid Line and Red Fire Cone video effects are borrowed from [Jinker's Animated Art] and are licensed as free
-  for use.
-- Jules and Ben's Witch Bolt effect is from [JB2A] and is licensed under [CC BY-NC-SA-4.0].
 - The Seagull sprites used in the Birds particle effect are from [whtdragon].
 - The control and tool icons are from [Font Awesome], licensed under the [CC BY-4.0].
 - The icons for particle effects are by Rexard and licensed under [Rexard Game Dev Assets EULA].
@@ -592,9 +370,12 @@ Many thanks to:
 [JB2A]: https://github.com/Jules-Bens-Aa/JB2A_DnD5e
 [Jinker's Animated Art]: https://github.com/jinkergm/JAA
 [Jack Kerouac's Animated Spell Effects]: https://github.com/jackkerouac/animated-spell-effects
+[Jack Kerouac's Animated Spell Effects Cartoon]: https://github.com/jackkerouac/animated-spell-effects-cartoon
+[Boss Loot Animated Assets]: https://github.com/boss-loot/boss-loot-assets-free
+[Wild Magic Surge]: https://foundryvtt.com/packages/wild_magic_surge_animated_dungeon_lighting_one
 [Sequencer]: https://github.com/fantasycalendar/FoundryVTT-Sequencer
-[FoundryVTT FXMaster Specials Demo Template]: https://gitlab.com/mesfoliesludiques/foundryvtt-fxmaster-specials-template
 [U~man]: https://github.com/mesfoliesludiques
+[ghost]: https://github.com/ghost-fvtt
 [theripper93]: https://github.com/theripper93
 [Wasp]: https://github.com/fantasycalendar
 [SecretFire]: https://github.com/Feu-Secret

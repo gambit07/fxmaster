@@ -1,16 +1,21 @@
 import { FXMasterParticleEffect } from "./effect.js";
-import { DefautlRectangleSpawnMixin } from "./mixins/default-retangle-spawn.js";
+import { DefaultRectangleSpawnMixin } from "./mixins/default-rectangle-spawn.js";
 
 /**
  * A full-screen particle effect which renders floating bubbles.
  */
-export class BubblesParticleEffect extends DefautlRectangleSpawnMixin(FXMasterParticleEffect) {
+export class BubblesParticleEffect extends DefaultRectangleSpawnMixin(FXMasterParticleEffect) {
   /** @override */
   static label = "FXMASTER.ParticleEffectBubbles";
 
   /** @override */
   static get icon() {
-    return "modules/fxmaster/assets/particle-effects/icons/bubbles.png";
+    return "modules/fxmaster/assets/particle-effects/icons/bubbles.webp";
+  }
+
+  /** @override */
+  static get group() {
+    return "ambient";
   }
 
   /** @override */
@@ -75,7 +80,7 @@ export class BubblesParticleEffect extends DefautlRectangleSpawnMixin(FXMasterPa
       },
       {
         type: "textureSingle",
-        config: { texture: "modules/fxmaster/assets/particle-effects/effects/bubbles/bubble.png" },
+        config: { texture: "modules/fxmaster/assets/particle-effects/effects/bubbles/bubble.webp" },
       },
     ],
   };

@@ -7,7 +7,7 @@ import { roundToDecimals } from "../../utils.js";
  *                                    values of the emitter configuration.
  * @abstract
  */
-export class FXMasterParticleEffect extends ParticleEffect {
+export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
   /**
    * A human-readable label for the particle effect. This can be a localization string.
    * @type {string}
@@ -25,7 +25,7 @@ export class FXMasterParticleEffect extends ParticleEffect {
 
   /** @type {string} */
   static get icon() {
-    return "modules/fxmaster/assets/particle-effects/icons/snow.png";
+    return "modules/fxmaster/assets/particle-effects/icons/snow.webp";
   }
 
   static get parameters() {
@@ -112,16 +112,18 @@ export class FXMasterParticleEffect extends ParticleEffect {
   }
 
   static get defaultDirection() {
-    const rotationBehavior = this.defaultConfig.behaviors.find((behavior) => behavior.type === "rotation");
+    const step = 5;
 
+    const rotationBehavior = this.defaultConfig.behaviors.find((b) => b.type === "rotation");
     if (rotationBehavior !== undefined) {
-      return (rotationBehavior.config.minStart + rotationBehavior.config.maxStart) / 2;
+      const avg = (rotationBehavior.config.minStart + rotationBehavior.config.maxStart) / 2;
+      return Math.round(avg / step) * step; // ← force valid
     }
 
-    const rotationStaticBehavior = this.defaultConfig.behaviors.find((behavior) => behavior.type === "rotationStatic");
-
-    if (rotationStaticBehavior !== undefined) {
-      return (rotationStaticBehavior.config.min + rotationStaticBehavior.config.max) / 2;
+    const rotationStatic = this.defaultConfig.behaviors.find((b) => b.type === "rotationStatic");
+    if (rotationStatic !== undefined) {
+      const avg = (rotationStatic.config.min + rotationStatic.config.max) / 2;
+      return Math.round(avg / step) * step;
     }
 
     return undefined;

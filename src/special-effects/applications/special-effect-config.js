@@ -1,22 +1,35 @@
-import { easeFunctions } from "../../ease.js";
+import { FXMasterBaseFormV2 } from "../../base-form.js";
+import { SpecialEffectsManagement } from "./special-effects-management.js";
 import { packageId } from "../../constants.js";
 
-export class SpecialEffectConfig extends FormApplication {
-  static get defaultOptions() {
-    return foundry.utils.mergeObject(super.defaultOptions, {
-      classes: ["form"],
-      closeOnSubmit: true,
-      submitOnChange: false,
-      submitOnClose: false,
-      popOut: true,
-      editable: game.user.isGM,
-      width: 320,
+export class SpecialEffectConfig extends FXMasterBaseFormV2 {
+  static DEFAULT_OPTIONS = {
+    id: "add-effect",
+    tag: "form",
+    classes: ["fxmaster", "form-v2", "specials-config"],
+    popOut: true,
+    actions: {
+      updateParam: SpecialEffectConfig.updateParam,
+      copyElement: SpecialEffectConfig.copyElement,
+      save: SpecialEffectConfig._onSave,
+    },
+    window: {
+      title: "FXMASTER.AnimationEffect.Update",
+    },
+    position: {
+      width: 500,
       height: "auto",
+    },
+  };
+
+  static PARTS = [
+    {
       template: "modules/fxmaster/templates/special-effect-config.hbs",
-      id: "add-effect",
-      title: game.i18n.localize("FXMASTER.AddSpecialEffect"),
-    });
-  }
+      footer: {
+        template: "templates/generic/form-footer.hbs",
+      },
+    },
+  ];
 
   /* -------------------------------------------- */
 
@@ -28,12 +41,10 @@ export class SpecialEffectConfig extends FormApplication {
    * Obtain module metadata and merge it with game settings which track current module visibility
    * @return {Object}   The data provided to the template when rendering the form
    */
-  getData() {
-    const eases = easeFunctions;
+  async _prepareContext() {
     const values = foundry.utils.mergeObject(
       {
         folder: "Custom",
-        angle: 0,
         position: {
           x: 0,
           y: 0,
@@ -46,72 +57,88 @@ export class SpecialEffectConfig extends FormApplication {
           x: 1.0,
           y: 1.0,
         },
-        speed: 0,
-        animationDelay: {
-          start: 0,
-          end: 0,
-        },
-        ease: "Linear",
         author: "",
         preset: false,
       },
       this.default,
     );
 
-    // Return data to the template
     return {
       default: values,
-      ease: Object.keys(eases),
     };
   }
 
-  /* -------------------------------------------- */
-  /*  Event Listeners and Handlers                */
-  /* -------------------------------------------- */
-
-  /** @override */
-  activateListeners(html) {
-    super.activateListeners(html);
-    html.find('input[type="range"]').on("input", (event) => this._onChangeRange(event));
+  async _onRender(...args) {
+    super._onRender(...args);
+    let windowPosition = game.user.getFlag(packageId, "dialog-position-specialeffectsconfig");
+    if (windowPosition) {
+      this.setPosition({ top: windowPosition.top, left: windowPosition.left });
+    }
   }
 
-  /**
-   * This method is called upon form submission after form data is validated
-   * @param event {Event}       The initial triggering submission event
-   * @param formData {object}   The object of validated form data with which to update the object
-   * @protected
-   */
-  async _updateObject(_, formData) {
-    const fxs = game.settings.get(packageId, "specialEffects");
+  static copyElement(event, button) {
+    const input = button.closest(".form-fields")?.querySelector("input");
+    if (!input) return;
+
+    input.select();
+    input.setSelectionRange(0, input.value.length);
+
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(input.value).catch(() => {
+        document.execCommand("copy");
+      });
+    } else {
+      document.execCommand("copy");
+    }
+
+    ui.notifications.info(game.i18n.format("FXMASTER.AnimationEffect.Copied", { value: input.value }));
+  }
+
+  static updateParam(_event, input) {
+    if (input.type === "range") {
+      const container = input.closest(".fxmaster-input-range");
+      const output = container?.querySelector(".range-value");
+      if (output) output.textContent = input.value;
+    }
+  }
+
+  static async _onSave(_event, _button) {
+    const form = this.element.querySelector("form");
+    if (!form) return;
+
+    const formData = Object.fromEntries(new FormData(form).entries());
+
+    formData.scaleX = parseFloat(formData.scaleX);
+    formData.scaleY = parseFloat(formData.scaleY);
+    formData.anchorX = parseFloat(formData.anchorX);
+    formData.anchorY = parseFloat(formData.anchorY);
+    formData.favorite = formData.favorite === "true";
+
+    const overrides = game.settings.get(packageId, "customSpecialEffects") || {};
 
     const newData = {
-      folder: formData["folder"],
-      label: formData["label"],
-      file: formData["file"],
-      scale: {
-        x: parseFloat(formData["scaleX"]),
-        y: parseFloat(formData["scaleY"]),
-      },
-      angle: parseFloat(formData["angle"]),
-      anchor: {
-        x: formData["anchorX"],
-        y: formData["anchorY"],
-      },
-      speed: parseFloat(formData["speed"]),
-      animationDelay: {
-        start: parseFloat(formData["animationDelayStart"]),
-        end: parseFloat(formData["animationDelayEnd"]),
-      },
-      ease: formData["ease"],
+      folder: formData.folder,
+      label: formData.label,
+      file: formData.file,
+      scale: { x: formData.scaleX, y: formData.scaleY },
+      anchor: { x: formData.anchorX, y: formData.anchorY },
       preset: false,
-      author: "",
+      author: formData.author || "",
+      type: "SpecialEffect",
+      favorite: formData.favorite,
     };
-    const fx = fxs.filter((f) => f.label == newData.label);
-    if (fx.length > 0) {
-      fx[0] = foundry.utils.mergeObject(fx[0], newData);
-    } else {
-      fxs.push(newData);
-    }
-    await game.settings.set(packageId, "specialEffects", fxs);
+    overrides[newData.file] = newData;
+    await game.settings.set(packageId, "customSpecialEffects", overrides);
+
+    const mgr = SpecialEffectsManagement.instance;
+    if (mgr) mgr.render(false);
+
+    this.close();
+  }
+
+  async _onClose(...args) {
+    super._onClose(...args);
+    const { top, left } = this.position;
+    game.user.setFlag(packageId, "dialog-position-specialeffectsconfig", { top, left });
   }
 }

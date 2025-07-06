@@ -9,7 +9,7 @@ export class BirdsParticleEffect extends FXMasterParticleEffect {
 
   /** @override */
   static get icon() {
-    return "modules/fxmaster/assets/particle-effects/icons/crows.png";
+    return "modules/fxmaster/assets/particle-effects/icons/birds.webp";
   }
 
   /** @override */
@@ -130,7 +130,7 @@ export class BirdsParticleEffect extends FXMasterParticleEffect {
   _getAnimations(options) {
     const animations = {
       glide: [
-        { textureNumber: 2, count: 30 },
+        { texture: 2, count: 30 },
         ...Array(4)
           .fill([
             { texture: 1, count: 3 },
@@ -160,7 +160,7 @@ export class BirdsParticleEffect extends FXMasterParticleEffect {
       framerate: 20,
       loop: true,
       textures: animation.map(({ texture, count }) => ({
-        texture: `modules/fxmaster/assets/particle-effects/effects/birds/bird${texture}.png`,
+        texture: `modules/fxmaster/assets/particle-effects/effects/birds/bird${texture}.webp`,
         count,
       })),
     });

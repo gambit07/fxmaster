@@ -1,73 +1,89 @@
 <form>
-  <div class="form-group">
-    <label>{{localize "FXMASTER.Name"}}</label>
-    <div class="form-fields">
-      <input name="label" type="text" value="{{default.label}}" />
+  <section class="fxmaster specials-config application-popout">
+    <div class="form-group favorite-row">
+      <div class="form-fields">
+        <label for="favorite">{{localize "FXMASTER.Favorite"}}</label>
+        <input name="favorite" value="true" type="checkbox" {{#if default.favorite}}checked{{/if}}/>
+      </div>
     </div>
-  </div>
-  <div class="form-group">
-    <label>{{localize "FXMASTER.Folder"}}</label>
-    <div class="form-fields">
-      <input name="folder" type="text" value="{{default.folder}}" />
+
+    <div class="form-group">
+      <label>{{localize "FXMASTER.Author"}}</label>
+      <div class="form-fields">
+        <input name="folder" type="text" value="{{default.folder}}" readonly/>
+      </div>
     </div>
-  </div>
-  <div class="form-group">
-    <label>{{localize "FXMASTER.File"}}</label>
-    <div class="form-fields">
-      {{filePicker target="file" type="video"}}
-      <input type="text" name="file" value="{{default.file}}" />
+
+    <div class="form-group">
+      <label>{{localize "FXMASTER.AnimationEffect.FileName"}}</label>
+      <div class="form-fields">
+        <input name="label" type="text" value="{{default.label}}" readonly/>
+        <button class="fxmaster-special-copy" type="button" data-action="copyElement" data-tooltip="{{localize 'FXMASTER.AnimationEffect.CopyElement'}}">
+          <span class="fa-solid fa-copy"></span>
+        </button>
+      </div>
     </div>
-  </div>
-  <div class="form-group">
-    <label title="{{localize 'FXMASTER.ScaleHint'}}">{{localize "FXMASTER.Scale"}} (x, y)</label>
-    <div class="form-fields">
-      <input type='text' data-dtype="Number" value="{{default.scale.x}}" name='scaleX' />
-      <input type='text' data-dtype="Number" value="{{default.scale.y}}" name='scaleY' />
+
+    <div class="form-group">
+      <label>{{localize "FXMASTER.AnimationEffect.FilePath"}}</label>
+      <div class="form-fields">
+        <input name="file" type="text" value="{{default.file}}" readonly/>
+        <button class="fxmaster-special-copy" type="button" data-action="copyElement" data-tooltip="{{localize 'FXMASTER.AnimationEffect.CopyElement'}}">
+          <span class="fa-solid fa-copy"></span>
+        </button>
+      </div>
     </div>
-  </div>
-  <div class="form-group">
-    <label title="{{localize 'FXMASTER.AngleHint'}}">{{localize "FXMASTER.Angle"}}</label>
-    <div class="form-fields">
-      <input type='range' data-dtype="Number" value="{{default.angle}}" name='angle' min="0" step="45" max="360" />
-      <span class="range-value">{{default.angle}}</span>
+
+    <div class="form-group">
+      <label>{{localize "FXMASTER.AnimationEffect.SequencerPath"}}</label>
+      <div class="form-fields">
+        <input name="sequencerPath" type="text" value="{{default.sequencerPath}}" readonly/>
+        <button class="fxmaster-special-copy" type="button" data-action="copyElement" data-tooltip="{{localize 'FXMASTER.AnimationEffect.CopyElement'}}">
+          <span class="fa-solid fa-copy"></span>
+        </button>
+      </div>
     </div>
-  </div>
-  <div class="form-group">
-    <label title="{{localize 'FXMASTER.AnchorHint'}}">{{localize "FXMASTER.Anchor"}} (x, y)</label>
-    <div class="form-fields">
-      <input type='text' data-dtype="Number" value="{{default.anchor.x}}" name='anchorX' />
-      <input type='text' data-dtype="Number" value="{{default.anchor.y}}" name='anchorY' />
+
+    <div class="form-group">
+      <label title="{{localize 'FXMASTER.ScaleHint'}}">{{localize "FXMASTER.Scale"}} (x, y)</label>
+      <div class="form-fields">
+        <input
+          type="text"
+          data-dtype="Number"
+          value="{{default.scale.x}}"
+          name="scaleX"
+        />
+        <input
+          type="text"
+          data-dtype="Number"
+          value="{{default.scale.y}}"
+          name="scaleY"
+        />
+      </div>
     </div>
-  </div>
-  <div class="form-group">
-    <label title="{{localize 'FXMASTER.SpeedHint'}}">{{localize "FXMASTER.Speed"}}</label>
-    <div class="form-fields">
-      <input type='number' data-dtype="Number" value="{{default.speed}}" name='speed' step="0.01" />
+
+    <div class="form-group">
+      <label title="{{localize 'FXMASTER.AnchorHint'}}">{{localize "FXMASTER.Anchor"}} (x, y)</label>
+      <div class="form-fields">
+        <input
+          type="text"
+          data-dtype="Number"
+          value="{{default.anchor.x}}"
+          name="anchorX"
+        />
+        <input
+          type="text"
+          data-dtype="Number"
+          value="{{default.anchor.y}}"
+          name="anchorY"
+        />
+      </div>
     </div>
-  </div>
-  <div class="form-group">
-    <label title="{{localize 'FXMASTER.AnimationDelayHint'}}">{{localize "FXMASTER.AnimationDelay"}} (start,
-      end)</label>
-    <div class="form-fields">
-      <input type='text' data-dtype="Number" value="{{default.animationDelay.start}}" name='animationDelayStart' />
-      <input type='text' data-dtype="Number" value="{{default.animationDelay.end}}" name='animationDelayEnd' />
-    </div>
-  </div>
-  <div class="form-group">
-    <label title="{{localize 'FXMASTER.EaseHint'}}">{{localize "FXMASTER.Ease"}}</label>
-    <div class="form-fields">
-      <select name="ease">
-        {{#select default.ease}}
-        {{#each ease}}
-        <option value="{{this}}">{{this}}</option>
-        {{/each}}
-        {{/select}}
-      </select>
-    </div>
-  </div>
-  <footer class="sheet-footer flexrow">
-    <button type="submit" name="submit">
-      <i class="fas fa-floppy-disk"></i> {{localize "FXMASTER.SaveChanges"}}
-    </button>
-  </footer>
+
+    <footer class="sheet-footer flexrow">
+      <button type="button" data-action="save">
+        <span class="fa-solid fa-check"></span> {{localize "FXMASTER.SaveChanges"}}
+      </button>
+    </footer>
+  </section>
 </form>

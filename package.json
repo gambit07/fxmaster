@@ -17,14 +17,19 @@
     "lint": "eslint --ext .js,.mjs .",
     "lint:fix": "eslint --ext .js,.mjs --fix .",
     "format": "prettier --write \"./**/*.(js|mjs|json|css|yml)\"",
-    "release": "standard-version",
-    "postinstall": "husky"
+    "get-version": "node get-version.js",
+    "release": "node update-module.js",
+    "prepare": "husky install"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ghost-fvtt/fxmaster.git"
+    "url": "git+https://github.com/gambit07/fxmaster.git"
   },
   "contributors": [
+    {
+      "name": "Gambit",
+      "discord": "gambit"
+    },
     {
       "name": "Emmanuel Ruaud",
       "discord": "U~man"
@@ -37,9 +42,9 @@
   ],
   "license": "BSD-3-Clause",
   "bugs": {
-    "url": "https://github.com/ghost-fvtt/fxmaster/issues"
+    "url": "https://github.com/gambit07/fxmaster/issues"
   },
-  "homepage": "https://github.com/ghost-fvtt/fxmaster#readme",
+  "homepage": "https://github.com/gambit07/fxmaster#readme",
   "devDependencies": {
     "@commitlint/cli": "19.8.1",
     "@commitlint/config-conventional": "19.8.1",
@@ -59,7 +64,6 @@
     "rollup": "4.41.0",
     "rollup-plugin-string": "3.0.0",
     "rollup-plugin-styler": "2.0.0",
-    "standard-version": "9.5.0",
     "stringify-package": "1.0.1"
   },
   "lint-staged": {

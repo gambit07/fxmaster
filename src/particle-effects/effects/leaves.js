@@ -1,21 +1,21 @@
 import { FXMasterParticleEffect } from "./effect.js";
-import { DefautlRectangleSpawnMixin } from "./mixins/default-retangle-spawn.js";
+import { DefaultRectangleSpawnMixin } from "./mixins/default-rectangle-spawn.js";
 
 /**
  * A full-screen particle effect which renders gently falling autumn leaves.
  */
-export class AutumnLeavesParticleEffect extends DefautlRectangleSpawnMixin(FXMasterParticleEffect) {
+export class AutumnLeavesParticleEffect extends DefaultRectangleSpawnMixin(FXMasterParticleEffect) {
   /** @override */
-  static label = "FXMASTER.ParticleEffectLeaves";
+  static label = "FXMASTER.ParticleEffectAutumnLeaves";
 
   /** @override */
   static get icon() {
-    return "modules/fxmaster/assets/particle-effects/icons/leaves.png";
+    return "modules/fxmaster/assets/particle-effects/icons/autumn-leaves.webp";
   }
 
   /** @override */
   static get group() {
-    return "weather";
+    return "ambient";
   }
 
   /** @override */

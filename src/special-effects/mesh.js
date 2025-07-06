@@ -1,7 +1,7 @@
 /**
  * A SpriteMesh which visualizes a special effect object in the PrimaryCanvasGroup.
  */
-export class SpecialEffectMesh extends SpriteMesh {
+export class SpecialEffectMesh extends CONFIG.fxmaster.SpriteMeshNS {
   /** @type {number} */
   get elevation() {
     return this.#elevation;

@@ -2,119 +2,50 @@
 #
 # SPDX-License-Identifier: MIT
 
-name: Publish
+name: Publish to Foundry
 
 on:
-  push:
-    tags:
-      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Module version to publish (e.g. 1.3.0)"
+        required: true
 
 env:
   node_version: 20
 
 jobs:
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-
-      - name: Install node
-        uses: actions/setup-node@v4.4.0
-        with:
-          node-version: ${{ env.node_version }}
-
-      - name: Cache Node.js modules
-        uses: actions/cache@v4
-        with:
-          path: .npm
-          key: ${{ runner.OS }}-node-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.OS }}-node-
-            ${{ runner.OS }}-
-
-      - name: Install dependencies
-        run: npm ci --cache .npm --prefer-offline
-
-      - name: Lint
-        run: npm run lint
-
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-
-      - name: Install node
-        uses: actions/setup-node@v4.4.0
-        with:
-          node-version: ${{ env.node_version }}
-
-      - name: Cache Node.js modules
-        uses: actions/cache@v4
-        with:
-          path: .npm
-          key: ${{ runner.OS }}-node-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.OS }}-node-
-            ${{ runner.OS }}-
-
-      - name: Install dependencies
-        run: npm ci --cache .npm --prefer-offline
-
-      - name: Build
-        run: npm run build
-        env:
-          NODE_ENV: production
-
-      - name: Archive production artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist
-
   publish:
-    needs:
-      - lint
-      - build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-
-      - name: Install node
-        uses: actions/setup-node@v4.4.0
+        uses: actions/checkout@v4
         with:
-          node-version: ${{ env.node_version }}
+          fetch-depth: 0
 
-      - name: Download production artifacts for publication
-        uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist
-
-      - name: Create zip file
-        working-directory: ./dist
-        run: zip -r ../module.zip .
-
-      - name: Extract version
-        run: echo "version=$(jq -r '.version' package.json)" >> $GITHUB_OUTPUT
-        id: extract_version
-
-      - name: Create release
-        id: create_version_release
-        uses: ncipollo/release-action@v1
-        with:
-          allowUpdates: false
-          name: ${{steps.extract_version.outputs.version}}
-          token: ${{ secrets.GITHUB_TOKEN }}
-          artifacts: "./module.json, ./module.zip"
-
-      - name: Publish to Foundry Admin
+      - name: Autopublish to Foundry Admin
         uses: Varriount/fvtt-autopublish@v2.0.2
         with:
           username: ${{ secrets.FVTT_USERNAME }}
           password: ${{ secrets.FVTT_PASSWORD }}
           module-id: ${{ secrets.FVTT_PACKAGE_ID }}
-          manifest-url: https://github.com/${{ github.repository }}/releases/download/v${{ steps.extract_version.outputs.version }}/module.json
+
+          manifest-url: https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/module.json
           manifest-file: ./module.json
+
+      - name: Post to GFX Discord
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_GFX_WEBHOOK }}
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          RELEASE_NOTES=$(sed ':a;N;$!ba;s/\n/\\n/g' release_notes.txt)
+          curl -H "Content-Type: application/json" \
+               -d '{
+                 "embeds": [{
+                   "title": "Gambit'\''s FXMaster Release: '"$VERSION"'",
+                   "description": "**To support my continued work on this module!**\n[Patreon ❤️](https://www.patreon.com/GambitsLounge) | [Ko-fi ❤️](https://ko-fi.com/gambit07)\n\n'"$RELEASE_NOTES"'\n\nCheck it out through the Foundry package manager or the link below:\n<https://github.com/'"${{ github.repository }}"'/releases/tag/'"$VERSION"'>",
+                   "image": {
+                     "url": "https://avatars.githubusercontent.com/u/4236874?s=400&u=05d3718580ef87ea13467131a0c1fcaf4956630d&v=4"
+                   }
+                 }]
+               }' $DISCORD_WEBHOOK

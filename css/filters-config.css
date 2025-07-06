@@ -1,3 +1,52 @@
-.fxmaster-list--filters {
-  height: 370px;
+.window-app.fxmaster-app,
+.ui-dialog.fxmaster-app {
+  height: auto !important;
+  max-height: var(--fxmaster-max-height) !important;
+  overflow: visible !important;
+}
+.window-app.fxmaster-app .window-content,
+.ui-dialog.fxmaster-app .window-content {
+  height: auto !important;
+  max-height: var(--fxmaster-max-height) !important;
+  overflow-y: auto !important;
+}
+
+.fxmaster-filters-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  box-sizing: border-box;
+  max-height: var(--fxmaster-max-height);
+  overflow-y: auto;
+}
+
+#filters-config {
+  height: auto;
+  max-height: var(--fxmaster-max-height);
+  overflow: visible;
+}
+
+.fxmaster-filter-params {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.75rem 1rem;
+}
+.fxmaster-filter-params label {
+  display: flex;
+  flex-direction: column;
+  font-size: var(--font-size-12);
+  gap: 0.25rem;
+}
+
+/* Open‐state boxing */
+#filters-config .fxmaster-filters-row.open {
+  border: 1px solid var(--color-warm-2) !important;
+  border-bottom: none !important;
+  border-radius: var(--fxmaster-radius) var(--fxmaster-radius) 0 0 !important;
+}
+#filters-config .fxmaster-filters-row.open + .fxmaster-filter-expand {
+  border: 1px solid var(--color-warm-2) !important;
+  border-top: none !important;
+  border-radius: 0 0 var(--fxmaster-radius) var(--fxmaster-radius) !important;
+  margin-bottom: 0.25rem !important;
 }

@@ -5,17 +5,7 @@ import terser from "@rollup/plugin-terser";
 
 import { distDirectory, packageId, sourceDirectory } from "./tools/const.mjs";
 
-const staticFiles = [
-  "assets",
-  "CHANGELOG.md",
-  "lang",
-  "libs",
-  "LICENSE.md",
-  "media",
-  "module.json",
-  "README.md",
-  "templates",
-];
+const staticFiles = ["assets", "CHANGELOG.md", "lang", "libs", "LICENSE.md", "module.json", "README.md", "templates"];
 const isProduction = process.env.NODE_ENV === "production";
 
 /**
@@ -28,6 +18,7 @@ const config = {
     format: "es",
     sourcemap: true,
     assetFileNames: "[name].[ext]",
+    inlineDynamicImports: true,
   },
   plugins: [
     styles({

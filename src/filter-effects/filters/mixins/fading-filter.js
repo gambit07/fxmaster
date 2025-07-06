@@ -30,7 +30,7 @@ export function FadingFilterMixin(Base) {
     async animateOptions(options = this.options, { duration = 4_000 } = {}) {
       const name = `${packageId}.${this.constructor.name}.${this.id}`;
       if (this.currentAnimation !== undefined) {
-        CanvasAnimation.terminateAnimation(name);
+        CONFIG.fxmaster.CanvasAnimationNS.terminateAnimation(name);
         await this.currentAnimation;
       }
       const data = { name, duration };
@@ -46,7 +46,9 @@ export function FadingFilterMixin(Base) {
         attribute: key,
         to: value,
       }));
-      this.currentAnimation = CanvasAnimation.animate(anim, data).finally(() => (this.currentAnimation = undefined));
+      this.currentAnimation = CONFIG.fxmaster.CanvasAnimationNS.animate(anim, data).finally(
+        () => (this.currentAnimation = undefined),
+      );
       return this.currentAnimation;
     }
 

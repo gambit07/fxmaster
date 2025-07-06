@@ -9,7 +9,7 @@ export class RainSimpleParticleEffect extends FXMasterParticleEffect {
 
   /** @override */
   static get icon() {
-    return "modules/fxmaster/assets/particle-effects/icons/rain.png";
+    return "modules/fxmaster/assets/particle-effects/icons/rain.webp";
   }
 
   /** @override */

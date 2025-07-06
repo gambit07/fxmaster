@@ -9,7 +9,7 @@ export class SnowParticleEffect extends FXMasterParticleEffect {
 
   /** @override */
   static get icon() {
-    return "modules/fxmaster/assets/particle-effects/icons/snow.png";
+    return "modules/fxmaster/assets/particle-effects/icons/snow.webp";
   }
 
   /** @override */
