@@ -11,17 +11,17 @@ if (!version) {
   console.error("⛔  No version specified");
   process.exit(1);
 }
-
+// Prefix tag with 'v'
 const tagName = `v${version}`;
 
-// ─── 2) Update module.json via manifest-version-updater ────────────────
+// ─── 2) Update module.json via manifest-version-updater ─────────────────
 const MODULE_JSON = path.join(ROOT, "module.json");
 const pkgContents = fs.readFileSync(MODULE_JSON, "utf8");
 const updatedPkgJson = updater.writeVersion(pkgContents, version);
 fs.writeFileSync(MODULE_JSON, updatedPkgJson, "utf8");
 console.log(`✅ module.json updated to v${version}`);
 
-// ─── 3) Prepend CHANGELOG.md from release_notes.txt ─────────────────
+// ─── 3) Prepend CHANGELOG.md from release_notes.txt ─────────────────────
 const NOTES_FILE = path.join(ROOT, "release_notes.txt");
 const CHANGELOG_FILE = path.join(ROOT, "CHANGELOG.md");
 if (fs.existsSync(NOTES_FILE)) {
@@ -34,11 +34,8 @@ if (fs.existsSync(NOTES_FILE)) {
   const dateStr = `${yyyy}-${mm}-${dd}`;
 
   const newEntry = `## [${tagName}] - ${dateStr}\n${notesRaw}`;
-
   let existing = "# Changelog\n\n";
-  if (fs.existsSync(CHANGELOG_FILE)) {
-    existing = fs.readFileSync(CHANGELOG_FILE, "utf8");
-  }
+  if (fs.existsSync(CHANGELOG_FILE)) existing = fs.readFileSync(CHANGELOG_FILE, "utf8");
   const [header, ...restLines] = existing.split(/\r?\n/);
   const rest = restLines.join("\n").replace(/^\s*\n+/, "");
   const updated = [header, newEntry, rest].join("\n\n");
@@ -48,24 +45,35 @@ if (fs.existsSync(NOTES_FILE)) {
   console.warn(`⚠️  release_notes.txt not found—skipping CHANGELOG update`);
 }
 
-// ─── 4) Commit module.json, CHANGELOG.md & tag ─────────────────────────
+// ─── 4) Commit module.json & CHANGELOG.md ─────────────────────────────
 try {
   execSync('git config user.name "github-actions[bot]"');
   execSync('git config user.email "41898282+github-actions[bot]@users.noreply.github.com"');
   execSync(`git add ${MODULE_JSON} ${CHANGELOG_FILE}`, { stdio: "inherit" });
   execSync(`git commit -m "chore(release): ${tagName}"`, { stdio: "inherit" });
   console.log(`💾  Committed module.json and CHANGELOG.md as ${tagName}`);
+} catch {
+  console.log("ℹ️  Nothing to commit");
+}
 
-  // Create and push annotated tag
+// ─── 5) Create or validate & push git tag ───────────────────────────────
+try {
+  // Try creating the tag; if it exists, skip creation
   execSync(`git tag ${tagName}`, { stdio: "inherit" });
   console.log(`🏷  Created git tag ${tagName}`);
+} catch {
+  console.log(`🔖 Tag ${tagName} already exists, skipping creation`);
+}
+// Push tag to remote (idempotent if already present)
+try {
   execSync(`git push origin ${tagName}`, { stdio: "inherit" });
   console.log(`📤  Pushed tag ${tagName} to origin`);
 } catch (err) {
-  console.log("ℹ️  Nothing to commit/tag (or tag already exists)");
+  console.error(`❌  Failed to push tag ${tagName}`, err);
+  process.exit(1);
 }
 
-// ─── 5) Build & minify via Rollup ───────────────────────────────────────
+// ─── 6) Build & minify via Rollup ───────────────────────────────────────
 console.log("🚀  Building (production) & minifying…");
 execSync("npm run build", {
   cwd: ROOT,
@@ -73,18 +81,20 @@ execSync("npm run build", {
   env: { ...process.env, NODE_ENV: "production" },
 });
 
-// ─── 6) Package dist/ into module.zip via archiver ──────────────────────
+// ─── 7) Package dist/ into module.zip via archiver ──────────────────────
 console.log("📦  Creating module.zip from dist (using archiver)");
 const archiver = require("archiver");
 const DIST_DIR = path.join(ROOT, "dist");
 const zipPath = path.join(ROOT, "module.zip");
-
 const output = fs.createWriteStream(zipPath);
 const archive = archiver("zip", { zlib: { level: 9 } });
+archive.pipe(output);
+archive.directory(DIST_DIR, false);
+archive.finalize();
+
+// ─── 8) Create GitHub Release & upload assets ───────────────────────────
 output.on("close", () => {
   console.log(`✅ module.zip created (${archive.pointer()} bytes)`);
-
-  // ─── 7) Create GitHub Release & upload assets ────────────────────────────
   try {
     console.log(`🏷  Creating GitHub release ${tagName}`);
     const ghCmd = [
@@ -101,12 +111,8 @@ output.on("close", () => {
     console.error("❌  gh release create failed", err);
     process.exit(1);
   }
-
   console.log("🎉  Release script complete!");
 });
 archive.on("error", (err) => {
   throw err;
 });
-archive.pipe(output);
-archive.directory(DIST_DIR, false);
-archive.finalize();
