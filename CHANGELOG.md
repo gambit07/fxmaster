@@ -1,5 +1,10 @@
 # Changelog
 
+## [v6.0.2] - 2025-07-06
+- Resolve module.zip not including the parent fxmaster folder
+- Remove test css line left in effecting all buttons
+- Add UI notification error if attempting to open the Animation Effects window without the Animations DB being properly built
+
 ## [v6.0.1] - 2025-07-06
 FXMaster Version 6! Big visual and functional overhaul. V12 & V13 compatible. Removed all previously deprecated code. To reduce module size - removed individual animation assets hosted within the module and converted all module image assets to webp from png. Added and updated a number of localization keys. Changed module name to Gambit's FXMaster to align with my other modules, identifiers remains unchanged. Overview of the updates below, although I'm sure there will be some stuff I missed!
 - Filter Effects
