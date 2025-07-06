@@ -1,5 +1,10 @@
 # Changelog
 
+## [v6.0.3] - 2025-07-06
+- Resolve module.zip not including the parent fxmaster folder
+- Remove test css line left in effecting all buttons
+- Add UI notification error if attempting to open the Animation Effects window without the Animations DB being properly built
+
 ## [v6.0.2] - 2025-07-06
 - Resolve module.zip not including the parent fxmaster folder
 - Remove test css line left in effecting all buttons
