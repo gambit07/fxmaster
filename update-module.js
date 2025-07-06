@@ -2,7 +2,6 @@ const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
 const ROOT = path.resolve(__dirname);
-const tagName = `v${version}`;
 
 const updater = require(path.join(ROOT, "manifest-version-updater.js"));
 
@@ -12,6 +11,8 @@ if (!version) {
   console.error("⛔  No version specified");
   process.exit(1);
 }
+
+const tagName = `v${version}`;
 
 // ─── 2) Update module.json via manifest-version-updater ────────────────
 const MODULE_JSON = path.join(ROOT, "module.json");
