@@ -193,7 +193,7 @@ Clicking on this tool opens the _Filter Effects Management_ app:
 
 ![Filter Effects Management](./media/screenshots/filter-effects-management.webp)
 
-You can activate individual _Filter Effects_ by checking the corresponding checkbox and then clicking on "Save Changes."
+You can activate individual _Filter Effects_ by clicking the corresponding toggle button.
 
 By clicking on the name of a _Filter Effect_, you expand it, showing the options for that effect:
 
@@ -202,7 +202,7 @@ By clicking on the name of a _Filter Effect_, you expand it, showing the options
 The available options differ heavily between individual _Filter Effects_, so it doesn't make much sense to list them
 here.
 
-Once you are finished with adjusting the options, you can apply them by clicking the "Save Changes" button.
+The options will be adjusted in real-time as you make changes to them.
 
 ### Save Particle and Filter Effects as a Macro&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/floppy-disk-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/floppy-disk-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/floppy-disk-dark.svg" alt="Save Particle and Filter Effects as a Macro Icon" height="20" width="20" style="vertical-align:middle;"></picture>
 
