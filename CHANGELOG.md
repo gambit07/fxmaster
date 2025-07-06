@@ -288,6 +288,30 @@ FXMaster Version 6! Big visual and functional overhaul. V12 & V13 compatible. Re
   - NEW: Added support for custom animation folders. This can be specified in the FXMaster settings page.
   - NEW: Added the ability to favorite animations, these will be accessible as a dropdown filter tag along with the major animation authors and custom folder
 
+## [v6.0.1] - 2025-07-06
+FXMaster Version 6! Big visual and functional overhaul. V12 & V13 compatible. Removed all previously deprecated code. To reduce module size - removed individual animation assets hosted within the module and converted all module image assets to webp from png. Added and updated a number of localization keys. Changed module name to Gambit's FXMaster to align with my other modules, identifiers remains unchanged. Overview of the updates below, although I'm sure there will be some stuff I missed!
+- Filter Effects
+  - Re-wrote the menu for application v2!
+  - Toggles can now be enabled and disabled individually. Toggle parameters will be updated in real time when making a change, and parameters will remember the last set value. 
+  - Window position will be saved based off last placement.
+- Particle Effects
+  - Re-wrote the menu for application v2!
+  - Toggles can now be enabled and disabled individually.
+  - Toggle parameters will be updated in real time when making a change, and parameters will remember the last set value.
+  - Window position will be saved based off last placement, along with window width.
+  - App updated for a 3 column layout. This can be adjusted by re-sizing the app window, single column width is still supported.
+  - NEW: Region support! You can now add particle effects to a region with the 'FXMaster: Particle Effects' region behavior.
+  - NEW: Regions now support masking scene level particle effects, which can be applied with the 'Suppress Weather' region behavior. This respects FXMasters invert particle effect mask scene tool as well.
+- Animation Effects (Previously Special Effects)
+  - Complete overhaul. The goal of this re-work was to remove seldom used features and focus on giving this window an identity. In my mind that was a tool that allows flexible previewing and searching of animations.
+  - FXMaster no longer supports features that overlapped with Sequencer, Sequencer is just better (much better) at those things. Placing animations via drag-drop as a tile is still supported, and the scale and anchor parameters can still be set on each animation.
+  - App now displays animations in a grid. The window can be re-sized to change animation sizes for large previews on hover.
+  - Animation details can be viewed and include file name, file path, and sequencer db path where relevant.
+  - NEW: Added search functionality with more advanced query support via AND, OR, and NOT. As an example, this will allow searching for any animation with eldritch in the name but not blast - ex: eldritch AND NOT blast
+  - NEW: Added support for all major animation modules. Animations db will be built on first load after update based off modules present. The Animations db can be re-built at any time through the FXMaster settings page if animation modules are added, updated, or removed.
+  - NEW: Added support for custom animation folders. This can be specified in the FXMaster settings page.
+  - NEW: Added the ability to favorite animations, these will be accessible as a dropdown filter tag along with the major animation authors and custom folder
+
 ## [v6.0.0] - 2025-07-06
 FXMaster Version 6! Big visual and functional overhaul. V12 & V13 compatible. Removed all previously deprecated code. To reduce module size - removed individual animation assets hosted within the module and converted all module image assets to webp from png. Added and updated a number of localization keys. Changed module name to Gambit's FXMaster to align with my other modules, identifiers remains unchanged. Overview of the updates below, although I'm sure there will be some stuff I missed!
 - Filter Effects
