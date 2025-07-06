@@ -48,16 +48,21 @@ if (fs.existsSync(NOTES_FILE)) {
   console.warn(`⚠️  release_notes.txt not found—skipping CHANGELOG update`);
 }
 
-// ─── 4) Commit module.json & CHANGELOG.md ─────────────────────────────
+// ─── 4) Commit module.json, CHANGELOG.md & tag ─────────────────────────
 try {
   execSync('git config user.name "github-actions[bot]"');
   execSync('git config user.email "41898282+github-actions[bot]@users.noreply.github.com"');
   execSync(`git add ${MODULE_JSON} ${CHANGELOG_FILE}`, { stdio: "inherit" });
   execSync(`git commit -m "chore(release): ${tagName}"`, { stdio: "inherit" });
+  console.log(`💾  Committed module.json and CHANGELOG.md as ${tagName}`);
+
+  // Create and push annotated tag
   execSync(`git tag ${tagName}`, { stdio: "inherit" });
   console.log(`🏷  Created git tag ${tagName}`);
-} catch {
-  console.log("ℹ️  Nothing to commit/tag");
+  execSync(`git push origin ${tagName}`, { stdio: "inherit" });
+  console.log(`📤  Pushed tag ${tagName} to origin`);
+} catch (err) {
+  console.log("ℹ️  Nothing to commit/tag (or tag already exists)");
 }
 
 // ─── 5) Build & minify via Rollup ───────────────────────────────────────
@@ -76,10 +81,6 @@ const zipPath = path.join(ROOT, "module.zip");
 
 const output = fs.createWriteStream(zipPath);
 const archive = archiver("zip", { zlib: { level: 9 } });
-archive.pipe(output);
-archive.directory(DIST_DIR, false);
-archive.finalize();
-
 output.on("close", () => {
   console.log(`✅ module.zip created (${archive.pointer()} bytes)`);
 
@@ -103,3 +104,9 @@ output.on("close", () => {
 
   console.log("🎉  Release script complete!");
 });
+archive.on("error", (err) => {
+  throw err;
+});
+archive.pipe(output);
+archive.directory(DIST_DIR, false);
+archive.finalize();
