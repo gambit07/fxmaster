@@ -100,6 +100,8 @@ output.on("close", () => {
     const ghCmd = [
       "gh release create",
       tagName,
+      "--target",
+      "main",
       `--title "Release ${tagName}"`,
       `--notes-file ${NOTES_FILE}`,
       "module.zip",
