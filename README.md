@@ -117,8 +117,7 @@ Clicking on the _Effect Controls_ tool opens the _Particle Effects Management_ a
 
 ![Particle Effects Management](./media/screenshots/particle-effects-management.webp)
 
-In this app, you can configure individual _Particle Effects_. They are sorted into different groups ("Weather", "Animals",
-and "Other").
+In this app, you can configure individual _Particle Effects_. They are sorted into different groups ("Weather", "Ambient", and "Animals").
 
 You can activate individual _Particle Effects_ by clicking the corresponding toggle button.
 
