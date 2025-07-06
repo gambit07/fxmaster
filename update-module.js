@@ -66,35 +66,38 @@ execSync("npm run build", {
 console.log("📦  Creating module.zip from dist (using archiver)");
 const archiver = require("archiver");
 const DIST_DIR = path.join(ROOT, "dist");
-const output = fs.createWriteStream(path.join(ROOT, "module.zip"));
+const zipPath = path.join(ROOT, "module.zip");
+
+const output = fs.createWriteStream(zipPath);
 const archive = archiver("zip", { zlib: { level: 9 } });
 
 output.on("close", () => {
   console.log(`✅ module.zip created (${archive.pointer()} bytes)`);
+
+  // ─── 7) Create GitHub Release & upload assets ────────────────────────────
+  try {
+    console.log(`🏷  Creating GitHub release v${version}`);
+    const ghCmd = [
+      "gh release create",
+      version,
+      `--title "Release ${version}"`,
+      `--notes-file ${NOTES_FILE}`,
+      "module.zip",
+      "module.json",
+    ].join(" ");
+    execSync(ghCmd, { cwd: ROOT, stdio: "inherit" });
+    console.log(`✅  GitHub release ${version} created with module.zip & module.json`);
+  } catch (err) {
+    console.error("❌  gh release create failed", err);
+    process.exit(1);
+  }
+
+  console.log("🎉  Release script complete!");
 });
+
 archive.on("error", (err) => {
   throw err;
 });
-
 archive.pipe(output);
-// false = “don’t include the dist/ prefix inside the zip”
 archive.directory(DIST_DIR, false);
 archive.finalize();
-
-// ─── 7) Create GitHub Release & upload assets ────────────────────────────
-try {
-  console.log(`🏷  Creating GitHub release v${version}`);
-  const ghCmd = [
-    "gh release create",
-    version,
-    `--title "Release ${version}"`,
-    `--notes-file ${NOTES_FILE}`,
-    "module.zip",
-    "module.json",
-  ].join(" ");
-  execSync(ghCmd, { cwd: ROOT, stdio: "inherit" });
-  console.log(`✅  GitHub release ${version} created with module.zip & module.json`);
-} catch (err) {
-  console.error("❌  gh release create failed", err);
-  process.exit(1);
-}
