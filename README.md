@@ -165,7 +165,7 @@ By default, _Particle Effects_ are only displayed outside the marked areas when 
 
 #### ⚠ Warning Regarding Large Scenes
 
-Similar to the foundry core weather effects, the _Particle Effects_ provided by FXMaster can have a pretty significant
+*Legacy Note - I do not think this is as much of a concern on V12 or V13 foundry, but leaving it here for posterity's sake*: The _Particle Effects_ provided by FXMaster can have a pretty significant
 impact on performance in large scenes (around 10,000 px × 10,000 px and larger). Be careful when enabling
 _Particle Effects_ in such scenes as it might make them crash. If that happens, launch the world in safe configuration
 and delete the configured _Particle Effects_ for the scene by running the following as a script macro or in the
