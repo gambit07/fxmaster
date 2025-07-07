@@ -9,6 +9,7 @@ import { isEnabled } from "./settings.js";
 import { SpecialEffectsManagement } from "./special-effects/applications/special-effects-management.js";
 import { ParticleEffectsRegionBehaviorConfig } from "./particle-effects/particle-effects-region-config.js";
 import { SpecialEffectsLayer } from "./special-effects/special-effects-layer.js";
+import { drawDrawingsMaskIfCurrentScene } from "./particle-effects/drawings-mask.js";
 
 const TYPE = `${packageId}.particleEffectsRegion`;
 
@@ -22,11 +23,29 @@ export const registerHooks = function () {
 
   // Re-add existing effects to regions when changed. System doesn't allow movement but this should handle that as well. In theory
   Hooks.on("updateRegion", (regionDoc, _diff, _options, _userId) => {
-    if (!regionDoc?.behaviors?.some((b) => b.type === TYPE)) return;
+    if (!regionDoc?.behaviors?.some((b) => (b.type === TYPE || b.type === "suppressWeather") && !b.disabled)) return;
+
     const placeable = canvas.regions.get(regionDoc.id);
     if (placeable) {
       canvas.fxmaster.drawRegionParticleEffects(placeable);
     }
+
+    drawDrawingsMaskIfCurrentScene(regionDoc.parent);
+  });
+
+  Hooks.on("updateRegionBehavior", (behaviorDoc, _diff, _options, _userId) => {
+    if (behaviorDoc.type !== "suppressWeather") return;
+    drawDrawingsMaskIfCurrentScene(behaviorDoc.parent.parent);
+  });
+
+  Hooks.on("deleteRegionBehavior", (behaviorDoc, _diff, _options, _userId) => {
+    if (behaviorDoc.type !== "suppressWeather") return;
+    drawDrawingsMaskIfCurrentScene(behaviorDoc.parent.parent);
+  });
+
+  Hooks.on("createRegionBehavior", (behaviorDoc, _diff, _options, _userId) => {
+    if (behaviorDoc.type !== "suppressWeather") return;
+    drawDrawingsMaskIfCurrentScene(behaviorDoc.parent.parent);
   });
 
   Hooks.on("canvasInit", async () => {
@@ -40,26 +59,30 @@ export const registerHooks = function () {
     CONFIG.RegionBehavior.typeIcons[TYPE] = "fas fa-hat-wizard";
     CONFIG.RegionBehavior.typeLabels[TYPE] = "FXMASTER.ParticleEffectRegionBehaviorName";
     CONFIG.RegionBehavior.sheetClasses[TYPE]["core.RegionBehaviorConfig"].cls = ParticleEffectsRegionBehaviorConfig;
-
-    const version = game.modules.get(packageId).version;
-    if (game.settings.get(packageId, "releaseMessage") === version || !game.user.isGM) return;
-
-    const content = `
-      <div class="fxmaster-announcement" style="border:2px solid #4A90E2; border-radius:8px; padding:12px; background:#f4faff;">
-        <h3 style="margin:0; color:#2a4365;">🎉Welcome to Gambit's FXMaster!</h3>
-          <p style="color: #2a4365; font-size: 1em;">This V${version} release resolves a few V6 release bugs. Check out the readme and release notes on <a href="https://github.com/gambit07/fxmaster" target="_blank" style="color: #3182ce; text-decoration: none; font-weight: bold;">GitHub</a>.</p>
-          <p style="color: #2a4365; font-size: 1em;">If you'd like to support my development time and get access to new Particle Effects <span style="color:#C11C84">Sakura Bloom & Sakura Blossoms</span>, please consider supporting the project on <a href="https://patreon.com/GambitsLounge" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Patreon</a>.</p>
-        </div>
-      `;
-    ChatMessage.create({ content });
-
-    game.settings.set(packageId, "releaseMessage", version);
   });
 
   Hooks.on("canvasReady", () => {
     if (!canvas.fxmaster) return;
     for (const region of canvas.regions.placeables) {
       canvas.fxmaster.drawRegionParticleEffects(region, { soft: true });
+
+      drawDrawingsMaskIfCurrentScene(region?.document.parent);
+    }
+  });
+
+  Hooks.once("ready", () => {
+    const version = game.modules.get(packageId).version;
+    if (game.settings.get(packageId, "releaseMessage") !== version && game.user.isGM) {
+      const content = `
+        <div class="fxmaster-announcement" style="border:2px solid #4A90E2; border-radius:8px; padding:12px; background:#f4faff;">
+          <h3 style="margin:0; color:#2a4365;">🎉Welcome to Gambit's FXMaster!</h3>
+            <p style="color: #2a4365; font-size: 1em;">This V${version} release resolves even more V6 release bugs! Check out the readme and release notes on <a href="https://github.com/gambit07/fxmaster" target="_blank" style="color: #3182ce; text-decoration: none; font-weight: bold;">GitHub</a>.</p>
+            <p style="color: #2a4365; font-size: 1em;">If you'd like to support my development time and get access to new Particle Effects <span style="color:#C11C84">Sakura Bloom & Sakura Blossoms</span>, please consider supporting the project on <a href="https://patreon.com/GambitsLounge" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Patreon</a>.</p>
+          </div>
+        `;
+      ChatMessage.create({ content });
+
+      game.settings.set(packageId, "releaseMessage", version);
     }
   });
 

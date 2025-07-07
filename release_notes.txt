@@ -1,3 +1,5 @@
-- Resolve module.zip not including the parent fxmaster folder
-- Remove test css line left in effecting all buttons
-- Add UI notification error if attempting to open the Animation Effects window without the Animations DB being properly built
+- Resolve Particle Effects window not auto-adjusting size based on dropdown expansion
+- Removed !important css tags that were unnecessary
+- Added updated pt-BR and pl translations from Kharmans and Lioheart. Thanks!
+- Resolved update chat message displaying on every refresh in V12
+- Resolve Suppress Weather masking not applying consistently

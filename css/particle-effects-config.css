@@ -45,15 +45,15 @@
 
 /* Open‐state boxing */
 #particle-effects-config .fxmaster-particles-row.open {
-  border: 1px solid var(--color-warm-2) !important;
-  border-bottom: none !important;
-  border-radius: var(--fxmaster-radius) var(--fxmaster-radius) 0 0 !important;
+  border: 1px solid var(--color-warm-2);
+  border-bottom: none;
+  border-radius: var(--fxmaster-radius) var(--fxmaster-radius) 0 0;
 }
 #particle-effects-config .fxmaster-particles-row.open + .fxmaster-particle-expand {
-  border: 1px solid var(--color-warm-2) !important;
-  border-top: none !important;
-  border-radius: 0 0 var(--fxmaster-radius) var(--fxmaster-radius) !important;
-  margin-bottom: 0.25rem !important;
+  border: 1px solid var(--color-warm-2);
+  border-top: none;
+  border-radius: 0 0 var(--fxmaster-radius) var(--fxmaster-radius);
+  margin-bottom: 0.25rem;
 }
 
 /* Parameter grid */
@@ -80,22 +80,38 @@
 /* Expand‐panels: no scrolling */
 #particle-effects-config .fxmaster-particle-expand,
 #particle-effects-config .fxmaster-particles-group-expand {
-  max-height: none !important;
-  overflow: visible !important;
+  max-height: none;
+  overflow: visible;
 }
 
 /* Region-behavior config */
 .region-behavior-config .behavior-settings {
-  display: none !important;
+  display: none;
   margin-left: 1.5em;
   border-left: 2px solid var(--color-border);
   padding-left: 0.5em;
 }
 .region-behavior-config .behavior-header {
-  display: flex !important;
+  display: flex;
   cursor: pointer;
   font-weight: bold;
 }
 .region-behavior-config .behavior-header:has(input[type="checkbox"]:checked) ~ .behavior-settings {
-  display: flex !important;
+  display: flex;
+}
+
+/* ——— Force outer Application size to max-height ——— */
+#particle-effects-config {
+  height: auto;
+  max-height: var(--fxmaster-max-height);
+  overflow: visible;
+}
+
+/* ——— Allow inner content scroll ——— */
+#particle-effects-config .window-content,
+.ui-dialog.fxmaster-app .ui-dialog-content {
+  height: auto;
+  max-height: var(--fxmaster-max-height);
+  overflow-y: auto;
+  overflow-x: hidden;
 }

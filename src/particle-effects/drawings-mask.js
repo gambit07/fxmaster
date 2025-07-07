@@ -27,7 +27,7 @@ export function registerDrawingsMaskFunctionality() {
   });
 }
 
-function drawDrawingsMaskIfCurrentScene(scene) {
+export function drawDrawingsMaskIfCurrentScene(scene) {
   if (scene === canvas.scene) {
     drawDrawingsMask();
   }
@@ -44,7 +44,7 @@ function drawDrawingsMask() {
   const maskedDrawings = canvas.drawings.placeables.filter((d) => d.document.getFlag(packageId, "masking"));
   const maskedRegions =
     canvas.regions?.placeables.filter((region) =>
-      region.document.behaviors?.some((b) => b.type === "suppressWeather"),
+      region.document.behaviors?.some((b) => b.type === "suppressWeather" && !b.disabled),
     ) ?? [];
 
   if (maskedDrawings.length === 0 && maskedRegions.length === 0) {
