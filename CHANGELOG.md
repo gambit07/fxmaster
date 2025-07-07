@@ -1,5 +1,12 @@
 # Changelog
 
+## [v6.0.4] - 2025-07-07
+- Resolve Particle Effects window not auto-adjusting size based on dropdown expansion
+- Removed !important css tags that were unnecessary
+- Added updated pt-BR and pl translations from Kharmans and Lioheart. Thanks!
+- Resolved update chat message displaying on every refresh in V12
+- Resolve Suppress Weather masking not applying consistently
+
 ## [v6.0.3] - 2025-07-06
 - Resolve module.zip not including the parent fxmaster folder
 - Remove test css line left in effecting all buttons
