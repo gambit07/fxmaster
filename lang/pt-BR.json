@@ -139,7 +139,8 @@
     "SearchAnimations": "Pesquisar Animações",
     "SearchQueries": "Consultas avançadas suportadas, ex: (eldritch OR arrow) AND NOT blast",
     "SequencerPath": "Caminho do Banco do Sequencer",
-    "Update": "Atualizar Efeito de Animações"
+    "Update": "Atualizar Efeito de Animações",
+    "RefreshDbError": "FXMaster | Nenhum efeito de animação encontrado no Banco FXMaster. Aguarde a conclusão da Busca de Animações atual ou acesse 'Configurações de Módulos -> FXMaster -> Atualizar Banco de Animações' para executar a Busca de Animações novamente."
   },
   "FXMASTER.FilterEffectTypeNotFound": "Nenhum efeito de filtro encontrado para o tipo: {type}",
   "FXMASTER.FilterEffectTypeUnknown": "O efeito do filtro '{id}' é do tipo desconhecido '{type}'. Será ignorado.",
