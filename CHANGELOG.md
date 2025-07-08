@@ -1,5 +1,9 @@
 # Changelog
 
+## [v6.0.5] - 2025-07-08
+- Resolve doubling up of the initial Animation Module scan when switching scenes
+- Removed thumbnail scan on first Animation Module scan. The process can take quite a while, especially on hosted services, so it will only be run when done manually through the Module settings page.
+
 ## [v6.0.4] - 2025-07-07
 - Resolve Particle Effects window not auto-adjusting size based on dropdown expansion
 - Removed !important css tags that were unnecessary
