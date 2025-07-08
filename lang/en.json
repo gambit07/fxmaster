@@ -128,7 +128,7 @@
       "Custom": "Custom",
       "WildMagicSurge": "Wild Magic Surge"
     },
-    "RefreshDbHint": "Rebuild database to account for any newly added or removed animations",
+    "RefreshDbHint": "Rebuild database to account for any newly added or removed animations, and to parse thumbnail icons. Thumbnail parsing can take quite some time, especially on hosted services such as the Forge.",
     "RefreshDbName": "Refresh Animations Database",
     "RightClickForDetails": "Right click for Details:",
     "ScanComplete": "FXMaster | Animation Scan Complete!",

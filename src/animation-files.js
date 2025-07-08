@@ -47,7 +47,7 @@ async function findThumbFor(file) {
 
 // Scan configured roots for .webm’s and thumbnails for jb2a to build our animations db
 
-export async function registerAnimations() {
+export async function registerAnimations({ initialScan = false } = {}) {
   if (!game.user.isGM) return;
 
   const { baseColor, highlightColor } = getDialogColors();
@@ -142,32 +142,34 @@ export async function registerAnimations() {
     }
   }
 
-  let thumbNotifId = ui.notifications.info(game.i18n.localize("FXMASTER.AnimationEffect.ScanningThumbnails"), {
-    permanent: true,
-  });
-  if (game?.release?.generation >= 13) thumbNotifId = thumbNotifId.id;
-  const thumbNotifEl = document.querySelector(`.notification[data-id="${thumbNotifId}"]`);
+  if(!initialScan) {
+    let thumbNotifId = ui.notifications.info(game.i18n.localize("FXMASTER.AnimationEffect.ScanningThumbnails"), {
+      permanent: true,
+    });
+    if (game?.release?.generation >= 13) thumbNotifId = thumbNotifId.id;
+    const thumbNotifEl = document.querySelector(`.notification[data-id="${thumbNotifId}"]`);
 
-  for (let i = 0; i < discovered.length; i++) {
-    const fx = discovered[i];
+    for (let i = 0; i < discovered.length; i++) {
+      const fx = discovered[i];
 
-    if (fx.folder === "JB2A Patreon" || fx.folder === "JB2A Free") {
-      const thumb = await findThumbFor(fx.file);
-      if (thumb) fx.thumb = thumb;
+      if (fx.folder === "JB2A Patreon" || fx.folder === "JB2A Free") {
+        const thumb = await findThumbFor(fx.file);
+        if (thumb) fx.thumb = thumb;
+      }
+
+      if (thumbNotifEl) {
+        const pct = Math.round(((i + 1) / discovered.length) * 100);
+        thumbNotifEl.style.borderColor = highlightColor;
+        thumbNotifEl.style.background = `linear-gradient(90deg, ${highlightColor} ${pct}%, ${baseColor} ${pct}%)`;
+        thumbNotifEl.innerText = game.i18n.format("FXMASTER.AnimationEffect.ScanningThumbnailsProgress", {
+          current: i + 1,
+          total: discovered.length,
+        });
+      }
     }
 
-    if (thumbNotifEl) {
-      const pct = Math.round(((i + 1) / discovered.length) * 100);
-      thumbNotifEl.style.borderColor = highlightColor;
-      thumbNotifEl.style.background = `linear-gradient(90deg, ${highlightColor} ${pct}%, ${baseColor} ${pct}%)`;
-      thumbNotifEl.innerText = game.i18n.format("FXMASTER.AnimationEffect.ScanningThumbnailsProgress", {
-        current: i + 1,
-        total: discovered.length,
-      });
-    }
+    ui.notifications.clear(thumbNotifId);
   }
-
-  ui.notifications.clear(thumbNotifId);
 
   const effectsMap = {};
   for (const fx of discovered) {

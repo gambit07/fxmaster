@@ -49,10 +49,6 @@ export const registerHooks = function () {
   });
 
   Hooks.on("canvasInit", async () => {
-    if (isEnabled()) {
-      await parseSpecialEffects();
-    }
-
     const { ParticleRegionBehaviorType } = await import("./particle-effects/particle-effects-region-behavior.js");
 
     CONFIG.RegionBehavior.dataModels[TYPE] = ParticleRegionBehaviorType;
@@ -70,19 +66,23 @@ export const registerHooks = function () {
     }
   });
 
-  Hooks.once("ready", () => {
+  Hooks.once("ready", async () => {
     const version = game.modules.get(packageId).version;
     if (game.settings.get(packageId, "releaseMessage") !== version && game.user.isGM) {
       const content = `
         <div class="fxmaster-announcement" style="border:2px solid #4A90E2; border-radius:8px; padding:12px; background:#f4faff;">
           <h3 style="margin:0; color:#2a4365;">🎉Welcome to Gambit's FXMaster!</h3>
-            <p style="color: #2a4365; font-size: 1em;">This V${version} release resolves even more V6 release bugs! Check out the readme and release notes on <a href="https://github.com/gambit07/fxmaster" target="_blank" style="color: #3182ce; text-decoration: none; font-weight: bold;">GitHub</a>.</p>
+            <p style="color: #2a4365; font-size: 1em;">This V${version} release resolves a few issues with the initial Animation Scan in some worlds. Check out the readme and release notes on <a href="https://github.com/gambit07/fxmaster" target="_blank" style="color: #3182ce; text-decoration: none; font-weight: bold;">GitHub</a>.</p>
             <p style="color: #2a4365; font-size: 1em;">If you'd like to support my development time and get access to new Particle Effects <span style="color:#C11C84">Sakura Bloom & Sakura Blossoms</span>, please consider supporting the project on <a href="https://patreon.com/GambitsLounge" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Patreon</a>.</p>
           </div>
         `;
       ChatMessage.create({ content });
 
       game.settings.set(packageId, "releaseMessage", version);
+    }
+
+    if (isEnabled()) {
+      await parseSpecialEffects();
     }
   });
 

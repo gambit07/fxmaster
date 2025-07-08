@@ -1,5 +1,2 @@
-- Resolve Particle Effects window not auto-adjusting size based on dropdown expansion
-- Removed !important css tags that were unnecessary
-- Added updated pt-BR and pl translations from Kharmans and Lioheart. Thanks!
-- Resolved update chat message displaying on every refresh in V12
-- Resolve Suppress Weather masking not applying consistently
+- Resolve doubling up of the initial Animation Module scan when switching scenes
+- Removed thumbnail scan on first Animation Module scan. The process can take quite a while, especially on hosted services, so it will only be run when done manually through the Module settings page.

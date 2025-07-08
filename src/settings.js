@@ -32,7 +32,7 @@ export function registerSettings() {
 
       console.time("FXMaster.refreshDb");
 
-      const newMap = await registerAnimations();
+      const newMap = await registerAnimations({ initialScan: false });
       await game.settings.set(packageId, "dbSpecialEffects", newMap);
       CONFIG.fxmaster.userSpecials = newMap;
       await game.settings.set(packageId, "refreshDb", false);

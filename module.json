@@ -1,6 +1,5 @@
 {
   "id": "fxmaster",
-  "name": "Gambit's FXMaster",
   "title": "Gambit's FXMaster",
   "description": "Adds various particle and filter effects",
   "authors": [
@@ -100,7 +99,8 @@
       "name": "fxmaster",
       "label": "FXMaster",
       "path": "packs/macros.db",
-      "type": "Macro"
+      "type": "Macro",
+      "module": "fxmaster"
     }
   ],
   "socket": true,

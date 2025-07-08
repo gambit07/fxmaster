@@ -124,7 +124,7 @@ export async function parseSpecialEffects() {
 
   if (!effectsMap || Object.keys(effectsMap).length === 0) {
     const { registerAnimations } = await import("./animation-files.js");
-    effectsMap = await registerAnimations();
+    effectsMap = await registerAnimations({ initialScan: true });
     await game.settings.set(packageId, "dbSpecialEffects", effectsMap);
   }
 
