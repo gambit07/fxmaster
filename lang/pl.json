@@ -128,7 +128,7 @@
       "Custom": "Niestandardowe",
       "WildMagicSurge": "Wild Magic Surge"
     },
-    "RefreshDbHint": "Przebudowa bazy danych w celu uwzględnienia nowo dodanych lub usuniętych animacji.",
+    "RefreshDbHint": "Przebudowa bazy danych w celu uwzględnienia wszelkich nowo dodanych lub usuniętych animacji oraz przeanalizowania miniatur ikon. Parsowanie miniatur może zająć sporo czasu, zwłaszcza w przypadku usług hostowanych, takich jak Forge.",
     "RefreshDbName": "Odśwież bazę animacji",
     "RightClickForDetails": "Kliknij prawym przyciskiem myszy, aby wyświetlić szczegóły:",
     "ScanComplete": "FXMaster | Skanowanie animacji zakończone!",
