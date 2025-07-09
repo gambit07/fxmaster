@@ -7,6 +7,8 @@ import { FilterManager } from "./filter-effects/filter-manager.js";
 import { SpecialEffectsLayer } from "./special-effects/special-effects-layer.js";
 import { registerHandlebarsHelpers } from "./handlebars-helpers.js";
 import { registerGetSceneControlButtonsHook } from "./controls.js";
+import { ParticleRegionBehaviorType } from "./particle-effects/particle-effects-region-behavior.js";
+import { packageId } from "./constants.js";
 import "../css/filters-config.css";
 import "../css/particle-effects-config.css";
 import "../css/specials-config.css";
@@ -26,6 +28,12 @@ Hooks.once("init", function () {
   registerHooks();
   registerLayers();
   registerHandlebarsHelpers();
+
+  const TYPE = `${packageId}.particleEffectsRegion`;
+
+  CONFIG.RegionBehavior.dataModels[TYPE] = ParticleRegionBehaviorType;
+  CONFIG.RegionBehavior.typeIcons[TYPE] = "fas fa-hat-wizard";
+  CONFIG.RegionBehavior.typeLabels[TYPE] = "FXMASTER.ParticleEffectRegionBehaviorName";
 
   foundry.utils.mergeObject(CONFIG.fxmaster, {
     filterEffects: FXMASTER.filterEffects,

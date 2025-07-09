@@ -309,24 +309,27 @@ You can get a complete list by typing `CONFIG.fxmaster.filters` in your web cons
 
 #### Available Particle Effects With Supported Options
 
-| Type         | `scale` | `direction` | `speed` | `lifetime` | `density` | `alpha` | `tint` |         `animations`         |
-| ------------ | :-----: | :---------: | :-----: | :--------: | :-------: | :-----: | :----: | :--------------------------: |
-| `snowstorm`  |    ✓    |      ✓      |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `bubbles`    |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `clouds`     |    ✓    |      ✓      |    ✓    |     ✓      |           |    ✓    |   ✓    |                              |
-| `embers`     |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `rainsimple` |    ✓    |      ✓      |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `stars`      |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `crows`      |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `bats`       |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `spiders`    |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `fog`        |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `raintop`    |    ✓    |      ✓      |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `birds`      |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    | ✓ (`glide`, `flap`, `mixed`) |
-| `leaves`     |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `rain`       |    ✓    |      ✓      |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `snow`       |    ✓    |      ✓      |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `eagles`     |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |     ✓ (`glide`, `flap`)      |
+| Type           | `scale` | `direction` | `speed` | `lifetime` | `density` | `alpha` | `tint` |         `animations`         |
+| -------------- | :-----: | :---------: | :-----: | :--------: | :-------: | :-----: | :----: | :--------------------------: |
+| `snowstorm`    |    ✓    |      ✓      |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
+| `bubbles`      |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
+| `clouds`       |    ✓    |      ✓      |    ✓    |     ✓      |           |    ✓    |   ✓    |                              |
+| `embers`       |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
+| `rainsimple`   |    ✓    |      ✓      |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
+| `stars`        |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
+| `crows`        |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
+| `bats`         |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
+| `spiders`      |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
+| `fog`          |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
+| `raintop`      |    ✓    |      ✓      |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
+| `birds`        |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    | ✓ (`glide`, `flap`, `mixed`) |
+| `leaves`       |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
+| `rain`         |    ✓    |      ✓      |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
+| `snow`         |    ✓    |      ✓      |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
+| `eagles`       |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |     ✓ (`glide`, `flap`)      |
+| `rats`         |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
+| `sakurabloom`  |    ✓    |      ✓      |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
+| `sakurablossom`|    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
 
 #### Particle Effect Options
 

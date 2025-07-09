@@ -122,11 +122,11 @@ export class FilterEffectsManagement extends FXMasterBaseFormV2 {
     const hasFilters = Object.keys(current).some((key) => !key.startsWith("-="));
     const btn = document.querySelector(`[data-tool="filters"]`);
     if (hasFilters) {
-      btn.style.setProperty("background-color", "var(--color-warm-2)");
-      btn.style.setProperty("border-color", "var(--color-warm-3)");
+      btn?.style?.setProperty("background-color", "var(--color-warm-2)");
+      btn?.style?.setProperty("border-color", "var(--color-warm-3)");
     } else {
-      btn.style.removeProperty("background-color");
-      btn.style.removeProperty("border-color");
+      btn?.style?.removeProperty("background-color");
+      btn?.style?.removeProperty("border-color");
     }
   }
 

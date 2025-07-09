@@ -7,9 +7,9 @@ import {
 } from "./utils.js";
 import { isEnabled } from "./settings.js";
 import { SpecialEffectsManagement } from "./special-effects/applications/special-effects-management.js";
-import { ParticleEffectsRegionBehaviorConfig } from "./particle-effects/particle-effects-region-config.js";
 import { SpecialEffectsLayer } from "./special-effects/special-effects-layer.js";
 import { drawDrawingsMaskIfCurrentScene } from "./particle-effects/drawings-mask.js";
+import { ParticleEffectsRegionBehaviorConfig } from "./particle-effects/particle-effects-region-config.js";
 
 const TYPE = `${packageId}.particleEffectsRegion`;
 
@@ -48,15 +48,6 @@ export const registerHooks = function () {
     drawDrawingsMaskIfCurrentScene(behaviorDoc.parent.parent);
   });
 
-  Hooks.on("canvasInit", async () => {
-    const { ParticleRegionBehaviorType } = await import("./particle-effects/particle-effects-region-behavior.js");
-
-    CONFIG.RegionBehavior.dataModels[TYPE] = ParticleRegionBehaviorType;
-    CONFIG.RegionBehavior.typeIcons[TYPE] = "fas fa-hat-wizard";
-    CONFIG.RegionBehavior.typeLabels[TYPE] = "FXMASTER.ParticleEffectRegionBehaviorName";
-    CONFIG.RegionBehavior.sheetClasses[TYPE]["core.RegionBehaviorConfig"].cls = ParticleEffectsRegionBehaviorConfig;
-  });
-
   Hooks.on("canvasReady", () => {
     if (!canvas.fxmaster) return;
     for (const region of canvas.regions.placeables) {
@@ -72,7 +63,7 @@ export const registerHooks = function () {
       const content = `
         <div class="fxmaster-announcement" style="border:2px solid #4A90E2; border-radius:8px; padding:12px; background:#f4faff;">
           <h3 style="margin:0; color:#2a4365;">🎉Welcome to Gambit's FXMaster!</h3>
-            <p style="color: #2a4365; font-size: 1em;">This V${version} release resolves a few issues with the initial Animation Scan in some worlds. Check out the readme and release notes on <a href="https://github.com/gambit07/fxmaster" target="_blank" style="color: #3182ce; text-decoration: none; font-weight: bold;">GitHub</a>.</p>
+            <p style="color: #2a4365; font-size: 1em;">This V${version} release resolves an issue with region suppression and initialization. Check out the readme and release notes on <a href="https://github.com/gambit07/fxmaster" target="_blank" style="color: #3182ce; text-decoration: none; font-weight: bold;">GitHub</a>.</p>
             <p style="color: #2a4365; font-size: 1em;">If you'd like to support my development time and get access to new Particle Effects <span style="color:#C11C84">Sakura Bloom & Sakura Blossoms</span>, please consider supporting the project on <a href="https://patreon.com/GambitsLounge" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Patreon</a>.</p>
           </div>
         `;
@@ -81,9 +72,9 @@ export const registerHooks = function () {
       game.settings.set(packageId, "releaseMessage", version);
     }
 
-    if (isEnabled()) {
-      await parseSpecialEffects();
-    }
+    CONFIG.RegionBehavior.sheetClasses[TYPE]["core.RegionBehaviorConfig"].cls = ParticleEffectsRegionBehaviorConfig;
+
+    if (isEnabled()) await parseSpecialEffects();
   });
 
   Hooks.on("updateScene", (scene, data) => {

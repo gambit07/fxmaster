@@ -129,24 +129,17 @@ function drawShapeToMask(mask, drawing) {
 function drawRegionShapeToMask(mask, region) {
   for (const s of region.document.shapes) {
     switch (s.type) {
-      case "polygon": {
-        const pts = s.points.map((p, i) => (i % 2 === 0 ? p + s.x : p + s.y));
-        mask.drawPolygon(pts);
+      case "polygon":
+        mask.drawShape(new PIXI.Polygon(s.points));
         break;
-      }
-      case "ellipse": {
-        mask.drawCircle(s.x, s.y, s.distance);
+      case "ellipse":
+        mask.drawEllipse(s.x, s.y, s.radiusX, s.radiusY);
         break;
-      }
-      case "rectangle": {
+      case "rectangle":
         mask.drawRect(s.x, s.y, s.width, s.height);
         break;
-      }
-      default: {
-        const pts = s.points.map((p, i) => (i % 2 === 0 ? p + s.x : p + s.y));
-        mask.drawPolygon(pts);
-        break;
-      }
+      default:
+        mask.drawShape(new PIXI.Polygon(s.points));
     }
   }
 }
