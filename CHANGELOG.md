@@ -1,5 +1,10 @@
 # Changelog
 
+## [v6.0.6] - 2025-07-09
+- Resolve issue with region initialization being done too late causing an issue where tokens were unable to move
+- Resolve issue with the 'Suppress Weather' region behavior not working for ellipse and polygon region types
+- Couple small bugfixes for css button color assignment
+
 ## [v6.0.5] - 2025-07-08
 - Resolve doubling up of the initial Animation Module scan when switching scenes
 - Removed thumbnail scan on first Animation Module scan. The process can take quite a while, especially on hosted services, so it will only be run when done manually through the Module settings page.
