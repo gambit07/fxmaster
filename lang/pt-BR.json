@@ -140,7 +140,9 @@
     "SearchQueries": "Consultas avançadas suportadas, ex: (eldritch OR arrow) AND NOT blast",
     "SequencerPath": "Caminho do Banco do Sequencer",
     "Update": "Atualizar Efeito de Animações",
-    "RefreshDbError": "FXMaster | Nenhum efeito de animação encontrado no Banco FXMaster. Aguarde a conclusão da Busca de Animações atual ou acesse 'Configurações de Módulos -> FXMaster -> Atualizar Banco de Animações' para executar a Busca de Animações novamente."
+    "RefreshDbError": "FXMaster | Nenhum efeito de animação encontrado no Banco FXMaster. Aguarde a conclusão da Busca de Animações atual ou acesse 'Configurações de Módulos -> FXMaster -> Atualizar Banco de Animações' para executar a Busca de Animações novamente.",
+    "RefreshDbEmpty": "FXMaster | Nenhum efeito de animação está presente no banco de dados do FXMaster. O FXMaster preenche as animações da sua própria pasta de animações personalizadas especificada nas configurações do módulo ou de provedores como JB2A, Boss Loot, etc. Se animações foram adicionadas, acesse 'Configurações de Módulos -> FXMaster -> Atualizar Banco de Animações' para executar novamente a opção 'Pesquisar Animações'.",
+    "ScanCompleteEmpty": "FXMaster | Busca de Animações Concluída - Nenhum efeito de animação encontrado. O FXMaster preenche as animações da sua própria pasta de animações personalizadas especificada nas configurações do módulo ou de provedores como JB2A, Boss Loot, etc."
   },
   "FXMASTER.FilterEffectTypeNotFound": "Nenhum efeito de filtro encontrado para o tipo: {type}",
   "FXMASTER.FilterEffectTypeUnknown": "O efeito do filtro '{id}' é do tipo desconhecido '{type}'. Será ignorado.",
@@ -149,5 +151,7 @@
   "FXMASTER.ParticleEffectRegionBehaviorName": "FXMaster: Efeitos de Partículas",
   "FXMASTER.ParticleEffectSakuraBlossoms": "Flores de Cerejeira",
   "FXMASTER.ParticleEffectSakuraBloom": "Flor de Cerejeira",
-  "FXMASTER.ResetPassiveSuccess": "Parâmetros de Partículas e Filtros redefinidos com sucesso"
+  "FXMASTER.ResetPassiveSuccess": "Parâmetros de Partículas e Filtros redefinidos com sucesso",
+  "FXMASTER.Yes": "Sim",
+  "FXMASTER.No": "Não"
 }
