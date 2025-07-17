@@ -140,7 +140,9 @@
     "SearchQueries": "Obsługiwane zaawansowane zapytania, na przykład: (eldritch OR arrow) AND NOT blast",
     "SequencerPath": "Ścieżka BD sekwencera",
     "Update": "Aktualizuj efekt animacji",
-    "RefreshDbError": "FXMaster | Nie znaleziono efektów animacji w bazie danych FXMaster. Poczekaj na zakończenie bieżącego skanowania animacji lub przejdź do „Ustawienia modułu -> FXMaster -> Odśwież bazę danych animacji”, aby ponownie uruchomić skanowanie animacji."
+    "RefreshDbError": "FXMaster | Nie znaleziono efektów animacji w bazie danych FXMaster. Poczekaj na zakończenie bieżącego skanowania animacji lub przejdź do „Ustawienia modułu -> FXMaster -> Odśwież bazę danych animacji”, aby ponownie uruchomić skanowanie animacji.",
+    "RefreshDbEmpty": "FXMaster | Brak efektów animacji w bazie danych FXMaster DB. FXMaster wypełnia animacje z własnego folderu animacji określonego w ustawieniach modułu lub od dostawców, takich jak JB2A, Boss Loot itp. Jeśli animacje zostały dodane, przejdź do „Ustawienia modułu -> FXMaster -> Odśwież bazę danych animacji”, aby ponownie uruchomić skanowanie animacji.",
+    "ScanCompleteEmpty": "FXMaster | Skanowanie animacji zakończone - Nie znaleziono efektów animacji. FXMaster wypełnia animacje z własnego folderu animacji określonego w ustawieniach modułu lub od dostawców, takich jak JB2A, Boss Loot itp. Jeśli animacje zostały dodane, przejdź do „Ustawienia modułu -> FXMaster -> Odśwież bazę danych animacji”, aby ponownie uruchomić skanowanie animacji."
   },
   "FXMASTER.FilterEffectTypeNotFound": "Nie znaleziono efektu filtra dla typu: {type}",
   "FXMASTER.FilterEffectTypeUnknown": "Efekt filtru '{id}' jest nieznanego typu '{type}', pomijam.",
@@ -149,5 +151,7 @@
   "FXMASTER.ParticleEffectRegionBehaviorName": "FXMaster: Efekty cząsteczkowe",
   "FXMASTER.ParticleEffectSakuraBlossoms": "Kwiaty Wiśni",
   "FXMASTER.ParticleEffectSakuraBloom": "Kwitnąca Wiśnia",
-  "FXMASTER.ResetPassiveSuccess": "Parametry cząstek i filtra zostały pomyślnie zresetowane"
+  "FXMASTER.ResetPassiveSuccess": "Parametry cząstek i filtra zostały pomyślnie zresetowane",
+  "FXMASTER.Yes": "Tak",
+  "FXMASTER.No": "Nie"
 }
