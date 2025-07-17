@@ -12,7 +12,7 @@ module.exports.writeVersion = function (contents, version) {
   const json = JSON.parse(contents);
   json.license = `${githubRawURL}/${repository}/v${version}/LICENSE.md`;
   json.readme = `${githubRawURL}/${repository}/v${version}/README.md`;
-  json.changelog = `${githubRawURL}/${repository}/v${version}/CHANGELOG.md`;
+  json.changelog = `${githubURL}/${repository}/releases/tag/v${version}`;
   json.version = version;
   json.download = `${githubURL}/${repository}/releases/download/v${version}/module.zip`;
   return stringifyPackage(json, 4);

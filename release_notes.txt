@@ -1,3 +1,5 @@
-- Resolve issue with region initialization being done too late causing an issue where tokens were unable to move
-- Resolve issue with the 'Suppress Weather' region behavior not working for ellipse and polygon region types
-- Couple small bugfixes for css button color assignment
+- Updated Clear Particle and Filter Effects button dialog to dialogV2. Now clears Particle and Filter Sidebar controls buttons highlighting immediately.
+- Resolve issue with region masking on one scene applying across multiple scenes even if no region was present on other scenes
+- Updated the onUpdateParticleEffects api to allow the particle effects app window buttons to end effects when relevant
+- Added additional logging to animation effects to give clearer direction if no animation files are found
+- Additional localization keys added

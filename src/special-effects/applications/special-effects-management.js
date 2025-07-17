@@ -48,6 +48,13 @@ export class SpecialEffectsManagement extends FXMasterBaseFormV2 {
         effects: [],
         tags: [],
       };
+    } else if (buckets.__emptyScan) {
+      ui.notifications.error(game.i18n.localize("FXMASTER.AnimationEffect.RefreshDbEmpty"));
+      this.close();
+      return {
+        effects: [],
+        tags: [],
+      };
     }
 
     const overrides = game.settings.get(packageId, "customSpecialEffects") || {};

@@ -16,6 +16,7 @@ export async function resetFlag(document, key, value) {
       value[`-=${k}`] = null;
     });
   }
+
   return document.setFlag(packageId, key, value);
 }
 
@@ -96,12 +97,19 @@ export async function onSwitchParticleEffects(parameters) {
  * @param {Array<object>} parametersArray The array of parameters defining the effects to be activated
  */
 export async function onUpdateParticleEffects(parametersArray) {
-  if (!canvas.scene) {
-    return;
-  }
+  if (!canvas.scene) return;
 
-  const effects = Object.fromEntries(parametersArray.map((parameters) => [foundry.utils.randomID(), parameters]));
-  await resetFlag(canvas.scene, "effects", effects);
+  const scene = canvas.scene;
+  // Grab whatever is already there (or {})
+  const old = scene.getFlag(packageId, "effects") || {};
+
+  // Map new parameters under fresh IDs
+  const added = Object.fromEntries(parametersArray.map((p) => [foundry.utils.randomID(), p]));
+
+  // Merge — this leaves old keys alone, adds (or overwrites) the new ones
+  const merged = mergeObject(old, added, { inplace: false });
+
+  await resetFlag(canvas.scene, "effects", merged);
 }
 
 /**

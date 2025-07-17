@@ -130,6 +130,13 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
       current[`core_${type}`] = { type, options };
     } else {
       delete current[`core_${type}`];
+
+      for (const [id, effect] of Object.entries(current)) {
+        if (id.startsWith("core_")) continue;
+        if (effect.type === type) {
+          delete current[id];
+        }
+      }
     }
 
     await resetFlag(scene, "effects", current);

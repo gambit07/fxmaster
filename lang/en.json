@@ -140,7 +140,9 @@
     "SearchQueries": "Advanced queries supported, ex: (eldritch OR arrow) AND NOT blast",
     "SequencerPath": "Sequencer DB Path",
     "Update": "Update Animation Effect",
-    "RefreshDbError": "FXMaster | No animation effects found in FXMaster DB. Wait for the current Animation Scan to complete, or go to 'Module Settings -> FXMaster -> Refresh Animations Database' to re-run the Animation Scan."
+    "RefreshDbError": "FXMaster | No animation effects found in FXMaster DB. Wait for the current Animation Scan to complete, or go to 'Module Settings -> FXMaster -> Refresh Animations Database' to re-run the Animation Scan.",
+    "RefreshDbEmpty": "FXMaster | No animation effects present in the FXMaster DB. FXMaster populates animations from your own custom animations folder specified in the module settings, or from providers such as JB2A, Boss Loot, etc. If animations have been added, go to 'Module Settings -> FXMaster -> Refresh Animations Database' to re-run the Animation Scan.",
+    "ScanCompleteEmpty": "FXMaster | Animation Scan Complete - No animation effects found. FXMaster populates animations from your own custom animations folder specified in the module settings, or from providers such as JB2A, Boss Loot, etc."
   },
   "FXMASTER.FilterEffectTypeNotFound": "No filter effect found for type: {type}",
   "FXMASTER.FilterEffectTypeUnknown": "Filter effect '{id}' is of unknown type '{type}', skipping it.",
@@ -149,5 +151,7 @@
   "FXMASTER.ParticleEffectRegionBehaviorName": "FXMaster: Particle Effects",
   "FXMASTER.ParticleEffectSakuraBlossoms": "Sakura Blossoms",
   "FXMASTER.ParticleEffectSakuraBloom": "Sakura Bloom",
-  "FXMASTER.ResetPassiveSuccess": "Particle and Filter parameters successfully reset"
+  "FXMASTER.ResetPassiveSuccess": "Particle and Filter parameters successfully reset",
+  "FXMASTER.Yes": "Yes",
+  "FXMASTER.No": "No"
 }

@@ -33,7 +33,7 @@ export function drawDrawingsMaskIfCurrentScene(scene) {
   }
 }
 
-function drawDrawingsMask() {
+export function drawDrawingsMask() {
   const msk = canvas.masks.depth;
   if (msk.fxmasterDrawingsMask) {
     msk.removeChild(msk.fxmasterDrawingsMask);
@@ -102,7 +102,8 @@ function createInvertedMask(maskedDrawings, maskedRegions) {
  * @param {Drawing}       drawing The drawing of which to draw the shape
  */
 function drawShapeToMask(mask, drawing) {
-  const shape = drawing.shape.geometry.graphicsData[0].shape.clone();
+  const shape = drawing?.shape?.geometry?.graphicsData[0]?.shape?.clone();
+  if (!shape) return;
   switch (drawing.type) {
     case CONFIG.fxmaster.DrawingNS.SHAPE_TYPES.ELLIPSE: {
       shape.x = drawing.center.x;

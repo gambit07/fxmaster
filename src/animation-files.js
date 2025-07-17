@@ -181,7 +181,13 @@ export async function registerAnimations({ initialScan = false } = {}) {
   }
 
   if (notifEl) ui.notifications.clear(notifId);
-  ui.notifications.info(game.i18n.localize("FXMASTER.AnimationEffect.ScanComplete"));
+
+  const isEmpty = Object.keys(effectsMap).length === 0;
+  if(isEmpty) {
+    ui.notifications.warn(game.i18n.localize("FXMASTER.AnimationEffect.ScanCompleteEmpty"));
+    effectsMap.__emptyScan = true;
+  }
+  else ui.notifications.info(game.i18n.localize("FXMASTER.AnimationEffect.ScanComplete"));
 
   return effectsMap;
 }

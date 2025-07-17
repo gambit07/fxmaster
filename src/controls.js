@@ -86,17 +86,47 @@ function getSceneControlButtons(t) {
       order: 60,
       button: true,
       [onEvent]: () => {
-        Dialog.confirm({
-          title: game.i18n.localize("FXMASTER.ClearParticleAndFilterEffectsTitle"),
-          content: game.i18n.localize("FXMASTER.ClearParticleAndFilterEffectsContent"),
-          yes: () => {
-            if (canvas.scene) {
-              FilterManager.instance.removeAll();
-              canvas.scene.unsetFlag(packageId, "effects");
-            }
+        const clearFxDialog = new foundry.applications.api.DialogV2({
+          window: {
+            title: game.i18n.localize("FXMASTER.ClearParticleAndFilterEffectsTitle"),
+            id: "clearFx",
+            minimizable: false,
           },
-          defaultYes: true,
+          content: game.i18n.localize("FXMASTER.ClearParticleAndFilterEffectsContent"),
+          buttons: [
+            {
+              action: "yes",
+              label: game.i18n.localize("FXMASTER.Yes"),
+              icon: "fas fa-check",
+              callback: () => {
+                if (canvas.scene) {
+                  FilterManager.instance.removeAll();
+                  canvas.scene.unsetFlag(packageId, "effects");
+
+                  const btnParticles = document.querySelector(`[data-tool="particle-effects"]`);
+                  btnParticles?.style?.removeProperty("background-color");
+                  btnParticles?.style?.removeProperty("border-color");
+                  const btnFilters = document.querySelector(`[data-tool="filters"]`);
+                  btnFilters?.style?.removeProperty("background-color");
+                  btnFilters?.style?.removeProperty("border-color");
+                }
+              },
+              default: true,
+            },
+            {
+              action: "no",
+              label: game.i18n.localize("FXMASTER.No"),
+              icon: "fas fa-times",
+              callback: () => {
+                return false;
+              },
+            },
+          ],
+          close: () => {},
+          rejectClose: false,
         });
+
+        return clearFxDialog.render(true);
       },
       visible: game.user.isGM,
     },

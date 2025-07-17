@@ -8,7 +8,7 @@ import {
 import { isEnabled } from "./settings.js";
 import { SpecialEffectsManagement } from "./special-effects/applications/special-effects-management.js";
 import { SpecialEffectsLayer } from "./special-effects/special-effects-layer.js";
-import { drawDrawingsMaskIfCurrentScene } from "./particle-effects/drawings-mask.js";
+import { drawDrawingsMaskIfCurrentScene, drawDrawingsMask } from "./particle-effects/drawings-mask.js";
 import { ParticleEffectsRegionBehaviorConfig } from "./particle-effects/particle-effects-region-config.js";
 
 const TYPE = `${packageId}.particleEffectsRegion`;
@@ -50,10 +50,10 @@ export const registerHooks = function () {
 
   Hooks.on("canvasReady", () => {
     if (!canvas.fxmaster) return;
+    drawDrawingsMask();
+
     for (const region of canvas.regions.placeables) {
       canvas.fxmaster.drawRegionParticleEffects(region, { soft: true });
-
-      drawDrawingsMaskIfCurrentScene(region?.document.parent);
     }
   });
 
