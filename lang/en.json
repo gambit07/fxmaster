@@ -153,5 +153,7 @@
   "FXMASTER.ParticleEffectSakuraBloom": "Sakura Bloom",
   "FXMASTER.ResetPassiveSuccess": "Particle and Filter parameters successfully reset",
   "FXMASTER.Yes": "Yes",
-  "FXMASTER.No": "No"
+  "FXMASTER.No": "No",
+  "FXMASTER.ParticleEffectFireflies": "Fireflies",
+  "FXMASTER.ParticleEffectFirefliesWeatherEffectsConfig": "Fireflies (FXMaster)"
 }

@@ -1,5 +1,3 @@
-- Updated Clear Particle and Filter Effects button dialog to dialogV2. Now clears Particle and Filter Sidebar controls buttons highlighting immediately.
-- Resolve issue with region masking on one scene applying across multiple scenes even if no region was present on other scenes
-- Updated the onUpdateParticleEffects api to allow the particle effects app window buttons to end effects when relevant
-- Added additional logging to animation effects to give clearer direction if no animation files are found
-- Additional localization keys added
+- Updated regions Suppress Weather functionality to allow scene level particle effects to play in areas marked as a hole within a Suppress Weather region
+- Added a few localization keys for July's new FXMaster+ effects
+- Updated pt-br and pl translations, thanks Kharmans and Lioheart!

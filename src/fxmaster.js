@@ -8,6 +8,7 @@ import { SpecialEffectsLayer } from "./special-effects/special-effects-layer.js"
 import { registerHandlebarsHelpers } from "./handlebars-helpers.js";
 import { registerGetSceneControlButtonsHook } from "./controls.js";
 import { ParticleRegionBehaviorType } from "./particle-effects/particle-effects-region-behavior.js";
+import { DefaultRectangleSpawnMixin } from "./particle-effects/effects/mixins/default-rectangle-spawn.js";
 import { packageId } from "./constants.js";
 import "../css/filters-config.css";
 import "../css/particle-effects-config.css";
@@ -39,6 +40,7 @@ Hooks.once("init", function () {
     filterEffects: FXMASTER.filterEffects,
     particleEffects: FXMASTER.particleEffects,
     specialEffects: FXMASTER.specialEffects,
+    DefaultRectangleSpawnMixin: DefaultRectangleSpawnMixin,
   });
 
   const weatherEffects = Object.fromEntries(
