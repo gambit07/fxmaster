@@ -1,5 +1,10 @@
 # Changelog
 
+## [v6.0.8] - 2025-07-19
+- Updated regions Suppress Weather functionality to allow scene level particle effects to play in areas marked as a hole within a Suppress Weather region
+- Added a few localization keys for July's new FXMaster+ effects
+- Updated pt-br and pl translations, thanks Kharmans and Lioheart!
+
 ## [v6.0.7] - 2025-07-16
 - Updated Clear Particle and Filter Effects button dialog to dialogV2. Now clears Particle and Filter Sidebar controls buttons highlighting immediately.
 - Resolve issue with region masking on one scene applying across multiple scenes even if no region was present on other scenes
