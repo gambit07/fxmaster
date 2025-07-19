@@ -153,5 +153,7 @@
   "FXMASTER.ParticleEffectSakuraBloom": "Flor de Cerejeira",
   "FXMASTER.ResetPassiveSuccess": "Parâmetros de Partículas e Filtros redefinidos com sucesso",
   "FXMASTER.Yes": "Sim",
-  "FXMASTER.No": "Não"
+  "FXMASTER.No": "Não",
+  "FXMASTER.ParticleEffectFireflies": "Vagalumes",
+  "FXMASTER.ParticleEffectFirefliesWeatherEffectsConfig": "Vagalumes (FXMaster)"
 }
