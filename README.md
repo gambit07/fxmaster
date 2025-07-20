@@ -311,7 +311,7 @@ You can get a complete list by typing `CONFIG.fxmaster.filters` in your web cons
 #### Available Particle Effects With Supported Options
 
 | Type           | `FXMaster+` | `scale` | `direction` | `speed` | `lifetime` | `density` | `alpha` | `tint` |         `animations`         |
-| -------------- | :-----: | :---------: | :-----: | :--------: | :-------: | :-----: | :----: | :--------------------------: |
+| -------------- | :-----: | :-----: | :---------: | :-----: | :--------: | :-------: | :-----: | :----: | :--------------------------: |
 | `snowstorm`    |        |    ✓    |      ✓      |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
 | `bubbles`      |        |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
 | `clouds`       |        |    ✓    |      ✓      |    ✓    |     ✓      |           |    ✓    |   ✓    |                              |
