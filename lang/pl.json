@@ -153,5 +153,7 @@
   "FXMASTER.ParticleEffectSakuraBloom": "Kwitnąca Wiśnia",
   "FXMASTER.ResetPassiveSuccess": "Parametry cząstek i filtra zostały pomyślnie zresetowane",
   "FXMASTER.Yes": "Tak",
-  "FXMASTER.No": "Nie"
+  "FXMASTER.No": "Nie",
+  "FXMASTER.ParticleEffectFireflies": "Świetliki",
+  "FXMASTER.ParticleEffectFirefliesWeatherEffectsConfig": "Świetliki (FXMaster)"
 }
