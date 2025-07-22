@@ -1,5 +1,10 @@
 # Changelog
 
+## [v6.0.9] - 2025-07-21
+- Resolved FXMaster+ effects not showing up in region config
+- Enabled proper masking for the firefly effect
+- Updated pt-br and pl translations, thanks Kharmans and Lioheart!
+
 ## [v6.0.8] - 2025-07-19
 - Updated regions Suppress Weather functionality to allow scene level particle effects to play in areas marked as a hole within a Suppress Weather region
 - Added a few localization keys for July's new FXMaster+ effects
