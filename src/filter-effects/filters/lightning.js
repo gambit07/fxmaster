@@ -5,14 +5,14 @@ import { FXMasterFilterEffectMixin } from "./mixins/filter.js";
 export class LightningFilter extends FXMasterFilterEffectMixin(PIXI.filters.AdjustmentFilter) {
   constructor(options, id) {
     super(options, id);
-    this.nextLigthningTime = canvas.app.ticker.lastTime / 10;
+    this.nextLightningTime = canvas.app.ticker.lastTime / 10;
   }
 
   /**
    * The time when the next lightning flash should appear.
    * @type {number}
    */
-  nextLigthningTime;
+  nextLightningTime;
 
   /** @override */
   static label = "FXMASTER.FilterEffectLightning";
@@ -67,8 +67,8 @@ export class LightningFilter extends FXMasterFilterEffectMixin(PIXI.filters.Adju
 
   /** @override */
   async step() {
-    if (canvas.app.ticker.lastTime / 10 > this.nextLigthningTime) {
-      this.nextLigthningTime = canvas.app.ticker.lastTime / 10 + 40 + this.options.frequency * Math.random();
+    if (canvas.app.ticker.lastTime / 10 > this.nextLightningTime) {
+      this.nextLightningTime = canvas.app.ticker.lastTime / 10 + 40 + this.options.frequency * Math.random();
 
       const animate = (value) => {
         const attributes = [

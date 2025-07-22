@@ -32,16 +32,14 @@ Hooks.once("init", function () {
 
   const TYPE = `${packageId}.particleEffectsRegion`;
 
-  CONFIG.RegionBehavior.dataModels[TYPE] = ParticleRegionBehaviorType;
-  CONFIG.RegionBehavior.typeIcons[TYPE] = "fas fa-hat-wizard";
-  CONFIG.RegionBehavior.typeLabels[TYPE] = "FXMASTER.ParticleEffectRegionBehaviorName";
-
   foundry.utils.mergeObject(CONFIG.fxmaster, {
     filterEffects: FXMASTER.filterEffects,
     particleEffects: FXMASTER.particleEffects,
     specialEffects: FXMASTER.specialEffects,
     DefaultRectangleSpawnMixin: DefaultRectangleSpawnMixin,
   });
+
+  Hooks.callAll(`${packageId}.preRegisterParticleEffects`, CONFIG.fxmaster);
 
   const weatherEffects = Object.fromEntries(
     Object.entries(CONFIG.fxmaster.particleEffects).map(([id, effectClass]) => [
@@ -56,6 +54,9 @@ Hooks.once("init", function () {
 
   CONFIG.originalWeatherEffects = CONFIG.weatherEffects;
   CONFIG.weatherEffects = { ...CONFIG.weatherEffects, ...weatherEffects };
+  CONFIG.RegionBehavior.dataModels[TYPE] = ParticleRegionBehaviorType;
+  CONFIG.RegionBehavior.typeIcons[TYPE] = "fas fa-hat-wizard";
+  CONFIG.RegionBehavior.typeLabels[TYPE] = "FXMASTER.ParticleEffectRegionBehaviorName";
 });
 
 registerGetSceneControlButtonsHook();

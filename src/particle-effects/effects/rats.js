@@ -23,7 +23,7 @@ export class RatsParticleEffect extends DefaultRectangleSpawnMixin(FXMasterParti
     return foundry.utils.mergeObject(
       super.parameters,
       {
-        density: { min: 0.001, value: 0.006, max: 0.1, step: 0.001, decimals: 3 },
+        density: { min: 0.001, value: 0.006, max: 0.3, step: 0.001, decimals: 3 },
         "-=direction": null,
       },
       { performDeletions: true },

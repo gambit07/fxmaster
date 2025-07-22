@@ -1,3 +1,3 @@
-- Updated regions Suppress Weather functionality to allow scene level particle effects to play in areas marked as a hole within a Suppress Weather region
-- Added a few localization keys for July's new FXMaster+ effects
+- Resolved FXMaster+ effects not showing up in region config
+- Enabled proper masking for the firefly effect
 - Updated pt-br and pl translations, thanks Kharmans and Lioheart!

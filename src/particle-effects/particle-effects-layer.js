@@ -111,6 +111,13 @@ export class ParticleEffectsLayer extends CONFIG.fxmaster.FullCanvasObjectMixinN
       }),
     );
 
+    const belowDarknessLayer = new PIXI.Container();
+    const aboveDarknessLayer = new PIXI.Container();
+
+    this.addChild(belowDarknessLayer);
+    if (canvas.lighting) canvas.lighting.addChild(aboveDarknessLayer);
+    else this.addChild(aboveDarknessLayer);
+
     const flags = canvas.scene.getFlag(packageId, "effects") ?? {};
     if (Object.keys(flags).length > 0) {
       this.occlusionFilter.enabled = true;
@@ -128,7 +135,11 @@ export class ParticleEffectsLayer extends CONFIG.fxmaster.FullCanvasObjectMixinN
       ec.zIndex = zIndex++;
       ec.blendMode = PIXI.BLEND_MODES.NORMAL;
 
-      this.addChild(ec);
+      if (type === "fireflies") {
+        aboveDarknessLayer.addChild(ec);
+      } else {
+        belowDarknessLayer.addChild(ec);
+      }
       this.particleEffects.set(id, ec);
       ec.play({ prewarm: !soft });
     }
@@ -166,6 +177,7 @@ export class ParticleEffectsLayer extends CONFIG.fxmaster.FullCanvasObjectMixinN
       for (const [type, params] of Object.entries(flags)) {
         const EffectClass = CONFIG.fxmaster.particleEffects[type];
         if (!EffectClass) continue;
+        const { layerLevel = "belowDarkness" } = EffectClass.defaultConfig || {};
 
         const container = new PIXI.Container();
 
@@ -205,9 +217,15 @@ export class ParticleEffectsLayer extends CONFIG.fxmaster.FullCanvasObjectMixinN
         fx.blendMode = PIXI.BLEND_MODES.NORMAL;
 
         container.addChild(fx);
-        this.addChild(container);
-        fx.play({ prewarm: !soft });
+        if (layerLevel === "aboveDarkness") {
+          const regionWrapper = new PIXI.Container();
+          if (canvas.lighting) canvas.lighting.addChild(regionWrapper);
+          regionWrapper.addChild(container);
+        } else {
+          this.addChild(container);
+        }
 
+        fx.play({ prewarm: !soft });
         this.regionEffects.get(regionId).push(fx);
       }
     }
