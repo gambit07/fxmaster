@@ -7,6 +7,7 @@
 
 **<p>Any support via the <a href="https://www.patreon.com/GambitsLounge" target="_blank" rel="nofollow noopener">Patreon</a> or <a href="https://ko-fi.com/gambit07" target="_blank" rel="nofollow noopener">Ko-fi</a> is greatly appreciated! If you are a Patreon subscriber you will receive access to the FXMaster+ module. FXMaster+ can be accessed from Patreon, and it's where I will be adding new particle effects and filters moving forward. For the month of August, it will get you access to the <span style="color:green">Magic Crystals</span>, <span style="color:yellow">Fireflies</span>, <span style="color:pink">Sakura Bloom</span>, and <span style="color:pink">Sakura Blossoms</span> Particle Effects previewed below:</p>**
 
+<video autoplay muted playsinline loop preload="auto" src="https://github.com/user-attachments/assets/7e35693a-094b-43d0-9249-584216b1df16"></video>
 <video autoplay muted playsinline loop preload="auto" src="https://github.com/user-attachments/assets/860557a5-602e-4e80-a241-af06db3b2c1f"></video>
 <video autoplay muted playsinline loop preload="auto" src="https://github.com/user-attachments/assets/dfc880e7-f148-4db1-b509-2ef2332ede7a"></video>
 
