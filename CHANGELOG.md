@@ -1,5 +1,10 @@
 # Changelog
 
+## [v6.0.10] - 2025-08-29
+- Resolved FXMaster+ effects not showing up in region config
+- Enabled proper masking for the firefly effect
+- Updated pt-br and pl translations, thanks Kharmans and Lioheart!
+
 ## [v6.0.9] - 2025-07-21
 - Resolved FXMaster+ effects not showing up in region config
 - Enabled proper masking for the firefly effect
