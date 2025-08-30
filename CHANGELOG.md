@@ -1,5 +1,9 @@
 # Changelog
 
+## [v6.0.11] - 2025-08-29
+- Added a few new localization keys for the monthly FXMaster+ release
+- Made a few tweaks to functionality to support the newest FXMaster+ particle effect, Magic Crystals
+
 ## [v6.0.9] - 2025-07-21
 - Resolved FXMaster+ effects not showing up in region config
 - Enabled proper masking for the firefly effect
