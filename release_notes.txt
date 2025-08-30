@@ -1,3 +1,2 @@
-- Resolved FXMaster+ effects not showing up in region config
-- Enabled proper masking for the firefly effect
-- Updated pt-br and pl translations, thanks Kharmans and Lioheart!
+- Added a few new localization keys for the monthly FXMaster+ release
+- Made a few tweaks to functionality to support the newest FXMaster+ particle effect, Magic Crystals
