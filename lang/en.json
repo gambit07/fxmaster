@@ -155,5 +155,9 @@
   "FXMASTER.Yes": "Yes",
   "FXMASTER.No": "No",
   "FXMASTER.ParticleEffectFireflies": "Fireflies",
-  "FXMASTER.ParticleEffectFirefliesWeatherEffectsConfig": "Fireflies (FXMaster)"
+  "FXMASTER.ParticleEffectFirefliesWeatherEffectsConfig": "Fireflies (FXMaster)",
+  "FXMASTER.ParticleEffectMagicCrystals": "Magic Crystals",
+  "FXMASTER.ParticleEffectMagicCrystalsWeatherEffectsConfig": "Magic Crystals (FXMaster)",
+  "FXMASTER.Spin": "Spin Speed",
+  "FXMASTER.Glow": "Glow"
 }
