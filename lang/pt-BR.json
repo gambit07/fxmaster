@@ -155,5 +155,9 @@
   "FXMASTER.Yes": "Sim",
   "FXMASTER.No": "Não",
   "FXMASTER.ParticleEffectFireflies": "Vagalumes",
-  "FXMASTER.ParticleEffectFirefliesWeatherEffectsConfig": "Vagalumes (FXMaster)"
+  "FXMASTER.ParticleEffectFirefliesWeatherEffectsConfig": "Vagalumes (FXMaster)",
+  "FXMASTER.ParticleEffectMagicCrystals": "Cristais Mágicos",
+  "FXMASTER.ParticleEffectMagicCrystalsWeatherEffectsConfig": "Cristais Mágicos (FXMaster)",
+  "FXMASTER.Spin": "Velocidade de Rotação",
+  "FXMASTER.Glow": "Brilho"
 }
