@@ -1,46 +1,42 @@
+/**
+ * FXMasterParticleEffect (abstract)
+ * ---------------------------------
+ * Base class for particle effects in FXMaster.
+ * - Defines common UI parameters and sensible defaults.
+ * - Maps user options (scale, speed, direction, lifetime, tint, alpha) onto
+ *   PIXI emitter configs.
+ * - Provides helpers for pre-warming (play) and graceful teardown (fadeOut).
+ * - Includes V1→V2 option converters for scene-dimension-aware values.
+ */
+
 import { roundToDecimals } from "../../utils.js";
 
 /**
- * An abstract base class for defining particle-based effects
- * @param {PIXI.Container} parent     The parent container within which the effect is rendered
- * @param {object} [options]          Options passed to the getParticleEmitters method which can be used to customize
- *                                    values of the emitter configuration.
- * @abstract
+ * Abstract particle effect with parameter plumbing and utilities.
+ * Subclasses must provide a PIXI EmitterConfig via `defaultConfig`.
  */
 export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
-  /**
-   * A human-readable label for the particle effect. This can be a localization string.
-   * @type {string}
-   * @override
-   */
-  static label = "FXMASTER.ParticleEffect";
+  /** Human-readable label, typically a localization key. */
+  static label = "FXMASTER.Common.ParticleEffect";
 
-  /**
-   * The weather effect group this effect belongs to.
-   * @type {string}
-   */
+  /** Effect group used by the weather UI. */
   static get group() {
     return "other";
   }
 
-  /** @type {string} */
+  /** Icon path shown in the UI. */
   static get icon() {
     return "modules/fxmaster/assets/particle-effects/icons/snow.webp";
   }
 
+  /** Parameter schema used to render controls and hold defaults. */
   static get parameters() {
     return {
-      scale: {
-        label: "FXMASTER.Scale",
-        type: "range",
-        min: 0.1,
-        value: 1,
-        max: 5,
-        step: 0.1,
-        decimals: 1,
-      },
+      belowTokens: { label: "FXMASTER.Params.BelowTokens", type: "checkbox", value: false },
+      tint: { label: "FXMASTER.Params.Tint", type: "color", value: { value: "#FFFFFF", apply: false } },
+      scale: { label: "FXMASTER.Params.Scale", type: "range", min: 0.1, value: 1, max: 5, step: 0.1, decimals: 1 },
       direction: {
-        label: "FXMASTER.Direction",
+        label: "FXMASTER.Params.Direction",
         type: "range",
         min: 0,
         value: this.defaultDirection,
@@ -48,17 +44,9 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
         step: 5,
         decimals: 0,
       },
-      speed: {
-        label: "FXMASTER.Speed",
-        type: "range",
-        min: 0.1,
-        value: 1,
-        max: 5,
-        step: 0.1,
-        decimals: 1,
-      },
+      speed: { label: "FXMASTER.Params.Speed", type: "range", min: 0.1, value: 1, max: 5, step: 0.1, decimals: 1 },
       lifetime: {
-        label: "FXMASTER.Lifetime",
+        label: "FXMASTER.Params.Lifetime",
         type: "range",
         min: 0.1,
         value: 1,
@@ -67,7 +55,7 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
         decimals: 1,
       },
       density: {
-        label: "FXMASTER.Density",
+        label: "FXMASTER.Params.Density",
         type: "range",
         min: 0.1,
         value: 0.5,
@@ -75,49 +63,32 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
         step: 0.1,
         decimals: 1,
       },
-      alpha: {
-        label: "FXMASTER.Opacity",
-        type: "range",
-        min: 0,
-        value: 1,
-        max: 1,
-        step: 0.1,
-        decimals: 1,
-      },
-      tint: {
-        label: "FXMASTER.Tint",
-        type: "color",
-        value: {
-          value: "#FFFFFF",
-          apply: false,
-        },
-      },
+      alpha: { label: "FXMASTER.Params.Opacity", type: "range", min: 0, value: 1, max: 1, step: 0.1, decimals: 1 },
     };
   }
 
-  /**
-   * Merge the given options with the default parameters.
-   */
+  /** Merge provided options into the parameter schema without inserting new keys. */
   static mergeWithDefaults(options) {
     return foundry.utils.mergeObject(this.parameters, options, { insertKeys: false, inplace: false });
   }
 
   /**
-   * Return the default config for this effect.
-   * @abstract
+   * Default PIXI emitter configuration for the effect.
+   * Subclasses must override.
    * @returns {PIXI.particles.EmitterConfigV3}
    */
   static get defaultConfig() {
     throw new Error("Subclasses of FXMasterParticleEffect must implement defaultConfig");
   }
 
+  /** Rounded default direction derived from the default config, if any. */
   static get defaultDirection() {
     const step = 5;
 
     const rotationBehavior = this.defaultConfig.behaviors.find((b) => b.type === "rotation");
     if (rotationBehavior !== undefined) {
       const avg = (rotationBehavior.config.minStart + rotationBehavior.config.maxStart) / 2;
-      return Math.round(avg / step) * step; // ← force valid
+      return Math.round(avg / step) * step;
     }
 
     const rotationStatic = this.defaultConfig.behaviors.find((b) => b.type === "rotationStatic");
@@ -129,12 +100,12 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
     return undefined;
   }
 
+  /** Flat map of parameter defaults (parameterName → value). */
   static get default() {
-    return Object.fromEntries(
-      Object.entries(this.parameters).map(([parameterName, parameterConfig]) => [parameterName, parameterConfig.value]),
-    );
+    return Object.fromEntries(Object.entries(this.parameters).map(([name, cfg]) => [name, cfg.value]));
   }
 
+  /** Apply user options onto a mutable emitter config. */
   applyOptionsToConfig(options, config) {
     this._applyScaleToConfig(options, config);
     this._applySpeedToConfig(options, config);
@@ -144,109 +115,100 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
     this._applyAlphaToConfig(options, config);
   }
 
-  /** @protected */
+  /** Multiply a stepped value-list by a factor. */
   _applyFactorToValueList(valueList, factor) {
-    valueList.list = valueList.list.map((valueStep) => ({
-      ...valueStep,
-      value: valueStep.value * factor,
-    }));
+    valueList.list = valueList.list.map((step) => ({ ...step, value: step.value * factor }));
   }
 
-  /** @protected */
+  /** Multiply a ranged number (min/max) by a factor. */
   _applyFactorToRandNumber(randNumber, factor) {
-    randNumber.min = randNumber.min * factor;
-    randNumber.max = randNumber.max * factor;
+    randNumber.min *= factor;
+    randNumber.max *= factor;
   }
 
-  /** @protected */
+  /** Scale size behaviors relative to grid size and user scale. */
   _applyScaleToConfig(options, config) {
     const factor = (options.scale?.value ?? 1) * (canvas.dimensions.size / 100);
 
     config.behaviors
-      .filter((behavior) => behavior.type === "scale")
+      .filter((b) => b.type === "scale")
       .forEach(({ config }) => this._applyFactorToValueList(config.scale, factor));
 
     config.behaviors
-      .filter((behavior) => behavior.type === "scaleStatic")
+      .filter((b) => b.type === "scaleStatic")
       .forEach(({ config }) => this._applyFactorToRandNumber(config, factor));
   }
 
-  /** @protected */
+  /** Scale velocities, lifetimes, and spawn frequency coherently. */
   _applySpeedToConfig(options, config) {
     const factor = (options.speed?.value ?? 1) * (canvas.dimensions.size / 100);
 
     config.behaviors
-      .filter((behavior) => ["moveSpeed", "movePath"].includes(behavior.type))
+      .filter((b) => ["moveSpeed", "movePath"].includes(b.type))
       .forEach(({ config }) => this._applyFactorToValueList(config.speed, factor));
 
     config.behaviors
-      .filter((behavior) => behavior.type === "moveSpeedStatic")
+      .filter((b) => b.type === "moveSpeedStatic")
       .forEach(({ config }) => this._applyFactorToRandNumber(config, factor));
 
     this._applyFactorToRandNumber(config.lifetime, 1 / factor);
     config.frequency /= factor;
   }
 
-  /** @protected */
+  /** Center rotation ranges on the chosen direction while preserving spread. */
   _applyDirectionToConfig(options, config) {
     const direction = options.direction?.value;
-    if (direction !== undefined) {
-      config.behaviors
-        .filter((behavior) => behavior.type === "rotation")
-        .forEach(({ config }) => {
-          const range = config.maxStart - config.minStart;
-          config.minStart = direction - range / 2;
-          config.maxStart = direction + range / 2;
-        });
+    if (direction === undefined) return;
 
-      config.behaviors
-        .filter((behavior) => behavior.type === "rotationStatic")
-        .forEach(({ config }) => {
-          const range = config.max - config.min;
-          config.min = direction - range / 2;
-          config.max = direction + range / 2;
-        });
-    }
+    config.behaviors
+      .filter((b) => b.type === "rotation")
+      .forEach(({ config }) => {
+        const range = config.maxStart - config.minStart;
+        config.minStart = direction - range / 2;
+        config.maxStart = direction + range / 2;
+      });
+
+    config.behaviors
+      .filter((b) => b.type === "rotationStatic")
+      .forEach(({ config }) => {
+        const range = config.max - config.min;
+        config.min = direction - range / 2;
+        config.max = direction + range / 2;
+      });
   }
 
-  /** @protected */
+  /** Adjust emitter lifetime and frequency together. */
   _applyLifetimeToConfig(options, config) {
     const factor = options.lifetime?.value ?? 1;
     this._applyFactorToRandNumber(config.lifetime, factor);
     config.frequency *= factor;
   }
 
-  /** @protected */
+  /** Apply a solid tint by replacing color behaviors when requested. */
   _applyTintToConfig(options, config) {
-    if (options.tint?.value.apply) {
-      const value = options.tint.value.value;
-      config.behaviors = config.behaviors
-        .filter(({ type }) => type !== "color" && type !== "colorStatic")
-        .concat({
-          type: "colorStatic",
-          config: {
-            color: value,
-          },
-        });
-    }
+    if (!options.tint?.value.apply) return;
+    const value = options.tint.value.value;
+    config.behaviors = config.behaviors
+      .filter(({ type }) => type !== "color" && type !== "colorStatic")
+      .concat({ type: "colorStatic", config: { color: value } });
   }
 
-  /** @protected */
+  /** Modulate alpha behaviors by a scalar factor. */
   _applyAlphaToConfig(options, config) {
     const factor = options.alpha?.value ?? 1;
 
     config.behaviors
-      .filter((behavior) => behavior.type === "alpha")
+      .filter((b) => b.type === "alpha")
       .forEach(({ config }) => this._applyFactorToValueList(config.alpha, factor));
 
     config.behaviors
-      .filter((behavior) => behavior.type === "alphaStatic")
+      .filter((b) => b.type === "alphaStatic")
       .forEach(({ config }) => {
         config.alpha *= factor;
       });
   }
 
-  /** @override */
+  /** Optionally pre-warm emitters before playing. */
   play({ prewarm = false } = {}) {
     if (prewarm) {
       this.emitters.forEach((emitter) => {
@@ -260,74 +222,137 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
   }
 
   /**
-   * Fade this effect out, playing it once and then stopping it.
-   * @param {{timeout?: number}} [options]         Additional options to configure the fade out
-   * @param {number}             [options.timeout] If given, the effect will be stopped after the given number in ms,
-   *                                               regardless of if it has finished playing or not.
-   * @returns {Promise<void>}                      A promise that resolves as soon as this effect has finished fading out
+   * Fade to transparent over a timeout and resolve when complete.
+   * @param {{timeout?: number}} [options]
+   * @returns {Promise<void>}
    */
-  async fadeOut({ timeout } = {}) {
-    const emitterPromises = this.emitters.map(
-      (emitter) =>
-        new Promise((resolve) => {
-          emitter.emitterLifetime = 0.1;
-          emitter.playOnceAndDestroy(() => {
-            resolve();
-          });
-        }),
-    );
-    const promises = [Promise.all(emitterPromises)];
-    if (timeout !== undefined) {
-      promises.push(new Promise((resolve) => setTimeout(resolve, timeout)).then(this.destroy.bind(this)));
+  async fadeOut({ timeout = 2000 } = {}) {
+    for (const emitter of this.emitters) {
+      try {
+        emitter.emit = false;
+      } catch {}
     }
 
-    await Promise.race(promises);
-    this.stop();
+    if (this._fadeTicker && (canvas?.app?.ticker || PIXI.Ticker.shared)) {
+      const t = canvas?.app?.ticker ?? PIXI.Ticker.shared;
+      t.remove(this._fadeTicker);
+      this._fadeTicker = null;
+    }
+
+    const startAlpha = this.alpha ?? 1;
+    if (!timeout || timeout <= 0) {
+      this.alpha = 0;
+      return;
+    }
+
+    const ticker = PIXI.Ticker.shared;
+    return new Promise((resolve) => {
+      const start = ticker.lastTime ?? performance.now();
+      this._fadeTicker = () => {
+        if (this.destroyed) {
+          ticker.remove(this._fadeTicker);
+          this._fadeTicker = null;
+          resolve();
+          return;
+        }
+        const now = ticker.lastTime ?? performance.now();
+        const u = Math.min(1, (now - start) / timeout);
+        this.alpha = startAlpha * (1 - u);
+        if (u >= 1) {
+          ticker.remove(this._fadeTicker);
+          this._fadeTicker = null;
+          resolve();
+        }
+      };
+      ticker.add(this._fadeTicker);
+    });
   }
 
+  /** Fade alpha from current value to a target over a timeout. */
+  async fadeToAlpha({ to = 1, timeout = 2000 } = {}) {
+    const ticker = PIXI.Ticker.shared;
+    const from = Number(this.alpha ?? 1);
+    if (!timeout || timeout <= 0) {
+      this.alpha = to;
+      return;
+    }
+
+    if (this._fadeTicker && (canvas?.app?.ticker || PIXI.Ticker.shared)) {
+      const t = canvas?.app?.ticker ?? PIXI.Ticker.shared;
+      t.remove(this._fadeTicker);
+      this._fadeTicker = null;
+    }
+
+    return new Promise((resolve) => {
+      const start = ticker.lastTime ?? performance.now();
+      this._fadeTicker = () => {
+        if (this.destroyed) {
+          ticker.remove(this._fadeTicker);
+          this._fadeTicker = null;
+          resolve();
+          return;
+        }
+        const now = ticker.lastTime ?? performance.now();
+        const u = Math.min(1, (now - start) / timeout);
+        this.alpha = from + (to - from) * u;
+        if (u >= 1) {
+          ticker.remove(this._fadeTicker);
+          this._fadeTicker = null;
+          resolve();
+        }
+      };
+      ticker.add(this._fadeTicker);
+    });
+  }
+
+  /** Symmetric fade-in helper. */
+  async fadeIn({ timeout = 2000 } = {}) {
+    return this.fadeToAlpha({ to: 1, timeout });
+  }
+
+  /**
+   * Convert legacy (V1) options to V2 semantics based on scene dimensions.
+   * @param {object} options
+   * @param {Scene} scene
+   */
   static convertOptionsToV2(options, scene) {
     return Object.fromEntries(
-      Object.entries(options).map(([optionKey, optionValue]) => {
-        switch (optionKey) {
-          case "scale": {
-            return [optionKey, this._convertScaleToV2(optionValue, scene)];
-          }
-          case "speed": {
-            return [optionKey, this._convertSpeedToV2(optionValue, scene)];
-          }
-          case "density": {
-            return [optionKey, this._convertDensityToV2(optionValue, scene)];
-          }
-          default: {
-            return [optionKey, optionValue];
-          }
+      Object.entries(options).map(([k, v]) => {
+        switch (k) {
+          case "scale":
+            return [k, this._convertScaleToV2(v, scene)];
+          case "speed":
+            return [k, this._convertSpeedToV2(v, scene)];
+          case "density":
+            return [k, this._convertDensityToV2(v, scene)];
+          default:
+            return [k, v];
         }
       }),
     );
   }
 
-  /** @protected */
+  /** Scale → normalized UI value based on grid size. */
   static _convertScaleToV2(scale, scene) {
     const decimals = this.parameters.scale?.decimals ?? 1;
     return roundToDecimals(scale * (100 / scene.dimensions.size), decimals);
   }
 
-  /** @protected */
+  /** Speed → normalized UI value relative to max default moveSpeed and grid size. */
   static _convertSpeedToV2(speed, scene) {
     const speeds = this.defaultConfig.behaviors
       .filter(({ type }) => type === "moveSpeed")
-      .flatMap(({ config }) => config.speed.list.map((valueStep) => valueStep.value));
+      .flatMap(({ config }) => config.speed.list.map((v) => v.value));
     const maximumSpeed = Math.max(...speeds);
 
     const decimals = this.parameters.speed?.decimals ?? 1;
     return roundToDecimals((speed / maximumSpeed) * (100 / scene.dimensions.size), decimals);
   }
 
-  /** @protected */
+  /** Density → normalized per-grid-unit value. */
   static _convertDensityToV2(density, scene) {
     const d = scene.dimensions;
     const gridUnits = (d.width / d.size) * (d.height / d.size);
-
     const decimals = this.parameters.density?.decimals ?? 1;
     return roundToDecimals(density / gridUnits, decimals);
   }

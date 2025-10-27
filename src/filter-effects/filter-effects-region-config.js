@@ -1,16 +1,29 @@
-export class ParticleEffectsRegionBehaviorConfig extends foundry.applications.sheets.RegionBehaviorConfig {
+/**
+ * Configuration sheet for region-scoped filter behaviors.
+ * Groups per-filter controls, adds scrolling, and manages dynamic visibility
+ * for elevation-based gating options.
+ */
+export class FilterRegionBehaviorConfig extends foundry.applications.sheets.RegionBehaviorConfig {
   static PARTS = foundry.utils.mergeObject(super.PARTS, { form: { scrollable: [""] } }, { inplace: false });
 
+  /**
+   * Customize the rendered HTML for the region behavior form.
+   * - Adds a scrollable container class.
+   * - Groups each filter's enable checkbox with its related settings.
+   * - Toggles visibility of elevation gating fields based on the selected mode.
+   * @param {object} context - Rendering context from Foundry.
+   * @param {object} options - Render options from Foundry.
+   * @returns {Promise<{form: HTMLFormElement}>} The rendered HTML wrapper.
+   */
   async _renderHTML(context, options) {
     const rendered = await super._renderHTML(context, options);
 
     rendered.form.classList.add("scrollable");
 
-    // This disgusts me
     const fieldset = Array.from(rendered.form.querySelectorAll("fieldset")).find(
       (fs) =>
         fs.querySelector("legend")?.textContent.trim() ===
-        game.i18n.localize("FXMASTER.ParticleEffectRegionBehaviorName"),
+        game.i18n.localize("FXMASTER.Regions.BehaviorNames.FilterEffectRegionBehaviorName"),
     );
     if (!fieldset) return rendered;
 
@@ -32,7 +45,9 @@ export class ParticleEffectsRegionBehaviorConfig extends foundry.applications.sh
           wrapper.appendChild(setting);
           i++;
         }
-      } else i++;
+      } else {
+        i++;
+      }
     }
 
     const findGroupByName = (name) => {
@@ -55,9 +70,7 @@ export class ParticleEffectsRegionBehaviorConfig extends foundry.applications.sh
     if (gateModeInput) {
       const applyVisibility = () => {
         const mode = gateModeInput.value;
-
         if (targetsGroup) targetsGroup.style.display = mode === "targets" ? "" : "none";
-
         if (gmAlwaysGroup) gmAlwaysGroup.style.display = mode === "targets" || mode === "pov" ? "" : "none";
       };
 

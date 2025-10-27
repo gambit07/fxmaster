@@ -5,7 +5,7 @@ import { withSteppedGradientColor } from "./helpers/with-stepped-gradient-color.
  */
 export class StarsParticleEffect extends FXMasterParticleEffect {
   /** @override */
-  static label = "FXMASTER.ParticleEffectStars";
+  static label = "FXMASTER.Particles.Effects.Stars";
 
   /** @override */
   static get icon() {
@@ -35,6 +35,8 @@ export class StarsParticleEffect extends FXMasterParticleEffect {
    * @type {PIXI.particles.EmitterConfigV3}
    */
   static STARS_CONFIG = {
+    layerLevel: "aboveDarkness",
+    blendMode: PIXI.BLEND_MODES.ADD,
     lifetime: { min: 8, max: 15 },
     behaviors: [
       {

@@ -6,7 +6,7 @@ import { withSteppedGradientColor } from "./helpers/with-stepped-gradient-color.
  */
 export class EmbersParticleEffect extends FXMasterParticleEffect {
   /** @override */
-  static label = "FXMASTER.ParticleEffectEmbers";
+  static label = "FXMASTER.Particles.Effects.Embers";
 
   /** @override */
   static get icon() {
@@ -36,6 +36,8 @@ export class EmbersParticleEffect extends FXMasterParticleEffect {
    * @type {PIXI.particles.EmitterConfigV3}
    */
   static EMBERS_CONFIG = {
+    layerLevel: "aboveDarkness",
+    blendMode: PIXI.BLEND_MODES.ADD,
     lifetime: { min: 4, max: 6 },
     behaviors: [
       {

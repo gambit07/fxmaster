@@ -74,11 +74,13 @@ function addAlphaToRgb(rgbString, alpha) {
  * @param {{name: string, type: string, options: object}} parameters The parameters that define the named particle effect
  */
 export async function onSwitchParticleEffects(parameters) {
+  console.log("made it here", canvas.scene, parameters);
   if (!canvas.scene) {
     return;
   }
-
+  console.log(parameters, "parameters");
   const currentEffects = canvas.scene.getFlag(packageId, "effects") ?? {};
+  console.log(currentEffects, "currentEffects");
   const key = `core_${parameters.type}`;
   const shouldSwitchOff = key in currentEffects;
   const effects = shouldSwitchOff
@@ -107,7 +109,7 @@ export async function onUpdateParticleEffects(parametersArray) {
   const added = Object.fromEntries(parametersArray.map((p) => [foundry.utils.randomID(), p]));
 
   // Merge — this leaves old keys alone, adds (or overwrites) the new ones
-  const merged = mergeObject(old, added, { inplace: false });
+  const merged = foundry.utils.mergeObject(old, added, { inplace: false });
 
   await resetFlag(canvas.scene, "effects", merged);
 }
@@ -116,15 +118,16 @@ export async function onUpdateParticleEffects(parametersArray) {
  * Handle removing region particle effects on region deletion.
  * @param {String} regionId Deleted Region ID
  */
+export function cleanupRegionFilterEffects(regionId) {
+  try {
+    canvas.filtereffects?.destroyRegionFilterEffects?.(regionId);
+  } catch {}
+}
+
 export function cleanupRegionParticleEffects(regionId) {
-  const layer = canvas.fxmaster;
-  if (!layer?.regionEffects) return;
-  const particleEffects = layer.regionEffects.get(regionId) || [];
-  for (const particleEffect of particleEffects) {
-    particleEffect.stop();
-    particleEffect.destroy();
-  }
-  layer.regionEffects.delete(regionId);
+  try {
+    canvas.particleeffects?.destroyRegionParticleEffects?.(regionId);
+  } catch {}
 }
 
 export async function parseSpecialEffects() {
@@ -138,3 +141,17 @@ export async function parseSpecialEffects() {
 
   CONFIG.fxmaster.userSpecials = effectsMap;
 }
+
+export function pixelsArea() {
+  const r = canvas?.app?.renderer;
+  if (!r) return new PIXI.Rectangle(0, 0, 0, 0);
+  const { width, height } = r.view; // device pixels
+  return new PIXI.Rectangle(0, 0, width | 0, height | 0);
+}
+
+export const clampRange = (v, lo, hi, def) => (Number.isFinite((v = Number(v))) ? Math.min(Math.max(v, lo), hi) : def);
+export const clamp01 = (v, def) => clampRange(v, 0, 1, def);
+export const clampNonNeg = (v, def = 0) => (Number.isFinite((v = Number(v))) ? Math.max(0, v) : def);
+export const clampMin = (v, m = 1e-4, def) => (Number.isFinite((v = Number(v))) ? Math.max(v, m) : def);
+export const num = (v, d = 0) => (v === undefined || v === null || Number.isNaN(Number(v)) ? d : Number(v));
+export const asFloat3 = (arr) => new Float32Array([arr[0], arr[1], arr[2]]);

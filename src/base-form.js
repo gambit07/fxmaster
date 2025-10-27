@@ -44,7 +44,6 @@ export class FXMasterBaseFormV2 extends Base {
       const base = `${label}_${key}`;
       const input = form.querySelector(`[name="${base}"]`);
       const apply = form.querySelector(`[name="${base}_apply"]`);
-
       if (!input) continue;
 
       if (param.type === "color") {
@@ -53,10 +52,21 @@ export class FXMasterBaseFormV2 extends Base {
           value: input.value || (param.value?.value ?? "#000000"),
         };
         continue;
-      } else if (param.type === "multi-select") {
-        const select = input.querySelector("select");
-        options[key] = select ? Array.from(select.selectedOptions, (o) => o.value) : [];
-      } else if (input.type === "number" || param.type === "range") {
+      }
+
+      if (param.type === "multi-select") {
+        let values = input?.value;
+        if (!values.length) values = param.value;
+        options[key] = values;
+        continue;
+      }
+
+      if (param.type === "checkbox") {
+        options[key] = Boolean(input.checked);
+        continue;
+      }
+
+      if (input.type === "number" || param.type === "range") {
         options[key] = parseFloat(input.value);
         continue;
       }

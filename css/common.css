@@ -146,3 +146,19 @@
   align-items: center;
   gap: 0.5rem;
 }
+
+/* Region-behavior config */
+.region-behavior-config .behavior-settings {
+  display: none;
+  margin-left: 1.5em;
+  border-left: 2px solid var(--color-border);
+  padding-left: 0.5em;
+}
+.region-behavior-config .behavior-header {
+  display: flex;
+  cursor: pointer;
+  font-weight: bold;
+}
+.region-behavior-config .behavior-header:has(input[type="checkbox"]:checked) ~ .behavior-settings {
+  display: flex;
+}

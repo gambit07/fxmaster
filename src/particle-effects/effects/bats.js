@@ -6,7 +6,7 @@ import { DefaultRectangleSpawnMixin } from "./mixins/default-rectangle-spawn.js"
  */
 export class BatsParticleEffect extends DefaultRectangleSpawnMixin(FXMasterParticleEffect) {
   /** @override */
-  static label = "FXMASTER.ParticleEffectBats";
+  static label = "FXMASTER.Particles.Effects.Bats";
 
   /** @override */
   static get icon() {

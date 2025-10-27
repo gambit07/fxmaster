@@ -33,7 +33,7 @@
                   filter
                   parameterConfig
                   parameterName
-                  (lookup ../../passiveFilters type)
+                  (getEffectParams ../../activeFilters ../../passiveFilters type)
                }}}
           </label>
         {{/each}}

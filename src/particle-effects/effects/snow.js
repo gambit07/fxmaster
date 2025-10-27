@@ -5,7 +5,7 @@ import { FXMasterParticleEffect } from "./effect.js";
  */
 export class SnowParticleEffect extends FXMasterParticleEffect {
   /** @override */
-  static label = "FXMASTER.ParticleEffectSnow";
+  static label = "FXMASTER.Particles.Effects.Snow";
 
   /** @override */
   static get icon() {

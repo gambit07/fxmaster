@@ -5,7 +5,7 @@ import { FXMasterParticleEffect } from "./effect.js";
  */
 export class BirdsParticleEffect extends FXMasterParticleEffect {
   /** @override */
-  static label = "FXMASTER.ParticleEffectBirds";
+  static label = "FXMASTER.Particles.Effects.Birds";
 
   /** @override */
   static get icon() {
@@ -25,12 +25,12 @@ export class BirdsParticleEffect extends FXMasterParticleEffect {
         density: { min: 0.001, value: 0.006, max: 0.01, step: 0.001, decimals: 3 },
         "-=direction": null,
         animations: {
-          label: "FXMASTER.Animations",
+          label: "FXMASTER.Params.Animations",
           type: "multi-select",
           options: {
-            glide: "FXMASTER.ParicleEffectBirdsAnimationsGlide",
-            flap: "FXMASTER.ParicleEffectBirdsAnimationsFlap",
-            mixed: "FXMASTER.ParicleEffectBirdsAnimationsMixed",
+            glide: "FXMASTER.Particles.BirdsAnimations.Glide",
+            flap: "FXMASTER.Particles.BirdsAnimations.Flap",
+            mixed: "FXMASTER.Particles.BirdsAnimations.Mixed",
           },
           value: ["mixed"],
         },

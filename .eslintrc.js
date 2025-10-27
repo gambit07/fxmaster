@@ -23,10 +23,12 @@ module.exports = {
     SpriteMesh: "readonly",
     FullCanvasObjectMixin: "readonly",
     WeatherOcclusionMaskFilter: "readonly",
+    fromUuidSync: "readonly",
   },
 
   rules: {
     "no-unused-vars": ["error", { vars: "all", args: "after-used", varsIgnorePattern: "^_", argsIgnorePattern: "^_" }],
+    "no-empty": "off",
   },
 
   overrides: [

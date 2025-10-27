@@ -6,7 +6,7 @@ import { DefaultRectangleSpawnMixin } from "./mixins/default-rectangle-spawn.js"
  */
 export class BubblesParticleEffect extends DefaultRectangleSpawnMixin(FXMasterParticleEffect) {
   /** @override */
-  static label = "FXMASTER.ParticleEffectBubbles";
+  static label = "FXMASTER.Particles.Effects.Bubbles";
 
   /** @override */
   static get icon() {

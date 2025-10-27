@@ -12,7 +12,7 @@ export class EaglesParticleEffect extends FXMasterParticleEffect {
   static _textureCache;
 
   /** @override */
-  static label = "FXMASTER.ParticleEffectEagles";
+  static label = "FXMASTER.Particles.Effects.Eagles";
 
   /** @override */
   static get icon() {
@@ -32,11 +32,11 @@ export class EaglesParticleEffect extends FXMasterParticleEffect {
         density: { min: 0.0005, value: 0.002, max: 0.01, step: 0.0005, decimals: 4 },
         "-=direction": null,
         animations: {
-          label: "FXMASTER.Animations",
+          label: "FXMASTER.Params.Animations",
           type: "multi-select",
           options: {
-            flap: "FXMASTER.ParicleEffectBirdsAnimationsFlap",
-            glide: "FXMASTER.ParicleEffectBirdsAnimationsGlide",
+            flap: "FXMASTER.Particles.BirdsAnimations.Flap",
+            glide: "FXMASTER.Particles.BirdsAnimations.Glide",
           },
           value: ["glide"],
         },
@@ -145,7 +145,7 @@ export class EaglesParticleEffect extends FXMasterParticleEffect {
 
     const glide = [
       { textureNumber: 0, count: 30 },
-      ...Array(4).fill(flap).deepFlatten(),
+      ...Array(2).fill(flap).deepFlatten(),
       { textureNumber: 0, count: 68 },
     ];
 

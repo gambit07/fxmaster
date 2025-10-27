@@ -28,7 +28,7 @@ export class SpecialEffectsManagement extends FXMasterBaseFormV2 {
     tag: "section",
     classes: ["fxmaster", "specials-management", "form-v2"],
     dragDrop: [{ dragSelector: ".special-effects", dropSelector: null }],
-    window: { title: "FXMASTER.SpecialEffectsManagementTitle", resizable: true },
+    window: { title: "FXMASTER.Common.SpecialEffectsManagementTitle", resizable: true },
     position: { width: 500, height: 500 },
     actions: {
       filterTag: SpecialEffectsManagement.updateTagFilter,
@@ -68,7 +68,7 @@ export class SpecialEffectsManagement extends FXMasterBaseFormV2 {
         if (overrides[entry.file]) {
           foundry.utils.mergeObject(entry, overrides[entry.file]);
         }
-        const folder = entry.favorite ? game.i18n.localize("FXMASTER.Favorites") : bucket.label;
+        const folder = entry.favorite ? game.i18n.localize("FXMASTER.Common.Favorites") : bucket.label;
         entry.tag = folder;
         effects.push(entry);
         tagSet.add(folder);
@@ -78,7 +78,7 @@ export class SpecialEffectsManagement extends FXMasterBaseFormV2 {
     effects.sort((a, b) => a.label.localeCompare(b.label));
 
     const allTags = Array.from(tagSet).sort((a, b) => a.localeCompare(b));
-    const priority = ["Custom", game.i18n.localize("FXMASTER.Favorites")];
+    const priority = ["Custom", game.i18n.localize("FXMASTER.Common.Favorites")];
     const tags = [
       ...priority.filter((t) => allTags.includes(t)).map((t) => ({ key: t, label: t })),
       ...allTags.filter((t) => !priority.includes(t)).map((t) => ({ key: t, label: t })),
@@ -286,7 +286,7 @@ export class SpecialEffectsManagement extends FXMasterBaseFormV2 {
 
     const fx = inst.visibleEffects?.[idx] ?? inst.fullEffects?.[idx];
     if (!fx) {
-      return ui.notifications.error(game.i18n.localize("FXMASTER.ErrorCannotFindEffect"));
+      return ui.notifications.error(game.i18n.localize("FXMASTER.Common.ErrorCannotFindEffect"));
     }
 
     const app = new SpecialEffectConfig();

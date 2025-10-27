@@ -17,7 +17,7 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
       updateParam: ParticleEffectsManagement.updateParam,
     },
     window: {
-      title: "FXMASTER.ParticleEffectsManagementTitle",
+      title: "FXMASTER.Common.ParticleEffectsManagementTitle",
       resizable: true,
       minimizable: true,
     },
@@ -80,11 +80,14 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
   }
 
   async _onRender(...args) {
-    super._onRender(...args);
+    await super._onRender(...args);
+
     let windowPosition = game.user.getFlag(packageId, "dialog-position-particleeffects");
     if (windowPosition) {
       this.setPosition({ top: windowPosition.top, left: windowPosition.left, width: windowPosition.width });
     }
+
+    this._autosizeInit();
 
     const content = this.element.querySelector(".window-content");
 
@@ -94,30 +97,35 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
         (e) => {
           e.preventDefault();
           e.stopImmediatePropagation();
-
           let wrapper = slider.closest(".fxmaster-particles-group-wrapper");
           if (!wrapper) wrapper = content;
-
           wrapper.scrollTop += e.deltaY;
         },
         { passive: false, capture: true },
       );
+
+      const output = slider.closest(".fxmaster-input-range")?.querySelector("output");
+      if (output) {
+        slider.addEventListener("input", (event) => {
+          output.textContent = slider.value;
+          ParticleEffectsManagement.updateParam.call(this, event, slider);
+        });
+      }
     });
 
-    const win = this.element.closest("#particle-effects-config");
-    if (win) {
-      const onFirstHover = () => {
-        win.classList.add("hovered");
-        win.removeEventListener("mouseenter", onFirstHover);
-      };
-      win.addEventListener("mouseenter", onFirstHover);
-    }
+    this.element.querySelectorAll(".fxmaster-input-color input[type=checkbox]").forEach((cb) => {
+      cb.addEventListener("change", (e) => ParticleEffectsManagement.updateParam.call(this, e, cb));
+    });
+    this.element.querySelectorAll(".fxmaster-input-color input[type=color]").forEach((inp) => {
+      inp.addEventListener("input", (e) => ParticleEffectsManagement.updateParam.call(this, e, inp));
+      inp.addEventListener("change", (e) => ParticleEffectsManagement.updateParam.call(this, e, inp));
+    });
   }
 
   async updateEnabledState(type, enabled) {
     const effectsDB = CONFIG.fxmaster.particleEffects[type];
     if (!effectsDB) {
-      logger.warn(game.i18n.format("FXMASTER.ParticleEffectTypeNotFound", { type: type }));
+      logger.warn(game.i18n.format("FXMASTER.Particles.TypeErrors.TypeNotFound", { type: type }));
       return;
     }
 
@@ -141,7 +149,6 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
 
     await resetFlag(scene, "effects", current);
 
-    //--toggle-active-bg-color is the toggles active bg color, here it is for the history books since I looked for it for a while and decided to go with highlight instead
     const hasParticles = Object.keys(current).some((key) => !key.startsWith("-="));
     const btn = document.querySelector(`[data-tool="particle-effects"]`);
     if (hasParticles) {
@@ -174,9 +181,11 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
     if (!effectDef) return;
 
     const options = FXMasterBaseFormV2.gatherFilterOptions(effectDef, this.element);
-
     current[`core_${type}`].options = options;
-    resetFlag(scene, "effects", current);
+
+    // --- NEW: coalesce rapid slider updates to ~12/sec ---
+    this._debouncedEffectsWrite ||= foundry.utils.debounce((payload) => resetFlag(scene, "effects", payload), 1000);
+    this._debouncedEffectsWrite(current);
   }
 
   async close(options) {
@@ -192,7 +201,98 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
 
   async _onClose(...args) {
     super._onClose(...args);
+
     const { top, left, width } = this.position;
     game.user.setFlag(packageId, "dialog-position-particleeffects", { top, left, width });
+
+    try {
+      this._autosizeCleanup?.();
+    } catch {}
+    this._autosizeCleanup = null;
+  }
+
+  _autosizeSetMaxClamp() {
+    const winEl = this.element;
+    if (!winEl) return;
+    const vh = Math.max(window.innerHeight, document.documentElement.clientHeight || 0);
+    winEl.style.setProperty("--fxmaster-max-height", Math.round(vh * 0.9) + "px");
+  }
+
+  _autosizeRestoreAuto() {
+    const winEl = this.element;
+    if (!winEl) return;
+    const wc = winEl.querySelector(".window-content");
+
+    [winEl, wc].forEach((el) => {
+      if (!el) return;
+      el.style.height = "";
+      el.style.minHeight = "";
+      if (el.style.maxHeight) el.style.maxHeight = "";
+    });
+
+    winEl.classList.add("fxm-autosize");
+    this._autosizeSetMaxClamp();
+  }
+
+  /** While user is drag-resizing, allow manual size (drop autosize class). */
+  _autosizeWireResizeAutoToggle() {
+    const winEl = this.element;
+    if (!winEl) return () => {};
+    const handles = winEl.querySelectorAll(".window-resizable-handle, .ui-resizable-handle");
+    const onDown = () => winEl.classList.remove("fxm-autosize");
+    handles.forEach((h) => h.addEventListener("pointerdown", onDown, { passive: true }));
+    return () => handles.forEach((h) => h.removeEventListener("pointerdown", onDown));
+  }
+
+  /** Observe expand/collapse rows; when anything opens, restore autosize and set fallback class. */
+  _autosizeObserveRows() {
+    const winEl = this.element;
+    if (!winEl) return () => {};
+    const wrappers = Array.from(winEl.querySelectorAll(".fxmaster-particles-group-wrapper"));
+    const rows = Array.from(winEl.querySelectorAll(".fxmaster-particles-row"));
+
+    const updateWrappers = () => {
+      for (const w of wrappers) {
+        const anyOpen = !!w.querySelector(".fxmaster-particles-row.open");
+        w.classList.toggle("fxm-column-open", anyOpen);
+      }
+      this._autosizeRestoreAuto();
+    };
+
+    updateWrappers();
+
+    const mo = new MutationObserver((muts) => {
+      for (const m of muts) {
+        if (m.type === "attributes" && m.attributeName === "class") {
+          updateWrappers();
+          break;
+        }
+      }
+    });
+
+    rows.forEach((r) => mo.observe(r, { attributes: true, attributeFilter: ["class"] }));
+    return () => mo.disconnect();
+  }
+
+  /** One-call init that wires everything and returns a single cleanup fn. */
+  _autosizeInit() {
+    this._autosizeCleanup?.();
+    this._autosizeRestoreAuto();
+
+    const stopRows = this._autosizeObserveRows();
+    const stopResize = this._autosizeWireResizeAutoToggle();
+
+    const onWinResize = () => this._autosizeSetMaxClamp();
+    window.addEventListener("resize", onWinResize, { passive: true });
+
+    this._autosizeCleanup = () => {
+      try {
+        stopRows?.();
+      } catch {}
+      try {
+        stopResize?.();
+      } catch {}
+      window.removeEventListener("resize", onWinResize);
+    };
   }
 }

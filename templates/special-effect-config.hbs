@@ -2,13 +2,13 @@
   <section class="fxmaster specials-config application-popout">
     <div class="form-group favorite-row">
       <div class="form-fields">
-        <label for="favorite">{{localize "FXMASTER.Favorite"}}</label>
+        <label for="favorite">{{localize "FXMASTER.Common.Favorite"}}</label>
         <input name="favorite" value="true" type="checkbox" {{#if default.favorite}}checked{{/if}}/>
       </div>
     </div>
 
     <div class="form-group">
-      <label>{{localize "FXMASTER.Author"}}</label>
+      <label>{{localize "FXMASTER.Common.Author"}}</label>
       <div class="form-fields">
         <input name="folder" type="text" value="{{default.folder}}" readonly/>
       </div>
@@ -45,7 +45,7 @@
     </div>
 
     <div class="form-group">
-      <label title="{{localize 'FXMASTER.ScaleHint'}}">{{localize "FXMASTER.Scale"}} (x, y)</label>
+      <label title="{{localize 'FXMASTER.Params.ScaleHint'}}">{{localize "FXMASTER.Params.Scale"}} (x, y)</label>
       <div class="form-fields">
         <input
           type="text"
@@ -63,7 +63,7 @@
     </div>
 
     <div class="form-group">
-      <label title="{{localize 'FXMASTER.AnchorHint'}}">{{localize "FXMASTER.Anchor"}} (x, y)</label>
+      <label title="{{localize 'FXMASTER.Params.AnchorHint'}}">{{localize "FXMASTER.Params.Anchor"}} (x, y)</label>
       <div class="form-fields">
         <input
           type="text"
@@ -82,7 +82,7 @@
 
     <footer class="sheet-footer flexrow">
       <button type="button" data-action="save">
-        <span class="fa-solid fa-check"></span> {{localize "FXMASTER.SaveChanges"}}
+        <span class="fa-solid fa-check"></span> {{localize "FXMASTER.Common.SaveChanges"}}
       </button>
     </footer>
   </section>

@@ -83,15 +83,19 @@ export async function registerAnimations({ initialScan = false } = {}) {
     },
   ];
 
-  // Find Wild Magic Surge, buncha module directories but they have some cool animations sooo I'll do some searching
-  const wmsRoots = [];
+  // Find Wild Magic Surge and Baileywiki, buncha module directories sooo I'll do some searching
+  const dynamicRoots = [];
   const mods = await CONFIG.fxmaster.FilePickerNS.browse("data", "modules");
   const dirs = Array.isArray(mods.dirs) ? mods.dirs : Array.isArray(mods.folders) ? mods.folders : [];
 
   for (const d of dirs) {
     const name = typeof d === "string" ? d : d.path || d;
     if (/wild.*magic.*surge/i.test(name)) {
-      wmsRoots.push({ path: `${name}`, label: "Wild Magic Surge" });
+      dynamicRoots.push({ path: name, label: "Wild Magic Surge" });
+    }
+
+    if (/baileywiki/i.test(name)) {
+      dynamicRoots.push({ path: name, label: "Baileywiki" });
     }
   }
 
@@ -99,7 +103,10 @@ export async function registerAnimations({ initialScan = false } = {}) {
   const customDir = game.settings.get(packageId, "customEffectsDirectory")?.trim();
   if (customDir) explicitRoots.push({ path: customDir, label: "Custom" });
 
-  const roots = [...explicitRoots, ...wmsRoots.filter((r) => !explicitRoots.some((e) => e.path === r.path))];
+  const roots = [
+    ...explicitRoots,
+    ...dynamicRoots.filter((r) => !explicitRoots.some((e) => e.path === r.path))
+  ];
 
   const discovered = [];
   const sequencerActive = game.modules.get("sequencer")?.active;
@@ -152,7 +159,7 @@ export async function registerAnimations({ initialScan = false } = {}) {
     for (let i = 0; i < discovered.length; i++) {
       const fx = discovered[i];
 
-      if (fx.folder === "JB2A Patreon" || fx.folder === "JB2A Free") {
+      if (fx.folder === "JB2A Patreon" || fx.folder === "JB2A Free" || fx.folder === "Baileywiki") {
         const thumb = await findThumbFor(fx.file);
         if (thumb) fx.thumb = thumb;
       }

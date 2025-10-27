@@ -12,7 +12,7 @@ export class RainTopParticleEffect extends FXMasterParticleEffect {
   _canvasPanHookId;
 
   /** @override */
-  static label = "FXMASTER.ParticleEffectRainTop";
+  static label = "FXMASTER.Particles.Effects.RainTop";
 
   /** @override */
   static get icon() {
@@ -31,13 +31,14 @@ export class RainTopParticleEffect extends FXMasterParticleEffect {
       {
         density: { min: 0.01, value: 0.3, max: 1, step: 0.01, decimals: 2 },
         "-=direction": null,
+        splash: { label: "FXMASTER.Common.Splash", type: "checkbox", value: true },
       },
       { performDeletions: true },
     );
   }
 
   /**
-   * Configuration for the particle emitter for raindrops from top down
+   * Configuration for the particle emitter for raindrops from top down.
    * @type {PIXI.particles.EmitterConfigV3}
    */
   static RAIN_TOP_CONFIG = {
@@ -67,14 +68,23 @@ export class RainTopParticleEffect extends FXMasterParticleEffect {
           minMult: 0.7,
         },
       },
-      {
-        type: "rotationStatic",
-        config: { min: 180, max: 180 },
-      },
-      {
-        type: "textureSingle",
-        config: { texture: "ui/particles/rain.png" },
-      },
+      { type: "rotationStatic", config: { min: 180, max: 180 } },
+      { type: "textureSingle", config: { texture: "ui/particles/rain.png" } },
+    ],
+  };
+
+  /**
+   * Splash config for top-down rain
+   * @type {PIXI.particles.EmitterConfigV3}
+   */
+  static SPLASH_TOP_CONFIG = {
+    lifetime: { min: 0.5, max: 0.5 },
+    behaviors: [
+      { type: "moveSpeedStatic", config: { min: 0, max: 0 } },
+      { type: "scaleStatic", config: { min: 0.48, max: 0.6 } },
+      { type: "rotationStatic", config: { min: -90, max: -90 } },
+      { type: "noRotation", config: {} },
+      { type: "textureSingle", config: { texture: "ui/particles/drop.png" } },
     ],
   };
 
@@ -86,12 +96,16 @@ export class RainTopParticleEffect extends FXMasterParticleEffect {
   /** @override */
   getParticleEmitters(options = {}) {
     options = this.constructor.mergeWithDefaults(options);
+
     const d = canvas.dimensions;
     const maxParticles = (d.width / d.size) * (d.height / d.size) * options.density.value;
     const sceneRadius = Math.sqrt(d.sceneWidth * d.sceneWidth + d.sceneHeight * d.sceneHeight) / 2;
+
     const config = foundry.utils.deepClone(this.constructor.RAIN_TOP_CONFIG);
     config.maxParticles = maxParticles;
+
     config.frequency = config.lifetime.min / maxParticles;
+
     config.behaviors.push({
       type: "moveSpeed",
       config: {
@@ -104,9 +118,12 @@ export class RainTopParticleEffect extends FXMasterParticleEffect {
         minMult: 0.8,
       },
     });
+
     this.applyOptionsToConfig(options, config);
+
     const moveSpeedList = config.behaviors.find(({ type }) => type === "moveSpeed").config.speed.list;
     const averageSpeed = moveSpeedList.reduce((acc, cur) => acc + cur.value, 0) / moveSpeedList.length;
+
     config.behaviors.push({
       type: "spawnShape",
       config: {
@@ -121,12 +138,45 @@ export class RainTopParticleEffect extends FXMasterParticleEffect {
       },
     });
 
-    const emitter = this.createEmitter(config);
-    emitter.updateOwnerPos(
-      canvas.stage.pivot.x - d.sceneX - d.sceneWidth / 2,
-      canvas.stage.pivot.y - d.sceneY - d.sceneHeight / 2,
-    );
-    return [emitter];
+    const rainEmitter = this.createEmitter(config);
+
+    const ownerX = canvas.stage.pivot.x - d.sceneX - d.sceneWidth / 2;
+    const ownerY = canvas.stage.pivot.y - d.sceneY - d.sceneHeight / 2;
+    rainEmitter.updateOwnerPos(ownerX, ownerY);
+
+    const emitters = [rainEmitter];
+
+    const splashEnabled = options?.splash?.value ?? true;
+    if (splashEnabled) {
+      const splashConfig = foundry.utils.deepClone(this.constructor.SPLASH_TOP_CONFIG);
+
+      const splashMax = Math.max(1, 0.4 * maxParticles);
+      splashConfig.maxParticles = splashMax;
+
+      const splashLifetime = splashConfig.lifetime?.min ?? 0.5;
+      splashConfig.frequency = splashLifetime / splashMax;
+
+      splashConfig.behaviors.push({
+        type: "spawnShape",
+        config: {
+          type: "rect",
+          data: {
+            x: d.sceneRect.x + d.sceneWidth / 2 - d.width / 2,
+            y: d.sceneRect.y + d.sceneHeight / 2 - d.height / 2,
+            w: d.width,
+            h: d.height,
+          },
+        },
+      });
+
+      this.applyOptionsToConfig(options, splashConfig);
+
+      const splashEmitter = this.createEmitter(splashConfig);
+      splashEmitter.updateOwnerPos(ownerX, ownerY);
+      emitters.push(splashEmitter);
+    }
+
+    return emitters;
   }
 
   /** @override */

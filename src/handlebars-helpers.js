@@ -19,6 +19,16 @@ export function registerHandlebarsHelpers() {
         `;
       }
 
+      case "checkbox": {
+        const applyChecked = _default ? "checked" : "";
+
+        return `
+          <div class="fxmaster-input-checkbox">
+            <input type="checkbox" name="${nameBase}" ${applyChecked} data-action="updateParam" />
+          </div>
+        `;
+      }
+
       case "range": {
         const val = Number(_default);
 
@@ -52,3 +62,7 @@ export function registerHandlebarsHelpers() {
     }
   });
 }
+
+Handlebars.registerHelper("getEffectParams", function (active, passive, type) {
+  return active?.[type] ?? passive?.[type] ?? {};
+});

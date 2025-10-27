@@ -6,7 +6,7 @@ import { DefaultRectangleSpawnMixin } from "./mixins/default-rectangle-spawn.js"
  */
 export class RatsParticleEffect extends DefaultRectangleSpawnMixin(FXMasterParticleEffect) {
   /** @override */
-  static label = "FXMASTER.ParticleEffectRats";
+  static label = "FXMASTER.Particles.Effects.Rats";
 
   /** @override */
   static get icon() {
@@ -23,7 +23,7 @@ export class RatsParticleEffect extends DefaultRectangleSpawnMixin(FXMasterParti
     return foundry.utils.mergeObject(
       super.parameters,
       {
-        density: { min: 0.001, value: 0.006, max: 0.3, step: 0.001, decimals: 3 },
+        density: { min: 0.001, value: 0.006, max: 1, step: 0.001, decimals: 3 },
         "-=direction": null,
       },
       { performDeletions: true },

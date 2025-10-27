@@ -1,15 +1,15 @@
 import { FXMasterParticleEffect } from "./effect.js";
 
 /**
- * A full-screen weather effect which renders rain drops and splashes.
+ * Full-screen rain with optional splash particles (toggled via options.splash.value).
  */
 export class RainParticleEffect extends FXMasterParticleEffect {
   /** @override */
-  static label = "FXMASTER.ParticleEffectRain";
+  static label = "FXMASTER.Particles.Effects.Rain";
 
   /** @override */
   static get icon() {
-    return "modules/fxmaster/assets/particle-effects/icons/rain-splash.webp";
+    return "modules/fxmaster/assets/particle-effects/icons/rain.webp";
   }
 
   /** @override */
@@ -17,8 +17,18 @@ export class RainParticleEffect extends FXMasterParticleEffect {
     return "weather";
   }
 
+  static get parameters() {
+    return foundry.utils.mergeObject(
+      super.parameters,
+      {
+        splash: { label: "FXMASTER.Common.Splash", type: "checkbox", value: true },
+      },
+      { performDeletions: true },
+    );
+  }
+
   /**
-   * Configuration for the particle emitter for rain
+   * Base rain config
    * @type {PIXI.particles.EmitterConfigV3}
    */
   static RAIN_CONFIG = {
@@ -36,53 +46,26 @@ export class RainParticleEffect extends FXMasterParticleEffect {
           },
         },
       },
-      {
-        type: "moveSpeedStatic",
-        config: { min: 2800, max: 3500 },
-      },
-      {
-        type: "scaleStatic",
-        config: { min: 0.8, max: 1 },
-      },
-      {
-        type: "rotationStatic",
-        config: { min: 75, max: 75 },
-      },
-      {
-        type: "textureSingle",
-        config: { texture: "ui/particles/rain.png" },
-      },
+      { type: "moveSpeedStatic", config: { min: 2800, max: 3500 } },
+      { type: "scaleStatic", config: { min: 0.8, max: 1 } },
+      { type: "rotationStatic", config: { min: 75, max: 75 } },
+      { type: "textureSingle", config: { texture: "ui/particles/rain.png" } },
     ],
   };
 
   /**
-   * Configuration for the particle emitter for splashes
+   * Splash config (second emitter, optional)
    * @type {PIXI.particles.EmitterConfigV3}
    */
   static SPLASH_CONFIG = {
     lifetime: { min: 0.5, max: 0.5 },
     pos: { x: 0, y: 0 },
     behaviors: [
-      {
-        type: "moveSpeedStatic",
-        config: { min: 0, max: 0 },
-      },
-      {
-        type: "scaleStatic",
-        config: { min: 0.48, max: 0.6 },
-      },
-      {
-        type: "rotationStatic",
-        config: { min: -90, max: -90 },
-      },
-      {
-        type: "noRotation",
-        config: {},
-      },
-      {
-        type: "textureSingle",
-        config: { texture: "ui/particles/drop.png" },
-      },
+      { type: "moveSpeedStatic", config: { min: 0, max: 0 } },
+      { type: "scaleStatic", config: { min: 0.48, max: 0.6 } },
+      { type: "rotationStatic", config: { min: -90, max: -90 } },
+      { type: "noRotation", config: {} },
+      { type: "textureSingle", config: { texture: "ui/particles/drop.png" } },
     ],
   };
 
@@ -91,13 +74,18 @@ export class RainParticleEffect extends FXMasterParticleEffect {
     return this.RAIN_CONFIG;
   }
 
-  /** @override */
+  /**
+   * Build one (rain) or two (rain + splash) emitters depending on options.splash.value.
+   */
   getParticleEmitters(options = {}) {
     options = this.constructor.mergeWithDefaults(options);
+
+    const splashEnabled = options?.splash?.value ?? true;
+    const splashIntensity = 1;
+
     const d = canvas.dimensions;
     const maxParticles = (d.width / d.size) * (d.height / d.size) * options.density.value;
 
-    // Create an emitter for rain drops
     const rainConfig = foundry.utils.deepClone(this.constructor.RAIN_CONFIG);
     rainConfig.maxParticles = maxParticles;
     rainConfig.frequency = 1 / maxParticles;
@@ -115,25 +103,32 @@ export class RainParticleEffect extends FXMasterParticleEffect {
     });
     this.applyOptionsToConfig(options, rainConfig);
 
-    // Create a second emitter for splashes
-    const splashConfig = foundry.utils.deepClone(this.constructor.SPLASH_CONFIG);
-    splashConfig.maxParticles = 0.5 * maxParticles;
-    splashConfig.frequency = 2 / maxParticles;
-    splashConfig.behaviors.push({
-      type: "spawnShape",
-      config: {
-        type: "rect",
-        data: {
-          x: 0,
-          y: 0.25 * d.height,
-          w: d.width,
-          h: 0.75 * d.height,
-        },
-      },
-    });
-    this.applyOptionsToConfig(options, splashConfig);
+    const emitters = [this.createEmitter(rainConfig)];
 
-    // Return both emitters
-    return [this.createEmitter(rainConfig), this.createEmitter(splashConfig)];
+    if (splashEnabled && splashIntensity > 0) {
+      const splashConfig = foundry.utils.deepClone(this.constructor.SPLASH_CONFIG);
+
+      const splashMax = Math.max(1, splashIntensity * 0.5 * maxParticles);
+      splashConfig.maxParticles = splashMax;
+      splashConfig.frequency = 1 / splashMax;
+
+      splashConfig.behaviors.push({
+        type: "spawnShape",
+        config: {
+          type: "rect",
+          data: {
+            x: 0,
+            y: 0.25 * d.height,
+            w: d.width,
+            h: 0.75 * d.height,
+          },
+        },
+      });
+
+      this.applyOptionsToConfig(options, splashConfig);
+      emitters.push(this.createEmitter(splashConfig));
+    }
+
+    return emitters;
   }
 }

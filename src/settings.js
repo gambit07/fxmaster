@@ -3,7 +3,7 @@ import { registerAnimations } from "./animation-files.js";
 
 export function registerSettings() {
   game.settings.register(packageId, "enable", {
-    name: "FXMASTER.EnableEffects",
+    name: "FXMASTER.Common.EnableEffects",
     default: true,
     scope: "client",
     type: Boolean,
@@ -42,8 +42,8 @@ export function registerSettings() {
   });
 
   game.settings.register(packageId, "resetPassives", {
-    name: "FXMASTER.ResetPassiveParameters",
-    hint: "FXMASTER.ResetPassiveParametersHint",
+    name: "FXMASTER.Common.ResetPassiveParameters",
+    hint: "FXMASTER.Common.ResetPassiveParametersHint",
     scope: "world",
     config: true,
     type: Boolean,
@@ -54,7 +54,7 @@ export function registerSettings() {
       game.settings.set(packageId, "passiveParticleConfig", {});
       game.settings.set(packageId, "passiveFilterConfig", {});
       await game.settings.set(packageId, "resetPassives", false);
-      ui.notifications.info(game.i18n.localize("FXMASTER.ResetPassiveSuccess"));
+      ui.notifications.info(game.i18n.localize("FXMASTER.Common.ResetPassiveSuccess"));
     },
   });
 
@@ -99,8 +99,8 @@ export function registerSettings() {
   });
 
   game.settings.register(packageId, "permission-create", {
-    name: "FXMASTER.PermissionCreate",
-    hint: "FXMASTER.PermissionCreateHint",
+    name: "FXMASTER.Common.PermissionCreate",
+    hint: "FXMASTER.Common.PermissionCreateHint",
     scope: "world",
     config: true,
     default: foundry.CONST.USER_ROLES.ASSISTANT,
@@ -115,8 +115,8 @@ export function registerSettings() {
   });
 
   game.settings.register(packageId, "disableAll", {
-    name: "FXMASTER.DisableAll",
-    hint: "FXMASTER.DisableAllHint",
+    name: "FXMASTER.Common.DisableAll",
+    hint: "FXMASTER.Common.DisableAllHint",
     default: false,
     scope: "world",
     type: Boolean,

@@ -1,3 +1,30 @@
-- Resolved FXMaster+ effects not showing up in region config
-- Enabled proper masking for the firefly effect
-- Updated pt-br and pl translations, thanks Kharmans and Lioheart!
+Welcome to Gambit's FXMaster V7! DO NOT update to this version right before a session, it contains BREAKING CHANGES.
+- BREAKING: Drawing based masks have been fully removed, along with the Invert Particle Effect Mask controls button. The reason for this is simple, drawings were never meant to support a masking system. Regions are able to do everything drawings could do and more. Now on to the fun changes!
+- Filter Effects:
+  - Gigantic overhaul, re-written from the ground up with custom shaders
+  - Effects can now be placed on a region with the new 'FXMaster: Filter Effects' region behavior
+  - Effects are now constrained to the bounds of a scene instead of the entire canvas
+  - Effects can now be suppressed, either globally via Suppress Weather, or with a new 'FXMaster: Suppress Scene Filters' Region Behavior
+  - Region Effects now have a Edge Fade % parameter, which softens the edges of a Region for more realistic visualizations
+  - Added a Thunder Aware audio mode for the Lightning effect. Increased max period for lightning effect to allow longer durations between lightning flashes
+- Particle Effects:
+  - Effects can now be suppressed either globally via Suppress Weather, or with a new 'FXMaster: Suppress Scene Particles' Region Behavior
+  - Increased max available density for rats particle effect
+  - Modified fade-in and fade-out time for particle effects to a 5 second default, down from 20 seconds
+  - Updated Particle Masking and Particle Emissions to better work with modules that create weird regions, ie Terrain Mapper
+  - Updated Particle Effects Window to better handle resizes in combination with effect expansion
+  - Updated Cloud Effect with new Shadow options
+  - Updated Stars and Embers effects to play above the lighting layer, allowing them to be visible in darkness
+  - Updated Rain effect to include a Splash parameter. Removed the separate Rain No Splash effect
+  - Updated Rain Top Down effect to include a Splash parameter.
+- Particle & Filter Effects:
+  - Suppression via Suppress Weather, FXMaster: Suppress Scene Filters, or FXMaster: Suppress Scene Particles only effect Scene level filters and particles, meaning a region specific Filter or Particle effect can be overlayed on top of a Suppression behavior region.
+  - Effects can now be placed above or below a token
+    - New Scene and Region Below Tokens option per Particle and Filter Effect. When off, particles display above tokens. When on, particles display below tokens.
+  - Effects now respect elevation when used on a region
+    - New region behavior option Elevation Constraints. None - Region is always visible. Tokens POV - Region is restricted to any controlled tokens pov at a given elevation. Specific Tokens POV - Set of controlled tokens that are valid to see an effect at a given elevation.
+  - Updated effects to pull currently active parameters for a scene instead of always using passive defaults when relevant
+  - Updated effects to change to active scenes parameter options when a scene is changed instead of maintaining parameter options from the original scene, when relevant
+  - Updated effects to display parameter output values in real time when using the arrow keys to make adjustments
+- Added animation effect support for Baileywiki modules assets
+- Many more small bugfixes and tweaks

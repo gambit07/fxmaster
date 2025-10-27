@@ -17,7 +17,7 @@ export class FilterEffectsManagement extends FXMasterBaseFormV2 {
       updateParam: FilterEffectsManagement.updateParam,
     },
     window: {
-      title: "FXMASTER.FilterEffectsManagementTitle",
+      title: "FXMASTER.Common.FilterEffectsManagementTitle",
     },
     position: {
       width: 325,
@@ -51,7 +51,7 @@ export class FilterEffectsManagement extends FXMasterBaseFormV2 {
   }
 
   async _onRender(...args) {
-    super._onRender(...args);
+    await super._onRender(...args);
 
     let windowPosition = game.user.getFlag(packageId, "dialog-position-filtereffects");
     if (windowPosition) {
@@ -74,17 +74,23 @@ export class FilterEffectsManagement extends FXMasterBaseFormV2 {
         },
         { passive: false, capture: true },
       );
+
+      const output = slider.closest(".fxmaster-input-range")?.querySelector("output");
+      if (output) {
+        slider.addEventListener("input", (event) => {
+          output.textContent = slider.value;
+          FilterEffectsManagement.updateParam.call(this, event, slider);
+        });
+      }
     });
 
-    const win = this.element.closest("#filters-config");
-
-    if (win) {
-      const onFirstHover = () => {
-        win.classList.add("hovered");
-        win.removeEventListener("mouseenter", onFirstHover);
-      };
-      win.addEventListener("mouseenter", onFirstHover);
-    }
+    this.element.querySelectorAll(".fxmaster-input-color input[type=checkbox]").forEach((cb) => {
+      cb.addEventListener("change", (e) => FilterEffectsManagement.updateParam.call(this, e, cb));
+    });
+    this.element.querySelectorAll(".fxmaster-input-color input[type=color]").forEach((inp) => {
+      inp.addEventListener("input", (e) => FilterEffectsManagement.updateParam.call(this, e, inp));
+      inp.addEventListener("change", (e) => FilterEffectsManagement.updateParam.call(this, e, inp));
+    });
   }
 
   async close(options) {
@@ -102,13 +108,13 @@ export class FilterEffectsManagement extends FXMasterBaseFormV2 {
   updateEnabledState(type, enabled) {
     const filtersDB = CONFIG.fxmaster.filterEffects[type];
     if (!filtersDB) {
-      logger.warn(game.i18n.format("FXMASTER.FilterEffectTypeNotFound", { type: type }));
+      logger.warn(game.i18n.format("FXMASTER.Filters.TypeErrors.TypeNotFound", { type: type }));
       return;
     }
 
     const scene = canvas.scene;
     if (!scene) return;
-    const current = foundry.utils.duplicate(scene.getFlag("fxmaster", "filters") ?? {});
+    const current = foundry.utils.duplicate(scene.getFlag(packageId, "filters") ?? {});
 
     if (enabled) {
       const options = FilterEffectsManagement.gatherFilterOptions(filtersDB, this.element);

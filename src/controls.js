@@ -1,5 +1,5 @@
 import { packageId } from "./constants.js";
-import { FilterManager } from "./filter-effects/filter-manager.js";
+import { FilterEffectsSceneManager } from "./filter-effects/filter-effects-scene-manager.js";
 import { ParticleEffectsManagement } from "./particle-effects/applications/particle-effects-management.js";
 import { SpecialEffectsManagement } from "./special-effects/applications/special-effects-management.js";
 import { FilterEffectsManagement } from "./filter-effects/applications/filter-effects-management.js";
@@ -45,19 +45,6 @@ function getSceneControlButtons(t) {
       [onEvent]: (_event, _active) => new ParticleEffectsManagement().render(true),
       visible: game.user.isGM,
     },
-    invertmask: {
-      name: "invertmask",
-      title: "CONTROLS.InvertMask",
-      icon: "fas fa-mask",
-      order: 30,
-      toggle: true,
-      active: canvas.scene?.getFlag(packageId, "invert") ?? false,
-      [onEvent]: () => {
-        const current = canvas.scene.getFlag(packageId, "invert") ?? false;
-        canvas.scene.setFlag(packageId, "invert", !current);
-      },
-      visible: game.user.isGM,
-    },
     specials: {
       name: "specials",
       title: "CONTROLS.SpecialFX",
@@ -88,19 +75,19 @@ function getSceneControlButtons(t) {
       [onEvent]: () => {
         const clearFxDialog = new foundry.applications.api.DialogV2({
           window: {
-            title: game.i18n.localize("FXMASTER.ClearParticleAndFilterEffectsTitle"),
+            title: game.i18n.localize("FXMASTER.Common.ClearParticleAndFilterEffectsTitle"),
             id: "clearFx",
             minimizable: false,
           },
-          content: game.i18n.localize("FXMASTER.ClearParticleAndFilterEffectsContent"),
+          content: game.i18n.localize("FXMASTER.Common.ClearParticleAndFilterEffectsContent"),
           buttons: [
             {
               action: "yes",
-              label: game.i18n.localize("FXMASTER.Yes"),
+              label: game.i18n.localize("FXMASTER.Common.Yes"),
               icon: "fas fa-check",
               callback: () => {
                 if (canvas.scene) {
-                  FilterManager.instance.removeAll();
+                  FilterEffectsSceneManager.instance.removeAll();
                   canvas.scene.unsetFlag(packageId, "effects");
 
                   const btnParticles = document.querySelector(`[data-tool="particle-effects"]`);
@@ -115,7 +102,7 @@ function getSceneControlButtons(t) {
             },
             {
               action: "no",
-              label: game.i18n.localize("FXMASTER.No"),
+              label: game.i18n.localize("FXMASTER.Common.No"),
               icon: "fas fa-times",
               callback: () => {
                 return false;
