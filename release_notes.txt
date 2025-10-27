@@ -27,4 +27,5 @@ Welcome to Gambit's FXMaster V7! DO NOT update to this version right before a se
   - Updated effects to change to active scenes parameter options when a scene is changed instead of maintaining parameter options from the original scene, when relevant
   - Updated effects to display parameter output values in real time when using the arrow keys to make adjustments
 - Added animation effect support for Baileywiki modules assets
+- Updated localization file layouts, many new keys added but structure was ported and translation was ported/added where possible across all existing files. 
 - Many more small bugfixes and tweaks
