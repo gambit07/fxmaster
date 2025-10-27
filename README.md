@@ -5,12 +5,22 @@
 <hr/>
 <p>Welcome to the official release of the application V2 overhaul for FXMaster! A lot of time and effort went into this conversion and new functionality has been added, including Region particle masking, as well as the addition of Region specific Particle Effects. The Special Effects control has been re-named to Animation Effects, and functionality has been broadly changed. FXMaster no longer supports features that overlapped with Sequencer. The FXMaster implementation was extremely dated, and Sequencer has superior functionality. Instead, the Animation Effects app has been converted to a more functional menu for searching, previewing, and favoriting animations from all major animation modules, while still allowing static tile placement via drag and drop.</p>
 
-**<p>Any support via the <a href="https://www.patreon.com/GambitsLounge" target="_blank" rel="nofollow noopener">Patreon</a> or <a href="https://ko-fi.com/gambit07" target="_blank" rel="nofollow noopener">Ko-fi</a> is greatly appreciated! If you are a Patreon subscriber you will receive access to the FXMaster+ module. FXMaster+ can be accessed from Patreon, and it's where I will be adding new particle effects and filters moving forward. For the month of September, it will get you access to the 🟡 Sunlight, 🟢 Magic Crystals, 🟡 Fireflies, 🌸 Sakura Bloom, 🌸 Sakura Blossoms — Particle Effects previewed below:</p>**
+**<p>Any support via the <a href="https://www.patreon.com/GambitsLounge" target="_blank" rel="nofollow noopener">Patreon</a> or <a href="https://ko-fi.com/gambit07" target="_blank" rel="nofollow noopener">Ko-fi</a> is greatly appreciated! If you are a Patreon subscriber you will receive access to the FXMaster+ module. FXMaster+ can be accessed from Patreon, and it's where I will be adding new particle effects and filters moving forward. For the month of September, it will get you access to the 🟢 Ghosts, 🟡 Sunlight, 🟢 Magic Crystals, 🟡 Fireflies, 🌸 Sakura Bloom, 🌸 Sakura Blossoms — Particle Effects previewed below:</p>**
 
 
 
 
+<video
+  autoplay
+  muted
+  playsinline
+  loop
+  preload="auto"
+  src="https://github.com/user-attachments/assets/d9e1c89b-0ce7-4c5c-a5f2-55c242e82397">
+</video>
 
+<details>
+  <summary>Sunlight (click to expand)</summary>
   <video
     autoplay
     muted
@@ -19,6 +29,7 @@
     preload="auto"
     src="https://github.com/user-attachments/assets/4bb9492d-dc3b-4d2e-82ee-6950cd2792eb">
   </video>
+</details>
   
 <details>
   <summary>Magic Crystals (click to expand)</summary>
