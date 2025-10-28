@@ -1,5 +1,11 @@
 # Changelog
 
+## [v7.0.1] - 2025-10-27
+- Updates: Updated pt-br translations, thanks Kharmans!
+- Bugfixes:
+  - Regions 'Specific Tokens POV' option not working
+  - A few small fixes for Token Enter and Exit events. I discovered these still need additional work so expect a future release with some better handling for these events.
+
 ## [v7.0.0] - 2025-10-27
 Welcome to Gambit's FXMaster V7! DO NOT update to this version right before a session, it contains BREAKING CHANGES.
 - BREAKING: Drawing based masks have been fully removed, along with the Invert Particle Effect Mask controls button. The reason for this is simple, drawings were never meant to support a masking system. Regions are able to do everything drawings could do and more. Now on to the fun changes!
