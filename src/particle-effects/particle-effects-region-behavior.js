@@ -119,6 +119,10 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
     return schema;
   }
 
+  /**
+   * Derive the current event gate mode from the selected events.
+   * @returns {"enterExit"|"enter"|"exitOnly"|"none"}
+   */
   _getEventModeFromSelection() {
     const evs = this.events instanceof Set ? this.events : new Set();
     const ENTER = CONST.REGION_EVENTS.TOKEN_ENTER;
@@ -131,66 +135,135 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
     return "none";
   }
 
+  /**
+   * Persist event gate state.
+   */
   async _writeEventGate(mode, latched) {
     await this.parent.setFlag(packageId, "eventGate", { mode, latched: !!latched });
   }
 
-  async _handleRegionEvent(event) {
-    if (this.events?.size === 0) return;
+  /**
+   * Collect enabled particle effects + options, persist flags, and sync elevation gate flags.
+   * Mirrors FilterRegionBehaviorType._applyFilters(). (No teardown here.)
+   * @returns {Promise<boolean>} true if any region flag changed
+   */
+  async _applyParticles() {
+    const system = this.toObject();
 
-    const evt = event.name;
-    const ENTER = CONST.REGION_EVENTS.TOKEN_ENTER;
-    const EXIT = CONST.REGION_EVENTS.TOKEN_EXIT;
-
-    const sys = this.toObject();
-
+    // Build particle definitions for this region
     const nextFX = Object.entries(CONFIG.fxmaster.particleEffects)
-      .filter(([type]) => !!sys[`${type}_enabled`])
+      .filter(([type]) => system[`${type}_enabled`])
       .reduce((map, [type, cls]) => {
         const opts = {};
         for (const param of Object.keys(cls.parameters)) {
           const cfg = cls.parameters[param];
           if (cfg.type === "color") {
-            opts[param] = { apply: sys[`${type}_${param}_apply`], value: sys[`${type}_${param}`] };
+            opts[param] = {
+              apply: system[`${type}_${param}_apply`],
+              value: system[`${type}_${param}`],
+            };
           } else if (cfg.type === "multi-select") {
-            const raw = sys[`${type}_${param}`];
+            const raw = system[`${type}_${param}`];
             opts[param] = raw ? Array.from(raw) : [];
           } else {
-            opts[param] = sys[`${type}_${param}`];
+            opts[param] = system[`${type}_${param}`];
           }
         }
-        const belowTokens = !!sys[`${type}_belowTokens`];
+        const belowTokens = !!system[`${type}_belowTokens`];
         map[type] = { options: opts, belowTokens };
         return map;
       }, {});
 
-    if (evt === ENTER) {
-      if ((event.region.tokens?.size ?? 0) <= 1) {
-        const prevFX = this.parent.getFlag(packageId, "particleEffects") ?? {};
-        const diff1 = foundry.utils.diffObject(prevFX, nextFX);
-        const diff2 = foundry.utils.diffObject(nextFX, prevFX);
-        if (!foundry.utils.isEmpty(diff1) || !foundry.utils.isEmpty(diff2)) {
-          await resetFlag(this.parent, "particleEffects", nextFX);
-        }
+    let changedAny = false;
+
+    // Persist particle effects (create/update/delete)
+    const prevFX = this.parent.getFlag(packageId, "particleEffects") ?? {};
+    const diff1 = foundry.utils.diffObject(prevFX, nextFX);
+    const diff2 = foundry.utils.diffObject(nextFX, prevFX);
+    if (!foundry.utils.isEmpty(diff1) || !foundry.utils.isEmpty(diff2)) {
+      if (Object.keys(nextFX).length) await resetFlag(this.parent, "particleEffects", nextFX);
+      else await this.parent.unsetFlag(packageId, "particleEffects");
+      changedAny = true;
+    }
+
+    // Elevation: always-visible GM override
+    const gmAlwaysVisible = !!system._elev_gmAlwaysVisible;
+    const prevGM = !!this.parent.getFlag(packageId, "gmAlwaysVisible");
+    if (gmAlwaysVisible !== prevGM) {
+      if (gmAlwaysVisible) await this.parent.setFlag(packageId, "gmAlwaysVisible", true);
+      else await this.parent.unsetFlag(packageId, "gmAlwaysVisible");
+      changedAny = true;
+    }
+
+    // Elevation: gate mode (none | pov | targets)
+    const gateMode = system._elev_gateMode ?? "none";
+    const prevGate = this.parent.getFlag(packageId, "gateMode") ?? "none";
+    if (gateMode !== prevGate) {
+      if (gateMode && gateMode !== "none") await this.parent.setFlag(packageId, "gateMode", gateMode);
+      else await this.parent.unsetFlag(packageId, "gateMode");
+      changedAny = true;
+    }
+
+    // Elevation: token targets (when gateMode === "targets")
+    if (gateMode === "targets") {
+      const targetsSet = system._elev_tokenTargets ?? new Set();
+      const nextTargets = Array.from(targetsSet ?? []);
+      const prevTargets = this.parent.getFlag(packageId, "tokenTargets");
+      const prevArr = Array.isArray(prevTargets) ? prevTargets : prevTargets ? [prevTargets] : [];
+      const eq = prevArr.length === nextTargets.length && nextTargets.every((t) => prevArr.includes(t));
+      if (!eq) {
+        await resetFlag(this.parent, "tokenTargets", nextTargets);
+        changedAny = true;
       }
-    } else if (evt === EXIT) {
-      if ((event.region.tokens?.size ?? 0) === 0) {
-        if (this.parent.getFlag(packageId, "particleEffects") != null) {
-          await this.parent.unsetFlag(packageId, "particleEffects");
-        }
+    } else {
+      if (this.parent.getFlag(packageId, "tokenTargets") != null) {
+        await this.parent.unsetFlag(packageId, "tokenTargets");
+        changedAny = true;
       }
     }
 
-    const prev = this.parent.getFlag(packageId, "eventGate") || {};
-    const mode = this._getEventModeFromSelection();
-    let latched = false;
+    return changedAny;
+  }
 
-    if (mode !== "none") {
-      if (mode === "enter") {
-        latched = evt === ENTER && (event.region.tokens?.size ?? 0) > 0;
-      } else if (mode === "enterExit") {
-        latched = (event.region.tokens?.size ?? 0) > 0;
-      }
+  /**
+   * Region token enter/exit events → update only the event gate (no flag churn for particles).
+   */
+  async _handleRegionEvent(event) {
+    if (!this.events?.size) return;
+
+    const evs = this.events instanceof Set ? this.events : new Set();
+    const evt = event.name;
+    if (!evs.has(evt)) return;
+
+    const ENTER = CONST.REGION_EVENTS.TOKEN_ENTER;
+
+    const mode = this._getEventModeFromSelection();
+    if (mode === "none" || mode === "exitOnly") return;
+
+    const prev = this.parent.getFlag(packageId, "eventGate") || { mode, latched: false };
+
+    const fxGateMode = this.parent.getFlag(packageId, "gateMode");
+    const rawTargets = this.parent.getFlag(packageId, "tokenTargets");
+    const targetIds = new Set(Array.isArray(rawTargets) ? rawTargets : rawTargets ? [rawTargets] : []);
+    const tokensInRegion = Array.from(event.region?.tokens ?? []);
+
+    const isTargetToken = (t) => targetIds.has(t.id) || targetIds.has(t.document?.uuid) || targetIds.has(t.uuid);
+
+    const countTargets = () => {
+      if (fxGateMode !== "targets" || targetIds.size === 0) return null;
+      let n = 0;
+      for (const t of tokensInRegion) if (isTargetToken(t)) n++;
+      return n;
+    };
+
+    let latched = !!prev.latched;
+    if (mode === "enterExit") {
+      latched =
+        fxGateMode === "targets" && targetIds.size > 0 ? (countTargets() ?? 0) > 0 : (tokensInRegion.length ?? 0) > 0;
+    } else if (mode === "enter") {
+      if (evt !== ENTER) return;
+      latched =
+        fxGateMode === "targets" && targetIds.size > 0 ? (countTargets() ?? 0) > 0 : (tokensInRegion.length ?? 0) > 0;
     }
 
     if (prev.mode !== mode || !!prev.latched !== !!latched) {
@@ -198,94 +271,21 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
     }
   }
 
+  /**
+   * Handle updates to the behavior. No hard teardown; just (re)apply particle flags and sync gate.
+   */
   async _onUpdate(changed, options, userId) {
     if (this.__fxmUpdating) return;
     this.__fxmUpdating = true;
     try {
       await super._onUpdate(changed, options, userId);
 
-      if (this.events?.size > 0 || changed.disabled) {
-        const layer = canvas.particleeffects;
-        if (layer?.regionEffects) {
-          const regionId = this.parent.parent.id;
-          const entries = layer.regionEffects.get(regionId) || [];
-          for (const entry of entries) {
-            const fx = entry?.fx ?? entry;
-            try {
-              fx?.stop?.();
-            } catch {}
-            try {
-              fx?.destroy?.();
-            } catch {}
-          }
-          layer.regionEffects.delete(regionId);
-        }
-        const hadFX = !!this.parent.getFlag(packageId, "particleEffects");
-        if (hadFX) await this.parent.unsetFlag(packageId, "particleEffects");
-        return;
-      }
-
-      const sys = this.toObject();
-
-      const nextFX = Object.entries(CONFIG.fxmaster.particleEffects)
-        .filter(([type]) => !!sys[`${type}_enabled`])
-        .reduce((map, [type, cls]) => {
-          const opts = {};
-          for (const param of Object.keys(cls.parameters)) {
-            const cfg = cls.parameters[param];
-            if (cfg.type === "color") {
-              opts[param] = { apply: sys[`${type}_${param}_apply`], value: sys[`${type}_${param}`] };
-            } else if (cfg.type === "multi-select") {
-              const raw = sys[`${type}_${param}`];
-              opts[param] = raw ? Array.from(raw) : [];
-            } else {
-              opts[param] = sys[`${type}_${param}`];
-            }
-          }
-          const belowTokens = !!sys[`${type}_belowTokens`];
-          map[type] = { options: opts, belowTokens };
-          return map;
-        }, {});
-
-      const prevFX = this.parent.getFlag(packageId, "particleEffects") ?? {};
-      const diff1 = foundry.utils.diffObject(prevFX, nextFX);
-      const diff2 = foundry.utils.diffObject(nextFX, prevFX);
-      if (!foundry.utils.isEmpty(diff1) || !foundry.utils.isEmpty(diff2)) {
-        await resetFlag(this.parent, "particleEffects", nextFX);
-      }
-
-      const gmAlwaysVisible = !!sys._elev_gmAlwaysVisible;
-      const prevGM = !!this.parent.getFlag(packageId, "gmAlwaysVisible");
-      if (gmAlwaysVisible !== prevGM) {
-        if (gmAlwaysVisible) await this.parent.setFlag(packageId, "gmAlwaysVisible", true);
-        else await this.parent.unsetFlag(packageId, "gmAlwaysVisible");
-      }
-
-      const gateMode = sys._elev_gateMode ?? "none";
-      const prevGate = this.parent.getFlag(packageId, "gateMode") ?? "none";
-      if (gateMode !== prevGate) {
-        if (gateMode && gateMode !== "none") await this.parent.setFlag(packageId, "gateMode", gateMode);
-        else await this.parent.unsetFlag(packageId, "gateMode");
-      }
-
-      if (gateMode === "targets") {
-        const targetsSet = sys._elev_tokenTargets ?? new Set();
-        const nextTargets = Array.from(targetsSet ?? []);
-        const prevTargets = this.parent.getFlag(packageId, "tokenTargets");
-        const prevArr = Array.isArray(prevTargets) ? prevTargets : prevTargets ? [prevTargets] : [];
-        const eq = prevArr.length === nextTargets.length && nextTargets.every((t) => prevArr.includes(t));
-        if (!eq) {
-          await resetFlag(this.parent, "tokenTargets", nextTargets);
-        }
-      } else {
-        if (this.parent.getFlag(packageId, "tokenTargets") != null) {
-          await this.parent.unsetFlag(packageId, "tokenTargets");
-        }
-      }
+      await this._applyParticles();
 
       const mode = this._getEventModeFromSelection();
       const prevEG = this.parent.getFlag(packageId, "eventGate") || {};
       let latched = false;
+
       if (!this.disabled && (mode === "enter" || mode === "enterExit")) {
         if (prevEG?.mode === mode) latched = !!prevEG.latched;
       }
@@ -297,6 +297,9 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
     }
   }
 
+  /**
+   * On delete, request a rebuild of region particle effects.
+   */
   async _onDelete(options, userId) {
     await super._onDelete(options, userId);
     const placeable = options.parent?.object;

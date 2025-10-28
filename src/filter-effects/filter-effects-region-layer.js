@@ -1482,15 +1482,23 @@ export class FilterEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObjectMi
     if (gateMode === "targets") {
       const targets = fxBeh.getFlag?.(packageId, "tokenTargets");
       const ids = Array.isArray(targets) ? targets : targets ? [targets] : [];
-      if (!ids.length) return true;
+      if (!ids.length) return false;
+
+      const selected = canvas.tokens?.controlled ?? [];
+      if (!selected.length) return false;
+
+      const inList = (t) => {
+        const id = t?.document?.id;
+        const uuid = t?.document?.uuid;
+        return ids.includes(id) || ids.includes(uuid);
+      };
+      const pool = selected.filter(inList);
+      if (!pool.length) return false;
+
       if (!win) return true;
 
-      for (const id of ids) {
-        let token = null;
-        try {
-          token = typeof id === "string" && id.includes(".") ? fromUuidSync(id) : canvas.tokens?.get(id);
-        } catch {}
-        const elev = Number(token?.document?.elevation);
+      for (const t of pool) {
+        const elev = Number(t?.document?.elevation ?? t?.elevation);
         if (Number.isFinite(elev) && this._inRangeElev(elev, win)) return true;
       }
       return false;

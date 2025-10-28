@@ -254,15 +254,15 @@ After adding a Region, open the Region config menu and navigate to the Behaviors
 
 In this menu, you can configure individual _Filter Effects_ in the same way as in the main app, and add region elevation visibility handling. Selecting the checkbox next to a _Filter Effect_ will display a dropdown of its options. Saving the Region behavior will add the selected _Filter Effects_ to the region. For region elevation, use the Elevation Constraints dropdown.
 
-None - No elevation restrictions are considered.
-Tokens POV - Visibility will be restricted to a given tokens POV. For example, if the region elevation bottom is set to 10 feet, and region elevation top is set to 20 feet, the filter effect will be visible to the token while their elevation is between 10 and 20 feet. If the region elevation bottom is set to 10 feet, and region elevation top is infinite, the filter effect will be visible to the token while their elevation is 10 feet or above. If the region elevation bottom is infinite, and region elevation top is 20, the filter effect will be visible to the token while their elevation is 20 feet or below.
+None - No elevation restrictions are considered.<br/>
+Tokens POV - Visibility will be restricted to a given tokens POV. For example, if the region elevation bottom is set to 10 feet, and region elevation top is set to 20 feet, the filter effect will be visible to the token while their elevation is between 10 and 20 feet. If the region elevation bottom is set to 10 feet, and region elevation top is infinite, the filter effect will be visible to the token while their elevation is 10 feet or above. If the region elevation bottom is infinite, and region elevation top is 20, the filter effect will be visible to the token while their elevation is 20 feet or below.<br/>
 Specific Tokens POV - Same visibility as Tokens POV, but only allows that visibility based on Token UUID's entered. Any Token UUID not entered will not be able to see the filter effect. 
 
 Always Visible for GM - Ignores Tokens POV for GM and makes the effect always visible.
 
 In addition, you can subscribe the Filter Region behavior to the Token Enters and Token Exits events. These events can work in concert with the Elevation Constraints options, or on their own.
 
-Token Enters: Effect becomes visible when a token enters the bounds of the region. This event can be paired with Token Exits to turn an effect on and off when a token moves in/out. Alternatively, you can only add the Token Enters event, in which case the effect will become visible once a token enters, and remain visible even if they exit.
+Token Enters: Effect becomes visible when a token enters the bounds of the region. This event can be paired with Token Exits to turn an effect on and off when a token moves in/out. Alternatively, you can only add the Token Enters event, in which case the effect will become visible once a token enters, and remain visible even if they exit.<br/>
 Token Exits: Effect becomes not visible when a token exits the bounds of the region.
 
 #### Masking Filter Effects
