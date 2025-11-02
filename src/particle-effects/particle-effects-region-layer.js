@@ -16,7 +16,7 @@ import { isEnabled } from "../settings.js";
 const TYPE = `${packageId}.particleEffectsRegion`;
 
 function computeSortSlots() {
-  const SORT = foundry.canvas.groups.PrimaryCanvasGroup?.SORT_LAYERS || canvas.primary?.constructor?.SORT_LAYERS || {};
+  const SORT = CONFIG.fxmaster.PrimaryCanvasGroupNS?.SORT_LAYERS || canvas.primary?.constructor?.SORT_LAYERS || {};
   const WEATHER = Number.isFinite(SORT.WEATHER) ? SORT.WEATHER : 800;
   const TOKENS = Number.isFinite(SORT.TOKENS) ? SORT.TOKENS : 600;
 

@@ -9,3 +9,4 @@ CONFIG.fxmaster.CanvasLayerNS = foundry.canvas?.layers?.CanvasLayer ?? CanvasLay
 CONFIG.fxmaster.InteractionLayerNS = foundry.canvas?.layers?.InteractionLayer ?? InteractionLayer;
 CONFIG.fxmaster.DrawingNS = foundry.canvas?.placeables?.Drawing ?? Drawing;
 CONFIG.fxmaster.WeatherOcclusionMaskFilterNS = foundry.canvas?.rendering?.filters?.WeatherOcclusionMaskFilter ?? WeatherOcclusionMaskFilter;
+CONFIG.fxmaster.PrimaryCanvasGroupNS = foundry.canvas?.groups?.PrimaryCanvasGroup ?? PrimaryCanvasGroup;
