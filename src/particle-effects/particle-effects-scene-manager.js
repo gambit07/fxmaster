@@ -14,6 +14,13 @@
  *   3) Attach one sprite (using the shared RT) per distinct parent container and
  *      set container.mask to that sprite.
  *   4) Keep a shared RT alive across swaps to minimize visible tearing.
+ *
+ * v12+ note:
+ * With sortLayer lanes, FXMaster scene FX live under:
+ *   - layer._belowContainer        (default / below weather lane content)
+ *   - layer._aboveContent          (above-darkness lane content)
+ *   - layer._belowTokensContent    (below-tokens lane content)
+ * This manager masks those content containers directly.
  */
 
 import { packageId } from "../constants.js";
@@ -42,12 +49,21 @@ export function refreshSceneParticlesSuppressionMasks() {
         if (layer?._belowContainer) out.push(layer._belowContainer);
       } catch {}
       try {
-        if (layer?._aboveContainer) out.push(layer._aboveContainer);
+        if (layer?._aboveContent) out.push(layer._aboveContent);
       } catch {}
       try {
-        if (layer?._belowTokensContainer) out.push(layer._belowTokensContainer);
+        if (layer?._belowTokensContent) out.push(layer._belowTokensContent);
       } catch {}
-      return out;
+      try {
+        if (layer?._laneRoots?.def) out.push(layer._laneRoots.def);
+      } catch {}
+      try {
+        if (layer?._laneRoots?.above) out.push(layer._laneRoots.above);
+      } catch {}
+      try {
+        if (layer?._laneRoots?.belowTokens) out.push(layer._laneRoots.belowTokens);
+      } catch {}
+      return out.filter(Boolean);
     };
 
     layer._dyingSceneEffects ??= new Set();
@@ -258,6 +274,7 @@ function _uniqueParents(fxList) {
     let p = fx?.parent;
     if (!p) continue;
 
+    // If a parent advertises a redirect for masking, honor it.
     if (p.fxmMaskRedirect) p = p.fxmMaskRedirect;
     set.add(p);
   }

@@ -10,7 +10,7 @@ export class ParticleEffectsRegionBehaviorConfig extends foundry.applications.sh
     const fieldset = Array.from(rendered.form.querySelectorAll("fieldset")).find(
       (fs) =>
         fs.querySelector("legend")?.textContent.trim() ===
-        game.i18n.localize("FXMASTER.ParticleEffectRegionBehaviorName"),
+        game.i18n.localize("FXMASTER.Regions.BehaviorNames.ParticleEffectRegionBehaviorName"),
     );
     if (!fieldset) return rendered;
 

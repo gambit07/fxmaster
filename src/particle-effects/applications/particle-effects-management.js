@@ -48,7 +48,7 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
         return {
           ...groups,
           [grp]: {
-            label: `FXMASTER.ParticleEffectsGroup${grp.titleCase()}`,
+            label: `FXMASTER.Particles.Groups.${grp.titleCase()}`,
             expanded: isExpanded,
             effects: {
               ...(groups[grp]?.effects ?? {}),

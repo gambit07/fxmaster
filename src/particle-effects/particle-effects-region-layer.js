@@ -15,6 +15,18 @@ import { isEnabled } from "../settings.js";
 
 const TYPE = `${packageId}.particleEffectsRegion`;
 
+function computeSortSlots() {
+  const SORT = foundry.canvas.groups.PrimaryCanvasGroup?.SORT_LAYERS || canvas.primary?.constructor?.SORT_LAYERS || {};
+  const WEATHER = Number.isFinite(SORT.WEATHER) ? SORT.WEATHER : 800;
+  const TOKENS = Number.isFinite(SORT.TOKENS) ? SORT.TOKENS : 600;
+
+  return {
+    BELOW_TOKENS: TOKENS - 1, // under tokens
+    DEFAULT_BELOW_WEATHER: Math.min(WEATHER - 1, TOKENS + 1), // above tokens, below weather
+    ABOVE_DARKNESS_EFFECTS: WEATHER + 120, // above darkness
+  };
+}
+
 export class ParticleEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObjectMixinNS(CONFIG.fxmaster.CanvasLayerNS) {
   /** Layer configuration for Foundry's canvas stack. */
   static get layerOptions() {
@@ -750,103 +762,161 @@ export class ParticleEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObject
 
   /** Ensure scene-level host containers exist and are attached in draw order. */
   _ensureSceneContainers() {
-    if (!this._belowContainer || this._belowContainer.destroyed) {
-      this._belowContainer = new PIXI.Container();
-      this._belowContainer.name = "fxmSceneBelowDarkness";
-      this.addChild(this._belowContainer);
-    }
+    const SLOTS = computeSortSlots();
+    const primaryElev = canvas.primary?.elevation ?? 0;
+    const weatherElev = canvas.weather?.elevation ?? canvas.lighting?.elevation ?? 1000;
 
-    if (!this._belowTokensContainer || this._belowTokensContainer.destroyed) {
-      const parent = canvas.tokens?.parent ?? canvas.primary;
-      const cOuter = (this._belowTokensContainer = new PIXI.Container());
-      cOuter.name = "fxmSceneBelowTokens_SCENE";
-      cOuter.sortableChildren = true;
-      cOuter.eventMode = "none";
-      parent.addChild(cOuter);
-      cOuter.zIndex = (canvas.tokens?.zIndex ?? 0) - 1;
-      if (parent.sortChildren) parent.sortChildren();
+    const makePrimaryRoot = (cur, name, sortLayer, elev, needsOcclusion = false) => {
+      let root = cur;
+      const FullObject = CONFIG.fxmaster.FullCanvasObjectMixinNS(PIXI.Container);
+      const parent = canvas.primary ?? canvas.stage;
 
-      if (!this._belowTokensOccl) {
-        this._belowTokensOccl =
-          CONFIG.fxmaster?.WeatherOcclusionMaskFilterNS?.create?.({
-            occlusionTexture: canvas.masks?.depth?.renderTexture,
-          }) ?? null;
+      if (!root || root.destroyed) {
+        root = new FullObject();
+        root.name = name;
+        root.sortableChildren = true;
+        root.eventMode = "none";
+        root.mask = canvas.masks.scene;
+        root.filterArea = canvas.app.renderer.screen;
+        parent.addChild(root);
+      } else if (root.parent !== parent) {
+        try {
+          root.parent?.removeChild?.(root);
+        } catch {}
+        parent.addChild(root);
       }
-      if (this._belowTokensOccl) {
-        this._belowTokensOccl.enabled = false;
-        this._belowTokensOccl.elevation = this.elevation;
-        cOuter.filters = [this._belowTokensOccl];
-        cOuter.filterArea = canvas.tokens?.parent?.filterArea ?? canvas.app.renderer.screen;
-      }
-    }
 
+      try {
+        root.elevation = elev;
+      } catch {}
+      try {
+        root.sortLayer = sortLayer;
+      } catch {}
+
+      if (needsOcclusion) {
+        if (!this._belowTokensOccl) {
+          this._belowTokensOccl =
+            CONFIG.fxmaster?.WeatherOcclusionMaskFilterNS?.create?.({
+              occlusionTexture: canvas.masks?.depth?.renderTexture,
+            }) ?? null;
+        }
+        if (this._belowTokensOccl) {
+          this._belowTokensOccl.enabled = false;
+          this._belowTokensOccl.elevation = weatherElev;
+          root.filters = [this._belowTokensOccl];
+          root.filterArea = canvas.app.renderer.screen;
+        }
+      }
+      return root;
+    };
+
+    const makeEffectsRoot = (cur, name, sortLayer, elev) => {
+      let root = cur;
+      const FullObject = CONFIG.fxmaster.FullCanvasObjectMixinNS(PIXI.Container);
+      const parent = canvas.effects ?? canvas.rendered ?? canvas.stage;
+
+      if (!root || root.destroyed) {
+        root = new FullObject();
+        root.name = name;
+        root.sortableChildren = true;
+        root.eventMode = "none";
+        root.mask = canvas.masks.scene;
+        root.filterArea = canvas.app.renderer.screen;
+        parent.addChild(root);
+      } else if (root.parent !== parent) {
+        try {
+          root.parent?.removeChild?.(root);
+        } catch {}
+        parent.addChild(root);
+      }
+
+      try {
+        root.elevation = elev;
+      } catch {}
+      try {
+        root.sortLayer = sortLayer;
+      } catch {}
+      return root;
+    };
+
+    this._laneRoots = this._laneRoots || {};
+
+    // BELOW-TOKENS  (FoW-masked under primary)
+    this._laneRoots.belowTokens = makePrimaryRoot(
+      this._laneRoots.belowTokens,
+      "fxmLane_BelowTokens",
+      SLOTS.BELOW_TOKENS,
+      primaryElev,
+      true,
+    );
     if (
       !this._belowTokensContent ||
       this._belowTokensContent.destroyed ||
-      this._belowTokensContent.parent !== this._belowTokensContainer
+      this._belowTokensContent.parent !== this._laneRoots.belowTokens
     ) {
-      const cInner = (this._belowTokensContent = new PIXI.Container());
-      cInner.name = "fxmSceneBelowTokensContent_SCENE";
-      cInner.sortableChildren = true;
-      cInner.eventMode = "none";
-      cInner.fxmMaskRedirect = this._belowTokensContainer;
-      this._belowTokensContainer.addChild(cInner);
+      const c = (this._belowTokensContent = new PIXI.Container());
+      c.name = "fxmBelowTokensContent_SCENE";
+      c.sortableChildren = true;
+      c.eventMode = "none";
+      this._laneRoots.belowTokens.addChild(c);
+      try {
+        c.fxmMaskRedirect = this._laneRoots.belowTokens;
+      } catch {}
     }
-
-    if (!this._belowTokensRegionContainer || this._belowTokensRegionContainer.destroyed) {
-      const parent = canvas.tokens?.parent ?? canvas.primary;
-      const cOuterR = (this._belowTokensRegionContainer = new PIXI.Container());
-      cOuterR.name = "fxmSceneBelowTokens_REGION";
-      cOuterR.sortableChildren = true;
-      cOuterR.eventMode = "none";
-      parent.addChild(cOuterR);
-      cOuterR.zIndex = (canvas.tokens?.zIndex ?? 0) - 1;
-      if (parent.sortChildren) parent.sortChildren();
-
-      if (!this._belowTokensRegionOccl) {
-        this._belowTokensRegionOccl =
-          CONFIG.fxmaster?.WeatherOcclusionMaskFilterNS?.create?.({
-            occlusionTexture: canvas.masks?.depth?.renderTexture,
-          }) ?? null;
-      }
-      if (this._belowTokensRegionOccl) {
-        this._belowTokensRegionOccl.enabled = false;
-        this._belowTokensRegionOccl.elevation = this.elevation;
-        cOuterR.filters = [this._belowTokensRegionOccl];
-        cOuterR.filterArea = canvas.tokens?.parent?.filterArea ?? canvas.app.renderer.screen;
-      }
-    }
-
     if (
       !this._belowTokensRegionContent ||
       this._belowTokensRegionContent.destroyed ||
-      this._belowTokensRegionContent.parent !== this._belowTokensRegionContainer
+      this._belowTokensRegionContent.parent !== this._laneRoots.belowTokens
     ) {
-      const cInnerR = (this._belowTokensRegionContent = new PIXI.Container());
-      cInnerR.name = "fxmSceneBelowTokensContent_REGION";
-      cInnerR.sortableChildren = true;
-      cInnerR.eventMode = "none";
-      this._belowTokensRegionContainer.addChild(cInnerR);
+      const c = (this._belowTokensRegionContent = new PIXI.Container());
+      c.name = "fxmBelowTokensContent_REGION";
+      c.sortableChildren = true;
+      c.eventMode = "none";
+      this._laneRoots.belowTokens.addChild(c);
     }
 
-    this.refreshBelowTokensSceneMask();
-
-    if (!this._aboveContainer || this._aboveContainer.destroyed) {
-      this._aboveContainer = new PIXI.Container();
-      this._aboveContainer.name = "fxmSceneAboveDarkness";
-      if (canvas.lighting) canvas.lighting.addChild(this._aboveContainer);
-      else this.addChild(this._aboveContainer);
+    // DEFAULT (FoW-masked above tokens, below weather in primary)
+    this._laneRoots.def = makePrimaryRoot(
+      this._laneRoots.def,
+      "fxmLane_DefaultBelowWeather",
+      SLOTS.DEFAULT_BELOW_WEATHER,
+      primaryElev,
+      false,
+    );
+    if (
+      !this._belowContainer ||
+      this._belowContainer.destroyed ||
+      this._belowContainer.parent !== this._laneRoots.def
+    ) {
+      this._belowContainer = new PIXI.Container();
+      this._belowContainer.name = "fxmSceneBelowWeather";
+      this._belowContainer.sortableChildren = true;
+      this._belowContainer.eventMode = "none";
+      this._laneRoots.def.addChild(this._belowContainer);
+      try {
+        this._belowContainer.fxmMaskRedirect = this._laneRoots.def;
+      } catch {}
     }
 
-    if (!this._aboveContent || this._aboveContent.destroyed || this._aboveContent.parent !== this._aboveContainer) {
+    // ABOVE-DARKNESS (FoW-masked in your build; EFFECTS is above lighting)
+    this._laneRoots.above = makeEffectsRoot(
+      this._laneRoots.above,
+      "fxmLane_AboveDarkness_Effects",
+      SLOTS.ABOVE_DARKNESS_EFFECTS,
+      weatherElev,
+    );
+    if (!this._aboveContent || this._aboveContent.destroyed || this._aboveContent.parent !== this._laneRoots.above) {
       const inner = (this._aboveContent = new PIXI.Container());
       inner.name = "fxmSceneAboveDarknessContent";
       inner.sortableChildren = true;
       inner.eventMode = "none";
-      inner.fxmMaskRedirect = this._aboveContainer;
-      this._aboveContainer.addChild(inner);
+      this._laneRoots.above.addChild(inner);
+      try {
+        inner.fxmMaskRedirect = this._laneRoots.above;
+      } catch {}
     }
 
+    this.refreshBelowTokensSceneMask();
     this.refreshAboveSceneMask();
   }
 
