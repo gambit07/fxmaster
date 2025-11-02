@@ -1,5 +1,9 @@
 # Changelog
 
+## [v7.0.3] - 2025-11-02
+- Bugfixes:
+  - Small fix for V12, forgot to add a namespace migration
+
 ## [v7.0.2] - 2025-11-02
 - Bugfixes:
   - Below Tokens: Resolved Particle Effects appearing under tiles when Below Tokens was true
