@@ -1,5 +1,6 @@
 import { SpiderParticleEffect } from "./effects/spiders.js";
 import { StarsParticleEffect } from "./effects/stars.js";
+import { StarsParticleEffect } from "./effects/fish.js";
 import { AutumnLeavesParticleEffect } from "./effects/leaves.js";
 import { BatsParticleEffect } from "./effects/bats.js";
 import { BirdsParticleEffect } from "./effects/birds.js";
@@ -25,6 +26,7 @@ export const particleEffects = {
   eagles: EaglesParticleEffect,
   rats: RatsParticleEffect,
   spiders: SpiderParticleEffect,
+  fishs: FishsParticleEffect,
 
   bubbles: BubblesParticleEffect,
   embers: EmbersParticleEffect,
