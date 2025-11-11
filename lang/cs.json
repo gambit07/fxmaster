@@ -1,0 +1,237 @@
+{
+  "I18N": {
+    "LANGUAGE": "Čeština",
+    "MAINTAINERS": "ghost#2000"
+  },
+
+  "CONTROLS": {
+    "Effects": "Ovládání efektů",
+    "SpecialFX": "Animace",
+    "ParticleEffects": "Částicové efekty",
+    "InvertMask": "Invertovat masku efektu prostředí",
+    "Filters": "Filtry",
+    "SaveMacro": "Uložit filtry a částicové efekty jako makro",
+    "ClearFX": "Vyčistit filtry a částicové efekty",
+    "ToolsActive": "Aktivní nástroje"
+  },
+
+  "FXMASTER": {
+    "Common": {
+      "ParticleEffect": "Částicové efekty",
+      "FilterEffect": "Filtry",
+      "ParticleEffectsManagementTitle": "Správa částicových efektů",
+      "FilterEffectsManagementTitle": "Správa filtrů",
+      "SpecialEffectsManagementTitle": "Správa animovaných efeoktů",
+      "SaveChanges": "Uložit změny",
+      "EnableEffects": "Aktivovat efekty?",
+      "DisableAll": "Deaktivovat efekty všem?",
+      "DisableAllHint": "Zaškrtnutí zakáže efekty všem uživatelům. Přepíše volbu 'Aktivovat efekty'. Slouží hlavně jako pojistka při selhání migrace. Obvykle není potřeba ji nastavovat ručně. Po změně tohoto nastavení je třeba scénu ručně znovunačíst.",
+      "ClearParticleAndFilterEffectsTitle": "Vyčistit filtry a efekty prostředí",
+      "ClearParticleAndFilterEffectsContent": "<p>Opravdu chceš natrvalo smazat všechny <em>částicové efekty</em> a <em>filtry </em> z této scény?</p>",
+      "ResetPassiveParameters": "Obnovit částicové efekty a filtry?",
+      "ResetPassiveParametersHint": "Zaškrtnutí obnoví parametry částicových a filtrových efektů na jejich výchozí hodnoty.",
+      "ResetPassiveSuccess": "Parametry částicových a filtrových efektů resetovány",
+      "Yes": "Ano",
+      "No": "Ne",
+      "Author": "Autor",
+      "Favorites": "Oblíbené",
+      "Favorite": "Oblíbený",
+      "Enable": "Povolit",
+      "ErrorCannotFindEffect": "FXMaster | Nelze najít data efektu.",
+      "TileCreated": "Byla vytvořena nová dlaždice efektu {effect}",
+      "PermissionCreate": "Oprávnění používat FXMaster",
+      "PermissionCreateHint": "Umožní uživatelům s vybraným a vyšším oprávněním používat prostřednictvím ovládacích prvků scény speciální efekty FXMaster.",
+      "Environment": "Prostředí",
+      "Interface": "Rozhraní",
+      "Music": "Hudba",
+      "Splash": "Stříkance?"
+    },
+
+    "Params": {
+      "Saturation": "Saturace",
+      "Gamma": "Gamma",
+      "Period": "Perioda",
+      "Duration": "Trvání",
+      "Brightness": "Jas",
+      "Contrast": "Kontrast",
+      "Noise": "Hustota šumu",
+      "LineWidth": "Šířka čáry",
+      "Density": "Hustota",
+      "Opacity": "Neprůhlednost",
+      "Tint": "Tónovat?",
+      "Scale": "Měřítko",
+      "ScaleHint": "Škálování videa",
+      "Speed": "Rychlost",
+      "Lifetime": "Výdrž",
+      "Blur": "Rozmazání",
+      "Bloom": "Přesvícení",
+      "Sepia": "Sépie",
+      "Threshold": "Práh",
+      "Direction": "Směr",
+      "Animations": "Animace",
+      "Anchor": "Kotva",
+      "AnchorHint": "Lokální souřadnice počátku mezi 0,0 a 1,0",
+      "Spin": "Rychlost otáčení",
+      "Glow": "Záře",
+     "Parallel": "Paralelní paprsky",
+      "Angle": "Vyzařovací bod/úhel",
+      "Gain": "Intenzita paprsků",
+      "Lacunarity": "Objem paprsků",
+      "BeamLength": "Délka paprsku",
+      "FadePercent": "Zeslabení okrajů %",
+      "ScratchSize": "Velikost škrábanců",
+      "ScratchDensity": "Hustota škrábanců",
+      "NoiseSize": "Velikost šumu",
+      "Wobble": "Chvění",
+      "Displacement": "Deformace",
+      "ThunderAware": "Reagovat na hrom?",
+      "ThunderChannels": "Kanály hromu",
+      "ThunderBassThreshold": "Práh basů hromu",
+      "Variants": "Varianty",
+      "Variant": {
+        "Cute": "Roztomilé",
+        "Creepy": "Děsivé"
+      },
+     "Shadow": "Stín?",
+      "ShadowRotation": "Pozice stínu",
+      "ShadowDistance": "Vzdálenost stínu",
+      "ShadowBlur": "Rozmazání stínu",
+      "ShadowOpacity": "Průhlednost stínu",
+      "BelowTokens": "Pod tokeny?"
+    },
+
+    "Particles": {
+      "Groups": {
+        "Other": "Ostatní",
+        "Animals": "Zvířata",
+        "Weather": "Počasí",
+        "Ambient": "Prostředí"
+      },
+      "Effects": {
+        "Bats": "Netopýři",
+        "Birds": "Ptáci",
+        "Bubbles": "Bubliny",
+        "Clouds": "Oblaka",
+        "Crows": "Vrány",
+        "Eagles": "Orli",
+        "Embers": "Uhlíky",
+        "Fog": "Mlha",
+        "AutumnLeaves": "Podzimní lístky",
+        "Rain": "Déšť",
+        "RainTop": "Déšť shora",
+        "Rats": "Krysy",
+        "Snow": "Sníh",
+        "Snowstorm": "Sněhová bouře",
+        "Spiders": "Pavouci",
+        "Stars": "Hvězdy",
+        "SakuraBlossoms": "Kvítky sakury",
+        "SakuraBloom": "Rozkvět sakury",
+        "Fireflies": "Světlušky",
+        "MagicCrystals": "Magické krystaly",
+        "Ghosts": "Duchové",
+        "BatsWeatherEffectsConfig": "Netopýři (FXMaster)",
+        "BirdsWeatherEffectsConfig": "Ptáci (FXMaster)",
+        "BubblesWeatherEffectsConfig": "Bubliny (FXMaster)",
+        "CloudsWeatherEffectsConfig": "Mraky (FXMaster)",
+        "CrowsWeatherEffectsConfig": "Vrány (FXMaster)",
+        "EaglesWeatherEffectsConfig": "Orli (FXMaster)",
+        "EmbersWeatherEffectsConfig": "Uhlíky (FXMaster)",
+        "FogWeatherEffectsConfig": "Mlha (FXMaster)",
+        "AutumnLeavesWeatherEffectsConfig": "Podzimní lístky (FXMaster)",
+        "RainWeatherEffectsConfig": "Déšť (FXMaster)",
+        "RainTopWeatherEffectsConfig": "Déšť shora (FXMaster)",
+        "RatsWeatherEffectsConfig": "Krysy (FXMaster)",
+        "SnowWeatherEffectsConfig": "Sníh (FXMaster)",
+        "SnowstormWeatherEffectsConfig": "Sněhová bouře (FXMaster)",
+        "SpidersWeatherEffectsConfig": "Pavouci (FXMaster)",
+        "StarsWeatherEffectsConfig": "Hvězdy (FXMaster)",
+        "SakuraBlossomsWeatherEffectsConfig": "Kvítky sakury (FXMaster)",
+        "SakuraBloomWeatherEffectsConfig": "Rozkvět sakury (FXMaster)",
+        "FirefliesWeatherEffectsConfig": "Světlušky (FXMaster)",
+        "MagicCrystalsWeatherEffectsConfig": "Magické krystaly (FXMaster)",
+        "GhostsWeatherEffectsConfig": "Duchové (FXMaster)"
+      },
+      "BirdsAnimations": {
+        "Glide": "Klouzání",
+        "Flap": "Mávání",
+        "Mixed": "Smíšené"
+      },
+      "TypeErrors": {
+        "TypeUnknown": "Částicový efekt '{id}' je neznámého typu '{type}', přeskočeno",
+        "TypeNotFound": "Pro typ {type} nebyl nalezen žádný částicový efekt"
+      }
+    },
+
+    "Filters": {
+      "Effects": {
+        "Bloom": "Přesvícení",
+        "Color": "Barva",
+        "Fog": "Mlha",
+        "Lightning": "Blesk",
+        "OldFilm": "Starý film",
+        "Predator": "Predátor",
+        "Underwater": "Pod vodou",
+        "Sunlight": "Sluneční světlo"
+      },
+      "TypeErrors": {
+        "TypeUnknown": "Efekt filtru '{id}' je neznámého typu '{type}', přeskočeno",
+        "TypeNotFound": "Pro typ {type} nebyl nalezen žádný filtrační efekt"
+      }
+    },
+
+    "Regions": {
+      "BehaviorNames": {
+        "ParticleEffectRegionBehaviorName": "FXMaster: Částicové efekty",
+        "FilterEffectRegionBehaviorName": "FXMaster: Filtry",
+        "SuppressSceneFiltersRegionBehaviorName": "FXMaster: Potlačit filtry",
+        "SuppressSceneParticlesRegionBehaviorName": "FXMaster: Potlačit částicové efekty"
+      },
+      "ElevationVisibility": {
+        "Label": "Výšková omezení",
+        "None": "Žádné",
+        "POV": "Pohled tokenu",
+        "Targets": "Pohled určených tokenů",
+        "TokenTargets": "UUID tokenu",
+        "AlwaysVisibleForGM": "Vždy viditelné pro PJ"
+      }
+    },
+
+    "AnimationEffect": {
+      "AllAnimations": "Všechny animace",
+      "Copied": "Zkopírováno: {value}",
+      "CopyElement": "Zkopírovat text do schránky",
+      "CustomDirectoryHint": "Cesta, kde se nacházejí tvé vlastní .webm soubory. Vyžaduje obnovení databáze animací.",
+      "CustomDirectoryName": "Složka vlastních animací",
+      "FileName": "Název souboru",
+      "FilePath": "Cesta k souboru",
+      "ModuleLabel": {
+        "JB2APatreon": "JB2A Patreon",
+        "JB2AFree": "JB2A Free",
+        "JB2AExtras": "JB2A Extras",
+        "JinkersAnimatedArt": "Jinker's Animated Art",
+        "AnimatedSpellEffects": "Animated Spell Effects",
+        "AnimatedSpellEffectsCartoon": "Animated Spell Effects: Cartoon",
+        "BossLootAssetsPremium": "Boss Loot Animated Assets Premium",
+        "BossLootAdventuresPremium": "Boss Loot Adventures Premium",
+        "BossLootAssetsFree": "Boss Loot Animated Assets Free",
+        "Custom": "Vlastní",
+        "WildMagicSurge": "Vlna divoké magie"
+      },
+      "RefreshDbHint": "Zaškrtutí umožní přestavět databázi tak, aby zohledňovala nově přidané či odebrané animace, a aby se zpracovaly náhledové ikony. Zpracování náhledů může trvat poměrně dlouho, zejména na hostovaných službách, jako je Forge.",
+      "RefreshDbName": "Aktualizovat databázi animací?",
+      "RightClickForDetails": "Klikni pravým tlačítkem pro detaily:",
+      "ScanComplete": "FXMaster | Sken animací dokončen!",
+      "ScanModules": "FXMaster | Skenuji moduly s animacemi {current}/{total}...",
+      "ScanningThumbnails": "FXMaster | Skenuji náhledy animací...",
+      "ScanningThumbnailsProgress": "FXMaster | Skenuji náhledy animací {current}/{total}",
+      "ScanStart": "FXMaster | Zahajuji sken animací...",
+      "SearchAnimations": "Hledat animace",
+      "SearchQueries": "Podporovány pokročilé dotazy, např.: (eldritch OR arrow) AND NOT blast",
+      "SequencerPath": "Cesta k DB Sequenceru",
+      "Update": "Aktualizovat animační efekt",
+      "RefreshDbError": "FXMaster | V databázi FXMaster nebyly nalezeny žádné animační efekty. Počkej na dokončení aktuálního skenu animací, nebo přejdi do 'Nastavení aplikace -> FXMaster -> Aktualizovat databázi animací' a spusť sken znovu.",
+      "RefreshDbEmpty": "FXMaster | V databázi FXMaster nejsou žádné animační efekty. FXMaster nahrává animace z tvé složky vlastních animací uvedené v nastavení modulu, nebo od poskytovatelů jako JB2A, Boss Loot apod. Pokud byly animace přidány, přejdi do 'Nastavení aplikace -> FXMaster -> Aktualizovat databázi animací' a spusť sken znovu.",
+      "ScanCompleteEmpty": "FXMaster | Sken animací dokončen, nebyly nalezeny žádné animační efekty. FXMaster nahrává animace z tvé složky vlastních animací uvedené v nastavení modulu, nebo od poskytovatelů jako JB2A, Boss Loot apod."
+    }
+  }
+}
