@@ -98,7 +98,7 @@
       "ShadowDistance": "Distância da Sombra",
       "ShadowBlur": "Desfoque da Sombra",
       "ShadowOpacity": "Opacidade da Sombra",
-      "BelowTokens": "Abaixo dos Tokens"
+      "BelowTokens": "Abaixo dos Tokens",
       "ShadowOnly": "Apenas Sombra",
       "Splash": "Respingo",
       "Orbit": "Órbita"
@@ -155,7 +155,6 @@
       "ShadowOnly": "Renderiza apenas a sombra projetada e oculta as sprites de partículas base.",
       "Splash": "Ativa os efeitos de respingos de chuva junto com as gotas de chuva.",
       "Orbit": "Permite orbitar em torno do centro de um recipiente em vez de se espalhar para fora."
-    },
     },
 
     "Particles": {
