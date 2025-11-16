@@ -44,7 +44,8 @@
       "Environment": "Ambiente",
       "Interface": "Interface",
       "Music": "Música",
-      "Splash": "Respingo"
+      "EnableTooltips": "Habilitar Dicas",
+      "EnableTooltipsHint": "Habilita descrições de dicas de ferramentas para os parâmetros de efeito de Partículas e Filtros."
     },
 
     "Params": {
@@ -98,6 +99,63 @@
       "ShadowBlur": "Desfoque da Sombra",
       "ShadowOpacity": "Opacidade da Sombra",
       "BelowTokens": "Abaixo dos Tokens"
+      "ShadowOnly": "Apenas Sombra",
+      "Splash": "Respingo",
+      "Orbit": "Órbita"
+    },
+    "ParamTooltips": {
+      "Saturation": "Intensidade da cor. 0 = tons de cinza; 1 = original; >1 = supersaturado.",
+      "Gamma": "Curva de tons médios. Valores mais baixos clareiam os tons médios; valores mais altos escurecem os tons médios.",
+      "Period": "Período de ciclo para repetição da animação, em milissegundos. Menor = ciclos mais rápidos.",
+      "Duration": "Duração de um efeito ou transição (fade ou playback), em segundos.",
+      "Brightness": "Brilho geral da cena ou da sprite. 0 = preto; 1 = original; >1 = mais brilhante.",
+      "Contrast": "Diferença entre claro e escuro. Valores mais altos aumentam o impacto.",
+      "Noise": "Intensidade da granulação/ruído do filme. Quanto maior o valor, mais visível a granulação.",
+      "LineWidth": "Largura das linhas/linhas de varredura em pixels (específica do efeito).",
+      "Density": "Quantas partículas são geradas por área. Maior = efeito mais denso. NOTA: Densidades mais altas terão um impacto maior no desempenho.",
+      "Opacity": "Transparência global do efeito. 0 = invisível; 1 = totalmente opaco.",
+      "Tint": "Aplique uma tonalidade de cor sólida. Clique em Aplicar para ativar a tonalidade.",
+      "Scale": "Escala de animação/partículas. Maior = partículas mais largas.",
+      "Speed": "Velocidade de movimento/animação. Maior = movimento ou mudança mais rápida.",
+      "Lifetime": "Tempo médio de vida das partículas e frequência relacionada. Maior = mais vida útil.",
+      "Blur": "Raio ou intensidade do desfoque aplicado pelo efeito.",
+      "Bloom": "Intensidade do brilho. Quão intensamente as áreas brilhantes brilham.",
+      "Sepia": "Intensidade da tonalidade sépia. Maior = aspecto vintage mais forte.",
+      "Threshold": "Limiar de brilho. Quanto menor, mais pixels são capturados.",
+      "Direction": "Orientação em graus para emissão ou movimento.",
+      "Animations": "Selecione os tipos de animação para este efeito.",
+      "Anchor": "Coordenadas locais da origem entre 0,0 e 1,0.",
+      "Spin": "Velocidade de rotação dos elementos. Maior = rotação mais rápida.",
+      "Glow": "Intensidade do brilho ao redor das sprites de partículas.",
+      "Parallel": "Use raios paralelos em vez de raios radiais.",
+      "Angle": "Ponto/ângulo de emissão em graus.",
+      "Gain": "Multiplicador de intensidade.",
+      "Lacunarity": "Fator de espaçamento para raios fractais. Maior = detalhes mais densos.",
+      "BeamLength": "Comprimento máximo visível dos feixes/raios.",
+      "FadePercent": "Suaviza as bordas da região nessa porcentagem para uma transição mais suave. Maior = mais fade.",
+      "ScratchSize": "Tamanho/espessura média dos arranhões.",
+      "ScratchDensity": "Quantos arranhões aparecem.",
+      "NoiseSize": "Escala de tamanho de grãos. Maior = grãos individuais maiores.",
+      "Wobble": "Adiciona movimento aleatório de partículas de um lado para o outro. Maior = mais movimento.",
+      "Displacement": "Intensidade da distorção no efeito de partículas.",
+      "ThunderAware": "Reaja aos picos de áudio. NOTA: Isso foi pensado para o Trovão, mas se aplica a qualquer efeito de graves no áudio, então escolha o Canal de acordo.",
+      "ThunderChannels": "A quais canais de áudio reagir.",
+      "ThunderBassThreshold": "Nível de graves necessário para provocar reações de trovão. Quanto maior o nível, menor a sensibilidade.",
+      "Variants": "Escolha um visual predefinido para este efeito.",
+      "Variant": {
+        "Cute": "Variante fofa semelhante a tecido.",
+        "Creepy": "Variante humanoide assustadora."
+      },
+      "Shadow": "Habilita a sombra projetada para os sprites de partículas.",
+      "ShadowRotation": "Ângulo da sombra em graus.",
+      "ShadowDistance": "Distância de deslocamento da sombra projetada. Maior = mais distante.",
+      "ShadowBlur": "Intensidade do desfoque na sombra projetada.",
+      "ShadowOpacity": "Opacidade da sombra projetada. 0 = invisível; 1 = totalmente opaca.",
+      "BelowTokens": "Renderiza visualmente os efeitos abaixo dos tokens.",
+      "ShadowOnly": "Renderiza apenas a sombra projetada e oculta as sprites de partículas base.",
+      "Splash": "Ativa os efeitos de respingos de chuva junto com as gotas de chuva.",
+      "Orbit": "Permite orbitar em torno do centro de um recipiente em vez de se espalhar para fora."
+    },
     },
 
     "Particles": {
@@ -198,6 +256,7 @@
 
     "AnimationEffect": {
       "AllAnimations": "Todas as Animações",
+      "FilterHint": "Filtre as animações por etiqueta. Quando presentes, incluem nomes de fornecedores de módulos, uma etiqueta Personalizada para uma pasta de animações adicionada pelo usuário e uma etiqueta Favoritos para animações favoritas.",
       "Copied": "Copiado: {value}",
       "CopyElement": "Copiar Texto para a Área de Transferência",
       "CustomDirectoryHint": "Caminho onde ficam seus arquivos .webm. Necessário atualizar o Banco de Animações.",
@@ -215,7 +274,9 @@
         "BossLootAdventuresPremium": "Boss Loot Adventures Premium",
         "BossLootAssetsFree": "Boss Loot Animated Assets Free",
         "Custom": "Personalizado",
-        "WildMagicSurge": "Wild Magic Surge"
+        "WildMagicSurge": "Wild Magic Surge",
+        "EskieEffectsFree": "Eskie Effects Free",
+        "EskieEffects": "Eskie Effects"
       },
       "RefreshDbHint": "Reconstrói o banco de dados para contabilizar animações adicionadas/removidas e analisar miniaturas. Pode demorar, especialmente em serviços como o The Forge.",
       "RefreshDbName": "Atualizar Banco de Animações",
@@ -231,7 +292,9 @@
       "Update": "Atualizar Efeito de Animação",
       "RefreshDbError": "FXMaster | Nenhum efeito de animação encontrado no banco do FXMaster. Aguarde o término da busca atual ou acesse \"Configurações do módulo → FXMaster → Atualizar banco de animações\".",
       "RefreshDbEmpty": "FXMaster | Nenhum efeito de animação presente no banco. O FXMaster carrega a partir da sua pasta personalizada ou de provedores como JB2A, Boss Loot etc. Após adicionar animações, use \"Configurações do módulo → FXMaster → Atualizar banco de animações\".",
-      "ScanCompleteEmpty": "FXMaster | Busca concluída — nenhum efeito de animação encontrado. Adicione animações e atualize novamente."
+      "ScanCompleteEmpty": "FXMaster | Busca concluída — nenhum efeito de animação encontrado. Adicione animações e atualize novamente.",
+      "Thumbnails": "Miniaturas",
+      "ThumbnailsHint": "Permite a busca de miniaturas de animações durante a verificação de Atualização de Animações. Os provedores de animação que suportam a busca de miniaturas são JB2A e Eskie Effects."
     }
   }
 }
