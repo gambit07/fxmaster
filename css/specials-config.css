@@ -4,20 +4,143 @@
   opacity: 0.6;
 }
 
-/* Specials filters bar */
+/* ─────────────────────────────────────
+ * Specials filters bar (Animation Effects)
+ * Layout: [Search] [Refresh] [Slider] [Tag Select]
+ * ───────────────────────────────────── */
 .specials-filters-container {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
   padding: 0.75rem 0;
   margin-bottom: 0.75rem;
   border-bottom: 1px solid var(--color-border);
-}
-.specials-filters-container > * {
-  margin-right: 0.5rem;
-}
-.specials-filters-container > *:last-child {
-  margin-right: 0;
+  gap: 0.5rem;
 }
 
-/* Popout layout */
+/* Use gap, not margins, for spacing */
+.specials-filters-container > * {
+  margin: 0;
+}
+
+/* Search: flex-grow (left side) */
+.specials-filters-container .specials-search-input {
+  flex: 1 1 0;
+  min-width: 8rem;
+}
+
+/* Tag select: flex-grow (right side) */
+.specials-filters-container .specials-tag-filter {
+  flex: 1 1 0;
+  min-width: 8rem;
+}
+
+/* Middle controls: compact */
+.specials-filters-container .fxm-refresh-animations,
+.specials-filters-container .fxm-switch {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* Refresh button styling */
+.specials-filters-container {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  font-size: 0.85rem;
+  line-height: 1.2;
+  cursor: pointer;
+}
+.specials-filters-container .fxm-refresh-animations i {
+  font-size: 0.85rem;
+}
+.specials-filters-container .fxm-refresh-animations[disabled] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.specials-filters-container .fxm-refresh-animations.spinning i {
+  animation: fxmaster-spin 900ms linear infinite;
+}
+
+@keyframes fxmaster-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Slider-style thumbnail toggle */
+.specials-filters-container .fxm-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  user-select: none;
+  font-size: 0.8rem;
+}
+
+/* Visually hide the native checkbox but keep it accessible */
+.specials-filters-container .fxm-switch input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+/* Track */
+.specials-filters-container .fxm-switch .fxm-slider {
+  position: relative;
+  width: 34px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--color-border);
+  box-shadow: inset 0 0 0 1px var(--color-shadow-dark);
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+/* Thumb */
+.specials-filters-container .fxm-switch .fxm-slider::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-text-light-0);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  transform: translateX(0);
+  transition: transform 150ms ease;
+}
+
+/* Checked state */
+.specials-filters-container .fxm-switch input[type="checkbox"]:checked + .fxm-slider {
+  background: var(--color-warm-2);
+}
+.specials-filters-container .fxm-switch input[type="checkbox"]:checked + .fxm-slider::before {
+  transform: translateX(14px);
+}
+
+/* Label text next to slider */
+.specials-filters-container .fxm-switch .fxm-switch-label {
+  opacity: 0.85;
+}
+
+/* Match heights so the row feels cohesive */
+.specials-filters-container input[type="text"],
+.specials-filters-container select {
+  height: 28px;
+}
+
+/* ─────────────────────────────────────
+ * Popout layout
+ * ───────────────────────────────────── */
 .fxmaster.specials-management.application-popout {
   display: flex;
   flex-direction: column;
@@ -115,7 +238,7 @@
   display: block;
 }
 
-/* Search & tags */
+/* Keep generic margins for other uses (overridden above in the bar) */
 .specials-search-input {
   margin-right: 0.5rem;
 }
@@ -140,7 +263,7 @@
   flex-shrink: 0;
 }
 
-/* Space out side-by-side inputs (e.g. Scale X/Y, Anchor X/Y) */
+/* Space out side-by-side inputs (e.g. Scale X/Y) */
 .fxmaster.specials-config .form-group .form-fields input + input {
   margin-left: 0.5rem;
 }

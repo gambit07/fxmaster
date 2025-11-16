@@ -16,10 +16,6 @@ uniform vec2  viewSize;     // CSS px of mask RT (usually screen size)
 uniform vec4  inputSize;    // xy: input size in CSS px; zw: 1/size
 uniform vec4  outputFrame;  // xy: offset in CSS px;   zw: size
 
-/* NOTE: keep these for ABI/back-compat (not used for mask sample anymore) */
-uniform vec4  srcFrame;     // CSS px: (x,y,w,h)
-uniform vec2  camFrac;      // CSS px: fractional camera translation
-
 uniform float hasMask;
 uniform float maskReady;
 
@@ -30,7 +26,6 @@ uniform float density;
 uniform vec2  dimensions;
 
 uniform float invertMask;
-uniform float feather;     // kept for ABI
 uniform float strength;
 
 /* ---- Region fade (shared with Color) ---- */

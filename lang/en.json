@@ -44,7 +44,8 @@
       "Environment": "Environment",
       "Interface": "Interface",
       "Music": "Music",
-      "Splash": "Splash"
+      "EnableTooltips": "Enable Tooltips",
+      "EnableTooltipsHint": "Enables tooltip descriptions for Particle and Filter effect parameters."
     },
 
     "Params": {
@@ -97,7 +98,64 @@
       "ShadowDistance": "Shadow Distance",
       "ShadowBlur": "Shadow Blur",
       "ShadowOpacity": "Shadow Opacity",
-      "BelowTokens": "Below Tokens"
+      "BelowTokens": "Below Tokens",
+      "ShadowOnly": "Shadow Only",
+      "Splash": "Splash",
+      "Orbit": "Orbit"
+    },
+
+    "ParamTooltips": {
+      "Saturation": "Color intensity. 0 = grayscale; 1 = original; >1 = oversaturated.",
+      "Gamma": "Midtone curve. Lower brightens midtones; higher darkens midtones.",
+      "Period": "Cycle period for repeating animation, in milliseconds. Lower = faster cycles.",
+      "Duration": "How long an effect or transition runs (fade or playback), in seconds.",
+      "Brightness": "Overall scene or sprite brightness. 0 = black; 1 = original; >1 = brighter.",
+      "Contrast": "Difference between light and dark. Higher values increase punch.",
+      "Noise": "Strength of film grain / noise. Higher = more visible grain.",
+      "LineWidth": "Width of lines/scanlines in pixels (effect-specific).",
+      "Density": "How many particles spawn per area. Higher = busier effect. NOTE: Higher densities will have a greater impact on performance.",
+      "Opacity": "Global transparency of the effect. 0 = invisible; 1 = fully opaque.",
+      "Tint": "Apply a solid color tint. Toggle Apply to enable the tint color.",
+      "Scale": "Animation/particle scaling. Higher = larger particles.",
+      "Speed": "Motion/animation speed. Higher = faster movement or change.",
+      "Lifetime": "Average life of particles and related frequency. Higher = longer-lived.",
+      "Blur": "Blur radius or strength applied by the effect.",
+      "Bloom": "Bloom intensity—how strongly bright areas glow.",
+      "Sepia": "Sepia toning amount. Higher = stronger vintage look.",
+      "Threshold": "Brightness threshold; lower catches more pixels.",
+      "Direction": "Orientation in degrees for emission or motion.",
+      "Animations": "Select animation types for this effect.",
+      "Anchor": "Local coordinates of the origin between 0.0 and 1.0.",
+      "Spin": "Spin/rotation speed of elements. Higher = faster spin.",
+      "Glow": "Glow intensity around particle sprites",
+      "Parallel": "Use parallel rays instead of radial.",
+      "Angle": "Emission point/angle in degrees.",
+      "Gain": "Intensity multiplier.",
+      "Lacunarity": "Spacing factor for fractal rays. Higher = denser detail.",
+      "BeamLength": "Maximum visible length of beams/rays.",
+      "FadePercent": "Softens region edges by this percent for a smoother blend. Higher = more fade.",
+      "ScratchSize": "Average size/thickness of scratches.",
+      "ScratchDensity": "How many scratches appear.",
+      "NoiseSize": "Grain size scale. Higher = larger individual grains.",
+      "Wobble": "Adds random side to side particle movement. Higher = more movement.",
+      "Displacement": "Strength of warping on particle effect.",
+      "ThunderAware": "React to audio peaks. NOTE: This is meant for Thunder, but will apply to any bass effect in audio so choose Channel accordingly.",
+      "ThunderChannels": "Which audio channels to react to.",
+      "ThunderBassThreshold": "Bass level required to trigger thunder reactions. Higher = less sensitive.",
+      "Variants": "Choose a preset look for this effect.",
+      "Variant": {
+        "Cute": "Cloth-like cute variant.",
+        "Creepy": "Spookier humanoid variant."
+      },
+      "Shadow": "Enable a drop shadow for the particle sprites.",
+      "ShadowRotation": "Shadow angle in degrees.",
+      "ShadowDistance": "Offset distance of the drop shadow. Higher = further away.",
+      "ShadowBlur": "Blur strength on the drop shadow.",
+      "ShadowOpacity": "Opacity of the drop shadow. 0 = invisible; 1 = fully opaque.",
+      "BelowTokens": "Renders effects underneath tokens visually.",
+      "ShadowOnly": "Render only the drop shadow and hide the base particle sprites.",
+      "Splash": "Enable rain splash effects alongside raindrops.",
+      "Orbit": "Enables orbit around center of a container instead of an outward spread."
     },
 
     "Particles": {
@@ -198,6 +256,7 @@
 
     "AnimationEffect": {
       "AllAnimations": "All Animations",
+      "FilterHint": "Filter animations by tag. Where present includes module provider names, a Custom tag for a user-added animation folder, and a Favorites tag for favorited animations.",
       "Copied": "Copied: {value}",
       "CopyElement": "Copy Text to Clipboard",
       "CustomDirectoryHint": "A path where your own .webm files live. This requires an Animation Database Refresh.",
@@ -215,10 +274,12 @@
         "BossLootAdventuresPremium": "Boss Loot Adventures Premium",
         "BossLootAssetsFree": "Boss Loot Animated Assets Free",
         "Custom": "Custom",
-        "WildMagicSurge": "Wild Magic Surge"
+        "WildMagicSurge": "Wild Magic Surge",
+        "EskieEffectsFree": "Eskie Effects Free",
+        "EskieEffects": "Eskie Effects"
       },
-      "RefreshDbHint": "Rebuild database to account for any newly added or removed animations, and to parse thumbnail icons. Thumbnail parsing can take quite some time, especially on hosted services such as the Forge.",
-      "RefreshDbName": "Refresh Animations Database",
+      "RefreshDbHint": "Rebuild the animations database to account for any newly added or removed animations. Optional thumbnail scanning.",
+      "RefreshDbName": "Refresh Animations",
       "RightClickForDetails": "Right click for Details:",
       "ScanComplete": "FXMaster | Animation Scan Complete!",
       "ScanModules": "FXMaster | Scanning Animation Modules {current}/{total}...",
@@ -231,7 +292,9 @@
       "Update": "Update Animation Effect",
       "RefreshDbError": "FXMaster | No animation effects found in FXMaster DB. Wait for the current Animation Scan to complete, or go to 'Module Settings -> FXMaster -> Refresh Animations Database' to re-run the Animation Scan.",
       "RefreshDbEmpty": "FXMaster | No animation effects present in the FXMaster DB. FXMaster populates animations from your own custom animations folder specified in the module settings, or from providers such as JB2A, Boss Loot, etc. If animations have been added, go to 'Module Settings -> FXMaster -> Refresh Animations Database' to re-run the Animation Scan.",
-      "ScanCompleteEmpty": "FXMaster | Animation Scan Complete - No animation effects found. FXMaster populates animations from your own custom animations folder specified in the module settings, or from providers such as JB2A, Boss Loot, etc."
+      "ScanCompleteEmpty": "FXMaster | Animation Scan Complete - No animation effects found. FXMaster populates animations from your own custom animations folder specified in the module settings, or from providers such as JB2A, Boss Loot, etc.",
+      "Thumbnails": "Thumbnails",
+      "ThumbnailsHint": "Enables lookup for animation thumbnails during the Refresh Animations scan. Animation providers that support thumbnail lookup are JB2A and Eskie Effects."
     }
   }
 }

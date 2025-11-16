@@ -21,7 +21,7 @@ export class RainParticleEffect extends FXMasterParticleEffect {
     return foundry.utils.mergeObject(
       super.parameters,
       {
-        splash: { label: "FXMASTER.Common.Splash", type: "checkbox", value: true },
+        splash: { label: "FXMASTER.Params.Splash", type: "checkbox", value: true },
       },
       { performDeletions: true },
     );
@@ -49,7 +49,7 @@ export class RainParticleEffect extends FXMasterParticleEffect {
       { type: "moveSpeedStatic", config: { min: 2800, max: 3500 } },
       { type: "scaleStatic", config: { min: 0.8, max: 1 } },
       { type: "rotationStatic", config: { min: 75, max: 75 } },
-      { type: "textureSingle", config: { texture: "ui/particles/rain.png" } },
+      { type: "textureSingle", config: { texture: "modules/fxmaster/assets/particle-effects/effects/rain/rain.webp" } },
     ],
   };
 
@@ -65,7 +65,7 @@ export class RainParticleEffect extends FXMasterParticleEffect {
       { type: "scaleStatic", config: { min: 0.48, max: 0.6 } },
       { type: "rotationStatic", config: { min: -90, max: -90 } },
       { type: "noRotation", config: {} },
-      { type: "textureSingle", config: { texture: "ui/particles/drop.png" } },
+      { type: "textureSingle", config: { texture: "modules/fxmaster/assets/particle-effects/effects/rain/drop.webp" } },
     ],
   };
 

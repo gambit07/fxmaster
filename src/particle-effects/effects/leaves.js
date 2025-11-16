@@ -79,7 +79,9 @@ export class AutumnLeavesParticleEffect extends DefaultRectangleSpawnMixin(FXMas
       {
         type: "textureRandom",
         config: {
-          textures: Array.fromRange(6).map((n) => `ui/particles/leaf${n + 1}.png`),
+          textures: Array.fromRange(6).map(
+            (n) => `modules/fxmaster/assets/particle-effects/effects/autumnleaves/leaf${n + 1}.webp`,
+          ),
         },
       },
     ],

@@ -53,10 +53,17 @@ export class FilterEffectsManagement extends FXMasterBaseFormV2 {
   async _onRender(...args) {
     await super._onRender(...args);
 
-    let windowPosition = game.user.getFlag(packageId, "dialog-position-filtereffects");
-    if (windowPosition) {
-      this.setPosition({ top: windowPosition.top, left: windowPosition.left });
-    }
+    const pos = game.user.getFlag(packageId, "dialog-position-filtereffects");
+    if (!pos) return;
+
+    await new Promise((r) => requestAnimationFrame(r));
+
+    const next = { top: pos.top, left: pos.left };
+    if (Number.isFinite(pos.width)) next.width = pos.width;
+
+    try {
+      this.setPosition(next);
+    } catch (err) {}
 
     const content = this.element.querySelector(".window-content");
 

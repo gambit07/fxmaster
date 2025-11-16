@@ -183,21 +183,6 @@ export class FogFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   }
 
   /**
-   * Internal helper to set a uniform with optional clamping.
-   * @param {string} key - Uniform key.
-   * @param {any} val - Value.
-   * @param {(v:any)=>any} [clampFn] - Optional clamp function.
-   * @private
-   */
-  _setUniform(key, val, clampFn) {
-    const x = clampFn ? clampFn(val) : val;
-    if (x === undefined) return;
-    try {
-      if (this.uniforms) this.uniforms[key] = x;
-    } catch {}
-  }
-
-  /**
    * Resolve tint color and enabled-flag from options.
    * Accepts { value, apply } objects or raw hex strings.
    * @param {object} [options={}] - Options payload.
@@ -232,23 +217,28 @@ export class FogFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   }
 
   /**
-   * Apply resolved tint payload to uniforms.
+   * Apply resolved tint payload to uniforms — but only if the payload
+   * actually contains tint info. Region-layer rebases (bounds-only)
+   * must NOT clobber a previously chosen tint.
    * @param {{rgb:Float32Array|null,hasRGB:boolean,enabled:boolean|undefined}} payload
    * @private
    */
   _applyTintUniforms({ rgb, hasRGB, enabled }) {
-    if (hasRGB && rgb) this._tintRGB = asFloat3(rgb);
-    if (enabled !== undefined) this._tintEnabled = !!enabled;
+    const u = (this.uniforms ??= {});
+    const hasToggle = enabled !== undefined;
+    if (!hasRGB && !hasToggle) return;
 
-    if (this._tintEnabled) {
-      this._setUniform("red", this._tintRGB[0]);
-      this._setUniform("green", this._tintRGB[1]);
-      this._setUniform("blue", this._tintRGB[2]);
-    } else {
-      this._setUniform("red", 1.0);
-      this._setUniform("green", 1.0);
-      this._setUniform("blue", 1.0);
-    }
+    if (hasRGB && rgb) this._tintRGB = asFloat3(rgb);
+    if (hasToggle) this._tintEnabled = !!enabled;
+
+    const wantTint = hasToggle ? this._tintEnabled : hasRGB ? true : this._tintEnabled ?? false;
+
+    const out = wantTint ? this._tintRGB ?? new Float32Array([1, 1, 1]) : new Float32Array([0, 0, 0]);
+
+    u.color ??= new Float32Array(3);
+    u.color[0] = out[0];
+    u.color[1] = out[1];
+    u.color[2] = out[2];
   }
 
   /**

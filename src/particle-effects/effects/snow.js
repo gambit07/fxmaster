@@ -66,7 +66,7 @@ export class SnowParticleEffect extends FXMasterParticleEffect {
       {
         type: "textureSingle",
         config: {
-          texture: "ui/particles/snow.png",
+          texture: "modules/fxmaster/assets/particle-effects/effects/snow/snow.webp",
         },
       },
     ],

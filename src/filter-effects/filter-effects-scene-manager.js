@@ -8,25 +8,18 @@
  *   Builds a device-pixel allow-mask RT and provides common uniforms
  *   (`maskSampler`, `hasMask`, `viewSize` in CSS px, `maskReady`, `deviceToCss`).
  * - Handles create/update/delete with fade-out, and keeps masks in sync with camera.
- *
- * CHANGE: Mixed belowTokens ordering
- * -------
- * When filters are mixed (some with options.belowTokens=true, some false), ensure
- * non-belowTokens filters run FIRST and belowTokens filters run LAST in the env.filters chain.
- * This prevents below-tokens passes from visually neutralizing earlier passes.
- *
- * CHANGE: Token-aware displacement guard for belowTokens
- * -------
- * For filters that visually displace the scene (e.g., Underwater), tokens appear to move unless
- * the shader can tell that the displaced source texel originated from a token. We now build a
- * CSS-space tokens-only mask RT and pass it as `tokenSampler` with a `hasTokenMask` flag for
- * filters whose options.belowTokens is true. Shaders can sample this RT at the *displaced*
- * screen-space location to decide whether to keep the undisplaced color.
  */
 
 import { packageId } from "../constants.js";
 import { logger } from "../logger.js";
-import { resetFlag } from "../utils.js";
+import {
+  resetFlag,
+  ensureBelowTokensArtifacts,
+  applyMaskUniformsToFilters,
+  getCssViewportMetrics,
+  buildSceneAllowMaskRT,
+  snappedStageMatrix,
+} from "../utils.js";
 
 export class FilterEffectsSceneManager {
   constructor() {
@@ -197,246 +190,30 @@ export class FilterEffectsSceneManager {
     );
   }
 
-  #getCameraMatrix() {
-    const M = canvas.primary?.worldTransform ?? canvas.stage?.worldTransform ?? new PIXI.Matrix();
-    return M.clone();
-  }
-
-  /** Paint the suppression allow-mask (scene rect minus suppression regions) into an RT. */
-  #paintSuppressMaskInto(rt) {
-    const r = canvas?.app?.renderer;
-    const dims = canvas?.scene?.dimensions;
-    if (!r || !dims || !rt) return;
-
-    const screenW = Math.max(1, r.screen.width | 0);
-    const screenH = Math.max(1, r.screen.height | 0);
-
-    {
-      const bg = new PIXI.Graphics();
-      bg.beginFill(0x000000, 1).drawRect(0, 0, screenW, screenH).endFill();
-      r.render(bg, { renderTexture: rt, clear: true });
-      bg.destroy(true);
-    }
-
-    const res = r.resolution || 1;
-    const camRaw = this.#getCameraMatrix();
-    const camM = camRaw.clone();
-    camM.tx = Math.round(camM.tx * res) / res;
-    camM.ty = Math.round(camM.ty * res) / res;
-
-    {
-      const rect = dims.sceneRect;
-      if (rect) {
-        const g = new PIXI.Graphics();
-        g.transform.setFromMatrix(camM);
-        g.roundPixels = false;
-        g.beginFill(0xffffff, 1)
-          .drawRect(rect.x | 0, rect.y | 0, rect.width | 0, rect.height | 0)
-          .endFill();
-        r.render(g, { renderTexture: rt, clear: false });
-        g.destroy(true);
-      }
-    }
-
-    {
-      const regions = this.#getSuppressRegions();
-      if (regions.length) {
-        const shapesGfx = new PIXI.Graphics();
-        shapesGfx.transform.setFromMatrix(camM);
-        shapesGfx.roundPixels = false;
-
-        shapesGfx.beginFill(0x000000, 1);
-        for (const region of regions) {
-          for (const s of region.document.shapes) {
-            const drawShape = () => {
-              switch (s.type) {
-                case "polygon":
-                  shapesGfx.drawShape(new PIXI.Polygon(s.points));
-                  break;
-                case "ellipse":
-                  shapesGfx.drawEllipse(s.x, s.y, s.radiusX, s.radiusY);
-                  break;
-                case "rectangle":
-                  shapesGfx.drawRect(s.x, s.y, s.width, s.height);
-                  break;
-                default:
-                  if (Array.isArray(s.points)) shapesGfx.drawShape(new PIXI.Polygon(s.points));
-              }
-            };
-            if (s.hole) {
-              shapesGfx.beginHole();
-              drawShape();
-              shapesGfx.endHole();
-            } else drawShape();
-          }
-        }
-        shapesGfx.endFill();
-
-        r.render(shapesGfx, { renderTexture: rt, clear: false });
-        shapesGfx.destroy(true);
-      }
-    }
-  }
-
-  _collectTokenAlphaSprites() {
-    const sprites = [];
-    for (const t of canvas.tokens?.placeables ?? []) {
-      if (!t.visible || t.document.hidden) continue;
-      const icon = t.icon ?? t.mesh ?? t;
-      const tex = icon?.texture;
-      const wt = icon?.worldTransform;
-      if (!tex?.baseTexture?.valid || !wt) continue;
-
-      const spr = new PIXI.Sprite(tex);
-      try {
-        spr.anchor.set(icon.anchor?.x ?? 0.5, icon.anchor?.y ?? 0.5);
-      } catch {}
-      try {
-        spr.transform.setFromMatrix(wt);
-      } catch {
-        try {
-          spr.destroy(true);
-        } catch {}
-        continue;
-      }
-      sprites.push(spr);
-    }
-    return sprites;
-  }
-
-  _composeMaskMinusTokens(baseRT) {
-    const r = canvas?.app?.renderer;
-    if (!r || !baseRT) return baseRT;
-
-    const out = PIXI.RenderTexture.create({
-      width: baseRT.width | 0,
-      height: baseRT.height | 0,
-      resolution: baseRT.resolution || 1,
-      multisample: 0,
-    });
-
-    r.render(new PIXI.Sprite(baseRT), { renderTexture: out, clear: true });
-
-    const cont = new PIXI.Container();
-    for (const s of this._collectTokenAlphaSprites()) {
-      s.blendMode = PIXI.BLEND_MODES.DST_OUT;
-      cont.addChild(s);
-    }
-    if (cont.children.length) r.render(cont, { renderTexture: out, clear: false });
-    try {
-      cont.destroy({ children: true, texture: false, baseTexture: false });
-    } catch {}
-
-    return out;
-  }
-
-  /** Repaint a cutout into an existing RT, copying base and erasing tokens. */
-  _repaintCutoutFromBase(baseRT, outRT) {
-    const r = canvas?.app?.renderer;
-    if (!r || !baseRT || !outRT) return;
-    r.render(new PIXI.Sprite(baseRT), { renderTexture: outRT, clear: true });
-    const cont = new PIXI.Container();
-    for (const s of this._collectTokenAlphaSprites()) {
-      s.blendMode = PIXI.BLEND_MODES.DST_OUT;
-      cont.addChild(s);
-    }
-    if (cont.children.length) r.render(cont, { renderTexture: outRT, clear: false });
-    try {
-      cont.destroy({ children: true, texture: false, baseTexture: false });
-    } catch {}
-  }
-
-  /** NEW: repaint a tokens-only silhouette (CSS-space) into an existing RT. */
-  _repaintTokensMaskInto(outRT) {
-    const r = canvas?.app?.renderer;
-    if (!r || !outRT) return;
-    const cont = new PIXI.Container();
-    for (const s of this._collectTokenAlphaSprites()) {
-      s.blendMode = PIXI.BLEND_MODES.NORMAL;
-      cont.addChild(s);
-    }
-    r.render(cont, { renderTexture: outRT, clear: true });
-    try {
-      cont.destroy({ children: true, texture: false, baseTexture: false });
-    } catch {}
-  }
-
+  /** Build/refresh scene allow-mask RT(s) and wire uniforms to active + fading filters. */
   #applySuppressMaskToFilters() {
     const r = canvas?.app?.renderer;
     if (!r) return;
 
-    const screen = r.screen;
-    const cssW = Math.max(1, screen.width | 0);
-    const cssH = Math.max(1, screen.height | 0);
-    const cssFA = new PIXI.Rectangle(0, 0, cssW, cssH);
-    const deviceToCss = 1 / (r.resolution || window.devicePixelRatio || 1);
-
     const filtersArr = [...Object.values(this.filters), ...this._dyingFilters];
     if (!filtersArr.length) return;
 
-    const W = Math.max(1, r.screen.width | 0);
-    const H = Math.max(1, r.screen.height | 0);
-    const res = r.resolution || 1;
+    const { cssW, cssH, deviceToCss, rect: cssFA } = getCssViewportMetrics();
 
-    if (
-      !this._suppressMaskRT ||
-      this._suppressMaskRT.width !== W ||
-      this._suppressMaskRT.height !== H ||
-      (this._suppressMaskRT.resolution || 1) !== res
-    ) {
-      try {
-        this._suppressMaskRT?.destroy(true);
-      } catch {}
-      this._suppressMaskRT = PIXI.RenderTexture.create({ width: W, height: H, resolution: res, multisample: 0 });
-    }
-    this.#paintSuppressMaskInto(this._suppressMaskRT);
-    try {
-      this._suppressMaskRT.baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
-      this._suppressMaskRT.baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
-    } catch {}
+    const regions = this.#getSuppressRegions();
+    this._suppressMaskRT = buildSceneAllowMaskRT({
+      regions,
+      reuseRT: this._suppressMaskRT,
+    });
 
-    const baseForPlain = this._suppressMaskRT;
-
-    const anyBelow = filtersArr.some((f) => !!f?.options?.belowTokens);
+    const anyBelow = filtersArr.some((f) => !!(f?.__fxmBelowTokens ?? f?.options?.belowTokens));
     if (anyBelow) {
-      if (
-        !this._suppressMaskCutoutRT ||
-        this._suppressMaskCutoutRT.width !== W ||
-        this._suppressMaskCutoutRT.height !== H ||
-        (this._suppressMaskCutoutRT.resolution || 1) !== res
-      ) {
-        try {
-          this._suppressMaskCutoutRT?.destroy(true);
-        } catch {}
-        this._suppressMaskCutoutRT = PIXI.RenderTexture.create({
-          width: W,
-          height: H,
-          resolution: res,
-          multisample: 0,
-        });
-      }
-      this._repaintCutoutFromBase(baseForPlain, this._suppressMaskCutoutRT);
-      try {
-        this._suppressMaskCutoutRT.baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
-        this._suppressMaskCutoutRT.baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
-      } catch {}
-
-      if (
-        !this._tokensMaskRT ||
-        this._tokensMaskRT.width !== W ||
-        this._tokensMaskRT.height !== H ||
-        (this._tokensMaskRT.resolution || 1) !== res
-      ) {
-        try {
-          this._tokensMaskRT?.destroy(true);
-        } catch {}
-        this._tokensMaskRT = PIXI.RenderTexture.create({ width: W, height: H, resolution: res, multisample: 0 });
-      }
-      this._repaintTokensMaskInto(this._tokensMaskRT);
-      try {
-        this._tokensMaskRT.baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
-        this._tokensMaskRT.baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
-      } catch {}
+      const updated = ensureBelowTokensArtifacts(this._suppressMaskRT, {
+        cutoutRT: this._suppressMaskCutoutRT,
+        tokensMaskRT: this._tokensMaskRT,
+      });
+      this._suppressMaskCutoutRT = updated.cutoutRT;
+      this._tokensMaskRT = updated.tokensMaskRT;
     } else {
       if (this._suppressMaskCutoutRT) {
         try {
@@ -452,32 +229,15 @@ export class FilterEffectsSceneManager {
       }
     }
 
-    for (const f of filtersArr) {
-      const u = f?.uniforms;
-      if (!u) continue;
-
-      const wantBelow = !!f?.options?.belowTokens;
-      const rt = wantBelow ? this._suppressMaskCutoutRT || baseForPlain : baseForPlain;
-
-      if ("maskSampler" in u) u.maskSampler = rt;
-      if ("hasMask" in u) u.hasMask = 1.0;
-      if ("viewSize" in u) u.viewSize = new Float32Array([cssW, cssH]);
-      if ("maskReady" in u) u.maskReady = 1.0;
-      if ("deviceToCss" in u) u.deviceToCss = deviceToCss;
-
-      if (wantBelow && this._tokensMaskRT) {
-        if ("tokenSampler" in u) u.tokenSampler = this._tokensMaskRT;
-        if ("hasTokenMask" in u) u.hasTokenMask = 1.0;
-      } else {
-        if ("hasTokenMask" in u) u.hasTokenMask = 0.0;
-      }
-
-      try {
-        f.filterArea = cssFA;
-      } catch {}
-      f.autoFit = false;
-      f.padding = 0;
-    }
+    applyMaskUniformsToFilters(filtersArr, {
+      baseMaskRT: this._suppressMaskRT,
+      cutoutRT: this._suppressMaskCutoutRT,
+      tokensMaskRT: this._tokensMaskRT,
+      cssW,
+      cssH,
+      deviceToCss,
+      filterAreaRect: cssFA,
+    });
   }
 
   #refreshSceneFilterSuppressionMask() {
@@ -485,7 +245,7 @@ export class FilterEffectsSceneManager {
 
     if (hasAny) this.#applySuppressMaskToFilters();
 
-    const M = this.#getCameraMatrix();
+    const M = snappedStageMatrix();
     this._lastRegionsMatrix = { a: M.a, b: M.b, c: M.c, d: M.d, tx: M.tx, ty: M.ty };
   }
 
@@ -515,8 +275,15 @@ export class FilterEffectsSceneManager {
 
   #animate() {
     for (const f of Object.values(this.filters)) f.step?.();
+    const r = canvas.app.renderer;
+    const res = r?.resolution || window.devicePixelRatio || 1;
+    const Msrc = canvas.stage.worldTransform;
+    const fxFrac = Msrc ? (Msrc.tx * res - Math.round(Msrc.tx * res)) / res : 0;
+    const fyFrac = Msrc ? (Msrc.ty * res - Math.round(Msrc.ty * res)) / res : 0;
 
-    const M = this.#getCameraMatrix?.();
+    this._lastCamFrac ??= { x: fxFrac, y: fyFrac };
+
+    const M = snappedStageMatrix();
     if (!M) return;
 
     const L = this._lastRegionsMatrix;
@@ -532,6 +299,14 @@ export class FilterEffectsSceneManager {
 
     if (changed) {
       this.#refreshSceneFilterSuppressionMask();
+    }
+
+    const anyBelowTokens = this._sceneFilters?.some?.((f) => !!(f.__fxmBelowTokens ?? f.options?.belowTokens));
+    const fracMoved = Math.abs(fxFrac - this._lastCamFrac.x) > 1e-4 || Math.abs(fyFrac - this._lastCamFrac.y) > 1e-4;
+    if (anyBelowTokens && fracMoved) {
+      this.#applySuppressMaskToFilters();
+      this._lastCamFrac.x = fxFrac;
+      this._lastCamFrac.y = fyFrac;
     }
 
     this._lastRegionsMatrix = { a: M.a, b: M.b, c: M.c, d: M.d, tx: M.tx, ty: M.ty };

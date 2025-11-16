@@ -7,6 +7,7 @@ import { refreshSceneParticlesSuppressionMasks } from "./particle-effects/partic
 import { ParticleEffectsRegionBehaviorConfig } from "./particle-effects/particle-effects-region-config.js";
 import { FilterRegionBehaviorConfig } from "./filter-effects/filter-effects-region-config.js";
 import { FilterEffectsSceneManager } from "./filter-effects/filter-effects-scene-manager.js";
+import { coalesceNextFrame, getCssViewportMetrics } from "./utils.js";
 
 /**
  * FXMaster Hooks
@@ -29,155 +30,95 @@ export const registerHooks = function () {
   let _fmResizeHandler = null;
   let _flResizeHandler = null;
   let _fxResizeHandler = null;
-  let _faResizeHandler = null;
-  let _faPanHandler = null;
-  let _faZoomHandler = null;
-  let _faTicker = null;
-  let _faPinned = false;
+
+  /** Coalesced rebuild of the scene filter suppression mask. */
+  const requestFilterSuppressionRefresh = coalesceNextFrame(
+    function requestFilterSuppressionRefresh() {
+      if (isEnabled()) FilterEffectsSceneManager.instance.refreshSceneFilterSuppressionMask();
+    },
+    { key: "fxm:filter:suppression" },
+  );
+
+  /** Coalesced *region* filter-mask refresh (all). */
+  const requestRegionMaskRefreshAllDebounced = coalesceNextFrame(
+    function requestRegionMaskRefreshAllDebounced() {
+      if (!isEnabled()) return;
+      try {
+        canvas.filtereffects?.requestRegionMaskRefreshAll?.();
+      } catch {}
+    },
+    { key: "fxm:filter:regionMasksAll" },
+  );
+
+  /** Coalesced *particle* suppression mask refresh. */
+  const requestSceneParticlesSuppressionRefresh = coalesceNextFrame(
+    function requestSceneParticlesSuppressionRefresh() {
+      try {
+        refreshSceneParticlesSuppressionMasks?.();
+      } catch {}
+    },
+    { key: "fxm:particles:suppression" },
+  );
 
   /**
-   * Debounce a function call to the next animation frame.
+   * Batched token-related mask updates:
+   *  - scene allow-masks (filter suppression)
+   *  - region filter masks (all)
+   *  - particle suppression masks
    */
-  const rafDebounce = (fn) => {
-    let raf = null;
-    return (...args) => {
-      if (raf != null) return;
-      raf = requestAnimationFrame(() => {
-        raf = null;
-        try {
-          fn(...args);
-        } catch {}
-      });
-    };
-  };
-
-  /** Request a coalesced rebuild of the scene filter suppression mask. */
-  const requestFilterSuppressionRefresh = rafDebounce(() => {
-    if (isEnabled()) FilterEffectsSceneManager.instance.refreshSceneFilterSuppressionMask();
-  });
-
-  const requestRegionMaskRefreshAllDebounced = rafDebounce(() => {
-    if (!isEnabled()) return;
-    try {
-      canvas.filtereffects?.requestRegionMaskRefreshAll?.();
-    } catch {}
-  });
-
-  // New: Debounce scene-level particles suppression mask refresh
-  const requestSceneParticlesSuppressionRefresh = rafDebounce(() => {
-    try {
-      refreshSceneParticlesSuppressionMasks?.();
-    } catch {}
-  });
-
-  /* ---------------------------------- */
-  /* Token hooks -> keep “Below Tokens” filter masks in sync
-   * Rebuilds:
-   *  - Scene allow-masks (base / below-tokens) via FilterEffectsSceneManager
-   *  - Region filter masks (base / below-tokens) via canvas.filtereffects
-   * Debounced to once-per-frame even if many tokens update at once.
-   */
-  const requestTokenMaskRefresh = rafDebounce(() => {
-    if (!isEnabled()) return;
-    try {
-      FilterEffectsSceneManager.instance.refreshSceneFilterSuppressionMask();
-    } catch {}
-    try {
-      canvas.filtereffects?.forceRegionMaskRefreshAll?.();
-    } catch {}
-  });
-
-  // ---------- NEW: filterArea pin helpers ----------
-  const _faScreenRect = () => {
-    const r = canvas?.app?.renderer;
-    return new PIXI.Rectangle(0, 0, r?.screen?.width | 0 || 1, r?.screen?.height | 0 || 1);
-  };
-
-  const _faEnvHasFilters = () => {
-    // Only pin while environment has filters
-    const arr = canvas?.environment?.filters;
-    return Array.isArray(arr) && arr.length > 0;
-  };
-
-  const _faPinGroups = () => {
-    const s = _faScreenRect();
-    const pin = (g) => {
-      if (!g) return;
-      if (!(g.filterArea instanceof PIXI.Rectangle)) g.filterArea = new PIXI.Rectangle();
-      g.filterArea.copyFrom(s);
-    };
-    pin(canvas?.primary);
-    pin(canvas?.environment);
-    pin(canvas?.interface);
-    _faPinned = true;
-  };
-
-  const _faUnpinGroups = () => {
-    const un = (g) => {
-      if (g && g.filterArea) {
-        try {
-          delete g.filterArea;
-        } catch {}
-      }
-    };
-    un(canvas?.primary);
-    un(canvas?.environment);
-    un(canvas?.interface);
-    _faPinned = false;
-  };
-
-  const _faEnsurePinned = () => {
-    if (!isEnabled()) {
-      _faUnpinGroups();
-      return;
-    }
-    const r = canvas?.app?.renderer;
-    if (!r) return;
-    if (_faEnvHasFilters()) _faPinGroups();
-    else _faUnpinGroups();
-  };
-
-  const _faBind = () => {
-    // keep aligned on resize / camera changes; also heartbeat to resist other modules doing thangs
-    if (_faResizeHandler && canvas?.app?.renderer) canvas.app.renderer.off("resize", _faResizeHandler);
-    _faResizeHandler = () => _faEnsurePinned();
-    canvas?.app?.renderer?.on?.("resize", _faResizeHandler);
-
-    if (_faPanHandler) Hooks.off("canvasPan", _faPanHandler);
-    _faPanHandler = () => _faEnsurePinned();
-    Hooks.on("canvasPan", _faPanHandler);
-
-    if (_faZoomHandler) Hooks.off("canvasZoom", _faZoomHandler);
-    _faZoomHandler = () => _faEnsurePinned();
-    Hooks.on("canvasZoom", _faZoomHandler);
-
-    // gentle heartbeat (500ms) to recover if any module mutates filterArea
-    let last = 0;
-    if (_faTicker)
+  const requestTokenMaskRefresh = coalesceNextFrame(
+    function requestTokenMaskRefresh() {
+      if (!isEnabled()) return;
       try {
-        canvas?.app?.ticker?.remove?.(_faTicker);
+        FilterEffectsSceneManager.instance.refreshSceneFilterSuppressionMask();
       } catch {}
-    _faTicker = () => {
-      const now = performance.now();
-      if (now - last > 500) {
-        last = now;
-        _faEnsurePinned();
-      }
-    };
-    canvas?.app?.ticker?.add?.(_faTicker);
-  };
+      try {
+        canvas.filtereffects?.forceRegionMaskRefreshAll?.();
+      } catch {}
+      try {
+        refreshSceneParticlesSuppressionMasks?.();
+      } catch {}
+    },
+    { key: "fxm:token:maskRefresh" },
+  );
 
-  const _faUnbind = () => {
+  const pinEnvFilterArea = () => {
+    const env = canvas?.environment;
+    if (!env) return;
+    const { deviceRect } = getCssViewportMetrics();
+    const fa = env.filterArea instanceof PIXI.Rectangle ? env.filterArea : new PIXI.Rectangle();
+    fa.copyFrom(deviceRect);
     try {
-      if (_faResizeHandler && canvas?.app?.renderer) canvas.app.renderer.off("resize", _faResizeHandler);
-      if (_faPanHandler) Hooks.off("canvasPan", _faPanHandler);
-      if (_faZoomHandler) Hooks.off("canvasZoom", _faZoomHandler);
-      if (_faTicker) canvas?.app?.ticker?.remove?.(_faTicker);
+      env.filterArea = fa;
     } catch {}
-    _faResizeHandler = _faPanHandler = _faZoomHandler = _faTicker = null;
   };
 
-  // TokenDocument lifecycle (create/update/delete)
+  const clearEnvFilterArea = () => {
+    try {
+      if (canvas?.environment) canvas.environment.filterArea = null;
+    } catch {}
+  };
+
+  const ensurePinned = () => {
+    const hasFilters = Array.isArray(canvas?.environment?.filters) && canvas.environment.filters.length > 0;
+    if (isEnabled() && hasFilters) pinEnvFilterArea();
+    else clearEnvFilterArea();
+  };
+
+  let _resize;
+  const bind = () => {
+    if (_resize && canvas?.app?.renderer) canvas.app.renderer.off("resize", _resize);
+    _resize = () => ensurePinned();
+    canvas?.app?.renderer?.on?.("resize", _resize);
+    ensurePinned();
+  };
+  const unbind = () => {
+    try {
+      if (_resize && canvas?.app?.renderer) canvas.app.renderer.off("resize", _resize);
+    } catch {}
+    _resize = null;
+  };
+
   Hooks.on("createToken", (tokenDoc) => {
     if (tokenDoc?.parent !== canvas.scene) return;
     if (!isEnabled()) return;
@@ -186,7 +127,10 @@ export const registerHooks = function () {
   Hooks.on("updateToken", (tokenDoc) => {
     if (tokenDoc?.parent !== canvas.scene) return;
     if (!isEnabled()) return;
-    requestTokenMaskRefresh();
+    try {
+      requestTokenMaskRefresh();
+      requestTokenMaskRefresh.flush?.();
+    } catch {}
   });
   Hooks.on("deleteToken", (tokenDoc) => {
     if (tokenDoc?.parent !== canvas.scene) return;
@@ -197,9 +141,15 @@ export const registerHooks = function () {
   Hooks.on("refreshToken", (placeable) => {
     if (placeable?.document?.parent !== canvas.scene) return;
     if (!isEnabled()) return;
-    requestTokenMaskRefresh();
+    try {
+      requestTokenMaskRefresh();
+      requestTokenMaskRefresh.flush?.();
+    } catch {}
   });
-  /* ---------------------------------- */
+
+  Hooks.on("createTile", () => requestTokenMaskRefresh());
+  Hooks.on("updateTile", () => requestTokenMaskRefresh());
+  Hooks.on("deleteTile", () => requestTokenMaskRefresh());
 
   /** Track opening of Particle Effects Management windows. */
   Hooks.on("renderParticleEffectsManagement", (app) => {
@@ -249,36 +199,29 @@ export const registerHooks = function () {
   };
 
   /**
-   * Schedule a one-shot refresh of any open FXMaster windows.
+   * Schedule a one-shot refresh of any open FXMaster windows (coalesced to a frame).
    */
-  const scheduleOpenWindowsRefresh = (() => {
-    let raf = null;
-    return (hard = true) => {
-      if (raf != null) return;
-      raf = requestAnimationFrame(() => {
-        raf = null;
-        refreshOpenFxMasterWindows({ hard });
-      });
-    };
-  })();
+  const scheduleOpenWindowsRefresh = coalesceNextFrame(
+    function scheduleOpenWindowsRefresh(hard = true) {
+      refreshOpenFxMasterWindows({ hard });
+    },
+    { key: "fxm:openWindowsRefresh" },
+  );
 
   /**
    * Request a one-per-frame redraw of all region particle effects.
    */
-  let _pendingRegionRedraw = false;
-  const requestRedrawAllRegionParticles = () => {
-    if (!isEnabled()) return;
-    if (_pendingRegionRedraw) return;
-    _pendingRegionRedraw = true;
-    requestAnimationFrame(() => {
-      _pendingRegionRedraw = false;
+  const requestRedrawAllRegionParticles = coalesceNextFrame(
+    function requestRedrawAllRegionParticles() {
+      if (!isEnabled()) return;
       try {
         for (const reg of canvas.regions.placeables) {
           canvas.particleeffects?.drawRegionParticleEffects?.(reg, { soft: false });
         }
       } catch {}
-    });
-  };
+    },
+    { key: "fxm:redrawAllRegionParticles" },
+  );
 
   /** Handle custom event: toggle scene particle effects. */
   Hooks.on(`${packageId}.switchParticleEffect`, onSwitchParticleEffects);
@@ -358,7 +301,6 @@ export const registerHooks = function () {
       if (isEnabled() && hasFxmasterBehavior) {
         canvas.particleeffects?.drawRegionParticleEffects?.(placeable);
       } else {
-        // Clear any prior region particles if disabled.
         try {
           if (!isEnabled()) canvas.particleeffects?.destroyRegionParticleEffects?.(regionDoc.id);
         } catch {}
@@ -383,7 +325,10 @@ export const registerHooks = function () {
   /** While a Region placeable is refreshed soft-refresh its mask. */
   Hooks.on("refreshRegion", (placeable) => {
     if (placeable?.document?.parent !== canvas.scene) return;
-    if (isEnabled()) canvas.filtereffects?.requestRegionMaskRefresh?.(placeable.id);
+    if (isEnabled()) {
+      canvas.filtereffects?.requestRegionMaskRefresh?.(placeable.id);
+      canvas.particleeffects?.requestRegionMaskRefresh?.(placeable.id);
+    }
   });
 
   /** When a RegionBehavior is created apply suppression and draw region effects. */
@@ -481,8 +426,7 @@ export const registerHooks = function () {
     _fxResizeHandler = null;
 
     try {
-      _faUnbind();
-      _faUnpinGroups();
+      unbind();
     } catch {}
   });
 
@@ -490,19 +434,10 @@ export const registerHooks = function () {
   Hooks.on("activateScene", () => {
     scheduleOpenWindowsRefresh(true);
     if (isEnabled()) {
-      try {
-        canvas.particleeffects?.requestRegionMaskRefreshAll?.();
-      } catch {}
-      requestAnimationFrame(() => {
-        try {
-          refreshSceneParticlesSuppressionMasks?.();
-        } catch {}
-      });
+      requestSceneParticlesSuppressionRefresh();
+      requestRegionMaskRefreshAllDebounced();
       try {
         canvas.particleeffects?.refreshAboveSceneMask?.();
-      } catch {}
-      try {
-        canvas.particleeffects?.refreshBelowTokensSceneMask?.();
       } catch {}
     }
   });
@@ -540,9 +475,6 @@ export const registerHooks = function () {
           try {
             canvas.particleeffects?.refreshAboveSceneMask?.();
           } catch {}
-          try {
-            canvas.particleeffects?.refreshBelowTokensSceneMask?.();
-          } catch {}
         };
         canvas?.app?.renderer?.on?.("resize", _fxResizeHandler);
       } catch {}
@@ -576,40 +508,26 @@ export const registerHooks = function () {
       try {
         canvas.particleeffects?.forceRegionMaskRefreshAll?.();
       } catch {}
+    }
+
+    if (isEnabled()) {
       try {
-        canvas.particleeffects?.refreshBelowTokensSceneMask?.();
+        canvas.stage?.updateTransform();
+      } catch {}
+      requestSceneParticlesSuppressionRefresh();
+      requestRegionMaskRefreshAllDebounced();
+      try {
+        canvas.particleeffects?.refreshAboveSceneMask?.();
       } catch {}
     }
 
     if (isEnabled()) {
-      requestAnimationFrame(() => {
-        try {
-          canvas.stage?.updateTransform();
-        } catch {}
-        try {
-          refreshSceneParticlesSuppressionMasks?.();
-        } catch {}
-        try {
-          canvas.particleeffects?.forceRegionMaskRefreshAll?.();
-        } catch {}
-        try {
-          canvas.particleeffects?.refreshAboveSceneMask?.();
-        } catch {}
-        try {
-          canvas.particleeffects?.refreshBelowTokensSceneMask?.();
-        } catch {}
-      });
-    }
-
-    if (isEnabled()) {
       try {
-        _faEnsurePinned();
-        _faBind();
+        bind();
       } catch {}
     } else {
       try {
-        _faUnbind();
-        _faUnpinGroups();
+        unbind();
       } catch {}
     }
 
@@ -623,7 +541,7 @@ export const registerHooks = function () {
       const content = `
         <div class="fxmaster-announcement" style="border:2px solid #4A90E2; border-radius:8px; padding:12px; background:#f4faff;">
           <h3 style="margin:0; color:#2a4365;">🎉Welcome to Gambit's FXMaster V7!</h3>
-            <p style="color: #2a4365; font-size: 1em;">This is a huge release and adds a plethora of new features. These features include but are not limited to: Filter effects can now be added to regions, regions have optional functionality to limit elevation visibility per Token, new Below Tokens option to display effects underneath a token, updates to various existing effects with new options, etc! Please check out the Release Notes for more detail. </p>
+            <p style="color: #2a4365; font-size: 1em;">This release resolves a number of bugs in V7. Please check out the Release Notes for more detail. </p>
             <p style="color: #2a4365; font-size: 1em;">If you'd like to support my development time and get access to new Effects: <ul><li><span style="color: #73ffa9">Ghosts</span></li><li><span style="color: #ffd500ff">Sunlight</span></li><li><span style="color: #7f00ff">Magic Crystals</span></li><li><span style="color: #d5b60a">Fireflies</span></li><li><span style="color: #ffb7c5">Sakura Bloom</span></li><li><span style="color: #ffb7c5">Sakura Blossoms</span></li></ul><br/>Please consider supporting the project on <a href="https://patreon.com/GambitsLounge" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Patreon</a>. This will give you access to the FXMaster+ module, now directly integrated with Foundry!</p>
           </div>
         `;
@@ -660,10 +578,6 @@ export const registerHooks = function () {
       foundry.utils.hasProperty(data, `flags.${packageId}.-=filters`)
     ) {
       if (isEnabled()) FilterEffectsSceneManager.instance.update();
-      // filters might have been toggled; re-evaluate pin
-      try {
-        _faEnsurePinned();
-      } catch {}
     }
 
     if (data.active === true) scheduleOpenWindowsRefresh(true);
@@ -686,14 +600,10 @@ export const registerHooks = function () {
 
   /** On camera pan: keep suppression and region masks aligned. */
   Hooks.on("canvasPan", () => {
-    if (isEnabled()) {
-      requestFilterSuppressionRefresh();
-      requestRegionMaskRefreshAllDebounced();
-      requestSceneParticlesSuppressionRefresh();
-      try {
-        _faEnsurePinned();
-      } catch {}
-    }
+    if (!isEnabled()) return;
+    requestFilterSuppressionRefresh();
+    requestRegionMaskRefreshAllDebounced();
+    requestSceneParticlesSuppressionRefresh();
   });
 
   /** On camera zoom: keep suppression and region masks aligned. */
@@ -702,9 +612,6 @@ export const registerHooks = function () {
       requestFilterSuppressionRefresh();
       requestRegionMaskRefreshAllDebounced();
       requestSceneParticlesSuppressionRefresh();
-      try {
-        _faEnsurePinned();
-      } catch {}
     }
   });
 
@@ -739,8 +646,8 @@ export const registerHooks = function () {
       tileSize: 100,
       video: { loop: true, autoplay: true, volume: 0 },
       width: data.width,
-      x: data.x - data.anchor.x * data.width,
-      y: data.y - data.anchor.y * data.height,
+      x: data.x - 0.5 * data.width,
+      y: data.y - 0.5 * data.height,
       z: 100,
     };
     ui.notifications.info(game.i18n.format("FXMASTER.Common.TileCreated", { effect: data.label }));

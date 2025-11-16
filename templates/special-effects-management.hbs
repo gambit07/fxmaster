@@ -1,5 +1,6 @@
 <section class="fxmaster specials-management application-popout">
   <div class="specials-filters-container flexrow">
+    <!-- Search -->
     <input
       type="text"
       data-tooltip="{{localize 'FXMASTER.AnimationEffect.SearchQueries'}}"
@@ -7,12 +8,32 @@
       placeholder="{{localize 'FXMASTER.AnimationEffect.SearchAnimations'}}"
       data-search
     />
-  <select class="specials-tag-filter">
-    <option value="">{{localize "FXMASTER.AnimationEffect.AllAnimations"}}</option>
-    {{#each tags as |tag|}}
-      <option value="{{tag.key}}">{{tag.label}}</option>
-    {{/each}}
-  </select>
+
+    <!-- Refresh button -->
+    <button type="button"
+            class="fxm-refresh-animations"
+            data-tooltip="{{localize 'FXMASTER.AnimationEffect.RefreshDbHint'}}">
+      <i class="fas fa-sync-alt" aria-hidden="true"></i>
+      {{localize "FXMASTER.AnimationEffect.RefreshDbName"}}
+    </button>
+
+    <!-- Thumbnail scan slider -->
+    <label class="fxm-switch fxm-thumbs-toggle"
+           data-tooltip="{{localize 'FXMASTER.AnimationEffect.ThumbnailsHint'}}">
+      <input type="checkbox" id="fxm-thumbs-toggle" checked/>
+      <span class="fxm-slider" aria-hidden="true"></span>
+      <span class="fxm-switch-label">
+        {{localize "FXMASTER.AnimationEffect.Thumbnails"}}
+      </span>
+    </label>
+
+    <!-- Tag filter dropdown -->
+    <select class="specials-tag-filter" data-tooltip="{{localize 'FXMASTER.AnimationEffect.FilterHint'}}">
+      <option value="">{{localize "FXMASTER.AnimationEffect.AllAnimations"}}</option>
+      {{#each tags as |tag|}}
+        <option value="{{tag.key}}">{{tag.label}}</option>
+      {{/each}}
+    </select>
   </div>
 
   <div class="specials-list"></div>

@@ -26,7 +26,6 @@ export class LightningFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
     }
 
     const u = (this.uniforms ??= {});
-    // Mask uniforms (no strength fade animate brightness instead)
     this.initMaskUniforms(u, { withStrength: false });
     this.initFadeUniforms(u);
     this.initRegionFadeUniforms(u, { maxEdges: MAX_EDGES });
@@ -35,10 +34,8 @@ export class LightningFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
     this.ensureVec2Uniform("camFrac", [0, 0]);
     this.ensureVec4Uniform("outputFrame", [0, 0, 1, 1]);
 
-    // Effect uniform defaults
     u.brightness = typeof u.brightness === "number" ? u.brightness : 1.0;
 
-    // Animation state
     this._tickerFn = null;
     this._accumMS = 0;
     this._nextMS = 0;
@@ -59,31 +56,40 @@ export class LightningFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
    * @returns {Record<string, object>} Parameter descriptors.
    */
   static get parameters() {
-    return {
+    const v13plus = !foundry.utils.isNewerVersion("13.0.0", game.version);
+
+    const base = {
       belowTokens: { label: "FXMASTER.Params.BelowTokens", type: "checkbox", value: false },
       frequency: { label: "FXMASTER.Params.Period", type: "range", max: 10000, min: 100, step: 5, value: 500 },
       spark_duration: { label: "FXMASTER.Params.Duration", type: "range", max: 2000, min: 100, step: 5, value: 300 },
       brightness: { label: "FXMASTER.Params.Brightness", type: "range", max: 4.0, min: 0.0, step: 0.1, value: 1.3 },
-      audioAware: { label: "FXMASTER.Params.ThunderAware", type: "checkbox", value: false },
-      audioChannels: {
-        label: "FXMASTER.Params.ThunderChannels",
-        type: "multi-select",
-        options: {
-          music: "FXMASTER.Common.Music",
-          environment: "FXMASTER.Common.Environment",
-          interface: "FXMASTER.Common.Interface",
-        },
-        value: ["environment"],
-      },
-      audioBassThreshold: {
-        label: "FXMASTER.Params.ThunderBassThreshold",
-        type: "range",
-        max: 1.0,
-        min: 0.0,
-        step: 0.01,
-        value: 0.75,
-      },
     };
+
+    const audio = v13plus
+      ? {
+          audioAware: { label: "FXMASTER.Params.ThunderAware", type: "checkbox", value: false },
+          audioChannels: {
+            label: "FXMASTER.Params.ThunderChannels",
+            type: "multi-select",
+            options: {
+              music: "FXMASTER.Common.Music",
+              environment: "FXMASTER.Common.Environment",
+              interface: "FXMASTER.Common.Interface",
+            },
+            value: ["environment"],
+          },
+          audioBassThreshold: {
+            label: "FXMASTER.Params.ThunderBassThreshold",
+            type: "range",
+            max: 1.0,
+            min: 0.0,
+            step: 0.01,
+            value: 0.75,
+          },
+        }
+      : {};
+
+    return { ...base, ...audio };
   }
 
   /**
@@ -186,9 +192,15 @@ export class LightningFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
     if (typeof o.brightness === "number") this.brightness = o.brightness;
     if (typeof o.frequency === "number") this.frequency = o.frequency;
     if (typeof o.spark_duration === "number") this.spark_duration = o.spark_duration;
-    if (typeof o.audioAware === "boolean") this.audioAware = o.audioAware;
-    if (o.audioChannels !== undefined) this.audioChannels = o.audioChannels;
-    if (typeof o.audioBassThreshold === "number") this.audioBassThreshold = o.audioBassThreshold;
+
+    const v13plus = !foundry.utils.isNewerVersion("13.0.0", game.version);
+    if (v13plus) {
+      if (typeof o.audioAware === "boolean") this.audioAware = o.audioAware;
+      if (o.audioChannels !== undefined) this.audioChannels = o.audioChannels;
+      if (typeof o.audioBassThreshold === "number") this.audioBassThreshold = o.audioBassThreshold;
+    } else {
+      this.audioAware = false;
+    }
 
     this.applyFadeOptionsFrom(o);
   }

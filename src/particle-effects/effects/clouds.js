@@ -1,7 +1,7 @@
 import { FXMasterParticleEffect } from "./effect.js";
 
 /**
- * A full-screen particle effect which renders drifting bubbles.
+ * A full-screen particle effect which renders drifting clouds.
  */
 export class CloudsParticleEffect extends FXMasterParticleEffect {
   /** @override */
@@ -22,6 +22,7 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
     return foundry.utils.mergeObject(super.parameters, {
       density: { min: 0.001, value: 0.03, max: 0.2, step: 0.001, decimals: 3 },
       dropShadow: { label: "FXMASTER.Params.Shadow", type: "checkbox", value: false },
+      shadowOnly: { label: "FXMASTER.Params.ShadowOnly", type: "checkbox", value: false },
       shadowRotation: {
         label: "FXMASTER.Params.ShadowRotation",
         type: "range",
@@ -141,6 +142,7 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
     });
 
     config._dropShadowEnabled = !!options.dropShadow?.value;
+    config._dropShadowOnly = !!options.shadowOnly?.value;
     config._dropshadowRotation = Number.isFinite(options.shadowRotation?.value) ? options.shadowRotation.value : 315;
     config._dropshadowDistance = Number.isFinite(options.shadowDistance?.value)
       ? options.shadowDistance.value
@@ -154,9 +156,10 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
   }
 
   /**
-   * Wrapper container + per-sprite init in a ticker.
+   * Create the particle emitter and (optionally) a single, wrapper-level DropShadowFilter.
    * @param {PIXI.particles.EmitterConfigV3 & {
    *   _dropShadowEnabled?: boolean,
+   *   _dropShadowOnly?: boolean,
    *   _dropshadowRotation?: number,
    *   _dropshadowDistance?: number,
    *   _dropshadowBlur?: number,
@@ -184,55 +187,94 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
     const distance = Number.isFinite(config._dropshadowDistance) ? config._dropshadowDistance : baseDistance;
     const blur = Number.isFinite(config._dropshadowBlur) ? config._dropshadowBlur : 1;
     const alpha = Number.isFinite(config._dropshadowOpacity) ? config._dropshadowOpacity : 0.5;
+    const shadowOnly = !!config._dropShadowOnly;
 
     const dir = { x: Math.cos(angleRad), y: Math.sin(angleRad) };
 
-    const shadowOptions = {
+    const r = canvas.app.renderer;
+    const screenRect = new PIXI.Rectangle(0, 0, r.screen.width | 0, r.screen.height | 0);
+
+    const shadow = new DropShadowCtor({
       offset: { x: 0, y: 0 },
-      blur: blur,
-      alpha: alpha,
+      blur,
+      alpha,
       color: 0x000000,
       quality: 20,
-      shadowOnly: false,
-      resolution: 1,
-    };
+      shadowOnly,
+      resolution: r.resolution || 1,
+    });
+    shadow.autoFit = false;
+    shadow.filterArea = screenRect;
+    shadow.padding = 0;
+
+    const existing = wrapper.filters ?? null;
+    wrapper.filters = existing ? existing.concat([shadow]) : [shadow];
+
+    let lastOffX = NaN;
+    let lastOffY = NaN;
+    let lastBlur = NaN;
+    let lastAlpha = NaN;
+    let lastShadowOnly = undefined;
 
     const tick = () => {
       const zoom = canvas?.stage?.scale?.x ?? 1;
 
-      const offX = dir.x * distance * zoom;
-      const offY = dir.y * distance * zoom;
+      const offX = Math.round(dir.x * distance * zoom);
+      const offY = Math.round(dir.y * distance * zoom);
 
-      for (const sprite of wrapper.children) {
-        if (!sprite || sprite.destroyed) continue;
-        if (!(sprite instanceof PIXI.Sprite) && !(sprite instanceof PIXI.AnimatedSprite)) continue;
-
-        let shadow = sprite.__fxmCloudShadowRef;
-        if (!shadow) {
-          shadow = new DropShadowCtor(shadowOptions);
-          const existing = sprite.filters ?? null;
-          sprite.filters = existing ? existing.concat([shadow]) : [shadow];
-          sprite.__fxmCloudShadowRef = shadow;
+      if (offX !== lastOffX || offY !== lastOffY) {
+        if (shadow.offset) {
+          shadow.offset.x = offX;
+          shadow.offset.y = offY;
         }
+        lastOffX = offX;
+        lastOffY = offY;
+      }
 
-        try {
-          if (shadow.offset) {
-            shadow.offset.x = offX;
-            shadow.offset.y = offY;
-          }
-          if ("blur" in shadow) shadow.blur = blur;
-          if ("alpha" in shadow) shadow.alpha = alpha;
-        } catch {
-          /* no-op */
-        }
+      if (blur !== lastBlur) {
+        if ("blur" in shadow) shadow.blur = blur;
+        lastBlur = blur;
+      }
+
+      if (alpha !== lastAlpha) {
+        if ("alpha" in shadow) shadow.alpha = alpha;
+        lastAlpha = alpha;
+      }
+
+      if (shadowOnly !== lastShadowOnly) {
+        if ("shadowOnly" in shadow) shadow.shadowOnly = shadowOnly;
+        lastShadowOnly = shadowOnly;
       }
     };
 
     PIXI.Ticker.shared.add(tick);
 
+    const onResize = () => {
+      screenRect.x = 0;
+      screenRect.y = 0;
+      screenRect.width = r.screen.width | 0;
+      screenRect.height = r.screen.height | 0;
+      shadow.filterArea = screenRect;
+
+      const targetRes = r.resolution || 1;
+      if (shadow.resolution !== targetRes) shadow.resolution = targetRes;
+    };
+    r.on("resize", onResize);
+
     const origDestroy = emitter.destroy?.bind(emitter);
     emitter.destroy = (...args) => {
       PIXI.Ticker.shared.remove(tick);
+      try {
+        r.off("resize", onResize);
+      } catch {}
+
+      try {
+        if (wrapper.filters) {
+          const arr = wrapper.filters.filter((f) => f !== shadow);
+          wrapper.filters = arr.length ? arr : null;
+        }
+        shadow.destroy?.();
+      } catch {}
       return origDestroy ? origDestroy(...args) : undefined;
     };
 

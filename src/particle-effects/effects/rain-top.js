@@ -31,7 +31,7 @@ export class RainTopParticleEffect extends FXMasterParticleEffect {
       {
         density: { min: 0.01, value: 0.3, max: 1, step: 0.01, decimals: 2 },
         "-=direction": null,
-        splash: { label: "FXMASTER.Common.Splash", type: "checkbox", value: true },
+        splash: { label: "FXMASTER.Params.Splash", type: "checkbox", value: true },
       },
       { performDeletions: true },
     );
@@ -69,7 +69,7 @@ export class RainTopParticleEffect extends FXMasterParticleEffect {
         },
       },
       { type: "rotationStatic", config: { min: 180, max: 180 } },
-      { type: "textureSingle", config: { texture: "ui/particles/rain.png" } },
+      { type: "textureSingle", config: { texture: "modules/fxmaster/assets/particle-effects/effects/rain/rain.webp" } },
     ],
   };
 
@@ -84,7 +84,7 @@ export class RainTopParticleEffect extends FXMasterParticleEffect {
       { type: "scaleStatic", config: { min: 0.48, max: 0.6 } },
       { type: "rotationStatic", config: { min: -90, max: -90 } },
       { type: "noRotation", config: {} },
-      { type: "textureSingle", config: { texture: "ui/particles/drop.png" } },
+      { type: "textureSingle", config: { texture: "modules/fxmaster/assets/particle-effects/effects/rain/drop.webp" } },
     ],
   };
 

@@ -82,10 +82,17 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
   async _onRender(...args) {
     await super._onRender(...args);
 
-    let windowPosition = game.user.getFlag(packageId, "dialog-position-particleeffects");
-    if (windowPosition) {
-      this.setPosition({ top: windowPosition.top, left: windowPosition.left, width: windowPosition.width });
-    }
+    const pos = game.user.getFlag(packageId, "dialog-position-particleeffects");
+    if (!pos) return;
+
+    await new Promise((r) => requestAnimationFrame(r));
+
+    const next = { top: pos.top, left: pos.left };
+    if (Number.isFinite(pos.width)) next.width = pos.width;
+
+    try {
+      this.setPosition(next);
+    } catch (err) {}
 
     this._autosizeInit();
 
@@ -183,7 +190,6 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
     const options = FXMasterBaseFormV2.gatherFilterOptions(effectDef, this.element);
     current[`core_${type}`].options = options;
 
-    // --- NEW: coalesce rapid slider updates to ~12/sec ---
     this._debouncedEffectsWrite ||= foundry.utils.debounce((payload) => resetFlag(scene, "effects", payload), 1000);
     this._debouncedEffectsWrite(current);
   }

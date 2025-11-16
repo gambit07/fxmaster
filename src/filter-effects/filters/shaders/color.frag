@@ -23,6 +23,8 @@ uniform vec2  viewSize;
 uniform vec4  inputSize;    // xy: input size in CSS px; zw: 1/size
 uniform vec4  outputFrame;  // xy: offset in CSS px; zw: size
 
+uniform vec2  camFrac;      // (stage unsnapped) - (stage snapped)
+
 // Region-mask flags
 uniform float hasMask;
 uniform float maskReady;
@@ -32,9 +34,6 @@ uniform float strength;
 // Color controls
 uniform float red, green, blue;
 uniform float brightness, contrast, saturation, gamma;
-
-// (legacy/ABI)
-uniform float feather;
 
 /* ---------- Fade uniforms ---------- */
 // 0=polygon, 1=rect, 2=ellipse, -1=none
@@ -217,22 +216,25 @@ void main(void) {
   // pixel position in CSS px that sampled src
   vec2 screenPx = outputFrame.xy + vTextureCoord * inputSize.xy;
 
+  vec2 snapPx = screenPx - camFrac;
+
   /* Region/suppression gating */
   float inMask = src.a;
   if (hasMask > 0.5) {
     if (maskReady < 0.5 || viewSize.x < 1.0 || viewSize.y < 1.0) {
       gl_FragColor = src; return;
     }
-    vec2  maskUV = screenPx / max(viewSize, vec2(1.0));
-    float a      = clamp(texture2D(maskSampler, maskUV).r, 0.0, 1.0);
-    float m      = smoothstep(0.49, 0.51, a);
+    // Use snapped pixels for the mask UV
+    vec2 maskUV = clamp(snapPx / max(viewSize, vec2(1.0)), 0.0, 1.0);
+    float a = clamp(texture2D(maskSampler, maskUV).r, 0.0, 1.0);
+    float m = smoothstep(0.49, 0.51, a);
     if (invertMask > 0.5) m = 1.0 - m;
     inMask *= m;
   }
 
   /* Fade factor */
   float fade = 1.0;
-  vec2 pW = applyCssToWorld(screenPx);
+  vec2 pW = applyCssToWorld(snapPx);
 
   if (uUsePct > 0.5) {
     float pct = clamp(uFadePct, 0.0, 1.0);

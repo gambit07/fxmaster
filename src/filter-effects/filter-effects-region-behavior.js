@@ -309,7 +309,7 @@ export class FilterRegionBehaviorType extends foundry.data.regionBehaviors.Regio
     const rawTargets = this.parent.getFlag(packageId, "tokenTargets");
     const targetIds = new Set(Array.isArray(rawTargets) ? rawTargets : rawTargets ? [rawTargets] : []);
     const tokensInRegion = Array.from(event.region?.tokens ?? []);
-    const isTargetToken = (t) => targetIds.has(t.id) || targetIds.has(t.document?.uuid) || targetIds.has(t.uuid);
+    const isTargetToken = (t) => targetIds.has(t.document.id) || targetIds.has(t.document.uuid);
 
     const countTargets = () => {
       if (fxGateMode !== "targets" || targetIds.size === 0) return null;

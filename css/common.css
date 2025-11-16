@@ -140,13 +140,6 @@
   color: var(--color-text-light-1);
 }
 
-/* Color pickers */
-.fxmaster-input-color {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
 /* Region-behavior config */
 .region-behavior-config .behavior-settings {
   display: none;
@@ -161,4 +154,78 @@
 }
 .region-behavior-config .behavior-header:has(input[type="checkbox"]:checked) ~ .behavior-settings {
   display: flex;
+}
+
+.fxm-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  user-select: none;
+  line-height: 1;
+  font-size: 0.9em;
+}
+
+/* Visually hide the native checkbox but keep it accessible */
+.fxm-switch input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  inline-size: 0;
+  block-size: 0;
+}
+
+/* Track */
+.fxm-switch .fxm-slider {
+  position: relative;
+  width: 34px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--color-border);
+  border: 1px solid var(--color-border-dark-3);
+  box-shadow: inset 0 0 0 1px var(--color-shadow-dark);
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease, filter 150ms ease;
+}
+
+/* Thumb */
+.fxm-switch .fxm-slider::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-text-light-0);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  transform: translateX(0);
+  transition: transform 150ms ease;
+}
+
+/* Checked state (distinct color + border) */
+.fxm-switch input[type="checkbox"]:checked + .fxm-slider {
+  background: var(--color-warm-2);
+  border-color: var(--color-warm-3);
+}
+.fxm-switch input[type="checkbox"]:checked + .fxm-slider::before {
+  transform: translateX(14px);
+}
+
+/* Focus ring for keyboard users */
+.fxm-switch input[type="checkbox"]:focus-visible + .fxm-slider {
+  outline: 2px solid var(--color-warm-3);
+  outline-offset: 2px;
+}
+
+/* Optional text next to slider */
+.fxm-switch .fxm-switch-label {
+  opacity: 0.85;
+}
+
+/* Ensure left alignment in your existing rows */
+.fxmaster-input-checkbox,
+.fxmaster-input-color {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: flex-start;
 }

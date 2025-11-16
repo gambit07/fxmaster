@@ -49,10 +49,6 @@ export class SpecialEffectConfig extends FXMasterBaseFormV2 {
           x: 0,
           y: 0,
         },
-        anchor: {
-          x: 0.5,
-          y: 0.5,
-        },
         scale: {
           x: 1.0,
           y: 1.0,
@@ -110,8 +106,6 @@ export class SpecialEffectConfig extends FXMasterBaseFormV2 {
 
     formData.scaleX = parseFloat(formData.scaleX);
     formData.scaleY = parseFloat(formData.scaleY);
-    formData.anchorX = parseFloat(formData.anchorX);
-    formData.anchorY = parseFloat(formData.anchorY);
     formData.favorite = formData.favorite === "true";
 
     const overrides = game.settings.get(packageId, "customSpecialEffects") || {};
@@ -121,7 +115,6 @@ export class SpecialEffectConfig extends FXMasterBaseFormV2 {
       label: formData.label,
       file: formData.file,
       scale: { x: formData.scaleX, y: formData.scaleY },
-      anchor: { x: formData.anchorX, y: formData.anchorY },
       preset: false,
       author: formData.author || "",
       type: "SpecialEffect",

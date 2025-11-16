@@ -1,5 +1,6 @@
 import { FXMasterBaseFormV2 } from "../../base-form.js";
 import { packageId } from "../../constants.js";
+import { registerAnimations } from "../../animation-files.js";
 
 export class SpecialEffectsManagement extends FXMasterBaseFormV2 {
   constructor(options = {}) {
@@ -40,22 +41,7 @@ export class SpecialEffectsManagement extends FXMasterBaseFormV2 {
 
   async _prepareContext() {
     const buckets = CONFIG.fxmaster.userSpecials;
-
-    if (!buckets || Object.keys(buckets).length === 0) {
-      ui.notifications.error(game.i18n.localize("FXMASTER.AnimationEffect.RefreshDbError"));
-      this.close();
-      return {
-        effects: [],
-        tags: [],
-      };
-    } else if (buckets.__emptyScan) {
-      ui.notifications.error(game.i18n.localize("FXMASTER.AnimationEffect.RefreshDbEmpty"));
-      this.close();
-      return {
-        effects: [],
-        tags: [],
-      };
-    }
+    if (!buckets) return { effects: [], tags: [] };
 
     const overrides = game.settings.get(packageId, "customSpecialEffects") || {};
 
@@ -117,6 +103,38 @@ export class SpecialEffectsManagement extends FXMasterBaseFormV2 {
       });
     }
 
+    const refreshBtn = html.querySelector(".fxm-refresh-animations");
+    const thumbsToggle = html.querySelector("#fxm-thumbs-toggle");
+
+    if (refreshBtn) {
+      if (!game.user.isGM) {
+        refreshBtn.disabled = true;
+        refreshBtn.title = game.i18n.localize("FXMASTER.Common.GMOnly");
+      }
+
+      refreshBtn.addEventListener("click", async () => {
+        if (!game.user.isGM) return;
+        const withThumbs = !!thumbsToggle?.checked;
+
+        refreshBtn.classList.add("spinning");
+        refreshBtn.disabled = true;
+
+        try {
+          const newMap = await registerAnimations({ initialScan: !withThumbs });
+          await game.settings.set(packageId, "dbSpecialEffects", newMap);
+          CONFIG.fxmaster.userSpecials = newMap;
+
+          await this._rebuildFromConfigMap(newMap);
+        } catch (err) {
+          console.error(err);
+          ui.notifications.error(game.i18n.localize("FXMASTER.AnimationEffect.RefreshDbError"));
+        } finally {
+          refreshBtn.classList.remove("spinning");
+          refreshBtn.disabled = !game.user.isGM;
+        }
+      });
+    }
+
     this.list = html.querySelector(".specials-list");
     this.list.innerHTML = "";
 
@@ -141,6 +159,57 @@ export class SpecialEffectsManagement extends FXMasterBaseFormV2 {
     this.observer.observe(this.sentinel);
 
     this._applyFilters();
+  }
+
+  async _rebuildFromConfigMap(newMap) {
+    const overrides = game.settings.get(packageId, "customSpecialEffects") || {};
+    const effects = [];
+    const tagSet = new Set();
+
+    for (const [_bucketKey, bucket] of Object.entries(newMap)) {
+      if (!bucket?.effects) continue;
+      for (const fx of bucket.effects) {
+        const entry = foundry.utils.deepClone(fx);
+        if (overrides[entry.file]) {
+          foundry.utils.mergeObject(entry, overrides[entry.file]);
+        }
+        const folder = entry.favorite ? game.i18n.localize("FXMASTER.Common.Favorites") : bucket.label;
+        entry.tag = folder;
+        effects.push(entry);
+        tagSet.add(folder);
+      }
+    }
+
+    effects.sort((a, b) => a.label.localeCompare(b.label));
+
+    const allTags = Array.from(tagSet).sort((a, b) => a.localeCompare(b));
+    const priority = ["Custom", game.i18n.localize("FXMASTER.Common.Favorites")];
+    const tags = [
+      ...priority.filter((t) => allTags.includes(t)).map((t) => ({ key: t, label: t })),
+      ...allTags.filter((t) => !priority.includes(t)).map((t) => ({ key: t, label: t })),
+    ];
+
+    this.fullEffects = effects;
+    this.visibleEffects = effects;
+
+    const sel = this.element?.querySelector(".specials-tag-filter");
+    if (sel) {
+      const prev = sel.value;
+      sel.innerHTML =
+        `<option value="">${game.i18n.localize("FXMASTER.AnimationEffect.AllAnimations")}</option>` +
+        tags.map((t) => `<option value="${t.key}">${t.label}</option>`).join("");
+      if ([...sel.options].some((o) => o.value === prev)) sel.value = prev;
+      else sel.value = "";
+      this.currentTag = sel.value;
+    }
+
+    if (!this.sentinel || !this.list) {
+      this.list = this.element.querySelector(".specials-list");
+      this.sentinel = document.createElement("div");
+      this.sentinel.classList.add("fxmaster-sentinel");
+      this.list.append(this.sentinel);
+    }
+    this._resetInfiniteScroll();
   }
 
   _appendNextBatch() {
@@ -171,7 +240,6 @@ export class SpecialEffectsManagement extends FXMasterBaseFormV2 {
     this.currentTag = tag;
     let matcher;
 
-    // Build the same matcher AST only if there’s a real query
     if (!raw.length) {
       matcher = () => true;
       this.searchMode = false;
@@ -353,6 +421,15 @@ export class SpecialEffectsManagement extends FXMasterBaseFormV2 {
         thumb.pause();
         thumb.currentTime = 0;
       }
+    });
+
+    c.addEventListener("click", (event) => {
+      if (event.button !== 0) return;
+      if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      new CONFIG.fxmaster.ImagePopout({
+        src: effect.file,
+        window: { title: `${effect.author} | ${effect.label}` },
+      }).render(true);
     });
 
     c.addEventListener("dragstart", this._onDragStart.bind(this));

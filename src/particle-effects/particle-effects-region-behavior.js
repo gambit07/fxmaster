@@ -150,7 +150,6 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
   async _applyParticles() {
     const system = this.toObject();
 
-    // Build particle definitions for this region
     const nextFX = Object.entries(CONFIG.fxmaster.particleEffects)
       .filter(([type]) => system[`${type}_enabled`])
       .reduce((map, [type, cls]) => {
@@ -247,7 +246,7 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
     const targetIds = new Set(Array.isArray(rawTargets) ? rawTargets : rawTargets ? [rawTargets] : []);
     const tokensInRegion = Array.from(event.region?.tokens ?? []);
 
-    const isTargetToken = (t) => targetIds.has(t.id) || targetIds.has(t.document?.uuid) || targetIds.has(t.uuid);
+    const isTargetToken = (t) => targetIds.has(t.document.id) || targetIds.has(t.document?.uuid);
 
     const countTargets = () => {
       if (fxGateMode !== "targets" || targetIds.size === 0) return null;

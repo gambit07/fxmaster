@@ -1,5 +1,4 @@
 import { packageId } from "./constants.js";
-import { registerAnimations } from "./animation-files.js";
 
 export function registerSettings() {
   game.settings.register(packageId, "enable", {
@@ -11,6 +10,16 @@ export function registerSettings() {
     requiresReload: true,
   });
 
+  game.settings.register(packageId, "enableTooltips", {
+    name: "FXMASTER.Common.EnableTooltips",
+    hint: "FXMASTER.Common.EnableTooltipsHint",
+    default: true,
+    scope: "world",
+    type: Boolean,
+    config: true,
+    requiresReload: false,
+  });
+
   game.settings.register(packageId, "customEffectsDirectory", {
     name: "FXMASTER.AnimationEffect.CustomDirectoryName",
     hint: "FXMASTER.AnimationEffect.CustomDirectoryHint",
@@ -20,25 +29,14 @@ export function registerSettings() {
     default: "",
   });
 
+  // Changed: keep behavior, hide from Settings UI
   game.settings.register(packageId, "refreshDb", {
     name: "FXMASTER.AnimationEffect.RefreshDbName",
     hint: "FXMASTER.AnimationEffect.RefreshDbHint",
     scope: "world",
-    config: true,
+    config: false,
     type: Boolean,
     default: false,
-    onChange: async (value) => {
-      if (!value) return;
-
-      console.time("FXMaster.refreshDb");
-
-      const newMap = await registerAnimations({ initialScan: false });
-      await game.settings.set(packageId, "dbSpecialEffects", newMap);
-      CONFIG.fxmaster.userSpecials = newMap;
-      await game.settings.set(packageId, "refreshDb", false);
-
-      console.timeEnd("FXMaster.refreshDb");
-    },
   });
 
   game.settings.register(packageId, "resetPassives", {

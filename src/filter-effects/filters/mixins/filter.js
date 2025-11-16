@@ -162,9 +162,12 @@ export function FXMasterFilterEffectMixin(Base) {
       }
 
       if (setCamFrac && "camFrac" in u) {
+        const r = canvas?.app?.renderer;
+        const res = r?.resolution || window.devicePixelRatio || 1;
         const M = canvas?.stage?.worldTransform;
-        const fxFrac = M ? M.tx - Math.round(M.tx) : 0;
-        const fyFrac = M ? M.ty - Math.round(M.ty) : 0;
+
+        const fxFrac = M ? (M.tx * res - Math.round(M.tx * res)) / res : 0;
+        const fyFrac = M ? (M.ty * res - Math.round(M.ty * res)) / res : 0;
         u.camFrac =
           u.camFrac instanceof Float32Array
             ? (u.camFrac.set([fxFrac, fyFrac]), u.camFrac)
@@ -271,7 +274,16 @@ export function FXMasterFilterEffectMixin(Base) {
     applyMaskOptionsFrom(options = {}) {
       const u = this.uniforms;
       if (!u || !options) return;
-      if ("maskSampler" in options && options.maskSampler) u.maskSampler = options.maskSampler;
+      if ("maskSampler" in options && options.maskSampler) {
+        u.maskSampler = options.maskSampler;
+        try {
+          const bt = u.maskSampler.baseTexture;
+          if (bt) {
+            bt.scaleMode = PIXI.SCALE_MODES.LINEAR;
+            if (typeof PIXI.MIPMAP_MODES !== "undefined") bt.mipmap = PIXI.MIPMAP_MODES.OFF;
+          }
+        } catch {}
+      }
       if ("hasMask" in options && typeof options.hasMask === "number") u.hasMask = options.hasMask;
       if ("maskReady" in options && typeof options.maskReady === "number") u.maskReady = options.maskReady;
       if ("invertMask" in options && typeof options.invertMask === "number") u.invertMask = options.invertMask;

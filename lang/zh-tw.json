@@ -167,8 +167,7 @@
         "OldFilm": "老電影",
         "Predator": "Predator",
         "Underwater": "水下",
-        "Sunlight": "日光",
-        "DropShadow": "陰影"
+        "Sunlight": "日光"
       },
       "TypeErrors": {
         "TypeUnknown": "濾鏡效果「{id}」的類型「{type}」未知，已略過。",

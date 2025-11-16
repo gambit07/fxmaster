@@ -1,47 +1,32 @@
 /**
- * Particle Scene Suppression Manager
- * ----------------------------------
- * Builds and applies a single screen-space (CSS px) allow-mask RenderTexture to
- * parent containers that host scene-level particle effects. The mask enforces
- * suppression regions for:
- *   - core "suppressWeather"
- *   - FXMaster "${packageId}.suppressSceneParticles"
- *
- * Approach:
- *   1) Collect all scene-level FX nodes (FXMaster scene effects + Weather tree).
- *   2) If suppression regions exist, build a white (allow) RT and punch out
- *      suppressed areas in alpha; otherwise detach masks.
- *   3) Attach one sprite (using the shared RT) per distinct parent container and
- *      set container.mask to that sprite.
- *   4) Keep a shared RT alive across swaps to minimize visible tearing.
- *
- * v12+ note:
- * With sortLayer lanes, FXMaster scene FX live under:
- *   - layer._belowContainer        (default / below weather lane content)
- *   - layer._aboveContent          (above-darkness lane content)
- *   - layer._belowTokensContent    (below-tokens lane content)
- * This manager masks those content containers directly.
+ * FXMaster: Particle Scene Suppression Manager
+ * Builds and applies a CSS-space allow-mask to scene-level particle containers and FX.
  */
 
 import { packageId } from "../constants.js";
 import { logger } from "../logger.js";
+import { composeMaskMinusTokens, ensureCssSpaceMaskSprite, safeMaskTexture, buildSceneAllowMaskRT } from "../utils.js";
 
-/** Shared screen-space allow-mask RT (kept across swaps to reduce tearing). */
 let _sceneParticlesMaskRT = null;
+let _sceneParticlesMaskRT_Cutout = null;
 
-/** Name used for the container-level mask sprite child. */
 const CONTAINER_MASK_NAME = "fxmaster:scene-particles-container-mask";
+const FX_MASK_NAME = "fxmaster:scene-particles-fx-mask";
+
+const _maskSpritesBase = new WeakSet();
+const _maskSpritesCutout = new WeakSet();
 
 /**
- * Recompute and attach container-level suppression masks for scene-level particles.
- * Detects suppression regions, (re)builds the shared RT if needed, attaches a
- * container-level sprite mask for each parent container that hosts FX, and
- * cleans up legacy per-FX masks.
+ * Recompute and attach suppression masks for scene-level particles.
  */
 export function refreshSceneParticlesSuppressionMasks() {
   try {
     const layer = canvas.particleeffects;
     if (!layer) return;
+
+    layer._dyingSceneEffects ??= new Set();
+    const liveFx = _collectSceneLevelFx(layer);
+    const dyingFx = Array.from(layer._dyingSceneEffects ?? []);
 
     const _knownSceneFxContainers = () => {
       const out = [];
@@ -51,65 +36,62 @@ export function refreshSceneParticlesSuppressionMasks() {
       try {
         if (layer?._aboveContent) out.push(layer._aboveContent);
       } catch {}
-      try {
-        if (layer?._belowTokensContent) out.push(layer._belowTokensContent);
-      } catch {}
-      try {
-        if (layer?._laneRoots?.def) out.push(layer._laneRoots.def);
-      } catch {}
-      try {
-        if (layer?._laneRoots?.above) out.push(layer._laneRoots.above);
-      } catch {}
-      try {
-        if (layer?._laneRoots?.belowTokens) out.push(layer._laneRoots.belowTokens);
-      } catch {}
       return out.filter(Boolean);
     };
 
-    layer._dyingSceneEffects ??= new Set();
-
-    const liveFx = _collectSceneLevelFx(layer);
-    const dyingFx = Array.from(layer._dyingSceneEffects ?? []);
-
     if (liveFx.length === 0 && dyingFx.length === 0) {
-      _detachContainerMasksFor(_knownSceneFxContainers());
+      const containers = _knownSceneFxContainers();
+      for (const c of containers) _ensureContainerMaskSprite(c, null);
       _detachPerFxMasks(liveFx);
-      _swapSharedMaskRT(null);
+      _swapSharedMaskRT(null, true);
       return;
     }
 
     const hasSuppress = _getSuppressRegions();
-    if (hasSuppress.length === 0) {
-      const containers = _uniqueParents([...liveFx, ...dyingFx]);
-      _detachContainerMasksFor(containers.length ? containers : _knownSceneFxContainers());
-      _detachContainerMasksFor(_knownSceneFxContainers());
-      _detachPerFxMasks(liveFx);
-      _detachPerFxMasks(dyingFx);
-      _swapSharedMaskRT(null);
-      return;
-    }
+    const newBase = buildSceneAllowMaskRT({ regions: hasSuppress });
 
-    const newRT = _buildSceneParticlesSuppressMaskRT(hasSuppress);
+    const oldBase = _sceneParticlesMaskRT || null;
+    const oldCut = _sceneParticlesMaskRT_Cutout || null;
 
-    const oldRT = _sceneParticlesMaskRT || null;
-    _swapSharedMaskRT(newRT);
+    _sceneParticlesMaskRT = newBase || null;
+    _sceneParticlesMaskRT_Cutout = newBase ? composeMaskMinusTokens(newBase) : null;
 
-    const containers = _uniqueParents([...liveFx, ...dyingFx]);
-    _applyContainerMasks(containers, _sceneParticlesMaskRT);
+    _retargetSpritesFromTexture(oldBase, _sceneParticlesMaskRT);
+    _retargetSpritesFromTexture(oldCut, _sceneParticlesMaskRT_Cutout ?? _sceneParticlesMaskRT);
 
-    const known = _knownSceneFxContainers();
-    const stale = known.filter((c) => !containers.includes(c));
-    _detachContainerMasksFor(stale);
-
-    _detachPerFxMasks(liveFx);
-    _detachPerFxMasks(dyingFx);
-
-    if (oldRT && oldRT !== _sceneParticlesMaskRT) {
+    if (oldBase && oldBase !== _sceneParticlesMaskRT)
       requestAnimationFrame(() => {
         try {
-          oldRT.destroy(true);
+          oldBase.destroy(true);
         } catch {}
       });
+    if (oldCut && oldCut !== _sceneParticlesMaskRT_Cutout)
+      requestAnimationFrame(() => {
+        try {
+          oldCut.destroy(true);
+        } catch {}
+      });
+
+    const allFx = [...liveFx, ...dyingFx];
+    const byParent = new Map();
+    for (const fx of allFx) {
+      const p = fx?.parent;
+      if (!p) continue;
+      if (!byParent.has(p)) byParent.set(p, []);
+      byParent.get(p).push(fx);
+    }
+
+    const known = _knownSceneFxContainers();
+    const activeContainers = byParent.size ? Array.from(byParent.keys()) : [];
+
+    for (const c of known) {
+      if (!activeContainers.includes(c)) _ensureContainerMaskSprite(c, null);
+    }
+
+    const containers = activeContainers.length ? activeContainers : known;
+    for (const c of containers) {
+      const fxInC = byParent.get(c) || [];
+      _applyMasksRespectingExisting(c, fxInC, _sceneParticlesMaskRT, _sceneParticlesMaskRT_Cutout);
     }
   } catch (err) {
     logger?.error?.(err);
@@ -117,9 +99,10 @@ export function refreshSceneParticlesSuppressionMasks() {
 }
 
 /**
- * Collect all scene-level particle effect nodes that should be masked:
- * - FXMaster scene effects from the layer map
- * - Weather subtree nodes that represent particle effects
+ * Collect all scene-level particle effect nodes that should be masked.
+ * @param {ParticleEffectsRegionLayer} layer
+ * @returns {PIXI.DisplayObject[]}
+ * @private
  */
 function _collectSceneLevelFx(layer) {
   const out = [];
@@ -127,7 +110,6 @@ function _collectSceneLevelFx(layer) {
     const map = layer?.particleEffects;
     if (map?.values) for (const fx of map.values()) out.push(fx);
   } catch {}
-
   try {
     const root = canvas.weather;
     if (root) {
@@ -136,22 +118,21 @@ function _collectSceneLevelFx(layer) {
         const n = stack.pop();
         for (const ch of n?.children ?? []) {
           try {
-            if (ch instanceof CONFIG.fxmaster.ParticleEffectNS || ch?.__fxmIsParticleEffect || ch?.isParticleEffect) {
+            if (ch instanceof CONFIG.fxmaster.ParticleEffectNS || ch?.__fxmIsParticleEffect || ch?.isParticleEffect)
               out.push(ch);
-            }
           } catch {}
           if (ch?.children?.length) stack.push(ch);
         }
       }
     }
   } catch {}
-
   return out;
 }
 
 /**
- * Return Regions that suppress scene-level particles.
- * Matches core "suppressWeather" and FXMaster "${packageId}.suppressSceneParticles".
+ * Get regions that suppress scene-level particles.
+ * @returns {PlaceableObject[]}
+ * @private
  */
 function _getSuppressRegions() {
   const SUPPRESS_TYPES = new Set(["suppressWeather", `${packageId}.suppressSceneParticles`]);
@@ -160,154 +141,25 @@ function _getSuppressRegions() {
 }
 
 /**
- * Build a CSS-space allow-mask RT (white=allow, transparent=suppress).
- * Steps:
- *   1) Create a white full-screen base RT in CSS px (renderer resolution applied).
- *   2) Draw suppression geometry to a temp RT in CSS space.
- *   3) Composite the temp RT with BLEND_MODES.ERASE onto the base to punch holes.
- *
- * @param {PlaceableObject[]} hasSuppress Regions with suppression behaviors
- * @returns {PIXI.RenderTexture|null} Allow-mask RT or null if unavailable
- */
-function _buildSceneParticlesSuppressMaskRT(hasSuppress) {
-  const r = canvas?.app?.renderer;
-  if (!r) return null;
-
-  const res = r.resolution || 1;
-  const cssW = Math.max(1, ((r.view?.width ?? r.screen.width) / res) | 0);
-  const cssH = Math.max(1, ((r.view?.height ?? r.screen.height) / res) | 0);
-
-  const rt = PIXI.RenderTexture.create({
-    width: cssW,
-    height: cssH,
-    resolution: res,
-  });
-  try {
-    rt.baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
-    rt.baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
-  } catch {}
-
-  {
-    const bg = new PIXI.Graphics();
-    bg.beginFill(0xffffff, 1).drawRect(0, 0, cssW, cssH).endFill();
-    r.render(bg, { renderTexture: rt, clear: true });
-    bg.destroy(true);
-  }
-
-  const suppressedRT = PIXI.RenderTexture.create({
-    width: cssW,
-    height: cssH,
-    resolution: res,
-  });
-  try {
-    suppressedRT.baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
-    suppressedRT.baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
-  } catch {}
-
-  {
-    const g = new PIXI.Graphics();
-    const M = (canvas.regions?.worldTransform ?? canvas.stage.worldTransform).clone();
-    M.tx = Math.round(M.tx);
-    M.ty = Math.round(M.ty);
-    g.transform.setFromMatrix(M);
-    g.roundPixels = true;
-
-    g.beginFill(0xffffff, 1);
-    for (const region of hasSuppress) {
-      const shapes = region.document?.shapes ?? [];
-      for (const s of shapes) {
-        const draw = () => {
-          switch (s.type) {
-            case "polygon":
-              g.drawShape(new PIXI.Polygon(s.points));
-              break;
-            case "ellipse":
-              g.drawEllipse(s.x, s.y, s.radiusX, s.radiusY);
-              break;
-            case "rectangle":
-              g.drawRect(s.x, s.y, s.width, s.height);
-              break;
-            default:
-              if (Array.isArray(s.points)) g.drawShape(new PIXI.Polygon(s.points));
-          }
-        };
-        if (s.hole) {
-          g.beginHole();
-          draw();
-          g.endHole();
-        } else draw();
-      }
-    }
-    g.endFill();
-
-    r.render(g, { renderTexture: suppressedRT, clear: true });
-    g.destroy(true);
-  }
-
-  {
-    const spr = new PIXI.Sprite(suppressedRT);
-    spr.blendMode = PIXI.BLEND_MODES.ERASE;
-    spr.width = cssW;
-    spr.height = cssH;
-    const c = new PIXI.Container();
-    c.addChild(spr);
-    r.render(c, { renderTexture: rt, clear: false });
-    try {
-      c.destroy({ children: true });
-    } catch {}
-  }
-
-  try {
-    suppressedRT.destroy(true);
-  } catch {}
-  return rt;
-}
-
-/**
- * Return unique parent containers for a list of FX nodes.
- * @param {PIXI.DisplayObject[]} fxList
- * @returns {PIXI.Container[]}
- */
-function _uniqueParents(fxList) {
-  const set = new Set();
-  for (const fx of fxList) {
-    let p = fx?.parent;
-    if (!p) continue;
-
-    // If a parent advertises a redirect for masking, honor it.
-    if (p.fxmMaskRedirect) p = p.fxmMaskRedirect;
-    set.add(p);
-  }
-  return Array.from(set);
-}
-
-/**
- * Ensure each container has a container-level mask sprite using the given texture.
- * @param {PIXI.Container[]} containers
- * @param {PIXI.RenderTexture|null} texture
- */
-function _applyContainerMasks(containers, texture) {
-  for (const container of containers) {
-    _ensureContainerMaskSprite(container, texture);
-  }
-}
-
-/**
  * Ensure a container-level CSS-space sprite exists and is applied as container.mask.
- * If texture is null, detach the mask sprite if present.
  * @param {PIXI.Container} container
  * @param {PIXI.RenderTexture|null} texture
+ * @private
  */
 function _ensureContainerMaskSprite(container, texture) {
   if (!container) return;
 
-  let spr = container.children?.find?.((c) => c?.name === CONTAINER_MASK_NAME);
+  let spr = container.children?.find?.((c) => c?.name === CONTAINER_MASK_NAME) || null;
 
   if (!texture) {
     if (spr && !spr.destroyed) {
       try {
         if (container.mask === spr) container.mask = null;
       } catch {}
+      try {
+        spr.texture = safeMaskTexture(null);
+      } catch {}
+      _registerMaskSprite(spr, null);
       try {
         container.removeChild(spr);
       } catch {}
@@ -318,43 +170,14 @@ function _ensureContainerMaskSprite(container, texture) {
     return;
   }
 
-  const r = canvas?.app?.renderer;
-  const res = r?.resolution || 1;
-  const cssW = Math.max(1, ((r?.view?.width ?? r?.screen?.width) / res) | 0);
-  const cssH = Math.max(1, ((r?.view?.height ?? r?.screen?.height) / res) | 0);
-
-  if (!spr || spr.destroyed) {
-    spr = new PIXI.Sprite(texture);
-    spr.name = CONTAINER_MASK_NAME;
-    spr.renderable = true;
-    spr.eventMode = "none";
-    spr.interactive = false;
-    spr.cursor = null;
-    container.addChildAt(spr, 0);
-  } else {
-    spr.texture = texture;
-  }
-
-  spr.x = 0;
-  spr.y = 0;
-  spr.width = cssW;
-  spr.height = cssH;
-
-  try {
-    container.parent?.updateTransform();
-    container.updateTransform();
-    const Minv = container.worldTransform.clone().invert();
-    spr.transform.setFromMatrix(Minv);
-    spr.roundPixels = true;
-    container.roundPixels = true;
-  } catch {}
-
-  container.mask = spr;
+  spr = ensureCssSpaceMaskSprite(container, texture, CONTAINER_MASK_NAME);
+  _registerMaskSprite(spr, texture);
 }
 
 /**
- * Remove legacy per-FX mask sprites from FX nodes (no-op if none exist).
+ * Remove per-FX mask sprites from FX nodes.
  * @param {PIXI.DisplayObject[]} fxList
+ * @private
  */
 function _detachPerFxMasks(fxList) {
   for (const fx of fxList) {
@@ -362,39 +185,154 @@ function _detachPerFxMasks(fxList) {
       const old = fx?._fxmSceneParticlesMaskSprite;
       if (old && !old.destroyed) {
         if (fx.mask === old) fx.mask = null;
+        try {
+          old.texture = safeMaskTexture(null);
+        } catch {}
+        _registerMaskSprite(old, null);
         fx.removeChild(old);
         old.destroy({ texture: false, baseTexture: false });
       }
     } catch {}
     if (fx) fx._fxmSceneParticlesMaskSprite = null;
-    try {
-      if (fx?.mask && fx.mask.name === CONTAINER_MASK_NAME) {
-        /* intentional */
-      }
-    } catch {}
   }
 }
 
 /**
- * Detach container-level masks for the provided containers.
- * @param {PIXI.Container[]} containers
- */
-function _detachContainerMasksFor(containers) {
-  for (const container of containers) {
-    _ensureContainerMaskSprite(container, null);
-  }
-}
-
-/**
- * Swap the shared allow-mask RT. Destroy the old texture immediately if replaced with null.
+ * Swap the shared allow-mask RT and optionally destroy the old texture.
  * @param {PIXI.RenderTexture|null} newRT
+ * @param {boolean} destroyOld
+ * @private
  */
-function _swapSharedMaskRT(newRT) {
+function _swapSharedMaskRT(newRT, destroyOld) {
   const old = _sceneParticlesMaskRT || null;
   _sceneParticlesMaskRT = newRT || null;
-  if (old && !newRT) {
+  if (destroyOld && old && !newRT) {
     try {
       old.destroy(true);
     } catch {}
   }
+}
+
+/**
+ * Apply container-level or per-FX masks depending on container state.
+ * @param {PIXI.Container} container
+ * @param {PIXI.DisplayObject[]} fxInContainer
+ * @param {PIXI.RenderTexture|null} baseTexture
+ * @param {PIXI.RenderTexture|null} cutoutTexture
+ * @private
+ */
+function _applyMasksRespectingExisting(container, fxInContainer, baseTexture, cutoutTexture) {
+  const hasRenderableChild = (container.children || []).some(
+    (ch) => ch && !ch.destroyed && ch.name !== CONTAINER_MASK_NAME,
+  );
+  if (!hasRenderableChild) {
+    _ensureContainerMaskSprite(container, null);
+    _detachPerFxMasks(fxInContainer);
+    return;
+  }
+
+  const hasForeignMask = !!container.mask && container.mask.name !== CONTAINER_MASK_NAME;
+
+  if (!hasForeignMask) {
+    _ensureContainerMaskSprite(container, baseTexture);
+    for (const fx of fxInContainer) {
+      const wantsCutout = !!fx?._fxmOptsCache?.belowTokens?.value || !!fx?.options?.belowTokens?.value;
+      if (wantsCutout && cutoutTexture) {
+        const spr = _ensureCssSpaceMaskSpriteSafe(fx, cutoutTexture, FX_MASK_NAME);
+        fx._fxmSceneParticlesMaskSprite = spr;
+      } else {
+        try {
+          const spr = fx?._fxmSceneParticlesMaskSprite;
+          if (spr && !spr.destroyed) {
+            if (fx.mask === spr) fx.mask = null;
+            spr.texture = safeMaskTexture(null);
+            _registerMaskSprite(spr, null);
+            fx.removeChild(spr);
+            spr.destroy({ texture: false, baseTexture: false });
+          }
+        } catch {}
+        fx._fxmSceneParticlesMaskSprite = null;
+      }
+    }
+    return;
+  }
+
+  for (const fx of fxInContainer) {
+    const wantsCutout = !!fx?._fxmOptsCache?.belowTokens?.value || !!fx?.options?.belowTokens?.value;
+    const tex = wantsCutout ? cutoutTexture || baseTexture : baseTexture;
+
+    if (!tex) {
+      try {
+        const spr = fx?._fxmSceneParticlesMaskSprite;
+        if (spr && !spr.destroyed) {
+          if (fx.mask === spr) fx.mask = null;
+          spr.texture = safeMaskTexture(null);
+          _registerMaskSprite(spr, null);
+          fx.removeChild(spr);
+          spr.destroy({ texture: false, baseTexture: false });
+        }
+      } catch {}
+      fx._fxmSceneParticlesMaskSprite = null;
+      continue;
+    }
+
+    const spr = _ensureCssSpaceMaskSpriteSafe(fx, tex, FX_MASK_NAME);
+    fx._fxmSceneParticlesMaskSprite = spr;
+  }
+}
+
+/**
+ * Track which shared RT a sprite uses for safe retargeting.
+ * @param {PIXI.Sprite} sprite
+ * @param {PIXI.Texture|PIXI.RenderTexture|null} texture
+ * @private
+ */
+function _registerMaskSprite(sprite, texture) {
+  try {
+    _maskSpritesBase.delete(sprite);
+    _maskSpritesCutout.delete(sprite);
+    if (!sprite || sprite.destroyed || !texture) return;
+    if (texture === _sceneParticlesMaskRT) _maskSpritesBase.add(sprite);
+    else if (texture === _sceneParticlesMaskRT_Cutout) _maskSpritesCutout.add(sprite);
+  } catch {}
+}
+
+/**
+ * Retarget sprites that referenced an old shared RT to a new texture.
+ * @param {PIXI.Texture|PIXI.RenderTexture|null} oldTex
+ * @param {PIXI.Texture|PIXI.RenderTexture|null} newTex
+ * @private
+ */
+function _retargetSpritesFromTexture(oldTex, newTex) {
+  if (!oldTex) return;
+  const set =
+    oldTex === _sceneParticlesMaskRT
+      ? _maskSpritesBase
+      : oldTex === _sceneParticlesMaskRT_Cutout
+      ? _maskSpritesCutout
+      : null;
+  if (!set) return;
+  for (const spr of set) {
+    if (!spr || spr.destroyed) continue;
+    try {
+      spr.texture = safeMaskTexture(newTex);
+    } catch {}
+  }
+}
+
+/**
+ * Safe wrapper around ensureCssSpaceMaskSprite with sprite tracking.
+ * @param {PIXI.Container} node
+ * @param {PIXI.Texture|PIXI.RenderTexture|null} texture
+ * @param {string} name
+ * @returns {PIXI.Sprite}
+ * @private
+ */
+function _ensureCssSpaceMaskSpriteSafe(node, texture, name) {
+  const spr = ensureCssSpaceMaskSprite(node, safeMaskTexture(texture), name);
+  try {
+    spr.texture = safeMaskTexture(texture);
+  } catch {}
+  _registerMaskSprite(spr, texture);
+  return spr;
 }
