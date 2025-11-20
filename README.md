@@ -13,8 +13,20 @@
   playsinline
   loop
   preload="auto"
-  src="https://github.com/user-attachments/assets/d9e1c89b-0ce7-4c5c-a5f2-55c242e82397">
+  src="https://github.com/user-attachments/assets/a627342f-5ba7-4645-aaae-6af57447564c">
 </video>
+
+<details>
+  <summary>Ghosts (click to expand)</summary>
+  <video
+    autoplay
+    muted
+    playsinline
+    loop
+    preload="auto"
+    src="https://github.com/user-attachments/assets/4bb9492d-dc3b-4d2e-82ee-6950cd2792eb">
+  </video>
+</details>
 
 <details>
   <summary>Sunlight (click to expand)</summary>
