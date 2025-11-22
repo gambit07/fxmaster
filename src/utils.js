@@ -1312,12 +1312,8 @@ export function ensureBelowTokensArtifacts(baseRT, state = {}) {
 }
 
 /**
- * Apply scene-mask uniforms and filterArea to a list of FXMaster filters.
+ * Apply scene-mask uniforms to a list of FXMaster filters.
  * Honors per-filter "belowTokens" option by swapping the sampler and providing token silhouettes.
- *
- * NOTE: filterArea is set in **device pixels** (renderer.screen), while
- *       viewSize and deviceToCss are provided so shaders can map to CSS space.
- *
  * @param {PIXI.Filter[]} filters
  * @param {{
  *   baseMaskRT: PIXI.RenderTexture,

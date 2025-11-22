@@ -13,8 +13,8 @@ let _sceneParticlesMaskRT_Cutout = null;
 const CONTAINER_MASK_NAME = "fxmaster:scene-particles-container-mask";
 const FX_MASK_NAME = "fxmaster:scene-particles-fx-mask";
 
-const _maskSpritesBase = new WeakSet();
-const _maskSpritesCutout = new WeakSet();
+const _maskSpritesBase = new Set();
+const _maskSpritesCutout = new Set();
 
 /**
  * Recompute and attach suppression masks for scene-level particles.
@@ -47,14 +47,21 @@ export function refreshSceneParticlesSuppressionMasks() {
       return;
     }
 
+    const anyBelowTokens = [...liveFx, ...dyingFx].some(
+      (fx) => !!(fx?._fxmOptsCache?.belowTokens?.value ?? fx?.options?.belowTokens?.value),
+    );
+
     const hasSuppress = _getSuppressRegions();
-    const newBase = buildSceneAllowMaskRT({ regions: hasSuppress });
+    const newBase = buildSceneAllowMaskRT({
+      regions: hasSuppress,
+      reuseRT: _sceneParticlesMaskRT,
+    });
 
     const oldBase = _sceneParticlesMaskRT || null;
     const oldCut = _sceneParticlesMaskRT_Cutout || null;
 
     _sceneParticlesMaskRT = newBase || null;
-    _sceneParticlesMaskRT_Cutout = newBase ? composeMaskMinusTokens(newBase) : null;
+    _sceneParticlesMaskRT_Cutout = newBase && anyBelowTokens ? composeMaskMinusTokens(newBase) : null;
 
     _retargetSpritesFromTexture(oldBase, _sceneParticlesMaskRT);
     _retargetSpritesFromTexture(oldCut, _sceneParticlesMaskRT_Cutout ?? _sceneParticlesMaskRT);

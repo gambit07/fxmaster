@@ -127,10 +127,7 @@ export const registerHooks = function () {
   Hooks.on("updateToken", (tokenDoc) => {
     if (tokenDoc?.parent !== canvas.scene) return;
     if (!isEnabled()) return;
-    try {
-      requestTokenMaskRefresh();
-      requestTokenMaskRefresh.flush?.();
-    } catch {}
+    requestTokenMaskRefresh();
   });
   Hooks.on("deleteToken", (tokenDoc) => {
     if (tokenDoc?.parent !== canvas.scene) return;
@@ -141,10 +138,7 @@ export const registerHooks = function () {
   Hooks.on("refreshToken", (placeable) => {
     if (placeable?.document?.parent !== canvas.scene) return;
     if (!isEnabled()) return;
-    try {
-      requestTokenMaskRefresh();
-      requestTokenMaskRefresh.flush?.();
-    } catch {}
+    requestTokenMaskRefresh();
   });
 
   Hooks.on("createTile", () => requestTokenMaskRefresh());
@@ -541,8 +535,8 @@ export const registerHooks = function () {
       const content = `
         <div class="fxmaster-announcement" style="border:2px solid #4A90E2; border-radius:8px; padding:12px; background:#f4faff;">
           <h3 style="margin:0; color:#2a4365;">🎉Welcome to Gambit's FXMaster V7!</h3>
-            <p style="color: #2a4365; font-size: 1em;">This release resolves a number of bugs in V7. Please check out the Release Notes for more detail. </p>
-            <p style="color: #2a4365; font-size: 1em;">If you'd like to support my development time and get access to new Effects: <ul><li><span style="color: #73ffa9">Ghosts</span></li><li><span style="color: #ffd500ff">Sunlight</span></li><li><span style="color: #7f00ff">Magic Crystals</span></li><li><span style="color: #d5b60a">Fireflies</span></li><li><span style="color: #ffb7c5">Sakura Bloom</span></li><li><span style="color: #ffb7c5">Sakura Blossoms</span></li></ul><br/>Please consider supporting the project on <a href="https://patreon.com/GambitsLounge" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Patreon</a>. This will give you access to the FXMaster+ module, now directly integrated with Foundry!</p>
+            <p style="color: #2a4365; font-size: 1em;">This release resolves additional bugs in V7 including Below Tokens Particle performance issues and Particle scene masking improvements. Please check out the Release Notes for more detail. </p>
+            <p style="color: #2a4365; font-size: 1em;">If you'd like to support my development time and get access to new Effects: <ul><li><span style="color: #a08332ff">Sandstorm</span></li><li><span style="color: #74653fff">Duststorm</span></li><li><span style="color: #73ffa9">Ghosts</span></li><li><span style="color: #ffd500ff">Sunlight</span></li><li><span style="color: #7f00ff">Magic Crystals</span></li><li><span style="color: #d5b60a">Fireflies</span></li><li><span style="color: #ffb7c5">Sakura Bloom</span></li><li><span style="color: #ffb7c5">Sakura Blossoms</span></li></ul><br/>Please consider supporting the project on <a href="https://patreon.com/GambitsLounge" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Patreon</a>. This will give you access to the FXMaster+ module, now directly integrated with Foundry!</p>
           </div>
         `;
       ChatMessage.create({ content });

@@ -17,6 +17,7 @@ import {
   getCssViewportMetrics,
   snappedStageMatrix,
 } from "../utils.js";
+import { refreshSceneParticlesSuppressionMasks } from "./particle-effects-scene-manager.js";
 
 const TYPE = `${packageId}.particleEffectsRegion`;
 
@@ -55,6 +56,7 @@ export class ParticleEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObject
     this._lastViewSize = { w: canvas.app.renderer.view?.width | 0, h: canvas.app.renderer.view?.height | 0 };
 
     this._gatePassCache = new Map();
+    this._lastSceneMaskMatrix = null;
   }
 
   /** @type {WeatherOcclusionMaskFilter} */
@@ -279,6 +281,36 @@ export class ParticleEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObject
    */
   async #draw() {
     await this.drawParticleEffects();
+  }
+
+  #updateSceneParticlesSuppressionForCamera() {
+    if (!canvas?.scene) return;
+
+    const hasSceneFx = (this.particleEffects && this.particleEffects.size > 0) || canvas.weather?.children?.length > 0;
+
+    if (!hasSceneFx) return;
+
+    const M = snappedStageMatrix(canvas.regions ?? canvas.stage);
+    const last = this._lastSceneMaskMatrix;
+
+    const eps = 1e-4;
+    if (
+      last &&
+      Math.abs(M.a - last.a) < eps &&
+      Math.abs(M.b - last.b) < eps &&
+      Math.abs(M.c - last.c) < eps &&
+      Math.abs(M.d - last.d) < eps &&
+      Math.abs(M.tx - last.tx) < eps &&
+      Math.abs(M.ty - last.ty) < eps
+    ) {
+      return;
+    }
+
+    this._lastSceneMaskMatrix = { a: M.a, b: M.b, c: M.c, d: M.d, tx: M.tx, ty: M.ty };
+
+    try {
+      refreshSceneParticlesSuppressionMasks?.();
+    } catch {}
   }
 
   /**
@@ -833,6 +865,9 @@ export class ParticleEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObject
    */
   #tick() {
     if (this._tearingDown) return;
+
+    this.#updateSceneParticlesSuppressionForCamera();
+
     if (this.regionEffects.size === 0) return;
 
     const r = canvas?.app?.renderer;

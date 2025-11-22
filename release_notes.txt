@@ -1,35 +1,6 @@
-This 7.1 release covers many bugfixes for 7.0, some performance improvements, and visual enhancements for the Particle, Filter, and Animation Effect windows
-- Particle & Filter Effects:
-  - Updated Particle and Filter boolean inputs to use a visual toggle instead of a checkbox for better style and visibility
-  - Added tooltips for all parameters with some brief details on what each means. Tooltips can be turned off in FXMaster settings.
-  - Resolved hole areas that extended outside a regions bounds causing effects to crash
-  - Resolved hole areas that extended outside a regions bounds not masking filter or particle effects properly
-  - Resolved console error regarding window position that could appear if switching between scenes quickly with a Particle or Filter window open
-  - Resolved ellipses created using the ALT hotkey for a perfect circle not being accounted for in general region handling due to a type mismatch
-  - Resolved belowTokens mask cutout not working correctly when a token was not controlled and under an occluded tile
-  - Improve Below Tokens option when using Dynamic Token Rings. Further improvement needed but should give better coverage now.
-- Particle Effects:
-  - Added new Shadow Only option to the Clouds particle effect. This works when the new V7 Shadow option is on, and will cause only the shadows of clouds to display on the canvas.
-  - Improved performance of Clouds new Shadow effect, and fixed shadow effect jitter when windows display scale > 100%
-  - Modified belowTokens option for Particle Effects. Stashing effects in different layers turned out to be pretty brittle, so Particles now use the same Filters approach which cuts a mask for a given token. Byproduct of this approach is the belowTokens true option now also maintains effects that play above darkness, above darkness.
-  - Increased performance of Particle Effects generally by pooling render texture requests
-  - Resolved foundry native overhead occlusion filters for FXMaster particle effects not working
-- Filter Effects:
-  - Resolved multiple polygon shapes on a single region with an Edge Fade % defined not working properly. Note: Rectangle and Ellipse type region shapes do not support Edge Fade % when creating multiple shapes on a single region.
-  - Resolved Thunder Aware mode for the Lightning Filter displaying as usable for V12 users. This option was made possible via a new V13 api and so unfortunately is not supported in V12.
-  - Resolved Fog Filter Effect not correctly applying Tint options
-  - Resolved ghosting of token and region masks while panning/zooming, which was especially visible for the color filter when Below Tokens was on.
-- Animation Effects:
-  - Moved the Refresh Animations Database option from the settings menu into the Animation Effects window, and added a toggle for whether to include thumbnail processing
-  - Massively improved thumbnail processing time when Refresh Animations Database runs with that option set
-  - Improved thumbnail processing for JB2A to better match various string patterns they use
-  - Added an Image Popout for Animation Effects when left clicking
-  - Added Animation Effects support for new modules Eskie Effects and Eskie Effects Free, module includes thumbnails which are also processed alongside JB2A's
-  - Removed Anchor parameter config when modifying animations. This option doesn't make sense when you can place the cursor exactly where you want the animation to be, so removing saves a bit of data on the db object
-- Added Czech language support. Thanks Lethrendis!
-
-  
-  
-  
-
-  
+- Resolved Animation Effects bug that prevented the window from opening if animations db was built but no animations were present
+- Resolved missing gate for the belowTokens option on Particle Effects that caused a significant performance drop when a large number of tokens are on the canvas, even with belowTokens off. Additionally, improved performance of the belowTokens option when on for Particle Effects especially in many tokens on scene scenarios.
+- Resolved scene Particle Effects not always correctly re-sizing to viewport in certain zoom scenarios
+- Resolved a few localization key mismatches
+- Resolved a namespace issue for V12 when opening the particle effects window
+- Added localization keys for FXMaster+ new Sandstorm and Duststorm effects, and new Rainbow mode for Magic Crystals

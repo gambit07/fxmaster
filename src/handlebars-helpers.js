@@ -18,9 +18,7 @@ export function registerHandlebarsHelpers() {
       const hintKey = leaf ? `FXMASTER.ParamTooltips.${leaf}` : "";
       tipText = hintKey && game.i18n.has(hintKey) ? game.i18n.localize(hintKey) : "";
       tipDir = (parameterConfig.tooltipDirection ?? "LEFT").toUpperCase();
-      tipAttrs = tipText
-        ? ` data-tooltip="${foundry.utils.escapeHTML(tipText)}" data-tooltip-direction="${tipDir}"`
-        : "";
+      tipAttrs = tipText ? ` data-tooltip="${tipText}" data-tooltip-direction="${tipDir}"` : "";
     }
 
     switch (parameterConfig.type) {

@@ -101,7 +101,12 @@
       "BelowTokens": "Below Tokens",
       "ShadowOnly": "Shadow Only",
       "Splash": "Splash",
-      "Orbit": "Orbit"
+      "Orbit": "Orbit",
+      "OrbitDistance": "Orbit Distance",
+      "WobbleFrequency": "Wobble Frequency",
+      "Streakiness": "Streakiness",
+      "Lift": "Lift",
+      "Rainbow": "Rainbow"
     },
 
     "ParamTooltips": {
@@ -155,7 +160,12 @@
       "BelowTokens": "Renders effects underneath tokens visually.",
       "ShadowOnly": "Render only the drop shadow and hide the base particle sprites.",
       "Splash": "Enable rain splash effects alongside raindrops.",
-      "Orbit": "Enables orbit around center of a container instead of an outward spread."
+      "Orbit": "Enables orbit around center of a container instead of an outward spread.",
+      "OrbitDistance": "Distance from the center of a container for orbiting particles.",
+      "WobbleFrequency": "Controls how fast particles wobble. Higher = faster wobble.",
+      "Streakiness": "Controls how stretched and banded the filter is along the movement path. Lower values look more like uniform haze, higher values create longer streaks.",
+      "Lift": "Controls how thick the filter is in the middle of each sheet compared to its edges. Lower values are more flat and even; higher values make the centers denser and the edges thinner, adding depth but reducing overall coverage.",
+      "Rainbow": "Overrides Tint and enables a random cycling rainbow effect on particles."
     },
 
     "Particles": {
@@ -187,6 +197,7 @@
         "Fireflies": "Fireflies",
         "MagicCrystals": "Magic Crystals",
         "Ghosts": "Ghosts",
+        "Sandstorm": "Sandstorm",
         "BatsWeatherEffectsConfig": "Bats (FXMaster)",
         "BirdsWeatherEffectsConfig": "Birds (FXMaster)",
         "BubblesWeatherEffectsConfig": "Bubbles (FXMaster)",
@@ -207,7 +218,8 @@
         "SakuraBloomWeatherEffectsConfig": "Sakura Bloom (FXMaster)",
         "FirefliesWeatherEffectsConfig": "Fireflies (FXMaster)",
         "MagicCrystalsWeatherEffectsConfig": "Magic Crystals (FXMaster)",
-        "GhostsWeatherEffectsConfig": "Ghosts (FXMaster)"
+        "GhostsWeatherEffectsConfig": "Ghosts (FXMaster)",
+        "SandstormWeatherEffectsConfig": "Sandstorm (FXMaster)"
       },
       "BirdsAnimations": {
         "Glide": "Glide",
@@ -229,7 +241,8 @@
         "OldFilm": "Old Film",
         "Predator": "Predator",
         "Underwater": "Underwater",
-        "Sunlight": "Sunlight"
+        "Sunlight": "Sunlight",
+        "Duststorm": "Duststorm"
       },
       "TypeErrors": {
         "TypeUnknown": "Filter effect '{id}' is of unknown type '{type}', skipping it.",

@@ -49,6 +49,7 @@ export class SpecialEffectsManagement extends FXMasterBaseFormV2 {
     const tagSet = new Set();
 
     for (const [_bucketKey, bucket] of Object.entries(buckets)) {
+      if (!bucket?.effects) continue;
       for (const fx of bucket.effects) {
         const entry = foundry.utils.deepClone(fx);
         if (overrides[entry.file]) {

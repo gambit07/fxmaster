@@ -16,7 +16,7 @@ import { FXMasterFilterEffectMixin } from "./filter-effects/filters/mixins/filte
 import { SuppressSceneFiltersBehaviorType } from "./filter-effects/suppress-scene-filters-region-behavior.js";
 import customVertex2D from "./filter-effects/filters/shaders/custom-vertex-2d.vert";
 import { SpecialEffectsLayer } from "./special-effects/special-effects-layer.js";
-import { regionWorldBoundsAligned, regionWorldBounds, rectFromAligned } from "./utils.js";
+import { regionWorldBoundsAligned, regionWorldBounds, rectFromAligned, asFloat3 } from "./utils.js";
 import "../css/filters-config.css";
 import "../css/particle-effects-config.css";
 import "../css/specials-config.css";
@@ -30,6 +30,7 @@ CONFIG.fxmaster.FXMasterFilterEffectMixin = FXMasterFilterEffectMixin;
 CONFIG.fxmaster.regionWorldBoundsAligned = regionWorldBoundsAligned;
 CONFIG.fxmaster.regionWorldBounds = regionWorldBounds;
 CONFIG.fxmaster.rectFromAligned = rectFromAligned;
+CONFIG.fxmaster.asFloat3 = asFloat3;
 
 window.FXMASTER = {
   filters: FilterEffectsSceneManager.instance,

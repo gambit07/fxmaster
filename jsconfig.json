@@ -4,5 +4,5 @@
     "target": "ES2022"
   },
   "exclude": ["node_modules", "dist"],
-  "include": ["src/**/*", "client/**/*", "common/**/*"]
+  "include": ["src/**/*", "client/**/*", "common/**/*", "../fxmaster-plus/scripts/filter-effects/filters/dust.js"]
 }
