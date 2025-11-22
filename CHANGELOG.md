@@ -1,5 +1,14 @@
 # Changelog
 
+## [v7.1.1] - 2025-11-22
+- Resolved Animation Effects bug that prevented the window from opening if animations db was built but no animations were present
+- Resolved missing gate for the belowTokens option on Particle Effects that caused a significant performance drop when a large number of tokens are on the canvas, even with belowTokens off. Additionally, improved performance of the belowTokens option when on for Particle Effects especially in many tokens on scene scenarios.
+- Resolved scene Particle Effects not always correctly re-sizing to viewport in certain zoom scenarios
+- Resolved a few localization key mismatches
+- Resolved a namespace issue for V12 when opening the particle effects window
+- Added localization keys for FXMaster+ new Sandstorm and Duststorm effects, and new Rainbow mode for Magic Crystals
+- Updated pt-br localizations, thanks Kharmans!
+
 ## [v7.1.0] - 2025-11-16
 This 7.1 release covers many bugfixes for 7.0, some performance improvements, and visual enhancements for the Particle, Filter, and Animation Effect windows
 - Particle & Filter Effects:
