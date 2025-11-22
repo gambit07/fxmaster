@@ -4,3 +4,4 @@
 - Resolved a few localization key mismatches
 - Resolved a namespace issue for V12 when opening the particle effects window
 - Added localization keys for FXMaster+ new Sandstorm and Duststorm effects, and new Rainbow mode for Magic Crystals
+- Updated pt-br localizations, thanks Kharmans!
