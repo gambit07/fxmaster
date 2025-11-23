@@ -101,7 +101,12 @@
       "BelowTokens": "Abaixo dos Tokens",
       "ShadowOnly": "Apenas Sombra",
       "Splash": "Respingo",
-      "Orbit": "Órbita"
+      "Orbit": "Órbita",
+      "OrbitDistance": "Distância da Órbita",
+      "WobbleFrequency": "Frequência de Oscilação",
+      "Streakiness": "Listras",
+      "Lift": "Elevador",
+      "Rainbow": "Arco-Íris"
     },
     "ParamTooltips": {
       "Saturation": "Intensidade da cor. 0 = tons de cinza; 1 = original; >1 = supersaturado.",
@@ -154,7 +159,12 @@
       "BelowTokens": "Renderiza visualmente os efeitos abaixo dos tokens.",
       "ShadowOnly": "Renderiza apenas a sombra projetada e oculta as sprites de partículas base.",
       "Splash": "Ativa os efeitos de respingos de chuva junto com as gotas de chuva.",
-      "Orbit": "Permite orbitar em torno do centro de um recipiente em vez de se espalhar para fora."
+      "Orbit": "Permite orbitar em torno do centro de um recipiente em vez de se espalhar para fora.",
+      "OrbitDistance": "Distância do centro de um recipiente para partículas em órbita.",
+      "WobbleFrequency": "Controla a velocidade de oscilação das partículas. Maior = oscilação mais rápida.",
+      "Streakiness": "Controla o quanto o filtro se estica e forma faixas ao longo do percurso do movimento. Valores mais baixos criam uma névoa mais uniforme, enquanto valores mais altos criam faixas mais longas.",
+      "Lift": "Controla a espessura do filtro no centro de cada folha em comparação com as bordas. Valores mais baixos resultam em uma superfície mais plana e uniforme; valores mais altos tornam o centro mais denso e as bordas mais finas, adicionando profundidade, mas reduzindo a cobertura geral.",
+      "Rainbow": "Substitui a Tonalidade e ativa um efeito de arco-íris aleatório e cíclico nas partículas."
     },
 
     "Particles": {
@@ -186,6 +196,7 @@
         "Fireflies": "Vagalumes",
         "MagicCrystals": "Cristais Mágicos",
         "Ghosts": "Fantasmas",
+        "Sandstorm": "Tempestade de Areia",
         "BatsWeatherEffectsConfig": "Morcegos (FXMaster)",
         "BirdsWeatherEffectsConfig": "Aves (FXMaster)",
         "BubblesWeatherEffectsConfig": "Bolhas (FXMaster)",
@@ -206,7 +217,8 @@
         "SakuraBloomWeatherEffectsConfig": "Flor de Cerejeira (FXMaster)",
         "FirefliesWeatherEffectsConfig": "Vagalumes (FXMaster)",
         "MagicCrystalsWeatherEffectsConfig": "Cristais Mágicos (FXMaster)",
-        "GhostsWeatherEffectsConfig": "Fantasmas (FXMaster)"
+        "GhostsWeatherEffectsConfig": "Fantasmas (FXMaster)",
+        "SandstormWeatherEffectsConfig": "Tempestade de Areia (FXMaster)"
       },
       "BirdsAnimations": {
         "Glide": "Planar",
@@ -228,7 +240,8 @@
         "OldFilm": "Filme Antigo",
         "Predator": "Predador",
         "Underwater": "Subaquático",
-        "Sunlight": "Luz do Sol"
+        "Sunlight": "Luz do Sol",
+        "Duststorm": "Tempestade de Poeira"
       },
       "TypeErrors": {
         "TypeUnknown": "O efeito de filtro \"{id}\" é de tipo desconhecido \"{type}\". Ignorado.",
