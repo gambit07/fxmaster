@@ -1,5 +1,11 @@
 # Changelog
 
+## [v7.1.2] - 2025-11-23
+- Resolved Clouds Shadow option shader crash in certain scenarios
+- Some tweaks to the update release chat card
+- Updated pt-br localizations, thanks Kharmans!
+- Updated pl localizations, thanks Lioheart!
+
 ## [v7.1.1] - 2025-11-22
 - Resolved Animation Effects bug that prevented the window from opening if animations db was built but no animations were present
 - Resolved missing gate for the belowTokens option on Particle Effects that caused a significant performance drop when a large number of tokens are on the canvas, even with belowTokens off. Additionally, improved performance of the belowTokens option when on for Particle Effects especially in many tokens on scene scenarios.
