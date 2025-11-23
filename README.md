@@ -1,11 +1,19 @@
 <h1 style="text-align: center;">Gambit's FXMaster</h1>
 <p style="text-align: center;"><img src="https://img.shields.io/github/v/release/gambit07/fxmaster?style=for-the-badge" alt="GitHub release" /> <img src="https://img.shields.io/github/downloads/gambit07/fxmaster/total?style=for-the-badge" alt="GitHub all releases" /> <a href="https://discord.gg/YvxHrJ4tVu" target="_blank" rel="nofollow noopener"><img src="https://dcbadge.limes.pink/api/server/BA7SQKqMpa" alt="Discord" /></a></p>
+<video
+  autoplay
+  muted
+  playsinline
+  loop
+  preload="auto"
+  src="https://github.com/user-attachments/assets/fddaf4b7-767e-4a48-be22-8df87188f257">
+</video>
 <h2 style="text-align: center;">Supporting The Module</h2>
 <p style="text-align: center;"><a href="https://ko-fi.com/gambit07" target="_blank" rel="nofollow noopener"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="ko-fi" /></a> <a href="https://www.patreon.com/GambitsLounge" target="_blank" rel="nofollow noopener"> <img src="https://img.shields.io/badge/Patreon-Gambits Lounge-F96854?style=for-the-badge&amp;logo=patreon" alt="Patreon Gambits Lounge" /> </a></p>
 <hr/>
 <p>Welcome to the official release of FXMaster V7! This is a massive overhaul of Filters which have essentially been re-built from the ground up. Scene Filters can now be masked by regions, and Filters can be played directly within Regions. To allow making filters to look more realistic, there is a new Edge Fade % parameter that will gradually fade a given effect to the region borders. Beyond Filter exclusive functionality, regions have been given much more flexibility by allowing elevation restrictions for both Particles and Filters. This will be super helpful for users of the Levels module, and more generally the upcoming Foundry V14 core levels integration. Particles and Filters have also received another often requested feature, the ability to place tokens above or below a given effect. Finally, many Particles and Filters have seen tweaks and functionality enhancements in V7. One special callout is the Lightning Filter effect, which now has a Thunder aware mode to sync lightning flashes up with Thunder sounds.</p>
 
-**<p>Any support via the <a href="https://www.patreon.com/GambitsLounge" target="_blank" rel="nofollow noopener">Patreon</a> or <a href="https://ko-fi.com/gambit07" target="_blank" rel="nofollow noopener">Ko-fi</a> is greatly appreciated! If you are a Patreon subscriber you will receive access to the FXMaster+ module. FXMaster+ can be accessed from Patreon, and it's where I will be adding new particle effects and filters moving forward. For the month of September, it will get you access to the 🟢 Ghosts, 🟡 Sunlight, 🟢 Magic Crystals, 🟡 Fireflies, 🌸 Sakura Bloom, 🌸 Sakura Blossoms — Particle Effects previewed below:</p>**
+**<p>Any support via the <a href="https://www.patreon.com/GambitsLounge" target="_blank" rel="nofollow noopener">Patreon</a> or <a href="https://ko-fi.com/gambit07" target="_blank" rel="nofollow noopener">Ko-fi</a> is greatly appreciated! If you are a Patreon subscriber you will receive access to the FXMaster+ module. FXMaster+ can be accessed from Patreon, and it's where I will be adding new particle effects and filters moving forward. For the month of September, it will get you access to the 🟤Duststorm, 🟤Sandstorm, 🟢 Ghosts, 🟡 Sunlight, 🟢 Magic Crystals, 🟡 Fireflies, 🌸 Sakura Bloom, 🌸 Sakura Blossoms — Effects previewed below:</p>**
 
 <video
   autoplay
@@ -13,7 +21,7 @@
   playsinline
   loop
   preload="auto"
-  src="https://github.com/user-attachments/assets/a627342f-5ba7-4645-aaae-6af57447564c">
+  src="https://github.com/user-attachments/assets/f5b05f09-f59a-4ac3-b9e1-54a35772ade7">
 </video>
 
 <details>
