@@ -194,6 +194,23 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
     const r = canvas.app.renderer;
     const screenRect = new PIXI.Rectangle(0, 0, r.screen.width | 0, r.screen.height | 0);
 
+    const clampShadowResolution = () => {
+      try {
+        const gl = r.gl;
+        const maxTex = gl?.getParameter?.(gl.MAX_TEXTURE_SIZE) || 8192;
+        const wCSS = Math.max(1, screenRect.width | 0);
+        const hCSS = Math.max(1, screenRect.height | 0);
+        const baseRes = r.resolution || window.devicePixelRatio || 1;
+        const safeRes = Math.max(0.5, Math.min(baseRes, maxTex / Math.max(wCSS, hCSS)));
+
+        if (!Number.isFinite(shadow.resolution) || shadow.resolution > safeRes || shadow.resolution <= 0) {
+          shadow.resolution = safeRes;
+        }
+      } catch {
+        shadow.resolution = r.resolution || 1;
+      }
+    };
+
     const shadow = new DropShadowCtor({
       offset: { x: 0, y: 0 },
       blur,
@@ -206,6 +223,8 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
     shadow.autoFit = false;
     shadow.filterArea = screenRect;
     shadow.padding = 0;
+
+    clampShadowResolution();
 
     const existing = wrapper.filters ?? null;
     wrapper.filters = existing ? existing.concat([shadow]) : [shadow];
