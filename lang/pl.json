@@ -44,7 +44,8 @@
       "Environment": "Środowisko",
       "Interface": "Interfejs",
       "Music": "Muzyka",
-      "Splash": "Rozprysk"
+      "EnableTooltips": "Włącz podpowiedzi",
+      "EnableTooltipsHint": "Włącza opisy podpowiedzi dla parametrów efektów cząsteczkowych i filtrów."
     },
 
     "Params": {
@@ -97,7 +98,74 @@
       "ShadowDistance": "Odległość cienia",
       "ShadowBlur": "Rozmycie cienia",
       "ShadowOpacity": "Krycie cienia",
-      "BelowTokens": "Poniżej żetonów"
+      "BelowTokens": "Poniżej tokenów",
+      "ShadowOnly": "Tylko cień",
+      "Splash": "Rozprysk",
+      "Orbit": "Orbita",
+      "OrbitDistance": "Odległość orbity",
+      "WobbleFrequency": "Częstotliwość wahań",
+      "Streakiness": "Pasmo",
+      "Lift": "Unoszenie",
+      "Rainbow": "Tęcza"
+    },
+
+    "ParamTooltips": {
+      "Saturation": "Intensywność koloru. 0 = skala szarości; 1 = oryginał; >1 = przesycone.",
+      "Gamma": "Krzywa półcieni. Niższa wartość rozjaśnia półcienie, wyższa przyciemnia półcienie.",
+      "Period": "Okres cyklu powtarzania animacji w milisekundach. Niższa wartość = szybsze cykle.",
+      "Duration": "Czas trwania efektu lub przejścia (zanikanie lub odtwarzanie) w sekundach.",
+      "Brightness": "Ogólna jasność sceny lub sprite'ów. 0 = czarny; 1 = oryginalny; >1 = jaśniejszy.",
+      "Contrast": "Różnica między jasnością a ciemnością. Wyższe wartości zwiększają wyrazistość.",
+      "Noise": "Siła ziarna filmu / szumu. Wyższa wartość = bardziej widoczne ziarno.",
+      "LineWidth": "Szerokość linii/linii skanowania w pikselach (specyficzna dla efektu).",
+      "Density": "Ile cząstek pojawia się na danym obszarze. Wyższa wartość = bardziej intensywny efekt. UWAGA: Wyższe gęstości będą miały większy wpływ na wydajność.",
+      "Opacity": "Globalna przezroczystość efektu. 0 = niewidoczny; 1 = całkowicie zakryty.",
+      "Tint": "Nałóż jednolity kolor. Przełącz opcję Zastosuj, aby włączyć kolor.",
+      "Scale": "Skalowanie animacji/cząstek. Wyższa wartość = większe cząstki.",
+      "Speed": "Prędkość ruchu/animacji. Wyższa wartość = szybszy ruch lub zmiana.",
+      "Lifetime": "Średnia żywotność cząstek i związana z nią częstotliwość. Wyższa wartość = dłuższa żywotność.",
+      "Blur": "Promień rozmycia lub siła zastosowana przez efekt.",
+      "Bloom": "Intensywność blasku — jak silnie świecą jasne obszary.",
+      "Sepia": "Stopień sepii. Im wyższy, tym bardziej wyrazisty efekt vintage.",
+      "Threshold": "Próg jasności; niższy wartość rejestruje więcej pikseli.",
+      "Direction": "Orientacja w stopniach dla emisji lub ruchu.",
+      "Animations": "Wybierz typy animacji dla tego efektu.",
+      "Anchor": "Lokalne współrzędne punktu początkowego między 0,0 a 1,0.",
+      "Spin": "Prędkość obrotowa elementów. Wyższa wartość = szybszy obrót.",
+      "Glow": "Intensywność blasku wokół sprite'ów cząstek",
+      "Parallel": "Zastosuj promienie równoległe zamiast promieni radialnych.",
+      "Angle": "Punkt emisji/kąt w stopniach.",
+      "Gain": "Mnożnik intensywności.",
+      "Lacunarity": "Współczynnik rozstawienia dla promieni fraktalnych. Wyższa wartość = większa gęstość szczegółów.",
+      "BeamLength": "Maksymalna widoczna długość wiązek/promieni.",
+      "FadePercent": "Zmiękcza krawędzie regionu o ten procent, zapewniając płynniejsze przejście. Wyższa wartość = większe wygładzenie.",
+      "ScratchSize": "Średnia wielkość/głębokość rys.",
+      "ScratchDensity": "Ile pojawi się rys.",
+      "NoiseSize": "Skala wielkości ziaren. Wyższa wartość = większe ziarna.",
+      "Wobble": "Dodaje losowy ruch cząstek na boki. Wyższa wartość = większy ruch.",
+      "Displacement": "Siła zniekształcenia efektu cząsteczkowego.",
+      "ThunderAware": "Reaguj na szczyty audio. UWAGA: Funkcja ta jest przeznaczona dla efektu Grzmotu, ale ma zastosowanie do wszystkich efektów basowych w audio, więc wybierz odpowiedni kanał.",
+      "ThunderChannels": "Na które kanały audio należy reagować.",
+      "ThunderBassThreshold": "Poziom basów wymagany do wywołania reakcji grzmotu. Wyższy = mniej czuły.",
+      "Variants": "Wybierz gotowy wygląd dla tego efektu.",
+      "Variant": {
+        "Cute": "Urocza wersja przypominająca materiał.",
+        "Creepy": "Bardziej przerażająca wersja humanoida."
+      },
+      "Shadow": "Włącz cień dla sprite'ów cząsteczek.",
+      "ShadowRotation": "Kąt cieni w stopniach.",
+      "ShadowDistance": "Odległość przesunięcia cienia. Wyższa wartość = większa odległość.",
+      "ShadowBlur": "Siła rozmycia cienia.",
+      "ShadowOpacity": "Krycie cienia. 0 = niewidoczny; 1 = całkowicie zakryty.",
+      "BelowTokens": "Wizualizuje efekty pod tokenami.",
+      "ShadowOnly": "Renderuj tylko cień i ukryj podstawowe sprite cząsteczek.",
+      "Splash": "Włącz efekty rozpryskiwania deszczu wraz z kroplami deszczu.",
+      "Orbit": "Umożliwia obieg wokół środka pojemnika zamiast rozprzestrzeniania się na zewnątrz.",
+      "OrbitDistance": "Odległość od środka pojemnika dla cząstek orbitujących.",
+      "WobbleFrequency": "Kontroluje szybkość drgań cząstek. Wyższa wartość = szybsze drgania.",
+      "Streakiness": "Kontroluje stopień rozciągnięcia i pasmowości filtra wzdłuż ścieżki ruchu. Niższe wartości wyglądają bardziej jak jednolita mgła, wyższe wartości tworzą dłuższe smugi.",
+      "Lift": "Kontroluje grubość filtra w środkowej części każdego arkusza w porównaniu z jego krawędziami. Niższe wartości zapewniają bardziej płaski i równomierny efekt, natomiast wyższe wartości sprawiają, że środek jest gęstszy, a krawędzie cieńsze, co dodaje głębi, ale zmniejsza ogólne pokrycie.",
+      "Rainbow": "Zastępuje opcję Barwy i włącza losowy efekt tęczy na cząstkach."
     },
 
     "Particles": {
@@ -129,6 +197,7 @@
         "Fireflies": "Świetliki",
         "MagicCrystals": "Magiczne kryształy",
         "Ghosts": "Duchy",
+        "Sandstorm": "Burza piaskowa",
         "BatsWeatherEffectsConfig": "Nietoperze (FXMaster)",
         "BirdsWeatherEffectsConfig": "Ptaki (FXMaster)",
         "BubblesWeatherEffectsConfig": "Bąbelki (FXMaster)",
@@ -149,7 +218,8 @@
         "SakuraBloomWeatherEffectsConfig": "Kwitnąca wiśnia (FXMaster)",
         "FirefliesWeatherEffectsConfig": "Świetliki (FXMaster)",
         "MagicCrystalsWeatherEffectsConfig": "Magiczne kryształy (FXMaster)",
-        "GhostsWeatherEffectsConfig": "Duchy (FXMaster)"
+        "GhostsWeatherEffectsConfig": "Duchy (FXMaster)",
+        "SandstormWeatherEffectsConfig": "Burza piaskowa (FXMaster)"
       },
       "BirdsAnimations": {
         "Glide": "Szybowanie",
@@ -171,7 +241,8 @@
         "OldFilm": "Stary film",
         "Predator": "Predator",
         "Underwater": "Pod wodą",
-        "Sunlight": "Światło słoneczne"
+        "Sunlight": "Światło słoneczne",
+        "Duststorm": "Burza pyłowa"
       },
       "TypeErrors": {
         "TypeUnknown": "Efekt filtru „{id}” jest nieznanego typu „{type}”, pomijam.",
@@ -189,8 +260,8 @@
       "ElevationVisibility": {
         "Label": "Ograniczenia wysokości",
         "None": "Brak",
-        "POV": "Widok żetonów",
-        "Targets": "Widok wybranych żetonów",
+        "POV": "Widok tokenów",
+        "Targets": "Widok wybranych tokenów",
         "TokenTargets": "UUID żetonu",
         "AlwaysVisibleForGM": "Zawsze widoczne dla MG"
       }
@@ -198,6 +269,7 @@
 
     "AnimationEffect": {
       "AllAnimations": "Wszystkie animacje",
+      "FilterHint": "Filtruj animacje według tagów. Jeśli są dostępne, zawierają nazwy dostawców modułów, tag niestandardowy dla folderu animacji dodanego przez użytkownika oraz tag Ulubione dla animacji dodanych do ulubionych.",
       "Copied": "Skopiowano: {value}",
       "CopyElement": "Kopiuj tekst do schowka",
       "CustomDirectoryHint": "Ścieżka, w której znajdują się pliki .webm. Wymaga to odświeżenia bazy danych animacji.",
@@ -209,16 +281,18 @@
         "JB2AFree": "JB2A Free",
         "JB2AExtras": "JB2A Extras",
         "JinkersAnimatedArt": "Jinker's Animated Art",
-        "AnimatedSpellEffects": "Animated Spell Effects",
-        "AnimatedSpellEffectsCartoon": "Animated Spell Effects: Cartoon",
+        "AnimatedSpellEffects": "Efekty animacji zaklęć",
+        "AnimatedSpellEffectsCartoon": "Efekty animacji zaklęć: Kreskówkowe",
         "BossLootAssetsPremium": "Boss Loot Animated Assets Premium",
         "BossLootAdventuresPremium": "Boss Loot Adventures Premium",
         "BossLootAssetsFree": "Boss Loot Animated Assets Free",
         "Custom": "Niestandardowe",
-        "WildMagicSurge": "Wild Magic Surge"
+        "WildMagicSurge": "Dzika fala magii",
+        "EskieEffectsFree": "Eskie Effects Free",
+        "EskieEffects": "Eskie Effects"
       },
-      "RefreshDbHint": "Przebudowa bazy danych w celu uwzględnienia nowych/usuniętych animacji oraz analizy miniatur. Może to potrwać, zwłaszcza na hostingu (np. Forge).",
-      "RefreshDbName": "Odśwież bazę animacji",
+      "RefreshDbHint": "Odbuduj bazę danych animacji, aby uwzględnić wszelkie nowo dodane lub usunięte animacje. Opcjonalne skanowanie miniatur.",
+      "RefreshDbName": "Odśwież animacje",
       "RightClickForDetails": "Kliknij prawym przyciskiem myszy, aby wyświetlić szczegóły:",
       "ScanComplete": "FXMaster | Skanowanie animacji zakończone!",
       "ScanModules": "FXMaster | Skanowanie modułów animacji {current}/{total}...",
@@ -231,7 +305,9 @@
       "Update": "Aktualizuj efekt animacji",
       "RefreshDbError": "FXMaster | Nie znaleziono efektów animacji w bazie FXMaster. Poczekaj na koniec bieżącego skanowania lub przejdź do „Ustawienia modułu → FXMaster → Odśwież bazę danych animacji”.",
       "RefreshDbEmpty": "FXMaster | Brak efektów animacji w bazie. FXMaster pobiera je z Twojego folderu animacji lub od dostawców (JB2A, Boss Loot itd.). Jeśli je dodałeś, odśwież bazę w „Ustawienia modułu → FXMaster → Odśwież bazę danych animacji”.",
-      "ScanCompleteEmpty": "FXMaster | Skanowanie zakończone — nie znaleziono efektów animacji. Dodaj animacje i ponów odświeżenie."
+      "ScanCompleteEmpty": "FXMaster | Skanowanie zakończone — nie znaleziono efektów animacji. Dodaj animacje i ponów odświeżenie.",
+      "Thumbnails": "Miniatury",
+      "ThumbnailsHint": "Umożliwia wyszukiwanie miniatur animacji podczas skanowania odświeżania animacji. Dostawcami animacji obsługującymi wyszukiwanie miniatur są JB2A i Eskie Effects."
     }
   }
 }
