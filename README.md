@@ -105,24 +105,24 @@ This module also provides ways to easily configure these effects.
   - [Installation Instructions](#installation-instructions)
   - [FAQ](#faq)
   - [Usage](#usage)
-    - [Animation Effects&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/hat-wizard-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/hat-wizard-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/hat-wizard-dark.svg" alt="Animation Effects Icon" height="20" width="20" style="vertical-align:middle;"></picture>](#animation-effects)
+    - [Animation Effects](#animation-effects)&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/hat-wizard-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/hat-wizard-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/hat-wizard-dark.svg" alt="Animation Effects Icon" height="20" width="20" style="vertical-align:middle;"></picture>
       - [Placing Animation Effects](#placing-animation-effects)
       - [Managing Animation Effects](#managing-animation-effects)
-    - [Particle Effects&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/cloud-rain-light.svg" media="(prefers-color-scheme: dark)"><source srcset="./media/font-awesome/cloud-rain-dark.svg" media="(prefers-color-scheme: light)"><img src="./media/font-awesome/cloud-rain-dark.svg" alt="Particle Effects Icon" height="20" width="20" style="display:inline-block; vertical-align:bottom;"></picture>](#particle-effects)
+    - [Particle Effects](#particle-effects)&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/cloud-rain-light.svg" media="(prefers-color-scheme: dark)"><source srcset="./media/font-awesome/cloud-rain-dark.svg" media="(prefers-color-scheme: light)"><img src="./media/font-awesome/cloud-rain-dark.svg" alt="Particle Effects Icon" height="20" width="20" style="display:inline-block; vertical-align:bottom;"></picture>
       - [Particle Effects via Region Behavior](#particle-effects-via-region-behavior)
       - [Masking Particle Effects](#masking-particle-effects)
       - [⚠ Warning Regarding Large Scenes](#-warning-regarding-large-scenes)
-    - [Filter Effects&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/filter-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/filter-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/filter-dark.svg" alt="Filter Effects Icon" height="20" width="20" style="vertical-align:middle;"></picture>](#filter-effects)
+    - [Filter Effects](#filter-effects)&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/filter-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/filter-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/filter-dark.svg" alt="Filter Effects Icon" height="20" width="20" style="vertical-align:middle;"></picture>
       - [Filter Effects via Region Behavior](#filter-effects-via-region-behavior)
       - [Masking Filter Effects](#masking-filter-effects)
-    - [Save Particle and Filter Effects as a Macro&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/floppy-disk-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/floppy-disk-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/floppy-disk-dark.svg" alt="Save Particle and Filter Effects as a Macro Icon" height="20" width="20" style="vertical-align:middle;"></picture>](#save-particle-and-filter-effects-as-macro)
-    - [Clear Particle and Filter Effects&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/trash-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/trash-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/trash-dark.svg" alt="Clear Particle and Filter Effects Icon" height="20" width="20" style="vertical-align:middle;"></picture>](#clear-particle-and-filter-effects)
+    - [Save Particle and Filter Effects as a Macro](#save-particle-and-filter-effects-as-a-macro)&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/floppy-disk-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/floppy-disk-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/floppy-disk-dark.svg" alt="Save Particle and Filter Effects as a Macro Icon" height="20" width="20" style="vertical-align:middle;"></picture>
+    - [Clear Particle and Filter Effects](#clear-particle-and-filter-effects)&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/trash-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/trash-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/trash-dark.svg" alt="Clear Particle and Filter Effects Icon" height="20" width="20" style="vertical-align:middle;"></picture>
   - [Developer API](#developer-api)
     - [Filter Effects](#filter-effects)
       - [Available Filter Effects With Supported Options](#available-filter-effects-with-supported-options)
     - [Particle Effects](#particle-effects)
       - [Available Particle Effects With Supported Options](#available-particle-effects-with-supported-options)
-      - [Particle Effect Options](#particle-effect-options)
+      - [Particle Effect Options](#some-particle-effect-options)
   - [Contributing](#contributing)
   - [Acknowledgement](#acknowledgement)
   - [Licensing](#licensing)
@@ -161,7 +161,7 @@ https://github.com/gambit07/fxmaster/releases/latest/download/module.json
 
 The functionality of FXMaster can be accessed via _Effect Controls_ <picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/wand-magic-sparkles-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/wand-magic-sparkles-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/wand-magic-sparkles-dark.svg" alt="Effect Controls Icon" height="20" width="20" style="vertical-align:middle;"></picture> in scene controls. Each FXMaster app has its own tool inside scene controls.
 
-### Animation Effects&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/hat-wizard-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/hat-wizard-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/hat-wizard-dark.svg" alt="Animation Effects Icon" height="20" width="20" style="vertical-align:bottom;"></picture>
+### Animation Effects&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/hat-wizard-light.svg" media="(prefers-color-scheme: dark)"><source srcset="./media/font-awesome/hat-wizard-dark.svg" media="(prefers-color-scheme: light)"><img src="./media/font-awesome/hat-wizard-dark.svg" alt="" aria-hidden="true" role="presentation" height="20" width="20" style="vertical-align:middle;"></picture>
 
 _Animation Effects_ are video files that can be previewed and/or placed on the canvas via clicking and dragging. FXMaster aggregates animations from popular animation module providers including: [JB2A], [Jinker's Animated Art], [Jack Kerouac's Animated Spell Effects], [Jack Kerouac's Animated Spell Effects Cartoon], [Boss Loot Animated Assets], and [Wild Magic Surge]. Along side the built in module support, you can also add your own Custom folder of animations from the modules settings.
 
@@ -185,7 +185,7 @@ _Animation Effects_ details can be viewed by right clicking an animation icon in
 
 ![Animation Effect Update](./media/screenshots/update-animation-effect.webp)
 
-### Particle Effects&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/cloud-rain-light.svg" media="(prefers-color-scheme: dark)"><source srcset="./media/font-awesome/cloud-rain-dark.svg" media="(prefers-color-scheme: light)"><img src="./media/font-awesome/cloud-rain-dark.svg" alt="Particle Effects Icon" height="20" width="20" style="display:inline-block; vertical-align:bottom;"></picture>
+### Particle Effects&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/cloud-rain-light.svg" media="(prefers-color-scheme: dark)"><source srcset="./media/font-awesome/cloud-rain-dark.svg" media="(prefers-color-scheme: light)"><img src="./media/font-awesome/cloud-rain-dark.svg" alt="" aria-hidden="true" role="presentation" height="20" width="20" style="display:inline-block; vertical-align:bottom;"></picture>
 
 _Particle Effects_ include weather effects like rain, fog, clouds, and snow, but also other global particle effects such as birds flying across the scene or spiders crawling around. 
 
@@ -244,7 +244,7 @@ canvas.scene.unsetFlag("fxmaster", "effects");
 
 You can then safely reactivate your modules. When creating Particle Effects on large scenes like the above, try to limit density and size as much as possible for a more performant experience.
 
-### Filter Effects&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/filter-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/filter-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/filter-dark.svg" alt="Filter Effects Icon" height="20" width="20" style="vertical-align:middle;"></picture>
+### Filter Effects&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/filter-light.svg" media="(prefers-color-scheme: dark)"><source srcset="./media/font-awesome/filter-dark.svg" media="(prefers-color-scheme: light)"><img src="./media/font-awesome/filter-dark.svg" alt="" aria-hidden="true" role="presentation" height="20" width="20" style="vertical-align:middle;"></picture>
 
 _Filter Effects_ include effects that change the underlying scene visuals in some way like altering the color, displaying an old film effect, or adding underwater displacement.
 There are two ways to implement _Filter Effects_: via the _Effect Controls_ menu for global _Filter Effects_, or via a [Region](https://foundryvtt.com/article/scene-regions/) using the _FXMaster: Filter Effects_ Region behavior.
@@ -291,7 +291,7 @@ By default, _Filter Effects_ added via the scene app are displayed across the en
 
 _Filter Effects_ are only displayed outside the region areas when masked. If a Hole shape is added to the region, scene filter effects will display in the hole area cutout.
 
-### Save Particle and Filter Effects as a Macro&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/floppy-disk-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/floppy-disk-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/floppy-disk-dark.svg" alt="Save Particle and Filter Effects as a Macro Icon" height="20" width="20" style="vertical-align:middle;"></picture>
+### Save Particle and Filter Effects as a Macro&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/floppy-disk-light.svg" media="(prefers-color-scheme: dark)"><source srcset="./media/font-awesome/floppy-disk-dark.svg" media="(prefers-color-scheme: light)"><img src="./media/font-awesome/floppy-disk-dark.svg" alt="" aria-hidden="true" role="presentation" height="20" width="20" style="vertical-align:middle;"></picture>
 
 This tool allows you to create a macro from the currently active _Particle Effects_ and _Filter Effects_. When clicking
 this tool, a macro is created in the macro directory. It's not put onto the hotbar, so you need to drag it there
@@ -300,7 +300,7 @@ yourself if you want to.
 When executed, the macro sets the _Particle Effects_ and _Filter Effects_ of the current scene to the state they were in
 when the macro was created.
 
-### Clear Particle and Filter Effects&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/trash-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/trash-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/trash-dark.svg" alt="Clear Particle and Filter Effects Icon" height="20" width="20" style="vertical-align:middle;"></picture>
+### Clear Particle and Filter Effects&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/trash-light.svg" media="(prefers-color-scheme: dark)"><source srcset="./media/font-awesome/trash-dark.svg" media="(prefers-color-scheme: light)"><img src="./media/font-awesome/trash-dark.svg" alt="" aria-hidden="true" role="presentation" height="20" width="20" style="vertical-align:middle;"></picture>
 
 When clicked, this tool shows a confirmation dialog to delete all _Particle Effects_ and _Filter Effects_ from the
 current scene.
