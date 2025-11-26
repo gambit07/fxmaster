@@ -198,15 +198,48 @@ export class FilterEffectsSceneManager {
     const filtersArr = [...Object.values(this.filters), ...this._dyingFilters];
     if (!filtersArr.length) return;
 
+    const regions = this.#getSuppressRegions();
+    const hasSuppress = Array.isArray(regions) && regions.length > 0;
+    const anyBelow = filtersArr.some((f) => !!(f?.__fxmBelowTokens ?? f?.options?.belowTokens));
+
+    if (!hasSuppress && !anyBelow) {
+      for (const f of filtersArr) {
+        const u = f?.uniforms || {};
+        if ("maskSampler" in u) u.maskSampler = PIXI.Texture.EMPTY;
+        if ("hasMask" in u) u.hasMask = 0.0;
+        if ("maskReady" in u) u.maskReady = 0.0;
+        if ("tokenSampler" in u) u.tokenSampler = PIXI.Texture.EMPTY;
+        if ("hasTokenMask" in u) u.hasTokenMask = 0.0;
+      }
+
+      if (this._suppressMaskRT) {
+        try {
+          this._suppressMaskRT.destroy(true);
+        } catch {}
+        this._suppressMaskRT = null;
+      }
+      if (this._suppressMaskCutoutRT) {
+        try {
+          this._suppressMaskCutoutRT.destroy(true);
+        } catch {}
+        this._suppressMaskCutoutRT = null;
+      }
+      if (this._tokensMaskRT) {
+        try {
+          this._tokensMaskRT.destroy(true);
+        } catch {}
+        this._tokensMaskRT = null;
+      }
+      return;
+    }
+
     const { cssW, cssH, deviceToCss, rect: cssFA } = getCssViewportMetrics();
 
-    const regions = this.#getSuppressRegions();
     this._suppressMaskRT = buildSceneAllowMaskRT({
       regions,
       reuseRT: this._suppressMaskRT,
     });
 
-    const anyBelow = filtersArr.some((f) => !!(f?.__fxmBelowTokens ?? f?.options?.belowTokens));
     if (anyBelow) {
       const updated = ensureBelowTokensArtifacts(this._suppressMaskRT, {
         cutoutRT: this._suppressMaskCutoutRT,

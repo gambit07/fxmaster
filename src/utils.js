@@ -1202,23 +1202,16 @@ export function paintSceneAllowMaskInto(rt, { regions = [] } = {}) {
     } catch {}
   }
 
-  const camM = snappedStageMatrix(canvas.regions ?? canvas.stage);
-
   {
-    const dims = canvas.scene?.dimensions;
-    const rect = dims?.sceneRect;
-    if (rect) {
-      const g = new PIXI.Graphics();
-      g.transform.setFromMatrix(camM);
-      g.beginFill(0xffffff, 1)
-        .drawRect(rect.x | 0, rect.y | 0, rect.width | 0, rect.height | 0)
-        .endFill();
-      r.render(g, { renderTexture: rt, clear: false });
-      try {
-        g.destroy(true);
-      } catch {}
-    }
+    const g = new PIXI.Graphics();
+    g.beginFill(0xffffff, 1).drawRect(0, 0, screenW, screenH).endFill();
+    r.render(g, { renderTexture: rt, clear: false });
+    try {
+      g.destroy(true);
+    } catch {}
   }
+
+  const camM = snappedStageMatrix(canvas.regions ?? canvas.stage);
 
   if (Array.isArray(regions) && regions.length) {
     const solidsGfx = new PIXI.Graphics();
@@ -1248,16 +1241,9 @@ export function paintSceneAllowMaskInto(rt, { regions = [] } = {}) {
 
     try {
       solidsGfx.destroy(true);
-    } catch {}
-    try {
       holesGfx.destroy(true);
     } catch {}
   }
-
-  try {
-    rt.baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
-    rt.baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
-  } catch {}
 }
 
 /**

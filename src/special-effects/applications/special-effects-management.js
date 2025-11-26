@@ -427,7 +427,7 @@ export class SpecialEffectsManagement extends FXMasterBaseFormV2 {
     c.addEventListener("click", (event) => {
       if (event.button !== 0) return;
       if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-      new CONFIG.fxmaster.ImagePopout({
+      new CONFIG.fxmaster.ImagePopoutNS({
         src: effect.file,
         window: { title: `${effect.author} | ${effect.label}` },
       }).render(true);

@@ -177,6 +177,9 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
 
     if (!config._dropShadowEnabled) return emitter;
 
+    const r = canvas?.app?.renderer;
+    if (!r) return emitter;
+
     const DropShadowCtor = PIXI.filters.DropShadowFilter;
 
     const BASE_OFFSET = { x: 50, y: -50 };
@@ -191,25 +194,17 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
 
     const dir = { x: Math.cos(angleRad), y: Math.sin(angleRad) };
 
-    const r = canvas.app.renderer;
-    const screenRect = new PIXI.Rectangle(0, 0, r.screen.width | 0, r.screen.height | 0);
+    const screenRect = new PIXI.Rectangle(0, 0, 1, 1);
 
-    const clampShadowResolution = () => {
-      try {
-        const gl = r.gl;
-        const maxTex = gl?.getParameter?.(gl.MAX_TEXTURE_SIZE) || 8192;
-        const wCSS = Math.max(1, screenRect.width | 0);
-        const hCSS = Math.max(1, screenRect.height | 0);
-        const baseRes = r.resolution || window.devicePixelRatio || 1;
-        const safeRes = Math.max(0.5, Math.min(baseRes, maxTex / Math.max(wCSS, hCSS)));
-
-        if (!Number.isFinite(shadow.resolution) || shadow.resolution > safeRes || shadow.resolution <= 0) {
-          shadow.resolution = safeRes;
-        }
-      } catch {
-        shadow.resolution = r.resolution || 1;
-      }
+    const updateScreenRect = () => {
+      const scr = r.screen;
+      screenRect.x = 0;
+      screenRect.y = 0;
+      screenRect.width = Math.max(1, scr.width | 0);
+      screenRect.height = Math.max(1, scr.height | 0);
     };
+
+    updateScreenRect();
 
     const shadow = new DropShadowCtor({
       offset: { x: 0, y: 0 },
@@ -218,11 +213,43 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
       color: 0x000000,
       quality: 20,
       shadowOnly,
-      resolution: r.resolution || 1,
+      resolution: r.resolution || window.devicePixelRatio || 1,
     });
+
     shadow.autoFit = false;
-    shadow.filterArea = screenRect;
     shadow.padding = 0;
+
+    wrapper.filterArea = screenRect;
+    shadow.filterArea = screenRect;
+
+    const clampShadowResolution = () => {
+      try {
+        const gl = r.gl;
+        const maxTex = gl?.getParameter?.(gl.MAX_TEXTURE_SIZE) || 8192;
+
+        const wCSS = Math.max(1, screenRect.width | 0);
+        const hCSS = Math.max(1, screenRect.height | 0);
+        const maxDim = Math.max(wCSS, hCSS);
+
+        const baseRes = r.resolution || window.devicePixelRatio || 1;
+        const safeRes = Math.max(0.5, Math.min(baseRes, maxTex / maxDim));
+
+        if (!Number.isFinite(safeRes) || safeRes <= 0) {
+          shadow.enabled = false;
+          shadow.alpha = 0;
+          return;
+        }
+
+        if (!Number.isFinite(shadow.resolution) || shadow.resolution > safeRes || shadow.resolution <= 0) {
+          shadow.resolution = safeRes;
+        }
+      } catch {
+        try {
+          shadow.enabled = false;
+          shadow.alpha = 0;
+        } catch {}
+      }
+    };
 
     clampShadowResolution();
 
@@ -238,8 +265,8 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
     const tick = () => {
       const zoom = canvas?.stage?.scale?.x ?? 1;
 
-      const offX = Math.round(dir.x * distance * zoom);
-      const offY = Math.round(dir.y * distance * zoom);
+      const offX = dir.x * distance * zoom;
+      const offY = dir.y * distance * zoom;
 
       if (offX !== lastOffX || offY !== lastOffY) {
         if (shadow.offset) {
@@ -269,14 +296,8 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
     PIXI.Ticker.shared.add(tick);
 
     const onResize = () => {
-      screenRect.x = 0;
-      screenRect.y = 0;
-      screenRect.width = r.screen.width | 0;
-      screenRect.height = r.screen.height | 0;
-      shadow.filterArea = screenRect;
-
-      const targetRes = r.resolution || 1;
-      if (shadow.resolution !== targetRes) shadow.resolution = targetRes;
+      updateScreenRect();
+      clampShadowResolution();
     };
     r.on("resize", onResize);
 
@@ -294,6 +315,7 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
         }
         shadow.destroy?.();
       } catch {}
+
       return origDestroy ? origDestroy(...args) : undefined;
     };
 

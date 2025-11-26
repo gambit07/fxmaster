@@ -3,6 +3,10 @@
   --fxmaster-border: 1px solid var(--color-border-dark-4);
   --fxmaster-max-height: 85vh;
   --fxmaster-max-height: 85dvh;
+  --fxm-switch-track-bg: var(--color-border, #555);
+  --fxm-switch-track-border: var(--color-border-dark-3, #111);
+  --fxm-switch-thumb-bg: #ffffff;
+  --fxm-switch-thumb-border: rgba(0, 0, 0, 0.65);
 }
 
 /* Base styles for headers & rows */
@@ -156,13 +160,16 @@
   display: flex;
 }
 
+/* Make the whole switch clearly clickable */
 .fxm-switch {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 0.35rem;
   user-select: none;
   line-height: 1;
   font-size: 0.9em;
+  cursor: pointer;
+  margin-inline: 0;
 }
 
 /* Visually hide the native checkbox but keep it accessible */
@@ -173,41 +180,48 @@
   block-size: 0;
 }
 
-/* Track */
+/* Track – slightly taller */
 .fxm-switch .fxm-slider {
+  all: unset;
   position: relative;
-  width: 34px;
-  height: 18px;
+  display: inline-block;
+  box-sizing: border-box;
+  width: 38px;
+  height: 24px;
   border-radius: 999px;
-  background: var(--color-border);
-  border: 1px solid var(--color-border-dark-3);
+  background: var(--fxm-switch-track-bg) !important;
+  border: 1px solid var(--fxm-switch-track-border) !important;
   box-shadow: inset 0 0 0 1px var(--color-shadow-dark);
   cursor: pointer;
   transition: background 150ms ease, border-color 150ms ease, filter 150ms ease;
 }
 
-/* Thumb */
+/* Thumb – scaled up and centered vertically */
 .fxm-switch .fxm-slider::before {
   content: "";
   position: absolute;
-  top: 2px;
+  top: 3px;
   left: 2px;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  background: var(--color-text-light-0);
+  background: var(--fxm-switch-thumb-bg) !important;
+  border: 1px solid var(--fxm-switch-thumb-border) !important;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
   transform: translateX(0);
   transition: transform 150ms ease;
+  z-index: 1;
 }
 
-/* Checked state (distinct color + border) */
-.fxm-switch input[type="checkbox"]:checked + .fxm-slider {
-  background: var(--color-warm-2);
-  border-color: var(--color-warm-3);
-}
+/* Checked state – adjust travel distance for new sizes */
 .fxm-switch input[type="checkbox"]:checked + .fxm-slider::before {
-  transform: translateX(14px);
+  transform: translateX(16px);
+}
+
+/* Checked state */
+.fxm-switch input[type="checkbox"]:checked + .fxm-slider {
+  background: var(--color-warm-2) !important;
+  border-color: var(--color-warm-3) !important;
 }
 
 /* Focus ring for keyboard users */
@@ -216,12 +230,11 @@
   outline-offset: 2px;
 }
 
-/* Optional text next to slider */
-.fxm-switch .fxm-switch-label {
-  opacity: 0.85;
+/* Optional hover polish */
+.fxm-switch .fxm-slider:hover::before {
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.25), 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 
-/* Ensure left alignment in your existing rows */
 .fxmaster-input-checkbox,
 .fxmaster-input-color {
   display: flex;

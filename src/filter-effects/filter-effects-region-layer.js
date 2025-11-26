@@ -207,14 +207,29 @@ function _buildRegionSDF_FromBinary(placeable, worldBounds) {
     height: Math.max(Number(worldBounds.height), minSize),
   };
 
-  const view = canvas.app.renderer.view;
+  const r = canvas.app.renderer;
+  const view = r.view;
   const devW = Math.max(1, view.width | 0);
   const devH = Math.max(1, view.height | 0);
+
+  const gl = r.gl;
+  const maxTex = gl?.getParameter?.(gl.MAX_TEXTURE_SIZE) || 8192;
+
   let wpt = Math.max(safeBounds.width / devW, safeBounds.height / devH);
   if (!Number.isFinite(wpt) || wpt <= 0) wpt = 1;
 
-  const W = Math.max(1, Math.ceil(safeBounds.width / wpt));
-  const H = Math.max(1, Math.ceil(safeBounds.height / wpt));
+  let W = Math.max(1, Math.ceil(safeBounds.width / wpt));
+  let H = Math.max(1, Math.ceil(safeBounds.height / wpt));
+
+  const overW = W > maxTex;
+  const overH = H > maxTex;
+  if (overW || overH) {
+    const scale = Math.min(maxTex / W, maxTex / H);
+    W = Math.max(1, Math.floor(W * scale));
+    H = Math.max(1, Math.floor(H * scale));
+
+    wpt = safeBounds.width / W;
+  }
 
   const bin = document.createElement("canvas");
   bin.width = W;

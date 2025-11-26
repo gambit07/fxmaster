@@ -51,9 +51,19 @@ export function refreshSceneParticlesSuppressionMasks() {
       (fx) => !!(fx?._fxmOptsCache?.belowTokens?.value ?? fx?.options?.belowTokens?.value),
     );
 
-    const hasSuppress = _getSuppressRegions();
+    const suppressRegions = _getSuppressRegions();
+    const hasSuppress = suppressRegions.length > 0;
+
+    if (!hasSuppress && !anyBelowTokens) {
+      const containers = _knownSceneFxContainers();
+      for (const c of containers) _ensureContainerMaskSprite(c, null);
+      _detachPerFxMasks(liveFx);
+      _swapSharedMaskRT(null, true);
+      return;
+    }
+
     const newBase = buildSceneAllowMaskRT({
-      regions: hasSuppress,
+      regions: suppressRegions,
       reuseRT: _sceneParticlesMaskRT,
     });
 

@@ -30,6 +30,7 @@ export class RainTopParticleEffect extends FXMasterParticleEffect {
       super.parameters,
       {
         density: { min: 0.01, value: 0.3, max: 1, step: 0.01, decimals: 2 },
+        lifetime: { min: 2, value: 2.5, max: 5, step: 0.1, decimals: 1 },
         "-=direction": null,
         splash: { label: "FXMASTER.Params.Splash", type: "checkbox", value: true },
       },

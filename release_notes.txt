@@ -1,4 +1,5 @@
-- Resolved Clouds Shadow option shader crash in certain scenarios
-- Some tweaks to the update release chat card
-- Updated pt-br localizations, thanks Kharmans!
-- Updated pl localizations, thanks Lioheart!
+- Resolved additional Clouds Shadow option shader crash in certain scenarios
+- Resolved filters not respecting scene bounds when Performance mode was set to High or lower
+- Added missing gating for masks in 0 mask scenarios
+- Improved design of slider toggle and improved it's style being overridden in certain systems
+- Tweaked the Rain Particle Effect to get better performance via more normalized density

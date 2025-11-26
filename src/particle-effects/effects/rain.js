@@ -21,6 +21,7 @@ export class RainParticleEffect extends FXMasterParticleEffect {
     return foundry.utils.mergeObject(
       super.parameters,
       {
+        lifetime: { min: 2, value: 2.5, max: 5, step: 0.1, decimals: 1 },
         splash: { label: "FXMASTER.Params.Splash", type: "checkbox", value: true },
       },
       { performDeletions: true },
@@ -84,11 +85,22 @@ export class RainParticleEffect extends FXMasterParticleEffect {
     const splashIntensity = 1;
 
     const d = canvas.dimensions;
-    const maxParticles = (d.width / d.size) * (d.height / d.size) * options.density.value;
+    const gridCells = (d.width / d.size) * (d.height / d.size);
+
+    const PARTICLE_BUDGET_RAIN = 20000;
+    const userDensity = options.density?.value ?? 0.5;
+
+    const maxDensityForScene = gridCells > 0 ? PARTICLE_BUDGET_RAIN / gridCells : userDensity;
+
+    const density = Math.min(userDensity, maxDensityForScene);
+
+    const maxParticles = Math.max(1, Math.round(gridCells * density));
 
     const rainConfig = foundry.utils.deepClone(this.constructor.RAIN_CONFIG);
     rainConfig.maxParticles = maxParticles;
+
     rainConfig.frequency = 1 / maxParticles;
+
     rainConfig.behaviors.push({
       type: "spawnShape",
       config: {
@@ -101,14 +113,16 @@ export class RainParticleEffect extends FXMasterParticleEffect {
         },
       },
     });
-    this.applyOptionsToConfig(options, rainConfig);
 
+    this.applyOptionsToConfig(options, rainConfig);
     const emitters = [this.createEmitter(rainConfig)];
 
     if (splashEnabled && splashIntensity > 0) {
       const splashConfig = foundry.utils.deepClone(this.constructor.SPLASH_CONFIG);
 
-      const splashMax = Math.max(1, splashIntensity * 0.5 * maxParticles);
+      const splashBudget = Math.min(Math.round(0.5 * maxParticles * splashIntensity), 5000);
+
+      const splashMax = Math.max(1, splashBudget);
       splashConfig.maxParticles = splashMax;
       splashConfig.frequency = 1 / splashMax;
 

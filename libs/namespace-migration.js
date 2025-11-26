@@ -10,4 +10,4 @@ CONFIG.fxmaster.InteractionLayerNS = foundry.canvas?.layers?.InteractionLayer ??
 CONFIG.fxmaster.DrawingNS = foundry.canvas?.placeables?.Drawing ?? Drawing;
 CONFIG.fxmaster.WeatherOcclusionMaskFilterNS = foundry.canvas?.rendering?.filters?.WeatherOcclusionMaskFilter ?? WeatherOcclusionMaskFilter;
 CONFIG.fxmaster.PrimaryCanvasGroupNS = foundry.canvas?.groups?.PrimaryCanvasGroup ?? PrimaryCanvasGroup;
-CONFIG.fxmaster.ImagePopout = foundry.applications?.apps?.ImagePopout ?? ImagePopout;
+CONFIG.fxmaster.ImagePopoutNS = foundry.applications?.apps?.ImagePopout ?? ImagePopout;
