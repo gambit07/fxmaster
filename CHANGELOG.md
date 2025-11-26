@@ -5,6 +5,13 @@
 - Resolved filters not respecting scene bounds when Performance mode was set to High or lower
 - Added missing gating for masks in 0 mask scenarios
 - Improved design of slider toggle and improved it's style being overridden in certain systems
+- Tweaked the Rain Particle Effect to get better performance via more normalized density.
+
+## [v7.1.3] - 2025-11-26
+- Resolved additional Clouds Shadow option shader crash in certain scenarios
+- Resolved filters not respecting scene bounds when Performance mode was set to High or lower
+- Added missing gating for masks in 0 mask scenarios
+- Improved design of slider toggle and improved it's style being overridden in certain systems
 - Tweaked the Rain Particle Effect to get better performance via more normalized density
 
 ## [v7.1.2] - 2025-11-23
