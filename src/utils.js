@@ -402,15 +402,41 @@ export function traceRegionShapePath2D(ctx, s) {
 }
 
 /**
- * Return a pixel-snapped stage matrix.
- * @param {PIXI.Container} [stage]
- * @returns {PIXI.Matrix}
+ * Return snapped camera translation in CSS space and fractional offset.
+ * @returns {{ txCss: number, tyCss: number, txSnapCss: number, tySnapCss: number, camFracX: number, camFracY: number }}
+ */
+/**
+ * Return snapped camera translation in CSS space and fractional offset.
+ * @returns {{ txCss: number, tyCss: number, txSnapCss: number, tySnapCss: number, camFracX: number, camFracY: number }}
+ */
+export function getSnappedCameraCss() {
+  const r = canvas?.app?.renderer;
+  const res = r?.resolution || window.devicePixelRatio || 1;
+  const stageM = canvas.stage?.worldTransform ?? PIXI.Matrix.IDENTITY;
+
+  const txCss = stageM.tx;
+  const tyCss = stageM.ty;
+
+  const txSnapCss = Math.round(txCss * res) / res;
+  const tySnapCss = Math.round(tyCss * res) / res;
+
+  const camFracX = txCss - txSnapCss;
+  const camFracY = tyCss - tySnapCss;
+
+  return { txCss, tyCss, txSnapCss, tySnapCss, camFracX, camFracY };
+}
+
+/**
+ * Return a pixel-snapped stage matrix (device px), aligned to CSS grid.
  */
 export function snappedStageMatrix(stage = canvas.stage) {
   const M = stage.worldTransform.clone();
-  const res = canvas?.app?.renderer?.resolution || 1;
-  M.tx = Math.round(M.tx * res) / res;
-  M.ty = Math.round(M.ty * res) / res;
+
+  const { txSnapCss, tySnapCss } = getSnappedCameraCss();
+
+  M.tx = txSnapCss;
+  M.ty = tySnapCss;
+
   return M;
 }
 
@@ -761,10 +787,12 @@ export function collectTokenAlphaSprites(opts = {}) {
   for (const t of canvas.tokens?.placeables ?? []) {
     if (!t.visible || t.document.hidden) continue;
 
+    if (t.hasDynamicRing) continue;
+
     if (respectOcc && _isTokenOccludedByOverhead(t)) continue;
     if (shouldInclude && !shouldInclude(t)) continue;
 
-    const icon = t.icon ?? t.mesh ?? t;
+    const icon = t.mesh ?? t;
     const tex = icon?.texture;
     if (!tex?.baseTexture?.valid) continue;
 
@@ -774,6 +802,15 @@ export function collectTokenAlphaSprites(opts = {}) {
     } catch {}
     try {
       const stageLocal = stageLocalMatrixOf(icon);
+      const vals = [stageLocal.a, stageLocal.b, stageLocal.c, stageLocal.d, stageLocal.tx, stageLocal.ty];
+      if (!vals.every(Number.isFinite)) {
+        spr.destroy(true);
+        continue;
+      }
+      if (vals.some((v) => Math.abs(v) > 1e7)) {
+        spr.destroy(true);
+        continue;
+      }
       spr.transform.setFromMatrix(stageLocal);
     } catch {
       try {
@@ -888,10 +925,7 @@ export function ensureCssSpaceMaskSprite(node, texture, name = "fxmaster:css-mas
     spr.texture = safeMaskTexture(texture);
   }
 
-  const r = canvas?.app?.renderer;
-  const res = r?.resolution || 1;
-  const cssW = Math.max(1, ((r?.view?.width ?? r?.screen?.width) / res) | 0);
-  const cssH = Math.max(1, ((r?.view?.height ?? r?.screen?.height) / res) | 0);
+  const { cssW, cssH } = getCssViewportMetrics();
   spr.x = 0;
   spr.y = 0;
   spr.width = cssW;
@@ -953,7 +987,9 @@ export function buildRegionMaskRT(region, { rtPool, resolution } = {}) {
 
   const gl = r?.gl;
   const MAX_GL = gl?.getParameter?.(gl.MAX_TEXTURE_SIZE) || 8192;
-  const res = resolution ?? Math.min(r?.resolution || 1, MAX_GL / Math.max(VW, VH));
+
+  const baseRes = window.devicePixelRatio || 1;
+  const res = resolution ?? Math.min(baseRes, MAX_GL / Math.max(VW, VH));
 
   const rt = rtPool
     ? rtPool.acquire(VW, VH, res)
@@ -1007,11 +1043,8 @@ export function buildRegionMaskRT(region, { rtPool, resolution } = {}) {
  * @param {PIXI.Sprite} spr
  */
 export function applyMaskSpriteTransform(container, spr) {
-  try {
-    container.updateTransform();
-  } catch {}
   const Minv = container.worldTransform.clone().invert();
-  const res = canvas?.app?.renderer?.resolution || 1;
+  const res = window.devicePixelRatio || 1;
   Minv.tx = Math.round(Minv.tx * res) / res;
   Minv.ty = Math.round(Minv.ty * res) / res;
   spr.transform.setFromMatrix(Minv);
@@ -1024,7 +1057,7 @@ export function applyMaskSpriteTransform(container, spr) {
  *
  * @param {PlaceableObject} placeable
  * @param {{behaviorType:string}} options
- *   - behaviorType: e.g. `${packageId}.particleEffectsRegion` or `${packageId}.filterEffectsRegion`
+ * - behaviorType: e.g. `${packageId}.particleEffectsRegion` or `${packageId}.filterEffectsRegion`
  * @returns {boolean}
  */
 export function computeRegionGatePass(placeable, { behaviorType }) {
@@ -1095,10 +1128,10 @@ export function computeRegionGatePass(placeable, { behaviorType }) {
  * executed with the latest arguments and the last call-site `this`.
  *
  * Usage:
- *   const oncePerFrame = coalesceNextFrame(fn, { key: "unique-key" });
- *   oncePerFrame(arg1, arg2);
- *   oncePerFrame.cancel();  // optional
- *   oncePerFrame.flush();   // optional - run immediately if pending
+ * const oncePerFrame = coalesceNextFrame(fn, { key: "unique-key" });
+ * oncePerFrame(arg1, arg2);
+ * oncePerFrame.cancel();  // optional
+ * oncePerFrame.flush();   // optional - run immediately if pending
  *
  * @template {(...args:any[]) => any} F
  * @param {F} fn - The function to call once per frame.
@@ -1178,46 +1211,92 @@ export function coalesceNextFrame(fn, { key } = {}) {
 }
 
 /**
- * Paint the scene "allow mask" (white=allow, black=suppress) into the given RT.
- * - Fills the scene rect in white.
- * - Subtracts suppression-region solids (ERASE).
- * - Adds back region holes (normal blend).
- *
- * @param {PIXI.RenderTexture} rt
- * @param {{ regions?: PlaceableObject[] }} [opts]
+ * Return viewport metrics in CSS pixels.
+ * @returns {{cssW:number, cssH:number, deviceToCss:number, rect: PIXI.Rectangle, deviceRect: PIXI.Rectangle}}
  */
-export function paintSceneAllowMaskInto(rt, { regions = [] } = {}) {
+export function getCssViewportMetrics() {
+  const r = globalThis.canvas?.app?.renderer;
+  const res = r?.resolution || window.devicePixelRatio || 1;
+
+  const deviceW = Math.max(1, (r?.view?.width ?? r?.screen?.width ?? 1) | 0);
+  const deviceH = Math.max(1, (r?.view?.height ?? r?.screen?.height ?? 1) | 0);
+  const deviceRect = new PIXI.Rectangle(0, 0, deviceW, deviceH);
+
+  const cssW = Math.max(1, (r?.screen?.width ?? Math.round(deviceW / res)) | 0);
+  const cssH = Math.max(1, (r?.screen?.height ?? Math.round(deviceH / res)) | 0);
+  const rect = new PIXI.Rectangle(0, 0, cssW, cssH);
+
+  return { cssW, cssH, deviceToCss: 1 / res, rect, deviceRect };
+}
+
+/**
+ * Build (or reuse) a CSS-space allow-mask RT for the current scene view,
+ * then paint the scene-rect minus suppression regions into it.
+ *
+ * White = allow, transparent = suppress.
+ *
+ * @param {{ regions?: PlaceableObject[], reuseRT?: PIXI.RenderTexture|null }} [opts]
+ * @returns {PIXI.RenderTexture|null}
+ */
+export function buildSceneAllowMaskRT({ regions = [], reuseRT = null } = {}) {
   const r = canvas?.app?.renderer;
-  if (!r || !rt) return;
+  if (!r) return null;
 
-  const screenW = Math.max(1, rt.width | 0);
-  const screenH = Math.max(1, rt.height | 0);
+  const { cssW, cssH } = getCssViewportMetrics();
 
+  const res = safeResolutionForCssArea(cssW, cssH);
+
+  let rt = reuseRT ?? null;
+  const needsNew =
+    !rt || (rt.width | 0) !== (cssW | 0) || (rt.height | 0) !== (cssH | 0) || (rt.resolution || 1) !== res;
+
+  if (needsNew) {
+    try {
+      reuseRT?.destroy(true);
+    } catch {}
+    rt = PIXI.RenderTexture.create({
+      width: cssW | 0,
+      height: cssH | 0,
+      resolution: res,
+      multisample: 0,
+    });
+    try {
+      rt.baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
+      rt.baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
+    } catch {}
+  }
+
+  // Paint Background Black (Everything suppressed by default)
   {
     const bg = new PIXI.Graphics();
-    bg.beginFill(0x000000, 1).drawRect(0, 0, screenW, screenH).endFill();
+    bg.beginFill(0x000000, 1).drawRect(0, 0, cssW, cssH).endFill();
     r.render(bg, { renderTexture: rt, clear: true });
     try {
       bg.destroy(true);
     } catch {}
   }
 
-  {
-    const g = new PIXI.Graphics();
-    g.beginFill(0xffffff, 1).drawRect(0, 0, screenW, screenH).endFill();
-    r.render(g, { renderTexture: rt, clear: false });
+  // Paint Scene Area White (Allow effects only inside scene dimensions)
+  const M = snappedStageMatrix();
+  const d = canvas.dimensions;
+  if (d) {
+    const sceneGfx = new PIXI.Graphics();
+    sceneGfx.transform.setFromMatrix(M);
+    sceneGfx.beginFill(0xffffff, 1.0);
+    sceneGfx.drawRect(d.sceneRect.x, d.sceneRect.y, d.sceneRect.width, d.sceneRect.height);
+    sceneGfx.endFill();
+    r.render(sceneGfx, { renderTexture: rt, clear: false });
     try {
-      g.destroy(true);
+      sceneGfx.destroy(true);
     } catch {}
   }
 
-  const camM = snappedStageMatrix(canvas.regions ?? canvas.stage);
-
+  // Subtract suppression-region solids (ERASE), add back holes (NORMAL)
   if (Array.isArray(regions) && regions.length) {
     const solidsGfx = new PIXI.Graphics();
-    solidsGfx.transform.setFromMatrix(camM);
+    solidsGfx.transform.setFromMatrix(M);
     const holesGfx = new PIXI.Graphics();
-    holesGfx.transform.setFromMatrix(camM);
+    holesGfx.transform.setFromMatrix(M);
 
     solidsGfx.beginFill(0xffffff, 1);
     holesGfx.beginFill(0xffffff, 1);
@@ -1244,6 +1323,8 @@ export function paintSceneAllowMaskInto(rt, { regions = [] } = {}) {
       holesGfx.destroy(true);
     } catch {}
   }
+
+  return rt;
 }
 
 /**
@@ -1302,18 +1383,21 @@ export function ensureBelowTokensArtifacts(baseRT, state = {}) {
  * Honors per-filter "belowTokens" option by swapping the sampler and providing token silhouettes.
  * @param {PIXI.Filter[]} filters
  * @param {{
- *   baseMaskRT: PIXI.RenderTexture,
- *   cutoutRT?: PIXI.RenderTexture|null,
- *   tokensMaskRT?: PIXI.RenderTexture|null,
- *   cssW: number,
- *   cssH: number,
- *   deviceToCss: number
+ * baseMaskRT: PIXI.RenderTexture,
+ * cutoutRT?: PIXI.RenderTexture|null,
+ * tokensMaskRT?: PIXI.RenderTexture|null,
+ * cssW: number,
+ * cssH: number,
+ * deviceToCss: number
  * }} cfg
  */
 export function applyMaskUniformsToFilters(
   filters,
   { baseMaskRT, cutoutRT = null, tokensMaskRT = null, cssW, cssH, deviceToCss },
 ) {
+  const rtCssW = baseMaskRT ? Math.max(1, baseMaskRT.width | 0) : Math.max(1, cssW | 0);
+  const rtCssH = baseMaskRT ? Math.max(1, baseMaskRT.height | 0) : Math.max(1, cssH | 0);
+
   for (const f of filters) {
     if (!f) continue;
     const u = f.uniforms || {};
@@ -1325,11 +1409,12 @@ export function applyMaskUniformsToFilters(
     if ("maskReady" in u) u.maskReady = rt ? 1.0 : 0.0;
 
     if ("viewSize" in u) {
-      u.viewSize =
-        u.viewSize instanceof Float32Array && u.viewSize.length >= 2
-          ? ((u.viewSize[0] = cssW), (u.viewSize[1] = cssH), u.viewSize)
-          : new Float32Array([cssW, cssH]);
+      const arr = u.viewSize instanceof Float32Array && u.viewSize.length >= 2 ? u.viewSize : new Float32Array(2);
+      arr[0] = rtCssW;
+      arr[1] = rtCssH;
+      u.viewSize = arr;
     }
+
     if ("deviceToCss" in u) u.deviceToCss = deviceToCss;
 
     if (wantBelow && tokensMaskRT) {
@@ -1342,63 +1427,6 @@ export function applyMaskUniformsToFilters(
 }
 
 /**
- * Return viewport metrics in CSS pixels.
- * @returns {{cssW:number, cssH:number, deviceToCss:number, rect: PIXI.Rectangle}}
- */
-export function getCssViewportMetrics() {
-  const r = globalThis.canvas?.app?.renderer;
-  const res = r?.resolution || window.devicePixelRatio || 1;
-
-  const deviceW = Math.max(1, (r?.view?.width ?? r?.screen?.width ?? 1) | 0);
-  const deviceH = Math.max(1, (r?.view?.height ?? r?.screen?.height ?? 1) | 0);
-  const deviceRect = new PIXI.Rectangle(0, 0, deviceW, deviceH);
-
-  const cssW = Math.max(1, (r?.screen?.width ?? Math.round(deviceW / res)) | 0);
-  const cssH = Math.max(1, (r?.screen?.height ?? Math.round(deviceH / res)) | 0);
-  const rect = new PIXI.Rectangle(0, 0, cssW, cssH);
-  return { cssW, cssH, deviceToCss: 1 / res, rect, deviceRect };
-}
-
-/**
- * Build (or reuse) a CSS-space allow-mask RT for the current scene view,
- * then paint the scene-rect minus suppression regions into it.
- *
- * White = allow, transparent = suppress.
- *
- * @param {{ regions?: PlaceableObject[], reuseRT?: PIXI.RenderTexture|null }} [opts]
- * @returns {PIXI.RenderTexture|null}
- */
-export function buildSceneAllowMaskRT({ regions = [], reuseRT = null } = {}) {
-  const r = canvas?.app?.renderer;
-  if (!r) return null;
-
-  const cssW = Math.max(1, r.screen?.width | 0 || 1);
-  const cssH = Math.max(1, r.screen?.height | 0 || 1);
-
-  const gl = r.gl;
-  const MAX = gl?.getParameter?.(gl.MAX_TEXTURE_SIZE) || 8192;
-  const res = Math.min(r.resolution || 1, MAX / Math.max(cssW, cssH));
-
-  let rt = reuseRT ?? null;
-  const needsNew = !rt || (rt.width | 0) !== cssW || (rt.height | 0) !== cssH || (rt.resolution || 1) !== res;
-
-  if (needsNew) {
-    try {
-      reuseRT?.destroy(true);
-    } catch {}
-    rt = PIXI.RenderTexture.create({ width: cssW, height: cssH, resolution: res, multisample: 0 });
-    try {
-      rt.baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
-      rt.baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
-    } catch {}
-  }
-
-  paintSceneAllowMaskInto(rt, { regions });
-
-  return rt;
-}
-
-/**
  * Subtract dynamic token rings from a render texture via DST_OUT.
  * Safe: temporarily flips mesh.blendMode and restores it.
  * @param {PIXI.RenderTexture} outRT
@@ -1406,6 +1434,7 @@ export function buildSceneAllowMaskRT({ regions = [], reuseRT = null } = {}) {
 export function subtractDynamicRingsFromRT(outRT) {
   const r = canvas?.app?.renderer;
   if (!r || !outRT) return;
+  const M = snappedStageMatrix();
   for (const t of canvas.tokens?.placeables ?? []) {
     if (!t?.visible || t.document?.hidden) continue;
     if (!t?.mesh || !t?.hasDynamicRing) continue;
@@ -1414,7 +1443,7 @@ export function subtractDynamicRingsFromRT(outRT) {
     try {
       t.mesh.blendMode = PIXI.BLEND_MODES.DST_OUT;
       t.mesh.worldAlpha = 1;
-      r.render(t.mesh, { renderTexture: outRT, clear: false, skipUpdateTransform: false });
+      r.render(t.mesh, { renderTexture: outRT, clear: false, transform: M, skipUpdateTransform: false });
     } finally {
       t.mesh.blendMode = oldBM;
       t.mesh.worldAlpha = oldAlph;
@@ -1429,6 +1458,7 @@ export function subtractDynamicRingsFromRT(outRT) {
 export function paintDynamicRingsInto(outRT) {
   const r = canvas?.app?.renderer;
   if (!r || !outRT) return;
+  const M = snappedStageMatrix();
   for (const t of canvas.tokens?.placeables ?? []) {
     if (!t?.visible || t.document?.hidden) continue;
     if (!t?.mesh || !t?.hasDynamicRing) continue;
@@ -1437,10 +1467,33 @@ export function paintDynamicRingsInto(outRT) {
     try {
       t.mesh.blendMode = PIXI.BLEND_MODES.NORMAL;
       t.mesh.worldAlpha = 1;
-      r.render(t.mesh, { renderTexture: outRT, clear: false, skipUpdateTransform: false });
+      r.render(t.mesh, { renderTexture: outRT, clear: false, transform: M, skipUpdateTransform: false });
     } finally {
       t.mesh.blendMode = oldBM;
       t.mesh.worldAlpha = oldAlph;
     }
   }
+}
+
+/**
+ * Compute a safe render resolution for a given CSS-sized area,
+ * respecting both renderer.resolution and MAX_TEXTURE_SIZE.
+ *
+ * @param {number} cssW
+ * @param {number} cssH
+ * @returns {number}
+ */
+export function safeResolutionForCssArea(cssW, cssH) {
+  const r = canvas?.app?.renderer;
+  if (!r) return 1;
+
+  const gl = r.gl;
+  const max = gl?.getParameter?.(gl.MAX_TEXTURE_SIZE) || 8192;
+  const base = r.resolution || window.devicePixelRatio || 1;
+
+  const span = Math.max(1, cssW | 0, cssH | 0);
+  const texLimited = max / span;
+
+  const safe = Math.max(0.5, Math.min(base, texLimited));
+  return safe;
 }

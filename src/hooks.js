@@ -4,79 +4,71 @@ import { isEnabled } from "./settings.js";
 import { SpecialEffectsManagement } from "./special-effects/applications/special-effects-management.js";
 import { SpecialEffectsLayer } from "./special-effects/special-effects-layer.js";
 import { refreshSceneParticlesSuppressionMasks } from "./particle-effects/particle-effects-scene-manager.js";
-import { ParticleEffectsRegionBehaviorConfig } from "./particle-effects/particle-effects-region-config.js";
-import { FilterRegionBehaviorConfig } from "./filter-effects/filter-effects-region-config.js";
+import {
+  ParticleEffectsRegionBehaviorConfig,
+  SuppressSceneParticlesRegionBehaviorConfig,
+} from "./particle-effects/particle-effects-region-config.js";
+import {
+  FilterEffectsRegionBehaviorConfig,
+  SuppressSceneFiltersRegionBehaviorConfig,
+} from "./filter-effects/filter-effects-region-config.js";
 import { FilterEffectsSceneManager } from "./filter-effects/filter-effects-scene-manager.js";
 import { coalesceNextFrame, getCssViewportMetrics } from "./utils.js";
+import { SceneMaskManager } from "./common/base-effects-scene-manager.js";
 
 /**
  * FXMaster Hooks
  * Registers Foundry VTT hooks and utilities to synchronize scene/region particle effects,
  * filter effects, suppression masks, and management UIs with canvas and scene lifecycle.
  */
-const TYPE = `${packageId}.particleEffectsRegion`;
+const PARTICLE_TYPE = `${packageId}.particleEffectsRegion`;
 const FILTER_TYPE = `${packageId}.filterEffectsRegion`;
 const SUPPRESS_SCENE_FILTERS = `${packageId}.suppressSceneFilters`;
 const SUPPRESS_SCENE_PARTICLES = `${packageId}.suppressSceneParticles`;
 
-/** Open Particle/Filter management windows tracked for live refresh. */
 const _openPFx = new Set();
 const _openFFx = new Set();
 
-/**
- * Register all FXMaster hooks.
- */
 export const registerHooks = function () {
   let _fmResizeHandler = null;
   let _flResizeHandler = null;
   let _fxResizeHandler = null;
 
-  /** Coalesced rebuild of the scene filter suppression mask. */
-  const requestFilterSuppressionRefresh = coalesceNextFrame(
-    function requestFilterSuppressionRefresh() {
-      if (isEnabled()) FilterEffectsSceneManager.instance.refreshSceneFilterSuppressionMask();
-    },
-    { key: "fxm:filter:suppression" },
-  );
+  const requestFilterSuppressionRefresh = () => {
+    if (isEnabled()) FilterEffectsSceneManager.instance.refreshSceneFilterSuppressionMasks();
+  };
 
-  /** Coalesced *region* filter-mask refresh (all). */
-  const requestRegionMaskRefreshAllDebounced = coalesceNextFrame(
-    function requestRegionMaskRefreshAllDebounced() {
-      if (!isEnabled()) return;
-      try {
-        canvas.filtereffects?.requestRegionMaskRefreshAll?.();
-      } catch {}
-    },
-    { key: "fxm:filter:regionMasksAll" },
-  );
+  const requestRegionMaskRefreshAll = () => {
+    if (!isEnabled()) return;
+    try {
+      canvas.filtereffects?.forceRegionMaskRefreshAll?.();
+    } catch {}
+  };
 
-  /** Coalesced *particle* suppression mask refresh. */
-  const requestSceneParticlesSuppressionRefresh = coalesceNextFrame(
-    function requestSceneParticlesSuppressionRefresh() {
-      try {
-        refreshSceneParticlesSuppressionMasks?.();
-      } catch {}
-    },
-    { key: "fxm:particles:suppression" },
-  );
+  const requestSceneParticlesSuppressionRefresh = () => {
+    try {
+      refreshSceneParticlesSuppressionMasks?.();
+    } catch {}
+  };
 
-  /**
-   * Batched token-related mask updates:
-   *  - scene allow-masks (filter suppression)
-   *  - region filter masks (all)
-   *  - particle suppression masks
-   */
   const requestTokenMaskRefresh = coalesceNextFrame(
     function requestTokenMaskRefresh() {
       if (!isEnabled()) return;
+
       try {
-        FilterEffectsSceneManager.instance.refreshSceneFilterSuppressionMask();
+        FilterEffectsSceneManager.instance.refreshSceneFilterSuppressionMasks();
       } catch {}
+
       try {
         canvas.filtereffects?.forceRegionMaskRefreshAll?.();
       } catch {}
+
       try {
         refreshSceneParticlesSuppressionMasks?.();
+      } catch {}
+
+      try {
+        canvas.particleeffects?.forceRegionMaskRefreshAll?.();
       } catch {}
     },
     { key: "fxm:token:maskRefresh" },
@@ -85,9 +77,11 @@ export const registerHooks = function () {
   const pinEnvFilterArea = () => {
     const env = canvas?.environment;
     if (!env) return;
-    const { deviceRect } = getCssViewportMetrics();
+
+    const { rect: cssRect } = getCssViewportMetrics();
     const fa = env.filterArea instanceof PIXI.Rectangle ? env.filterArea : new PIXI.Rectangle();
-    fa.copyFrom(deviceRect);
+    fa.copyFrom(cssRect);
+
     try {
       env.filterArea = fa;
     } catch {}
@@ -145,29 +139,22 @@ export const registerHooks = function () {
   Hooks.on("updateTile", () => requestTokenMaskRefresh());
   Hooks.on("deleteTile", () => requestTokenMaskRefresh());
 
-  /** Track opening of Particle Effects Management windows. */
   Hooks.on("renderParticleEffectsManagement", (app) => {
     _openPFx.add(app);
   });
 
-  /** Track closing of Particle Effects Management windows. */
   Hooks.on("closeParticleEffectsManagement", (app) => {
     _openPFx.delete(app);
   });
 
-  /** Track opening of Filter Effects Management windows. */
   Hooks.on("renderFilterEffectsManagement", (app) => {
     _openFFx.add(app);
   });
 
-  /** Track closing of Filter Effects Management windows. */
   Hooks.on("closeFilterEffectsManagement", (app) => {
     _openFFx.delete(app);
   });
 
-  /**
-   * Refresh all open FXMaster windows, optionally re-rendering from scratch.
-   */
   const refreshOpenFxMasterWindows = ({ hard = true } = {}) => {
     for (const app of [..._openPFx, ..._openFFx]) {
       if (hard) {
@@ -192,9 +179,6 @@ export const registerHooks = function () {
     }
   };
 
-  /**
-   * Schedule a one-shot refresh of any open FXMaster windows (coalesced to a frame).
-   */
   const scheduleOpenWindowsRefresh = coalesceNextFrame(
     function scheduleOpenWindowsRefresh(hard = true) {
       refreshOpenFxMasterWindows({ hard });
@@ -202,9 +186,6 @@ export const registerHooks = function () {
     { key: "fxm:openWindowsRefresh" },
   );
 
-  /**
-   * Request a one-per-frame redraw of all region particle effects.
-   */
   const requestRedrawAllRegionParticles = coalesceNextFrame(
     function requestRedrawAllRegionParticles() {
       if (!isEnabled()) return;
@@ -217,13 +198,9 @@ export const registerHooks = function () {
     { key: "fxm:redrawAllRegionParticles" },
   );
 
-  /** Handle custom event: toggle scene particle effects. */
   Hooks.on(`${packageId}.switchParticleEffect`, onSwitchParticleEffects);
-
-  /** Handle custom event: update scene particle effects. */
   Hooks.on(`${packageId}.updateParticleEffects`, onUpdateParticleEffects);
 
-  /** Before a Region is deleted: remove its particle and filter entries. */
   Hooks.on("preDeleteRegion", (regionDoc) => {
     try {
       canvas.particleeffects?.destroyRegionParticleEffects?.(regionDoc.id);
@@ -233,13 +210,12 @@ export const registerHooks = function () {
     } catch {}
   });
 
-  /** When a Region is created: draw any region particles/filters and refresh masks. */
   Hooks.on("createRegion", (regionDoc) => {
     if (regionDoc?.parent !== canvas.scene) return;
 
     const placeable = canvas.regions.get(regionDoc.id);
     if (placeable) {
-      if (isEnabled() && regionDoc?.behaviors?.some((b) => b.type === TYPE && !b.disabled)) {
+      if (isEnabled() && regionDoc?.behaviors?.some((b) => b.type === PARTICLE_TYPE && !b.disabled)) {
         canvas.particleeffects?.drawRegionParticleEffects?.(placeable);
       }
       const hasRegionFilterBehavior = regionDoc?.behaviors?.some((b) => b.type === FILTER_TYPE && !b.disabled);
@@ -257,7 +233,6 @@ export const registerHooks = function () {
     if (hasSuppression) requestRedrawAllRegionParticles();
   });
 
-  /** When a Region is deleted: destroy entries and refresh masks. */
   Hooks.on("deleteRegion", (regionDoc) => {
     if (regionDoc?.parent !== canvas.scene) return;
 
@@ -272,7 +247,7 @@ export const registerHooks = function () {
     requestFilterSuppressionRefresh();
     if (isEnabled()) {
       try {
-        canvas.filtereffects?.requestRegionMaskRefreshAll?.();
+        canvas.filtereffects?.forceRegionMaskRefreshAll?.();
       } catch {}
     }
 
@@ -282,12 +257,13 @@ export const registerHooks = function () {
     if (hadSuppression) requestRedrawAllRegionParticles();
   });
 
-  /** When a Region is updated: rebuild particle/filter entries and refresh masks. */
   Hooks.on("updateRegion", (regionDoc) => {
     if (regionDoc?.parent !== canvas.scene) return;
 
     const hasFxmasterBehavior = regionDoc?.behaviors?.some(
-      (b) => (b.type === TYPE || b.type === "suppressWeather" || b?.type === SUPPRESS_SCENE_PARTICLES) && !b.disabled,
+      (b) =>
+        (b.type === PARTICLE_TYPE || b.type === "suppressWeather" || b?.type === SUPPRESS_SCENE_PARTICLES) &&
+        !b.disabled,
     );
 
     const placeable = canvas.regions.get(regionDoc.id);
@@ -316,16 +292,14 @@ export const registerHooks = function () {
     if (hasSuppression) requestRedrawAllRegionParticles();
   });
 
-  /** While a Region placeable is refreshed soft-refresh its mask. */
   Hooks.on("refreshRegion", (placeable) => {
     if (placeable?.document?.parent !== canvas.scene) return;
     if (isEnabled()) {
-      canvas.filtereffects?.requestRegionMaskRefresh?.(placeable.id);
-      canvas.particleeffects?.requestRegionMaskRefresh?.(placeable.id);
+      canvas.filtereffects?.forceRegionMaskRefresh?.(placeable.id);
+      canvas.particleeffects?.forceRegionMaskRefresh?.(placeable.id);
     }
   });
 
-  /** When a RegionBehavior is created apply suppression and draw region effects. */
   Hooks.on("createRegionBehavior", (behaviorDoc) => {
     const t = behaviorDoc?.type;
     const regionDoc = behaviorDoc?.parent;
@@ -343,14 +317,13 @@ export const registerHooks = function () {
       requestFilterSuppressionRefresh();
     }
 
-    if (isEnabled() && t === TYPE) {
+    if (isEnabled() && t === PARTICLE_TYPE) {
       canvas.particleeffects?.drawRegionParticleEffects?.(placeable, { soft: false });
     } else if (isEnabled() && t === FILTER_TYPE) {
       canvas.filtereffects?.drawRegionFilterEffects?.(placeable, { soft: false });
     }
   });
 
-  /** When a RegionBehavior is updated reapply suppression and redraw region effects. */
   Hooks.on("updateRegionBehavior", (behaviorDoc) => {
     const t = behaviorDoc?.type;
     const regionDoc = behaviorDoc?.parent;
@@ -368,14 +341,13 @@ export const registerHooks = function () {
       requestFilterSuppressionRefresh();
     }
 
-    if (isEnabled() && t === TYPE) {
+    if (isEnabled() && t === PARTICLE_TYPE) {
       canvas.particleeffects?.drawRegionParticleEffects?.(placeable, { soft: false });
     } else if (isEnabled() && t === FILTER_TYPE) {
       canvas.filtereffects?.drawRegionFilterEffects?.(placeable, { soft: false });
     }
   });
 
-  /** When a RegionBehavior is deleted reapply suppression and rebuild remaining effects. */
   Hooks.on("deleteRegionBehavior", (behaviorDoc) => {
     const t = behaviorDoc?.type;
     const regionDoc = behaviorDoc?.parent;
@@ -393,14 +365,13 @@ export const registerHooks = function () {
       requestFilterSuppressionRefresh();
     }
 
-    if (isEnabled() && t === TYPE) {
+    if (isEnabled() && t === PARTICLE_TYPE) {
       canvas.particleeffects?.drawRegionParticleEffects?.(placeable, { soft: false });
     } else if (isEnabled() && t === FILTER_TYPE) {
       canvas.filtereffects?.drawRegionFilterEffects?.(placeable, { soft: false });
     }
   });
 
-  /** On canvas init: clear manager state and unbind previous resize handlers. */
   Hooks.on("canvasInit", async () => {
     if (isEnabled()) {
       try {
@@ -424,19 +395,17 @@ export const registerHooks = function () {
     } catch {}
   });
 
-  /** On scene activation: refresh open windows and request mask updates. */
   Hooks.on("activateScene", () => {
     scheduleOpenWindowsRefresh(true);
     if (isEnabled()) {
       requestSceneParticlesSuppressionRefresh();
-      requestRegionMaskRefreshAllDebounced();
+      requestRegionMaskRefreshAll();
       try {
         canvas.particleeffects?.refreshAboveSceneMask?.();
       } catch {}
     }
   });
 
-  /** On canvas ready: activate managers, bind resize handlers, and prime masks. */
   Hooks.on("canvasReady", async () => {
     if (isEnabled()) {
       await FilterEffectsSceneManager.instance.activate();
@@ -474,10 +443,6 @@ export const registerHooks = function () {
       } catch {}
     }
 
-    try {
-      canvas.stage?.updateTransform();
-    } catch {}
-
     if (isEnabled()) {
       for (const region of canvas.regions.placeables) {
         try {
@@ -505,15 +470,16 @@ export const registerHooks = function () {
     }
 
     if (isEnabled()) {
-      try {
-        canvas.stage?.updateTransform();
-      } catch {}
       requestSceneParticlesSuppressionRefresh();
-      requestRegionMaskRefreshAllDebounced();
+      requestRegionMaskRefreshAll();
       try {
         canvas.particleeffects?.refreshAboveSceneMask?.();
       } catch {}
     }
+
+    try {
+      SceneMaskManager.instance.refreshSync?.("all");
+    } catch {}
 
     if (isEnabled()) {
       try {
@@ -528,30 +494,32 @@ export const registerHooks = function () {
     scheduleOpenWindowsRefresh(true);
   });
 
-  /** On first ready: show release note, register behavior sheets, and parse specials. */
   Hooks.once("ready", async () => {
     const version = game.modules.get(packageId).version;
     if (game.settings.get(packageId, "releaseMessage") !== version) {
       const content = `
         <div class="fxmaster-announcement" style="border:4px solid #4A90E2; border-radius:6px; padding:12px;">
-          <h3 style="margin:0;">🎉Welcome to Gambit's FXMaster V7!</h3>
-            <p style="font-size: 1em;">This release addresses some additional bugfixes. Please check out the <a href= "https://github.com/gambit07/fxmaster/releases/latest" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Release Notes</a> for more detail. </p>
-            <p style="font-size: 1em;">If you'd like to support my development time and get access to new Effects: <ul><li><span style="color: #a08332ff; text-decoration: none; font-weight: bold;">Sandstorm</span></li><li><span style="color: #74653fff; text-decoration: none; font-weight: bold;">Duststorm</span></li><li><span style="color: #73ffa9">Ghosts</span></li><li><span style="color: #ffd500ff">Sunlight</span></li><li><span style="color: #7f00ff">Magic Crystals</span></li><li><span style="color: #d5b60a">Fireflies</span></li><li><span style="color: #ffb7c5">Sakura Bloom</span></li><li><span style="color: #ffb7c5">Sakura Blossoms</span></li></ul><br/>Please consider supporting the project on <a href="https://patreon.com/GambitsLounge" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Patreon</a>. This will give you access to the FXMaster+ module, now directly integrated with Foundry!</p>
+          <h3 style="margin:0;">🎉Welcome to Gambit's FXMaster V7.2!</h3>
+            <p style="font-size: 1em;">This release improves the performance of Particle Effects and adds new handling for Foundry's Performance Modes. Please check out the <a href= "https://github.com/gambit07/fxmaster/releases/latest" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Release Notes</a> for more detail. </p>
+            <p style="font-size: 1em;">If you'd like to support my development time and get access to the <b>Gambit's FXMaster+</b> and <b>Gambit's Asset Previewer</b> modules, please consider supporting the project on <a href="https://patreon.com/GambitsLounge" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Patreon</a>.</p><p>FXMaster+ Effects: <ul><li><span style="color: #3bd1ffff; text-decoration: none; font-weight: bold;">Ice</span></li><li><span style="color: #a08332ff; text-decoration: none; font-weight: bold;">Sandstorm</span></li><li><span style="color: #74653fff; text-decoration: none; font-weight: bold;">Duststorm</span></li><li><span style="color: #73ffa9; text-decoration: none; font-weight: bold;">Ghosts</span></li><li><span style="color: #ffd500ff; text-decoration: none; font-weight: bold;">Sunlight</span></li><li><span style="color: #7f00ff; text-decoration: none; font-weight: bold;">Magic Crystals</span></li><li><span style="color: #d5b60a; text-decoration: none; font-weight: bold;">Fireflies</span></li><li><span style="color: #ffb7c5; text-decoration: none; font-weight: bold;">Sakura Bloom</span></li><li><span style="color: #ffb7c5; text-decoration: none; font-weight: bold;">Sakura Blossoms</span></li><li><span style="text-decoration: none; font-weight: bold;">And add your own Particle Effects!</span></li></ul></p><p>If you have any questions about the module feel free to join the <a href= "https://discord.gg/YvxHrJ4tVu" target="_blank" style="color: #4e5d94; text-decoration: none; font-weight: bold;">Discord</a>!
           </div>
       `;
       ChatMessage.create({ content });
       game.settings.set(packageId, "releaseMessage", version);
     }
 
-    CONFIG.RegionBehavior.sheetClasses[TYPE]["core.RegionBehaviorConfig"].cls = ParticleEffectsRegionBehaviorConfig;
-    CONFIG.RegionBehavior.sheetClasses[FILTER_TYPE] = {
-      "core.RegionBehaviorConfig": { cls: FilterRegionBehaviorConfig },
-    };
+    CONFIG.RegionBehavior.sheetClasses[PARTICLE_TYPE]["core.RegionBehaviorConfig"].cls =
+      ParticleEffectsRegionBehaviorConfig;
+    CONFIG.RegionBehavior.sheetClasses[SUPPRESS_SCENE_PARTICLES]["core.RegionBehaviorConfig"].cls =
+      SuppressSceneParticlesRegionBehaviorConfig;
+    CONFIG.RegionBehavior.sheetClasses[FILTER_TYPE]["core.RegionBehaviorConfig"].cls =
+      FilterEffectsRegionBehaviorConfig;
+    CONFIG.RegionBehavior.sheetClasses[SUPPRESS_SCENE_FILTERS]["core.RegionBehaviorConfig"].cls =
+      SuppressSceneFiltersRegionBehaviorConfig;
 
     if (isEnabled()) await parseSpecialEffects();
   });
 
-  /** On scene update: reconcile flags and refresh particles/filters/masks. */
   Hooks.on("updateScene", async (scene, data) => {
     if (scene !== canvas.scene) return;
 
@@ -571,7 +539,10 @@ export const registerHooks = function () {
       foundry.utils.hasProperty(data, `flags.${packageId}.filters`) ||
       foundry.utils.hasProperty(data, `flags.${packageId}.-=filters`)
     ) {
-      if (isEnabled()) FilterEffectsSceneManager.instance.update();
+      if (isEnabled()) {
+        FilterEffectsSceneManager.instance.update();
+        ensurePinned();
+      }
     }
 
     if (data.active === true) scheduleOpenWindowsRefresh(true);
@@ -592,24 +563,21 @@ export const registerHooks = function () {
     }
   });
 
-  /** On camera pan: keep suppression and region masks aligned. */
   Hooks.on("canvasPan", () => {
     if (!isEnabled()) return;
     requestFilterSuppressionRefresh();
-    requestRegionMaskRefreshAllDebounced();
+    requestRegionMaskRefreshAll();
     requestSceneParticlesSuppressionRefresh();
   });
 
-  /** On camera zoom: keep suppression and region masks aligned. */
   Hooks.on("canvasZoom", () => {
     if (isEnabled()) {
       requestFilterSuppressionRefresh();
-      requestRegionMaskRefreshAllDebounced();
+      requestRegionMaskRefreshAll();
       requestSceneParticlesSuppressionRefresh();
     }
   });
 
-  /** On canvas drop of a SpecialEffect: create a looping video Tile at drop location. */
   Hooks.on("dropCanvasData", async (canvas, data) => {
     if (data.type !== "SpecialEffect") return;
 
@@ -648,7 +616,6 @@ export const registerHooks = function () {
     canvas.scene.createEmbeddedDocuments("Tile", [tileData]).then(() => {});
   });
 
-  /** On hotbar drop of a SpecialEffect: create a macro that spawns the effect. */
   Hooks.on("hotbarDrop", (hotbar, data) => {
     if (data.type !== "SpecialEffect") return;
     const macroCommand = SpecialEffectsLayer._createMacro(data);
@@ -661,7 +628,6 @@ export const registerHooks = function () {
     };
   });
 
-  /** When the Special Effects setting changes: reload data and refresh UIs. */
   Hooks.on("updateSetting", (setting) => {
     if (setting.key === "fxmaster.specialEffects") {
       parseSpecialEffects();
@@ -673,7 +639,6 @@ export const registerHooks = function () {
     }
   });
 
-  /** After rendering Scene Controls: visually mark active Effect tools. */
   Hooks.on("renderSceneControls", (controls) => {
     if (controls.control.name !== "effects") return;
 

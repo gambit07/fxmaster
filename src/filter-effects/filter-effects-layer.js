@@ -1,14 +1,10 @@
 /**
- * FilterEffectsRegionLayer
+ * FilterEffectsLayer
  * ------------------
  * Applies region-scoped post-processing filters in FXMaster.
  * - Renders a per-region, screen-space (CSS px) alpha mask aligned to the camera.
- * - Attaches configured filter instances to `canvas.environment`, wiring mask uniforms.
- * - Keeps masks and filter areas in sync with camera transforms and viewport changes.
- * - Provides analytic fade info (rect/ellipse) and SDF masks (polygons) to filters that opt-in.
- * - Supports below-tokens rendering: when a filter has options.belowTokens=true,
- *   it receives a cutout mask (region mask with token alpha subtracted) so the effect
- *   appears visually beneath tokens.
+ * - Attaches configured filter instances to `canvas.environment`.
+ * - Keeps masks and filter areas in sync with camera transforms.
  */
 
 import { packageId, MAX_EDGES } from "../constants.js";
@@ -23,7 +19,6 @@ import {
   buildPolygonEdges,
   hasMultipleNonHoleShapes,
   edgeFadeWorldWidth,
-  RTPool,
   composeMaskMinusTokens,
   rectFromAligned,
   rectFromShapes,
@@ -31,17 +26,12 @@ import {
   computeRegionGatePass,
   coalesceNextFrame,
   getCssViewportMetrics,
+  ensureBelowTokensArtifacts,
 } from "../utils.js";
+import { BaseEffectsLayer } from "../common/base-effects-layer.js";
 
 const FILTER_TYPE = `${packageId}.filterEffectsRegion`;
 
-/* ----------------------- CPU SDF helpers ------------------------ */
-
-/**
- * Build a geometry key string for caching (stable across camera moves).
- * @param {Array} shapes
- * @returns {string}
- */
 function _geomKeyFromShapes(shapes) {
   const parts = [];
   for (const s of shapes) {
@@ -62,11 +52,6 @@ function _geomKeyFromShapes(shapes) {
   return parts.join(",");
 }
 
-/**
- * Analyze whether the region is a single analytic shape (rect or ellipse).
- * @param {PlaceableObject} placeable
- * @returns {{mode:1|2,center:{x:number,y:number},half:{x:number,y:number},rotation:number}|null}
- */
 function _analyzeAnalyticShape(placeable) {
   const shapes = (placeable?.document?.shapes ?? []).filter((s) => !s.hole);
   if (shapes.length !== 1) return null;
@@ -88,12 +73,6 @@ function _analyzeAnalyticShape(placeable) {
   return null;
 }
 
-/**
- * True if any filter on this region requests an edge fade > 0 (options.fadePercent).
- * @param {PlaceableObject} placeable
- * @param {Array} behaviors
- * @returns {boolean}
- */
 function _regionWantsEdgeFade(placeable, behaviors) {
   for (const b of behaviors ?? []) {
     const defs = b.getFlag(packageId, "filters");
@@ -106,11 +85,6 @@ function _regionWantsEdgeFade(placeable, behaviors) {
   return false;
 }
 
-/**
- * EDT over a binary canvas producing an 8-bit grayscale signed distance canvas.
- * @param {HTMLCanvasElement} binaryCanvas
- * @returns {{sdfCanvas: HTMLCanvasElement}}
- */
 function _edtSignedFromBinary(binaryCanvas) {
   let W = Math.max(1, binaryCanvas?.width | 0);
   let H = Math.max(1, binaryCanvas?.height | 0);
@@ -185,19 +159,6 @@ function _edtSignedFromBinary(binaryCanvas) {
   return { sdfCanvas: can };
 }
 
-/**
- * Build SDF from region’s binary mask in world bounds; returns texture & decode uniforms.
- * @param {PlaceableObject} placeable
- * @param {{x:number,y:number,width:number,height:number}} worldBounds
- * @returns {{
- *   texture: PIXI.Texture,
- *   uUvFromWorld: Float32Array,
- *   uSdfScaleOff: Float32Array,
- *   uSdfScaleOff4: Float32Array,
- *   uSdfTexel: Float32Array,
- *   insideMax: number
- * }}
- */
 function _buildRegionSDF_FromBinary(placeable, worldBounds) {
   const minSize = 1e-3;
   const safeBounds = {
@@ -298,34 +259,17 @@ function _buildRegionSDF_FromBinary(placeable, worldBounds) {
   return { texture, uUvFromWorld, uSdfScaleOff, uSdfScaleOff4, uSdfTexel, insideMax };
 }
 
-/* -------------------------- Layer class ---------------------------- */
-
-export class FilterEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObjectMixinNS(CONFIG.fxmaster.CanvasLayerNS) {
-  /**
-   * Construct a new FilterEffectsRegionLayer.
-   */
+export class FilterEffectsLayer extends BaseEffectsLayer {
   constructor() {
     super();
     this.regionMasks = new Map();
-    this.sortableChildren = true;
-    this.eventMode = "none";
-    this._ticker = false;
-    this._lastRegionsMatrix = null;
-    this._rtPool = new RTPool();
     this._sdfCache = new Map();
     this._gatePassCache = new Map();
-    this._tearingDown = false;
-
     try {
       canvas.app.renderer.roundPixels = true;
     } catch {}
   }
 
-  /**
-   * Draw existing region filters, align filter areas, start the watcher, and trigger an initial refresh.
-   * @returns {Promise<void>}
-   * @protected
-   */
   async _draw() {
     if (!isEnabled()) return;
 
@@ -338,9 +282,9 @@ export class FilterEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObjectMi
     if (!this._ticker) {
       const PRIO = PIXI.UPDATE_PRIORITY?.HIGH ?? 25;
       try {
-        canvas.app.ticker.add(this.#animate, this, PRIO);
+        canvas.app.ticker.add(this._animate, this, PRIO);
       } catch {
-        canvas.app.ticker.add(this.#animate, this);
+        canvas.app.ticker.add(this._animate, this);
       }
       this._ticker = true;
     }
@@ -348,17 +292,12 @@ export class FilterEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObjectMi
     this._waitForStableViewThenRefresh();
   }
 
-  /**
-   * Tear down the layer.
-   * @returns {Promise<void>}
-   * @protected
-   */
   async _tearDown() {
     this._tearingDown = true;
 
     if (this._ticker) {
       try {
-        canvas.app.ticker.remove(this.#animate, this);
+        canvas.app.ticker.remove(this._animate, this);
       } catch {}
       this._ticker = false;
     }
@@ -386,18 +325,9 @@ export class FilterEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObjectMi
 
     this._drainRtPool();
 
-    const res = await super._tearDown();
-    this._tearingDown = false;
-    return res;
+    return super._tearDown();
   }
 
-  /**
-   * Build and attach filters for a single region placeable.
-   * Creates a CSS-space alpha mask RT, wires analytic/SDF uniforms, and handles below-tokens routing.
-   * @param {PlaceableObject} placeable
-   * @param {{soft?:boolean}} [opts]
-   * @returns {Promise<void>}
-   */
   async drawRegionFilterEffects(placeable, { soft = false } = {}) {
     const regionId = placeable.id;
     this._destroyRegionMasks(regionId);
@@ -416,8 +346,8 @@ export class FilterEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObjectMi
 
     const gl = r.gl;
     const MAX_GL = gl?.getParameter?.(gl.MAX_TEXTURE_SIZE) || 8192;
-    const devW = Math.max(1, r.view.width | 0);
-    const devH = Math.max(1, r.view.height | 0);
+    const devW = Math.max(1, deviceRect.width | 0);
+    const devH = Math.max(1, deviceRect.height | 0);
     const capScale = Math.min(1, MAX_GL / Math.max(devW, devH));
 
     const rbAligned = regionWorldBoundsAligned(placeable);
@@ -518,15 +448,8 @@ export class FilterEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObjectMi
 
     let maskCutoutRT = null;
     if (anyWantsBelow) {
-      const w = maskRT.width | 0,
-        h = maskRT.height | 0,
-        res = maskRT.resolution || 1;
-      maskCutoutRT = this._acquireRT(w, h, res);
-      composeMaskMinusTokens(maskRT, { outRT: maskCutoutRT });
-      try {
-        maskCutoutRT.baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
-        maskCutoutRT.baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
-      } catch {}
+      const { cutoutRT } = ensureBelowTokensArtifacts(maskRT);
+      maskCutoutRT = cutoutRT;
     }
 
     const defaultSmoothK = Math.max(2.0 * worldPerCss, 1e-6);
@@ -612,15 +535,16 @@ export class FilterEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObjectMi
             }
           }
 
-          filter.__fxmBaseStrength = typeof u.strength === "number" ? u.strength : undefined;
+          //filter.__fxmBaseStrength = typeof u.strength === "number" ? u.strength : undefined;
         }
 
         try {
-          filter.filterArea = deviceRect.clone();
+          if (!(filter.filterArea instanceof PIXI.Rectangle)) filter.filterArea = new PIXI.Rectangle();
+          filter.filterArea.copyFrom(deviceRect);
+          filter.autoFit = false;
+          filter.padding = 0;
+          filter.resolution = (r.resolution || 1) * capScale;
         } catch {}
-        filter.autoFit = false;
-        filter.padding = 0;
-        filter.resolution = (r.resolution || 1) * capScale;
 
         if (rbAligned && typeof filter.configure === "function") {
           filter.configure({
@@ -639,6 +563,11 @@ export class FilterEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObjectMi
           } catch {}
         }
 
+        try {
+          const u2 = filter.uniforms;
+          if (u2 && typeof u2.strength === "number") filter.__fxmBaseStrength = u2.strength;
+        } catch {}
+
         appliedFilters.push(filter);
       }
     }
@@ -654,9 +583,6 @@ export class FilterEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObjectMi
     }
   }
 
-  /**
-   * Repaint masks for all regions in-place and update filter areas.
-   */
   forceRegionMaskRefreshAll() {
     for (const region of canvas.regions.placeables) {
       if (this.regionMasks.has(region.id)) this._rebuildRegionMaskFor(region);
@@ -664,20 +590,12 @@ export class FilterEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObjectMi
     this._refreshEnvFilterArea();
   }
 
-  /**
-   * Repaint a single region’s mask and update filter areas.
-   * @param {string} regionId
-   */
   forceRegionMaskRefresh(regionId) {
     const region = canvas.regions?.get(regionId);
     if (region && this.regionMasks.has(regionId)) this._rebuildRegionMaskFor(region);
     this._refreshEnvFilterArea();
   }
 
-  /**
-   * Immediate refresh for a single region followed by a coalesced call on the next frame.
-   * @param {string} regionId
-   */
   requestRegionMaskRefresh(regionId) {
     this._coalescedRegionRefresh ??= coalesceNextFrame(
       function (rid) {
@@ -689,9 +607,6 @@ export class FilterEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObjectMi
     this._coalescedRegionRefresh(regionId);
   }
 
-  /**
-   * Immediate refresh of all masks followed by a coalesced call on the next frame.
-   */
   requestRegionMaskRefreshAll() {
     this._coalescedRefreshAll ??= coalesceNextFrame(
       function () {
@@ -703,24 +618,17 @@ export class FilterEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObjectMi
     this._coalescedRefreshAll();
   }
 
-  /**
-   * Remove a region’s filters and release its mask RT.
-   * @param {string} regionId
-   */
   destroyRegionFilterEffects(regionId) {
     this._destroyRegionMasks(regionId);
   }
 
-  /**
-   * Keep environment and per-filter areas aligned to the current screen size.
-   */
   _refreshEnvFilterArea() {
     if (this.regionMasks.size === 0) return;
 
     const env = canvas.environment;
     const r = canvas.app.renderer;
     if (!env || !r) return;
-    const { rect: cssRect } = getCssViewportMetrics();
+    const { rect: cssRect, deviceRect } = getCssViewportMetrics();
 
     const hasSceneMask = !!(env.mask && env.mask.name === "fxmaster:iface-mask-gfx");
 
@@ -739,7 +647,7 @@ export class FilterEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObjectMi
       for (const f of entry.filters ?? []) {
         try {
           if (!(f.filterArea instanceof PIXI.Rectangle)) f.filterArea = new PIXI.Rectangle();
-          f.filterArea.copyFrom(cssRect);
+          f.filterArea.copyFrom(deviceRect);
           f.autoFit = false;
           f.padding = 0;
         } catch {}
@@ -747,20 +655,6 @@ export class FilterEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObjectMi
     }
   }
 
-  _acquireRT(w, h, res) {
-    return this._rtPool.acquire(w, h, res);
-  }
-  _releaseRT(rt) {
-    return this._rtPool.release(rt);
-  }
-  _drainRtPool() {
-    return this._rtPool.drain();
-  }
-
-  /**
-   * Remove and destroy region entries (all or one), releasing their RTs and SDFs.
-   * @param {string} [regionId]
-   */
   _destroyRegionMasks(regionId) {
     const removeFromTarget = (filtersToRemove = []) => {
       const target = canvas.environment;
@@ -807,10 +701,6 @@ export class FilterEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObjectMi
     }
   }
 
-  /**
-   * Rebuild a region’s mask RT and update attached filters and uniforms.
-   * @param {PlaceableObject} placeable
-   */
   _rebuildRegionMaskFor(placeable) {
     const regionId = placeable.id;
     const entry = this.regionMasks.get(regionId);
@@ -828,23 +718,11 @@ export class FilterEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObjectMi
 
     const anyWantsBelow = (entry.filters || []).some((f) => !!f.__fxmBelowTokens);
     if (anyWantsBelow) {
-      const w = newRT.width | 0,
-        h = newRT.height | 0,
-        res = newRT.resolution || 1;
-      const needsNew =
-        !entry.maskCutoutRT ||
-        entry.maskCutoutRT.width !== w ||
-        entry.maskCutoutRT.height !== h ||
-        (entry.maskCutoutRT.resolution || 1) !== res;
-      if (needsNew) {
-        if (entry.maskCutoutRT) this._releaseRT(entry.maskCutoutRT);
-        entry.maskCutoutRT = this._acquireRT(w, h, res);
-      }
-      composeMaskMinusTokens(newRT, { outRT: entry.maskCutoutRT });
-      try {
-        entry.maskCutoutRT.baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
-        entry.maskCutoutRT.baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
-      } catch {}
+      const { cutoutRT } = ensureBelowTokensArtifacts(newRT, {
+        cutoutRT: entry.maskCutoutRT,
+        tokensMaskRT: null,
+      });
+      entry.maskCutoutRT = cutoutRT;
     } else {
       if (entry.maskCutoutRT) {
         this._releaseRT(entry.maskCutoutRT);
@@ -852,8 +730,8 @@ export class FilterEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObjectMi
       }
     }
 
-    const devW = Math.max(1, r.view.width | 0);
-    const devH = Math.max(1, r.view.height | 0);
+    const devW = Math.max(1, deviceRect.width | 0);
+    const devH = Math.max(1, deviceRect.height | 0);
     const gl = r.gl;
     const MAX_GL = gl?.getParameter?.(gl.MAX_TEXTURE_SIZE) || 8192;
     const capScale = Math.min(1, MAX_GL / Math.max(devW, devH));
@@ -971,6 +849,12 @@ export class FilterEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObjectMi
       }
 
       try {
+        /*
+         * When rebuilding region masks, replicate the old RegionLayer’s behaviour
+         * by explicitly sizing the filter area to the full device viewport
+         * and deriving the resolution from the renderer.  Avoid lockViewport()
+         * here because its internal scaling can diverge on high‑DPI displays.
+         */
         if (!(f.filterArea instanceof PIXI.Rectangle)) f.filterArea = new PIXI.Rectangle();
         f.filterArea.copyFrom(deviceRect);
         f.autoFit = false;
@@ -992,11 +876,6 @@ export class FilterEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObjectMi
     this._refreshEnvFilterArea();
   }
 
-  /**
-   * Wait for a stable camera/viewport, then perform a one-time refresh.
-   * Uses a coalesced RAF loop (coalesceNextFrame) so multiple triggers in the
-   * same frame collapse to a single check, and so we can cancel cleanly.
-   */
   _waitForStableViewThenRefresh() {
     const r = canvas?.app?.renderer;
     if (!r) return;
@@ -1058,10 +937,74 @@ export class FilterEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObjectMi
     } catch {}
   }
 
-  /**
-   * Apply the elevation gate by updating uniforms and toggling filter enable states.
-   * @param {PlaceableObject} placeable
-   */
+  _animate() {
+    super._animate();
+
+    /*
+     * Recompose the below‑tokens cutout on every tick for any region that
+     * requires it. This ensures that dynamic token rings and camera
+     * translations are reflected immediately in the mask.
+     */
+    for (const [_rid, entry] of this.regionMasks) {
+      if (!entry) continue;
+      const filters = entry.filters ?? [];
+      const anyBelow = filters.some((f) => !!f.__fxmBelowTokens);
+      if (anyBelow && entry.maskRT && entry.maskCutoutRT) {
+        try {
+          composeMaskMinusTokens(entry.maskRT, { outRT: entry.maskCutoutRT });
+        } catch (err) {
+          logger?.error?.("FXMaster: error recomposing token cutout mask", err);
+        }
+      }
+    }
+
+    try {
+      const M = snappedStageMatrix();
+      const L = this._lastRegionsMatrix;
+      let changed = false;
+      if (!L) {
+        changed = true;
+      } else {
+        const eps = 1e-4;
+        if (
+          Math.abs(L.a - M.a) > eps ||
+          Math.abs(L.b - M.b) > eps ||
+          Math.abs(L.c - M.c) > eps ||
+          Math.abs(L.d - M.d) > eps ||
+          Math.abs(L.tx - M.tx) > eps ||
+          Math.abs(L.ty - M.ty) > eps
+        ) {
+          changed = true;
+        }
+      }
+      if (changed) {
+        this.forceRegionMaskRefreshAll();
+        this._lastRegionsMatrix = M.clone();
+      }
+    } catch {}
+
+    for (const reg of canvas.regions.placeables) {
+      if (this.regionMasks.has(reg.id)) this._applyElevationGate(reg);
+    }
+
+    this._refreshEnvFilterArea();
+
+    try {
+      for (const entry of this.regionMasks.values()) {
+        const list = entry.filters ?? [];
+        for (const f of list) {
+          if (typeof f?.lockViewport === "function") {
+            f.lockViewport({ setDeviceToCss: false, setCamFrac: true });
+          }
+        }
+      }
+    } catch {}
+  }
+
+  _onCameraChange() {
+    this.forceRegionMaskRefreshAll();
+  }
+
   _applyElevationGate(placeable) {
     const entry = this.regionMasks.get(placeable.id);
     if (!entry) return;
@@ -1087,40 +1030,5 @@ export class FilterEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObjectMi
     }
 
     this._gatePassCache.set(placeable.id, pass);
-  }
-
-  /**
-   * Per-frame watcher:
-   * - Updates masks/areas when the stage transform changes.
-   * - Re-applies elevation gating.
-   * - Keeps filter areas current.
-   * @private
-   */
-  #animate() {
-    if (this._tearingDown) return;
-    if (this.regionMasks.size === 0) return;
-
-    const M = snappedStageMatrix();
-    const L = this._lastRegionsMatrix;
-    const eps = 1e-4;
-    const changed =
-      !L ||
-      Math.abs(L.a - M.a) > eps ||
-      Math.abs(L.b - M.b) > eps ||
-      Math.abs(L.c - M.c) > eps ||
-      Math.abs(L.d - M.d) > eps ||
-      Math.abs(L.tx - M.tx) > eps ||
-      Math.abs(L.ty - M.ty) > eps;
-
-    if (changed) {
-      this.forceRegionMaskRefreshAll();
-      this._lastRegionsMatrix = M;
-    }
-
-    for (const reg of canvas.regions.placeables) {
-      if (this.regionMasks.has(reg.id)) this._applyElevationGate(reg);
-    }
-
-    this._refreshEnvFilterArea();
   }
 }

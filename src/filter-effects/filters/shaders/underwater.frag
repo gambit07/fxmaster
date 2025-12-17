@@ -195,31 +195,34 @@ void main(void) {
   /* ---- Region/suppression mask ---- */
   float inMask = src.a;
   if (hasMask > 0.5) {
-    if (maskReady < 0.5 || viewSize.x < 1.0 || viewSize.y < 1.0) { gl_FragColor = src; return; }
+    bool maskUsable = (maskReady > 0.5) &&
+                      (viewSize.x >= 1.0) &&
+                      (viewSize.y >= 1.0);
+    if (maskUsable) {
+      vec2 maskUV = screenPx / max(viewSize, vec2(1.0));
+      float a = texture2D(maskSampler, maskUV).r;
 
-    vec2 maskUV = screenPx / max(viewSize, vec2(1.0));
-    float a = texture2D(maskSampler, maskUV).r;
+      // Optional feather in CSS px
+      if (feather > 0.5) {
+        vec2 px = 1.0 / max(viewSize, vec2(1.0));
+        vec2 o  = px * feather;
+        float s = 0.0;
+        s += texture2D(maskSampler, maskUV + vec2(-o.x, -o.y)).r;
+        s += texture2D(maskSampler, maskUV + vec2( 0.0, -o.y)).r;
+        s += texture2D(maskSampler, maskUV + vec2( o.x, -o.y)).r;
+        s += texture2D(maskSampler, maskUV + vec2(-o.x,  0.0)).r;
+        s += a;
+        s += texture2D(maskSampler, maskUV + vec2( o.x,  0.0)).r;
+        s += texture2D(maskSampler, maskUV + vec2(-o.x,  o.y)).r;
+        s += texture2D(maskSampler, maskUV + vec2( 0.0,  o.y)).r;
+        s += texture2D(maskSampler, maskUV + vec2( o.x,  o.y)).r;
+        a = s / 9.0;
+      }
 
-    // Optional feather in CSS px
-    if (feather > 0.5) {
-      vec2 px = 1.0 / max(viewSize, vec2(1.0));
-      vec2 o  = px * feather;
-      float s = 0.0;
-      s += texture2D(maskSampler, maskUV + vec2(-o.x, -o.y)).r;
-      s += texture2D(maskSampler, maskUV + vec2( 0.0, -o.y)).r;
-      s += texture2D(maskSampler, maskUV + vec2( o.x, -o.y)).r;
-      s += texture2D(maskSampler, maskUV + vec2(-o.x,  0.0)).r;
-      s += a;
-      s += texture2D(maskSampler, maskUV + vec2( o.x,  0.0)).r;
-      s += texture2D(maskSampler, maskUV + vec2(-o.x,  o.y)).r;
-      s += texture2D(maskSampler, maskUV + vec2( 0.0,  o.y)).r;
-      s += texture2D(maskSampler, maskUV + vec2( o.x,  o.y)).r;
-      a = s / 9.0;
+      float m = smoothstep(0.49, 0.51, a);
+      if (invertMask > 0.5) m = 1.0 - m;
+      inMask *= m;
     }
-
-    float m = smoothstep(0.49, 0.51, a);
-    if (invertMask > 0.5) m = 1.0 - m;
-    inMask *= m;
   }
 
   /* ---- Region edge fade (percent or absolute) ---- */
@@ -273,9 +276,7 @@ void main(void) {
   // Sample displaced color
   vec4 displaced = texture2D(uSampler, duv);
 
-  // ---- NEW: token-aware guard for displaced sample ----
-  // If the displaced lookup would read from a token pixel,
-  // cancel the refraction (use undisplaced src at this pixel).
+  // ---- token-aware guard for displaced sample ----
   float tokenA = 0.0;
   if (hasTokenMask > 0.5) {
     vec2 displacedScreenPx = screenPx + dispPx;

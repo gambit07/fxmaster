@@ -67,37 +67,12 @@ export class FilterEffectsManagement extends FXMasterBaseFormV2 {
 
     const content = this.element.querySelector(".window-content");
 
-    this.element.querySelectorAll("input[type=range]").forEach((slider) => {
-      slider.addEventListener(
-        "wheel",
-        (e) => {
-          e.preventDefault();
-          e.stopImmediatePropagation();
-
-          let wrapper = slider.closest(".fxmaster-filters-container");
-          if (!wrapper) wrapper = content;
-
-          wrapper.scrollTop += e.deltaY;
-        },
-        { passive: false, capture: true },
-      );
-
-      const output = slider.closest(".fxmaster-input-range")?.querySelector("output");
-      if (output) {
-        slider.addEventListener("input", (event) => {
-          output.textContent = slider.value;
-          FilterEffectsManagement.updateParam.call(this, event, slider);
-        });
-      }
+    this._wireRangeWheelBehavior({
+      getScrollWrapper: (slider) => slider.closest(".fxmaster-filters-container") ?? content,
+      onInput: (event, slider) => FilterEffectsManagement.updateParam.call(this, event, slider),
     });
 
-    this.element.querySelectorAll(".fxmaster-input-color input[type=checkbox]").forEach((cb) => {
-      cb.addEventListener("change", (e) => FilterEffectsManagement.updateParam.call(this, e, cb));
-    });
-    this.element.querySelectorAll(".fxmaster-input-color input[type=color]").forEach((inp) => {
-      inp.addEventListener("input", (e) => FilterEffectsManagement.updateParam.call(this, e, inp));
-      inp.addEventListener("change", (e) => FilterEffectsManagement.updateParam.call(this, e, inp));
-    });
+    this.wireColorInputs(this.element, FilterEffectsManagement.updateParam);
   }
 
   async close(options) {
@@ -133,24 +108,12 @@ export class FilterEffectsManagement extends FXMasterBaseFormV2 {
     resetFlag(scene, "filters", current);
 
     const hasFilters = Object.keys(current).some((key) => !key.startsWith("-="));
-    const btn = document.querySelector(`[data-tool="filters"]`);
-    if (hasFilters) {
-      btn?.style?.setProperty("background-color", "var(--color-warm-2)");
-      btn?.style?.setProperty("border-color", "var(--color-warm-3)");
-    } else {
-      btn?.style?.removeProperty("background-color");
-      btn?.style?.removeProperty("border-color");
-    }
+    FXMasterBaseFormV2.setToolButtonHighlight("filters", hasFilters);
   }
 
   static updateParam(event, input) {
     if (!input?.name) return;
-
-    if (input.type === "range") {
-      const container = input.closest(".fxmaster-input-range");
-      const output = container?.querySelector(".range-value");
-      if (output) output.textContent = input.value;
-    }
+    FXMasterBaseFormV2.updateRangeOutput(input);
 
     const type = input.closest(".fxmaster-filter-expand")?.previousElementSibling?.dataset?.type;
     if (!type) return;

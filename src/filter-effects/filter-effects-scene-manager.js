@@ -3,33 +3,23 @@
  * -------------
  * Manages scene-wide post-processing filters for FXMaster.
  * - Attaches scene filters to canvas.environment
- * - Clamps filter effect to the scene rectangle via an allow-mask render texture
- * - Honors suppression regions: core "suppressWeather" and `${packageId}.suppressSceneFilters`
- *   Builds a device-pixel allow-mask RT and provides common uniforms
- *   (`maskSampler`, `hasMask`, `viewSize` in CSS px, `maskReady`, `deviceToCss`).
+ * - Clamps filter effect to the scene rectangle via an allow-mask render texture.
  * - Handles create/update/delete with fade-out, and keeps masks in sync with camera.
  */
 
 import { packageId } from "../constants.js";
 import { logger } from "../logger.js";
-import {
-  resetFlag,
-  ensureBelowTokensArtifacts,
-  applyMaskUniformsToFilters,
-  getCssViewportMetrics,
-  buildSceneAllowMaskRT,
-  snappedStageMatrix,
-} from "../utils.js";
+import { resetFlag, applyMaskUniformsToFilters, getCssViewportMetrics, snappedStageMatrix } from "../utils.js";
+
+import { SceneMaskManager } from "../common/base-effects-scene-manager.js";
 
 export class FilterEffectsSceneManager {
   constructor() {
     this.filters = {};
     this._dyingFilters = new Set();
     this._ticker = false;
-    this._suppressMaskRT = null;
-    this._suppressMaskCutoutRT = null;
-    this._tokensMaskRT = null;
     this._lastRegionsMatrix = null;
+    this._lastCamFrac = undefined;
   }
 
   static get instance() {
@@ -53,7 +43,8 @@ export class FilterEffectsSceneManager {
       }
       this._ticker = true;
     }
-    this.#refreshSceneFilterSuppressionMask();
+
+    this.#refreshSceneFilterSuppressionMasks(true);
   }
 
   async clear() {
@@ -73,7 +64,6 @@ export class FilterEffectsSceneManager {
 
     this.filters = {};
     this._dyingFilters.clear();
-    this.#destroySuppressMask();
 
     try {
       canvas?.app?.ticker?.remove?.(this.#animate, this);
@@ -124,22 +114,23 @@ export class FilterEffectsSceneManager {
             f.destroy?.();
           } catch {}
           this._dyingFilters.delete(f);
-          if (!Object.keys(this.filters).length && this._dyingFilters.size === 0) {
-            this.#destroySuppressMask();
-          }
         });
     }
 
     this.#applyFilters();
-    this.#applySuppressMaskToFilters();
+
+    this.#refreshSceneFilterSuppressionMasks(true);
   }
 
   refreshViewMaskGeometry() {
-    this.#refreshSceneFilterSuppressionMask();
+    this.#refreshSceneFilterSuppressionMasks(true);
   }
 
-  refreshSceneFilterSuppressionMask() {
-    this.#refreshSceneFilterSuppressionMask();
+  refreshSceneFilterSuppressionMasks() {
+    const r = canvas?.app?.renderer;
+    const hiDpi = (r?.resolution ?? window.devicePixelRatio ?? 1) !== 1;
+    const forceSync = this.#anyBelowTokens() && hiDpi;
+    this.#refreshSceneFilterSuppressionMasks(forceSync);
   }
 
   async addFilter(name, type, options) {
@@ -167,42 +158,22 @@ export class FilterEffectsSceneManager {
     await resetFlag(canvas.scene, "filters", infos);
   }
 
-  #destroySuppressMask() {
-    try {
-      this._suppressMaskRT?.destroy(true);
-    } catch {}
-    this._suppressMaskRT = null;
-    try {
-      this._suppressMaskCutoutRT?.destroy(true);
-    } catch {}
-    this._suppressMaskCutoutRT = null;
-    try {
-      this._tokensMaskRT?.destroy(true);
-    } catch {}
-    this._tokensMaskRT = null;
-  }
-
-  #getSuppressRegions() {
-    const SUPPRESS_TYPES = new Set(["suppressWeather", `${packageId}.suppressSceneFilters`]);
-    const placeables = canvas.regions?.placeables ?? [];
-    return placeables.filter((region) =>
-      region.document.behaviors?.some((b) => SUPPRESS_TYPES.has(b.type) && !b.disabled),
-    );
-  }
-
-  /** Build/refresh scene allow-mask RT(s) and wire uniforms to active + fading filters. */
-  #applySuppressMaskToFilters() {
-    const r = canvas?.app?.renderer;
-    if (!r) return;
-
+  #applySuppressMaskToFilters(sync = false) {
     const filtersArr = [...Object.values(this.filters), ...this._dyingFilters];
     if (!filtersArr.length) return;
 
-    const regions = this.#getSuppressRegions();
-    const hasSuppress = Array.isArray(regions) && regions.length > 0;
+    try {
+      const r = canvas?.app?.renderer;
+      const hiDpi = (r?.resolution ?? window.devicePixelRatio ?? 1) !== 1;
+      const anyBelow = this.#anyBelowTokens();
+      if (sync || (anyBelow && hiDpi)) SceneMaskManager.instance.refreshSync("filters");
+      else SceneMaskManager.instance.refresh("filters");
+    } catch {}
+
+    const { base, cutout, tokens } = SceneMaskManager.instance.getMasks("filters");
     const anyBelow = filtersArr.some((f) => !!(f?.__fxmBelowTokens ?? f?.options?.belowTokens));
 
-    if (!hasSuppress && !anyBelow) {
+    if (!base) {
       for (const f of filtersArr) {
         const u = f?.uniforms || {};
         if ("maskSampler" in u) u.maskSampler = PIXI.Texture.EMPTY;
@@ -211,61 +182,15 @@ export class FilterEffectsSceneManager {
         if ("tokenSampler" in u) u.tokenSampler = PIXI.Texture.EMPTY;
         if ("hasTokenMask" in u) u.hasTokenMask = 0.0;
       }
-
-      if (this._suppressMaskRT) {
-        try {
-          this._suppressMaskRT.destroy(true);
-        } catch {}
-        this._suppressMaskRT = null;
-      }
-      if (this._suppressMaskCutoutRT) {
-        try {
-          this._suppressMaskCutoutRT.destroy(true);
-        } catch {}
-        this._suppressMaskCutoutRT = null;
-      }
-      if (this._tokensMaskRT) {
-        try {
-          this._tokensMaskRT.destroy(true);
-        } catch {}
-        this._tokensMaskRT = null;
-      }
       return;
     }
 
     const { cssW, cssH, deviceToCss, rect: cssFA } = getCssViewportMetrics();
 
-    this._suppressMaskRT = buildSceneAllowMaskRT({
-      regions,
-      reuseRT: this._suppressMaskRT,
-    });
-
-    if (anyBelow) {
-      const updated = ensureBelowTokensArtifacts(this._suppressMaskRT, {
-        cutoutRT: this._suppressMaskCutoutRT,
-        tokensMaskRT: this._tokensMaskRT,
-      });
-      this._suppressMaskCutoutRT = updated.cutoutRT;
-      this._tokensMaskRT = updated.tokensMaskRT;
-    } else {
-      if (this._suppressMaskCutoutRT) {
-        try {
-          this._suppressMaskCutoutRT.destroy(true);
-        } catch {}
-        this._suppressMaskCutoutRT = null;
-      }
-      if (this._tokensMaskRT) {
-        try {
-          this._tokensMaskRT.destroy(true);
-        } catch {}
-        this._tokensMaskRT = null;
-      }
-    }
-
     applyMaskUniformsToFilters(filtersArr, {
-      baseMaskRT: this._suppressMaskRT,
-      cutoutRT: this._suppressMaskCutoutRT,
-      tokensMaskRT: this._tokensMaskRT,
+      baseMaskRT: base,
+      cutoutRT: anyBelow ? cutout : null,
+      tokensMaskRT: anyBelow ? tokens : null,
       cssW,
       cssH,
       deviceToCss,
@@ -273,12 +198,12 @@ export class FilterEffectsSceneManager {
     });
   }
 
-  #refreshSceneFilterSuppressionMask() {
+  #refreshSceneFilterSuppressionMasks(sync = false) {
     const hasAny = Object.keys(this.filters).length > 0 || this._dyingFilters.size > 0;
-
-    if (hasAny) this.#applySuppressMaskToFilters();
+    if (hasAny) this.#applySuppressMaskToFilters(sync);
 
     const M = snappedStageMatrix();
+    if (!M) return;
     this._lastRegionsMatrix = { a: M.a, b: M.b, c: M.c, d: M.d, tx: M.tx, ty: M.ty };
   }
 
@@ -293,8 +218,9 @@ export class FilterEffectsSceneManager {
     const existing = env.filters ?? [];
     const others = existing.filter((f) => !oursAll.includes(f));
 
-    const nonBelow = oursAll.filter((f) => !f?.options?.belowTokens);
-    const below = oursAll.filter((f) => f?.options?.belowTokens);
+    const isBelow = (f) => !!(f?.__fxmBelowTokens ?? f?.options?.belowTokens);
+    const nonBelow = oursAll.filter((f) => !isBelow(f));
+    const below = oursAll.filter((f) => isBelow(f));
 
     env.filters = [...nonBelow, ...others, ...below];
   }
@@ -306,15 +232,23 @@ export class FilterEffectsSceneManager {
     env.filters = env.filters.filter((f) => !set.has(f));
   }
 
+  #anyBelowTokens() {
+    return [...Object.values(this.filters), ...this._dyingFilters].some(
+      (f) => !!(f?.__fxmBelowTokens ?? f?.options?.belowTokens),
+    );
+  }
+
   #animate() {
     for (const f of Object.values(this.filters)) f.step?.();
-    const r = canvas.app.renderer;
-    const res = r?.resolution || window.devicePixelRatio || 1;
-    const Msrc = canvas.stage.worldTransform;
-    const fxFrac = Msrc ? (Msrc.tx * res - Math.round(Msrc.tx * res)) / res : 0;
-    const fyFrac = Msrc ? (Msrc.ty * res - Math.round(Msrc.ty * res)) / res : 0;
 
-    this._lastCamFrac ??= { x: fxFrac, y: fyFrac };
+    try {
+      const all = [...Object.values(this.filters), ...this._dyingFilters];
+      for (const f of all) {
+        if (typeof f?.lockViewport === "function") {
+          f.lockViewport({ setDeviceToCss: false, setCamFrac: true });
+        }
+      }
+    } catch {}
 
     const M = snappedStageMatrix();
     if (!M) return;
@@ -331,17 +265,25 @@ export class FilterEffectsSceneManager {
       Math.abs(L.ty - M.ty) > eps;
 
     if (changed) {
-      this.#refreshSceneFilterSuppressionMask();
+      this.#refreshSceneFilterSuppressionMasks(true);
     }
 
-    const anyBelowTokens = this._sceneFilters?.some?.((f) => !!(f.__fxmBelowTokens ?? f.options?.belowTokens));
-    const fracMoved = Math.abs(fxFrac - this._lastCamFrac.x) > 1e-4 || Math.abs(fyFrac - this._lastCamFrac.y) > 1e-4;
-    if (anyBelowTokens && fracMoved) {
-      this.#applySuppressMaskToFilters();
-      this._lastCamFrac.x = fxFrac;
-      this._lastCamFrac.y = fyFrac;
-    }
-
-    this._lastRegionsMatrix = { a: M.a, b: M.b, c: M.c, d: M.d, tx: M.tx, ty: M.ty };
+    try {
+      const r = canvas?.app?.renderer;
+      const res = r?.resolution || window.devicePixelRatio || 1;
+      const stageM = canvas?.stage?.worldTransform;
+      const fxFrac = stageM ? (stageM.tx * res - Math.round(stageM.tx * res)) / res : 0;
+      const fyFrac = stageM ? (stageM.ty * res - Math.round(stageM.ty * res)) / res : 0;
+      if (!this._lastCamFrac) this._lastCamFrac = { x: fxFrac, y: fyFrac };
+      const anyBelowTokens = [...Object.values(this.filters), ...this._dyingFilters].some((f) => {
+        return !!(f?.__fxmBelowTokens ?? f?.options?.belowTokens);
+      });
+      const fracMoved = Math.abs(fxFrac - this._lastCamFrac.x) > 1e-4 || Math.abs(fyFrac - this._lastCamFrac.y) > 1e-4;
+      if (anyBelowTokens && fracMoved) {
+        this.#applySuppressMaskToFilters(true);
+        this._lastCamFrac.x = fxFrac;
+        this._lastCamFrac.y = fyFrac;
+      }
+    } catch {}
   }
 }

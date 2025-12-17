@@ -18,6 +18,10 @@ export class BatsParticleEffect extends DefaultRectangleSpawnMixin(FXMasterParti
     return "animals";
   }
 
+  static get densityScalar() {
+    return 0.3;
+  }
+
   /** @override */
   static get parameters() {
     return foundry.utils.mergeObject(

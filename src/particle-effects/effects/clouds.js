@@ -104,7 +104,10 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
   getParticleEmitters(options = {}) {
     options = this.constructor.mergeWithDefaults(options);
     const d = canvas.dimensions;
-    const maxParticles = (d.width / d.size) * (d.height / d.size) * options.density.value;
+
+    const { maxParticles } = this.constructor.computeMaxParticlesFromView(options, {
+      minViewCells: this.constructor.MIN_VIEW_CELLS ?? 3000,
+    });
 
     const offsetFactor = 2 / 3;
     const config = foundry.utils.deepClone(this.constructor.CLOUDS_CONFIG);

@@ -2,7 +2,7 @@
    FXMaster — Particle Effects Config Window (full CSS)
    ========================================================= */
 
-/* sensible defaults (overridden via JS when we restore autosize) */
+/* sensible defaults (overridden via JS when restoring autosize) */
 :root {
   --fxmaster-max-height: 90vh;
   --fxmaster-radius: 6px;

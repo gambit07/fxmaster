@@ -46,7 +46,7 @@ uniform vec2  uSdfScaleOff;
 uniform float uSdfInsideMax;
 uniform vec2  uSdfTexel;
 
-// Absolute width (kept for compatibility)
+// Absolute width
 uniform float uFadeWorld;   // world px
 uniform float uFadePx;      // CSS px
 
@@ -195,13 +195,17 @@ void main(void) {
   // Region/suppression mask
   float inMask = src.a;
   if (hasMask > 0.5) {
-    if (maskReady < 0.5 || viewSize.x < 1.0 || viewSize.y < 1.0) { gl_FragColor = src; return; }
-    vec2 maskUV = screenPx / max(viewSize, vec2(1.0));
-    float aRaw  = texture2D(maskSampler, maskUV).r;
-    float a     = clamp(aRaw, 0.0, 1.0);
-    float m     = smoothstep(0.48, 0.52, a);
-    if (invertMask > 0.5) m = 1.0 - m;
-    inMask *= m;
+    bool maskUsable = (maskReady > 0.5) &&
+                      (viewSize.x >= 1.0) &&
+                      (viewSize.y >= 1.0);
+    if (maskUsable) {
+      vec2 maskUV = screenPx / viewSize;
+      float aRaw  = texture2D(maskSampler, maskUV).r;
+      float a     = clamp(aRaw, 0.0, 1.0);
+      float m     = smoothstep(0.48, 0.52, a);
+      if (invertMask > 0.5) m = 1.0 - m;
+      inMask *= m;
+    }
   }
 
   // Region edge fade (percent or absolute)
@@ -232,7 +236,8 @@ void main(void) {
   }
 
   // Bloom strength, gated by mask & fade
-  float k = clamp(bloomScale * strength, 0.0, 1.0) * clamp(inMask * fadeEdge, 0.0, 1.0);
+  float k = clamp(bloomScale * strength, 0.0, 1.0) *
+            clamp(inMask * fadeEdge, 0.0, 1.0);
   if (k <= 0.0001) { gl_FragColor = src; return; }
 
   // Convert blur (px) → UV

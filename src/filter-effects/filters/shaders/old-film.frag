@@ -199,15 +199,17 @@ void main(){
   // Region/suppression mask in screen pixels
   float inMask = src.a;
   if (hasMask > 0.5) {
-    if (maskReady < 0.5 || viewSize.x < 1.0 || viewSize.y < 1.0) {
-      gl_FragColor = src; return;
+    bool maskUsable = (maskReady > 0.5) &&
+                      (viewSize.x >= 1.0) &&
+                      (viewSize.y >= 1.0);
+    if (maskUsable) {
+      vec2 maskUV = screenPx / max(viewSize, vec2(1.0));
+      float aRaw  = texture2D(maskSampler, maskUV).r;
+      float a     = clamp(aRaw, 0.0, 1.0);
+      float m     = smoothstep(0.48, 0.52, a);
+      if (invertMask > 0.5) m = 1.0 - m;
+      inMask *= m;
     }
-    vec2 maskUV = screenPx / max(viewSize, vec2(1.0));
-    float aRaw  = texture2D(maskSampler, maskUV).r;
-    float a     = clamp(aRaw, 0.0, 1.0);
-    float m     = smoothstep(0.48, 0.52, a);
-    if (invertMask > 0.5) m = 1.0 - m;
-    inMask *= m;
   }
 
   // Per-pixel region fade (percent or absolute)

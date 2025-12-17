@@ -70,7 +70,12 @@ export class RainTopParticleEffect extends FXMasterParticleEffect {
         },
       },
       { type: "rotationStatic", config: { min: 180, max: 180 } },
-      { type: "textureSingle", config: { texture: "modules/fxmaster/assets/particle-effects/effects/rain/rain.webp" } },
+      {
+        type: "textureSingle",
+        config: {
+          texture: "modules/fxmaster/assets/particle-effects/effects/rain/rain.webp",
+        },
+      },
     ],
   };
 
@@ -85,7 +90,12 @@ export class RainTopParticleEffect extends FXMasterParticleEffect {
       { type: "scaleStatic", config: { min: 0.48, max: 0.6 } },
       { type: "rotationStatic", config: { min: -90, max: -90 } },
       { type: "noRotation", config: {} },
-      { type: "textureSingle", config: { texture: "modules/fxmaster/assets/particle-effects/effects/rain/drop.webp" } },
+      {
+        type: "textureSingle",
+        config: {
+          texture: "modules/fxmaster/assets/particle-effects/effects/rain/drop.webp",
+        },
+      },
     ],
   };
 
@@ -99,13 +109,19 @@ export class RainTopParticleEffect extends FXMasterParticleEffect {
     options = this.constructor.mergeWithDefaults(options);
 
     const d = canvas.dimensions;
-    const maxParticles = (d.width / d.size) * (d.height / d.size) * options.density.value;
+
+    const { maxParticles, viewCells, density } = this.constructor.computeMaxParticlesFromView(options, {
+      minViewCells: this.constructor.MIN_VIEW_CELLS ?? 3000,
+    });
+
     const sceneRadius = Math.sqrt(d.sceneWidth * d.sceneWidth + d.sceneHeight * d.sceneHeight) / 2;
 
     const config = foundry.utils.deepClone(this.constructor.RAIN_TOP_CONFIG);
     config.maxParticles = maxParticles;
 
-    config.frequency = config.lifetime.min / maxParticles;
+    const lifetime = config.lifetime ?? 1;
+    const lifetimeMin = typeof lifetime === "number" ? lifetime : lifetime.min ?? lifetime.max ?? 1;
+    config.frequency = lifetimeMin / maxParticles;
 
     config.behaviors.push({
       type: "moveSpeed",
@@ -122,8 +138,10 @@ export class RainTopParticleEffect extends FXMasterParticleEffect {
 
     this.applyOptionsToConfig(options, config);
 
-    const moveSpeedList = config.behaviors.find(({ type }) => type === "moveSpeed").config.speed.list;
-    const averageSpeed = moveSpeedList.reduce((acc, cur) => acc + cur.value, 0) / moveSpeedList.length;
+    const moveSpeedBehavior = config.behaviors.find(({ type }) => type === "moveSpeed");
+    const moveSpeedList = moveSpeedBehavior?.config?.speed?.list ?? [{ value: 1600 }, { value: 2000 }];
+    const averageSpeed =
+      moveSpeedList.reduce((acc, cur) => acc + (cur.value ?? 0), 0) / Math.max(1, moveSpeedList.length);
 
     config.behaviors.push({
       type: "spawnShape",
@@ -132,8 +150,8 @@ export class RainTopParticleEffect extends FXMasterParticleEffect {
         data: {
           x: d.sceneRect.x + d.sceneWidth / 2,
           y: d.sceneRect.y + d.sceneHeight / 2,
-          radius: averageSpeed * config.lifetime.max + sceneRadius * 2,
-          innerRadius: averageSpeed * config.lifetime.max,
+          radius: averageSpeed * (config.lifetime?.max ?? lifetimeMin) + sceneRadius * 2,
+          innerRadius: averageSpeed * (config.lifetime?.max ?? lifetimeMin),
           affectRotation: true,
         },
       },
@@ -151,7 +169,8 @@ export class RainTopParticleEffect extends FXMasterParticleEffect {
     if (splashEnabled) {
       const splashConfig = foundry.utils.deepClone(this.constructor.SPLASH_TOP_CONFIG);
 
-      const splashMax = Math.max(1, 0.4 * maxParticles);
+      const splashBase = viewCells * density * 0.4;
+      const splashMax = Math.max(1, Math.round(Math.min(splashBase, maxParticles)));
       splashConfig.maxParticles = splashMax;
 
       const splashLifetime = splashConfig.lifetime?.min ?? 0.5;

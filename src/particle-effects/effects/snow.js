@@ -17,6 +17,10 @@ export class SnowParticleEffect extends FXMasterParticleEffect {
     return "weather";
   }
 
+  static get densityScalar() {
+    return 0.05;
+  }
+
   /**
    * Configuration for the particle emitter for snow
    * @type {PIXI.particles.EmitterConfigV3}
@@ -80,11 +84,29 @@ export class SnowParticleEffect extends FXMasterParticleEffect {
   /** @override */
   getParticleEmitters(options = {}) {
     options = this.constructor.mergeWithDefaults(options);
+
     const d = canvas.dimensions;
-    const maxParticles = (d.width / d.size) * (d.height / d.size) * options.density.value;
+
+    const { maxParticles } = this.constructor.computeMaxParticlesFromView(options, {
+      minViewCells: this.constructor.MIN_VIEW_CELLS ?? 10000,
+    });
+
     const config = foundry.utils.deepClone(this.constructor.SNOW_CONFIG);
     config.maxParticles = maxParticles;
-    config.frequency = (config.lifetime.min + config.lifetime.max) / 2 / maxParticles;
+
+    const lifetime = config.lifetime ?? 1;
+    let avgLifetime;
+    if (typeof lifetime === "number") {
+      avgLifetime = lifetime;
+    } else {
+      const min = lifetime.min ?? lifetime.max ?? 1;
+      const max = lifetime.max ?? lifetime.min ?? min;
+      avgLifetime = (min + max) / 2;
+    }
+    config.frequency = avgLifetime / maxParticles;
+
+    config.behaviors ??= [];
+
     config.behaviors.push({
       type: "spawnShape",
       config: {
@@ -92,6 +114,7 @@ export class SnowParticleEffect extends FXMasterParticleEffect {
         data: { x: 0, y: -0.1 * d.height, w: d.width, h: d.height },
       },
     });
+
     this.applyOptionsToConfig(options, config);
     return [this.createEmitter(config)];
   }

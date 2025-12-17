@@ -18,6 +18,12 @@ export class FogParticleEffect extends DefaultRectangleSpawnMixin(FXMasterPartic
     return "weather";
   }
 
+  static get densityScalar() {
+    return 0.3;
+  }
+
+  static MIN_VIEW_CELLS = 6000;
+
   /** @override */
   static get parameters() {
     return foundry.utils.mergeObject(

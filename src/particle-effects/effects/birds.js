@@ -17,6 +17,10 @@ export class BirdsParticleEffect extends FXMasterParticleEffect {
     return "animals";
   }
 
+  static get densityScalar() {
+    return 0.3;
+  }
+
   /** @override */
   static get parameters() {
     return foundry.utils.mergeObject(
@@ -99,24 +103,42 @@ export class BirdsParticleEffect extends FXMasterParticleEffect {
   /** @override */
   getParticleEmitters(options = {}) {
     options = this.constructor.mergeWithDefaults(options);
+
     const d = canvas.dimensions;
-    const maxParticles = (d.width / d.size) * (d.height / d.size) * options.density.value;
+
+    const { maxParticles } = this.constructor.computeMaxParticlesFromView(options, {
+      minViewCells: this.constructor.MIN_VIEW_CELLS ?? 5000,
+    });
+
     const config = foundry.utils.deepClone(this.constructor.BIRDS_CONFIG);
     config.maxParticles = maxParticles;
-    config.frequency = config.lifetime.min / maxParticles;
+
+    const lifetime = config.lifetime ?? 1;
+    const lifetimeMin = typeof lifetime === "number" ? lifetime : lifetime.min ?? lifetime.max ?? 1;
+    config.frequency = lifetimeMin / maxParticles;
+
+    config.behaviors ??= [];
+
     config.behaviors.push({
       type: "spawnShape",
       config: {
         type: "rect",
-        data: { x: d.sceneRect.x, y: d.sceneRect.y, w: d.sceneRect.width, h: d.sceneRect.height },
+        data: {
+          x: d.sceneRect.x,
+          y: d.sceneRect.y,
+          w: d.sceneRect.width,
+          h: d.sceneRect.height,
+        },
       },
     });
+
     config.behaviors.push({
       type: "animatedRandom",
       config: {
         anims: this._getAnimations(options),
       },
     });
+
     this.applyOptionsToConfig(options, config);
 
     return [this.createEmitter(config)];

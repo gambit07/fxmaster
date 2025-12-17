@@ -83,11 +83,27 @@ export class SnowstormParticleEffect extends FXMasterParticleEffect {
   /** @override */
   getParticleEmitters(options = {}) {
     options = this.constructor.mergeWithDefaults(options);
+
     const d = canvas.dimensions;
-    const maxParticles = (d.width / d.size) * (d.height / d.size) * options.density.value;
+
+    const { maxParticles } = this.constructor.computeMaxParticlesFromView(options, {
+      minViewCells: this.constructor.MIN_VIEW_CELLS ?? 10000,
+    });
+
     const config = foundry.utils.deepClone(this.constructor.defaultConfig);
     config.maxParticles = maxParticles;
-    config.frequency = (config.lifetime.min + config.lifetime.max) / 2 / maxParticles;
+
+    const lifetime = config.lifetime ?? 1;
+    let avgLifetime;
+    if (typeof lifetime === "number") {
+      avgLifetime = lifetime;
+    } else {
+      const min = lifetime.min ?? lifetime.max ?? 1;
+      const max = lifetime.max ?? lifetime.min ?? min;
+      avgLifetime = (min + max) / 2;
+    }
+    config.frequency = avgLifetime / maxParticles;
+
     config.behaviors.push({
       type: "spawnShape",
       config: {
@@ -95,6 +111,7 @@ export class SnowstormParticleEffect extends FXMasterParticleEffect {
         data: { x: d.sceneRect.x, y: d.sceneRect.y, w: d.sceneRect.width, h: d.sceneRect.height },
       },
     });
+
     this.applyOptionsToConfig(options, config);
 
     return [this.createEmitter(config)];

@@ -8,18 +8,34 @@ export function DefaultRectangleSpawnMixin(Base) {
     /** @override */
     getParticleEmitters(options = {}) {
       options = this.constructor.mergeWithDefaults(options);
+
+      const { maxParticles } = this.constructor.computeMaxParticlesFromView(options, {
+        minViewCells: this.constructor.MIN_VIEW_CELLS ?? 3000,
+      });
+
       const d = canvas.dimensions;
-      const maxParticles = (d.width / d.size) * (d.height / d.size) * options.density.value;
       const config = foundry.utils.deepClone(this.constructor.defaultConfig);
+
       config.maxParticles = maxParticles;
-      config.frequency = config.lifetime.min / maxParticles;
+
+      const lifetime = config.lifetime ?? 1;
+      const lifetimeMin = typeof lifetime === "number" ? lifetime : lifetime.min ?? 1;
+      config.frequency = lifetimeMin / maxParticles;
+
+      config.behaviors ??= [];
       config.behaviors.push({
         type: "spawnShape",
         config: {
           type: "rect",
-          data: { x: d.sceneRect.x, y: d.sceneRect.y, w: d.sceneRect.width, h: d.sceneRect.height },
+          data: {
+            x: d.sceneRect.x,
+            y: d.sceneRect.y,
+            w: d.sceneRect.width,
+            h: d.sceneRect.height,
+          },
         },
       });
+
       this.applyOptionsToConfig(options, config);
 
       return [this.createEmitter(config)];

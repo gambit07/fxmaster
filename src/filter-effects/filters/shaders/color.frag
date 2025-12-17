@@ -215,21 +215,22 @@ void main(void) {
 
   // pixel position in CSS px that sampled src
   vec2 screenPx = outputFrame.xy + vTextureCoord * inputSize.xy;
-
-  vec2 snapPx = screenPx - camFrac;
+  vec2 snapPx   = screenPx - camFrac;
 
   /* Region/suppression gating */
   float inMask = src.a;
   if (hasMask > 0.5) {
-    if (maskReady < 0.5 || viewSize.x < 1.0 || viewSize.y < 1.0) {
-      gl_FragColor = src; return;
+    bool maskUsable = (maskReady > 0.5) &&
+                      (viewSize.x >= 1.0) &&
+                      (viewSize.y >= 1.0);
+    if (maskUsable) {
+      // Use snapped pixels for the mask UV
+      vec2 maskUV = clamp(snapPx / max(viewSize, vec2(1.0)), 0.0, 1.0);
+      float a = clamp(texture2D(maskSampler, maskUV).r, 0.0, 1.0);
+      float m = smoothstep(0.49, 0.51, a);
+      if (invertMask > 0.5) m = 1.0 - m;
+      inMask *= m;
     }
-    // Use snapped pixels for the mask UV
-    vec2 maskUV = clamp(snapPx / max(viewSize, vec2(1.0)), 0.0, 1.0);
-    float a = clamp(texture2D(maskSampler, maskUV).r, 0.0, 1.0);
-    float m = smoothstep(0.49, 0.51, a);
-    if (invertMask > 0.5) m = 1.0 - m;
-    inMask *= m;
   }
 
   /* Fade factor */

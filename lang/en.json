@@ -1,7 +1,7 @@
 {
   "I18N": {
     "LANGUAGE": "English",
-    "MAINTAINERS": "ghost#2000"
+    "MAINTAINERS": "gambit"
   },
 
   "CONTROLS": {
@@ -106,7 +106,20 @@
       "WobbleFrequency": "Wobble Frequency",
       "Streakiness": "Streakiness",
       "Lift": "Lift",
-      "Rainbow": "Rainbow"
+      "Rainbow": "Rainbow",
+
+      "FrostStrength": "Frost Strength",
+      "Depth": "Depth",
+      "VeinStrength": "Vein Strength",
+      "WaterTint": "Water Tint",
+      "WaterStrength": "Water Strength",
+      "WaterSpeed": "Water Speed",
+      "SheenStrength": "Sheen Strength",
+      "SheenTint": "Sheen Tint",
+      "ReflectionStrength": "Reflection Strength",
+      "ReflectionDistance": "Reflection Distance",
+      "ReflectionBlur": "Reflection Blur",
+      "ReflectionFresnel": "Reflection Fresnel"
     },
 
     "ParamTooltips": {
@@ -165,7 +178,20 @@
       "WobbleFrequency": "Controls how fast particles wobble. Higher = faster wobble.",
       "Streakiness": "Controls how stretched and banded the filter is along the movement path. Lower values look more like uniform haze, higher values create longer streaks.",
       "Lift": "Controls how thick the filter is in the middle of each sheet compared to its edges. Lower values are more flat and even; higher values make the centers denser and the edges thinner, adding depth but reducing overall coverage.",
-      "Rainbow": "Overrides Tint and enables a random cycling rainbow effect on particles."
+      "Rainbow": "Overrides Tint and enables a random cycling rainbow effect on particles.",
+
+      "FrostStrength": "Controls how strongly the ice veil (frost) tints the scene. Higher = more frosty/opaque ice look.",
+      "Depth": "Controls how much the under-ice layer contributes (movement/caustics). Higher = more visible depth beneath the ice.",
+      "VeinStrength": "Darkens and adds subtle vein-like structure within the ice. 0 disables the veins.",
+      "WaterTint": "Tint color for the animated under-ice water layer.",
+      "WaterStrength": "Strength of the animated under-ice water refraction and tint. Higher = more visible movement.",
+      "WaterSpeed": "Speed of the under-ice water motion. Higher = faster movement.",
+      "SheenStrength": "Strength of the ice sheen highlight layer. Higher = brighter sheen.",
+      "SheenTint": "Tint color for the sheen highlight layer.",
+      "ReflectionStrength": "Strength of the reflection-like sampling for glossy ice. Higher = stronger reflection.",
+      "ReflectionDistance": "How far the reflection is sampled/offset. Higher = more pronounced reflection shift.",
+      "ReflectionBlur": "Blur applied to the reflection sample. Higher = softer reflection.",
+      "ReflectionFresnel": "Controls how view-angle dependent the reflection is. Higher = tighter, more edge-weighted reflection."
     },
 
     "Particles": {
@@ -229,6 +255,45 @@
       "TypeErrors": {
         "TypeUnknown": "Particle effect '{id}' is of unknown type '{type}', skipping it.",
         "TypeNotFound": "No particle effect found for type: {type}"
+      },
+      "CustomParticles": {
+        "ManagementHeader": "{name}'s Particle Effects",
+        "NoCustomParticleEffects": "No custom particle effects have been created yet.",
+        "AddEffect": "Add Effect",
+        "ParticleNamePlaceholder": "My Custom Particle Name",
+        "BaseEffect": "Base Effect",
+        "Group": "Group",
+        "Textures": "Textures",
+        "TexturePathsPlaceholder": "Image paths separated by commmas, Filepicker sequential select supported. Recommended to keep texture sizes as low as possible for performance, 50kb or less preferred.",
+        "Icon": "Icon",
+        "IconPath": "Icon Path",
+        "Name": "Custom Particle Name",
+        "Save": "Save",
+        "Cancel": "Cancel",
+        "Edit": "Edit",
+        "Delete": "Delete",
+        "ControlTitle": "Manage User Particle Effects",
+        "ManagementTitle": "User Particle Effects",
+        "ConfigTitle": "Custom Particle Effect",
+        "AmbientFloat": "Ambient Float",
+        "DirectionalDrift": "Directional Drift",
+        "RefreshBrowserTitle": "Refresh Browser",
+        "RefreshBrowserContentNew": "Would you like to refresh your browser now? The {name} effect will not be available within the Region Particle Effects menu until a refresh occurs.",
+        "RefreshBrowserContentUpdated": "Would you like to refresh your browser now? The {name} effect will not be updated within the Region Particle Effects menu until a refresh occurs. Issues may occur if the effect was modified to use different base effect types or texture paths.",
+        "Tooltips": {
+          "Name": "Name shown in the FXMaster particle list.",
+          "BaseEffect": "Choose the motion style. Directional Drift moves particles in a primary direction. Ambient Float spawns particles randomly and lets them drift on-screen.",
+          "Group": "Which FXMaster category this effect appears under (Weather, Ambient, or Animals).",
+          "Textures": "One or more image paths, separated by commas. Multiple images will be chosen at random per particle.",
+          "Icon": "Icon image shown in the particle list."
+        },
+        "Errors": {
+          "NameRequired": "Name is required.",
+          "TexturesRequired": "You must choose at least one image for the particle texture.",
+          "IconRequired": "You must choose an icon image for the custom effect.",
+          "InvalidTexture": "Texture is not a supported image file: {path}",
+          "InvalidIcon": "Icon is not a supported image file: {path}"
+        }
       }
     },
 
@@ -242,7 +307,8 @@
         "Predator": "Predator",
         "Underwater": "Underwater",
         "Sunlight": "Sunlight",
-        "Duststorm": "Duststorm"
+        "Duststorm": "Duststorm",
+        "Ice": "Ice"
       },
       "TypeErrors": {
         "TypeUnknown": "Filter effect '{id}' is of unknown type '{type}', skipping it.",

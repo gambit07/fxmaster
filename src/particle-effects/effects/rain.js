@@ -2,6 +2,7 @@ import { FXMasterParticleEffect } from "./effect.js";
 
 /**
  * Full-screen rain with optional splash particles (toggled via options.splash.value).
+ * Uses a standard PIXI.Container for the emitter parent.
  */
 export class RainParticleEffect extends FXMasterParticleEffect {
   /** @override */
@@ -17,6 +18,15 @@ export class RainParticleEffect extends FXMasterParticleEffect {
     return "weather";
   }
 
+  /**
+   * Make rain a bit denser than the global default while still respecting
+   * performance mode scaling.
+   */
+  static get densityScalar() {
+    return 0.14;
+  }
+
+  /** @override */
   static get parameters() {
     return foundry.utils.mergeObject(
       super.parameters,
@@ -50,7 +60,12 @@ export class RainParticleEffect extends FXMasterParticleEffect {
       { type: "moveSpeedStatic", config: { min: 2800, max: 3500 } },
       { type: "scaleStatic", config: { min: 0.8, max: 1 } },
       { type: "rotationStatic", config: { min: 75, max: 75 } },
-      { type: "textureSingle", config: { texture: "modules/fxmaster/assets/particle-effects/effects/rain/rain.webp" } },
+      {
+        type: "textureSingle",
+        config: {
+          texture: "modules/fxmaster/assets/particle-effects/effects/rain/rain.webp",
+        },
+      },
     ],
   };
 
@@ -66,7 +81,12 @@ export class RainParticleEffect extends FXMasterParticleEffect {
       { type: "scaleStatic", config: { min: 0.48, max: 0.6 } },
       { type: "rotationStatic", config: { min: -90, max: -90 } },
       { type: "noRotation", config: {} },
-      { type: "textureSingle", config: { texture: "modules/fxmaster/assets/particle-effects/effects/rain/drop.webp" } },
+      {
+        type: "textureSingle",
+        config: {
+          texture: "modules/fxmaster/assets/particle-effects/effects/rain/drop.webp",
+        },
+      },
     ],
   };
 
@@ -76,7 +96,27 @@ export class RainParticleEffect extends FXMasterParticleEffect {
   }
 
   /**
+   * Create an emitter backed by a standard PIXI.Container.
+   * @param {PIXI.particles.EmitterConfigV3} config
+   * @returns {PIXI.particles.Emitter}
+   */
+  createEmitter(config) {
+    const container = new PIXI.Container();
+    container.sortableChildren = false;
+    container.eventMode = "none";
+
+    this.addChild(container);
+
+    const emitter = new PIXI.particles.Emitter(container, config);
+    emitter.autoUpdate = true;
+
+    return emitter;
+  }
+
+  /**
    * Build one (rain) or two (rain + splash) emitters depending on options.splash.value.
+   * Particle counts are derived from view size (in grid cells),
+   * user density, and Foundry's Performance Mode via FXMasterParticleEffect helpers.
    */
   getParticleEmitters(options = {}) {
     options = this.constructor.mergeWithDefaults(options);
@@ -85,16 +125,10 @@ export class RainParticleEffect extends FXMasterParticleEffect {
     const splashIntensity = 1;
 
     const d = canvas.dimensions;
-    const gridCells = (d.width / d.size) * (d.height / d.size);
 
-    const PARTICLE_BUDGET_RAIN = 20000;
-    const userDensity = options.density?.value ?? 0.5;
-
-    const maxDensityForScene = gridCells > 0 ? PARTICLE_BUDGET_RAIN / gridCells : userDensity;
-
-    const density = Math.min(userDensity, maxDensityForScene);
-
-    const maxParticles = Math.max(1, Math.round(gridCells * density));
+    const { viewCells, density, maxParticles } = this.constructor.computeMaxParticlesFromView(options, {
+      minViewCells: this.constructor.MIN_VIEW_CELLS ?? 3000,
+    });
 
     const rainConfig = foundry.utils.deepClone(this.constructor.RAIN_CONFIG);
     rainConfig.maxParticles = maxParticles;
@@ -120,9 +154,9 @@ export class RainParticleEffect extends FXMasterParticleEffect {
     if (splashEnabled && splashIntensity > 0) {
       const splashConfig = foundry.utils.deepClone(this.constructor.SPLASH_CONFIG);
 
-      const splashBudget = Math.min(Math.round(0.5 * maxParticles * splashIntensity), 5000);
+      const splashBase = viewCells * density * splashIntensity * 0.5;
+      const splashMax = Math.max(1, Math.round(Math.min(splashBase, maxParticles)));
 
-      const splashMax = Math.max(1, splashBudget);
       splashConfig.maxParticles = splashMax;
       splashConfig.frequency = 1 / splashMax;
 

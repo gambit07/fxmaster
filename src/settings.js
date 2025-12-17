@@ -29,7 +29,6 @@ export function registerSettings() {
     default: "",
   });
 
-  // Changed: keep behavior, hide from Settings UI
   game.settings.register(packageId, "refreshDb", {
     name: "FXMASTER.AnimationEffect.RefreshDbName",
     hint: "FXMASTER.AnimationEffect.RefreshDbHint",

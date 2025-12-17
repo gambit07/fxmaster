@@ -20,13 +20,6 @@ export class BloomFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   constructor(options = {}, id) {
     super(options, id, PIXI.Filter.defaultVertex, fragment);
 
-    const r = canvas?.app?.renderer;
-    if (r) {
-      try {
-        this.filterArea = new PIXI.Rectangle(0, 0, r.screen.width | 0, r.screen.height | 0);
-      } catch {}
-    }
-
     const u = (this.uniforms ??= {});
     this.initMaskUniforms(u, { withStrength: true, strengthDefault: 1.0 });
     this.initFadeUniforms(u);

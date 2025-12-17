@@ -5,10 +5,13 @@
 
 import { packageId } from "../constants.js";
 import { logger } from "../logger.js";
-import { composeMaskMinusTokens, ensureCssSpaceMaskSprite, safeMaskTexture, buildSceneAllowMaskRT } from "../utils.js";
-
-let _sceneParticlesMaskRT = null;
-let _sceneParticlesMaskRT_Cutout = null;
+import {
+  ensureCssSpaceMaskSprite,
+  safeMaskTexture,
+  getCssViewportMetrics,
+  applyMaskSpriteTransform,
+} from "../utils.js";
+import { SceneMaskManager } from "../common/base-effects-scene-manager.js";
 
 const CONTAINER_MASK_NAME = "fxmaster:scene-particles-container-mask";
 const FX_MASK_NAME = "fxmaster:scene-particles-fx-mask";
@@ -25,6 +28,7 @@ export function refreshSceneParticlesSuppressionMasks() {
     if (!layer) return;
 
     layer._dyingSceneEffects ??= new Set();
+
     const liveFx = _collectSceneLevelFx(layer);
     const dyingFx = Array.from(layer._dyingSceneEffects ?? []);
 
@@ -43,73 +47,20 @@ export function refreshSceneParticlesSuppressionMasks() {
       const containers = _knownSceneFxContainers();
       for (const c of containers) _ensureContainerMaskSprite(c, null);
       _detachPerFxMasks(liveFx);
-      _swapSharedMaskRT(null, true);
       return;
     }
 
-    const anyBelowTokens = [...liveFx, ...dyingFx].some(
-      (fx) => !!(fx?._fxmOptsCache?.belowTokens?.value ?? fx?.options?.belowTokens?.value),
-    );
+    SceneMaskManager.instance.refreshSync("particles");
+    const { base: maskRT, cutout: cutoutRT } = SceneMaskManager.instance.masks;
 
-    const suppressRegions = _getSuppressRegions();
-    const hasSuppress = suppressRegions.length > 0;
+    const allFxEntries = [...liveFx, ...dyingFx].map((fx) => ({ fx }));
 
-    if (!hasSuppress && !anyBelowTokens) {
-      const containers = _knownSceneFxContainers();
-      for (const c of containers) _ensureContainerMaskSprite(c, null);
-      _detachPerFxMasks(liveFx);
-      _swapSharedMaskRT(null, true);
-      return;
-    }
+    const containers = _knownSceneFxContainers();
+    for (const c of containers) _ensureContainerMaskSprite(c, null);
 
-    const newBase = buildSceneAllowMaskRT({
-      regions: suppressRegions,
-      reuseRT: _sceneParticlesMaskRT,
-    });
+    _retargetSpritesFromTexture(allFxEntries, maskRT, { useCutout: false });
 
-    const oldBase = _sceneParticlesMaskRT || null;
-    const oldCut = _sceneParticlesMaskRT_Cutout || null;
-
-    _sceneParticlesMaskRT = newBase || null;
-    _sceneParticlesMaskRT_Cutout = newBase && anyBelowTokens ? composeMaskMinusTokens(newBase) : null;
-
-    _retargetSpritesFromTexture(oldBase, _sceneParticlesMaskRT);
-    _retargetSpritesFromTexture(oldCut, _sceneParticlesMaskRT_Cutout ?? _sceneParticlesMaskRT);
-
-    if (oldBase && oldBase !== _sceneParticlesMaskRT)
-      requestAnimationFrame(() => {
-        try {
-          oldBase.destroy(true);
-        } catch {}
-      });
-    if (oldCut && oldCut !== _sceneParticlesMaskRT_Cutout)
-      requestAnimationFrame(() => {
-        try {
-          oldCut.destroy(true);
-        } catch {}
-      });
-
-    const allFx = [...liveFx, ...dyingFx];
-    const byParent = new Map();
-    for (const fx of allFx) {
-      const p = fx?.parent;
-      if (!p) continue;
-      if (!byParent.has(p)) byParent.set(p, []);
-      byParent.get(p).push(fx);
-    }
-
-    const known = _knownSceneFxContainers();
-    const activeContainers = byParent.size ? Array.from(byParent.keys()) : [];
-
-    for (const c of known) {
-      if (!activeContainers.includes(c)) _ensureContainerMaskSprite(c, null);
-    }
-
-    const containers = activeContainers.length ? activeContainers : known;
-    for (const c of containers) {
-      const fxInC = byParent.get(c) || [];
-      _applyMasksRespectingExisting(c, fxInC, _sceneParticlesMaskRT, _sceneParticlesMaskRT_Cutout);
-    }
+    _retargetSpritesFromTexture(allFxEntries, cutoutRT, { useCutout: true });
   } catch (err) {
     logger?.error?.(err);
   }
@@ -144,17 +95,6 @@ function _collectSceneLevelFx(layer) {
     }
   } catch {}
   return out;
-}
-
-/**
- * Get regions that suppress scene-level particles.
- * @returns {PlaceableObject[]}
- * @private
- */
-function _getSuppressRegions() {
-  const SUPPRESS_TYPES = new Set(["suppressWeather", `${packageId}.suppressSceneParticles`]);
-  const regions = canvas.regions?.placeables ?? [];
-  return regions.filter((reg) => (reg.document.behaviors ?? []).some((b) => SUPPRESS_TYPES.has(b.type) && !b.disabled));
 }
 
 /**
@@ -211,22 +151,6 @@ function _detachPerFxMasks(fxList) {
       }
     } catch {}
     if (fx) fx._fxmSceneParticlesMaskSprite = null;
-  }
-}
-
-/**
- * Swap the shared allow-mask RT and optionally destroy the old texture.
- * @param {PIXI.RenderTexture|null} newRT
- * @param {boolean} destroyOld
- * @private
- */
-function _swapSharedMaskRT(newRT, destroyOld) {
-  const old = _sceneParticlesMaskRT || null;
-  _sceneParticlesMaskRT = newRT || null;
-  if (destroyOld && old && !newRT) {
-    try {
-      old.destroy(true);
-    } catch {}
   }
 }
 
@@ -308,32 +232,100 @@ function _registerMaskSprite(sprite, texture) {
   try {
     _maskSpritesBase.delete(sprite);
     _maskSpritesCutout.delete(sprite);
+    const { base, cutout } = SceneMaskManager.instance.masks;
     if (!sprite || sprite.destroyed || !texture) return;
-    if (texture === _sceneParticlesMaskRT) _maskSpritesBase.add(sprite);
-    else if (texture === _sceneParticlesMaskRT_Cutout) _maskSpritesCutout.add(sprite);
+    if (texture === base) _maskSpritesBase.add(sprite);
+    else if (texture === cutout) _maskSpritesCutout.add(sprite);
   } catch {}
 }
 
 /**
- * Retarget sprites that referenced an old shared RT to a new texture.
+ * Retarget sprites that referenced an old shared RT to a new texture,
+ * and re-project them for the current camera / viewport.
  * @param {PIXI.Texture|PIXI.RenderTexture|null} oldTex
  * @param {PIXI.Texture|PIXI.RenderTexture|null} newTex
  * @private
  */
-function _retargetSpritesFromTexture(oldTex, newTex) {
-  if (!oldTex) return;
-  const set =
-    oldTex === _sceneParticlesMaskRT
-      ? _maskSpritesBase
-      : oldTex === _sceneParticlesMaskRT_Cutout
-      ? _maskSpritesCutout
-      : null;
-  if (!set) return;
-  for (const spr of set) {
-    if (!spr || spr.destroyed) continue;
+/**
+ * Retarget per-FX mask sprites to the given shared RT, and re-project
+ * them for the current camera / viewport.
+ *
+ * @param {{fx: PIXI.Container}[]|PIXI.Container[]} entries
+ * @param {PIXI.Texture|PIXI.RenderTexture|null} tex
+ * @param {{useCutout?: boolean}} [opts]
+ * @private
+ */
+function _retargetSpritesFromTexture(entries, tex, { useCutout = false } = {}) {
+  if (!entries || !entries[Symbol.iterator]) return;
+
+  const { cssW, cssH } = getCssViewportMetrics();
+
+  for (const entry of entries) {
+    const fx = entry?.fx ?? entry;
+    if (!fx || fx.destroyed) continue;
+
+    const wantsCutout =
+      !!fx?._fxmOptsCache?.belowTokens?.value || !!fx?.options?.belowTokens?.value || !!fx?.__fxmBelowTokens;
+
+    if (wantsCutout !== useCutout) continue;
+
+    if (!tex) {
+      try {
+        const old = fx._fxmSceneParticlesMaskSprite;
+        if (old && !old.destroyed) {
+          if (fx.mask === old) fx.mask = null;
+          try {
+            old.texture = safeMaskTexture(null);
+          } catch {}
+          try {
+            fx.removeChild(old);
+          } catch {}
+          try {
+            old.destroy({ texture: false, baseTexture: false });
+          } catch {}
+        }
+      } catch {}
+      fx._fxmSceneParticlesMaskSprite = null;
+      continue;
+    }
+
+    let spr = fx._fxmSceneParticlesMaskSprite;
+    if (!spr || spr.destroyed) {
+      spr = new PIXI.Sprite(safeMaskTexture(tex));
+      spr.name = FX_MASK_NAME;
+      spr.eventMode = "none";
+      spr.interactive = false;
+      spr.cursor = null;
+      try {
+        fx.addChildAt(spr, 0);
+      } catch {
+        fx.addChild(spr);
+      }
+      fx._fxmSceneParticlesMaskSprite = spr;
+    } else {
+      try {
+        spr.texture = safeMaskTexture(tex);
+      } catch {}
+    }
+
+    spr.x = 0;
+    spr.y = 0;
+    spr.width = cssW;
+    spr.height = cssH;
+
     try {
-      spr.texture = safeMaskTexture(newTex);
-    } catch {}
+      applyMaskSpriteTransform(fx, spr);
+    } catch (e) {
+      try {
+        logger.error(`${packageId} | Failed to reapply scene particles mask sprite transform`, e);
+      } catch {}
+    }
+
+    if (fx.mask !== spr) {
+      try {
+        fx.mask = spr;
+      } catch {}
+    }
   }
 }
 

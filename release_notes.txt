@@ -1,5 +1,10 @@
-- Resolved additional Clouds Shadow option shader crash in certain scenarios
-- Resolved filters not respecting scene bounds when Performance mode was set to High or lower
-- Added missing gating for masks in 0 mask scenarios
-- Improved design of slider toggle and improved it's style being overridden in certain systems
-- Tweaked the Rain Particle Effect to get better performance via more normalized density
+- Welcome to FXMaster V7.2! This release focused on performance and consistency improvements for Particle Effects, accomplished in a couple of ways:
+  - First, all particle effects have had a pass on their density parameter with more normalized density ranges they can generate Particle effects within. This should prevent issues where you could apply an effect with maximum density on a huge scene and crash it (tested on scenes up to about 16000x12000). Density will now normalize to the number of cells present on a scene. I've tested each of these individually to try to find a good balance between performance and density, happy to hear any feedback (preferably on my Gambit's Lounge Discord) as these can be adjusted further in the future. 
+  - Second, I've added in support for Foundrys built-in Performance Mode client setting. FXMaster will now adjust density based on that setting, where percentage is the fraction of total particles set in the manager that will be emitted, Maximum = 100%, High = 75%, Medium = 50%, Low = 25%. This should be a big help for players and GM's on lower end hardware such as laptops, and keep GM's from having to globally reduce particle density in order to not kill their lowest end hardware.
+- Added new Elevation Constraints option to 'FXMaster: Suppress Scene Particles' and 'FXMaster: Suppress Scene Filters' behaviors. This functions in the same way as the region behaviors for adding a particle or filter, and will allow suppression based on the parameters set.
+- Backend cleanup for Filter and Particle Effects, resolved a number of issues with masking consistency including Dynamic Token Borders not being masked appropriately when belowTokens = true
+- Switched Particle and Filter management apps to use default foundry color picker for Tint parameter, only difference is a hex code text input is present for easy copy/paste
+- Upodated Particle and Filter management apps to allow using the mouse scroll wheel to increase/decrease parameter values while a range slider is selected. This should be a good middle ground between preventing accidentally changing a parameter and allowing the flexibility of the mousewheel.
+- Fog Filter Effect: Updated defaults to work better visually for a standard Fog, renamed Density label to Opacity as that is functionally what the setting does.
+- Underwater Filter Effect: Resolved shader crashing in certain scenarios
+- Added new localizations for December's FXMaster+ release, Ice! Also added new localizations for FXMaster+'s holiday surprise :]

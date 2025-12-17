@@ -1,14 +1,11 @@
 /**
- * FXMaster: Particle Effects Region Layer
- * Manages scene-level and region-level particle effects, occlusion, and region masks.
+ * FXMaster: Particle Effects Layer
+ * Manages scene-level and region-level particle effects.
  */
 
 import { packageId } from "../constants.js";
-import { logger } from "../logger.js";
 import { isEnabled } from "../settings.js";
 import {
-  RTPool,
-  composeMaskMinusTokens,
   safeMaskTexture,
   buildRegionMaskRT,
   applyMaskSpriteTransform,
@@ -16,62 +13,47 @@ import {
   coalesceNextFrame,
   getCssViewportMetrics,
   snappedStageMatrix,
+  composeMaskMinusTokens,
 } from "../utils.js";
 import { refreshSceneParticlesSuppressionMasks } from "./particle-effects-scene-manager.js";
+import { BaseEffectsLayer } from "../common/base-effects-layer.js";
+import { logger } from "../logger.js";
 
 const TYPE = `${packageId}.particleEffectsRegion`;
 
-export class ParticleEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObjectMixinNS(CONFIG.fxmaster.CanvasLayerNS) {
-  /**
-   * Layer configuration for the canvas stack.
-   * @returns {object}
-   */
+export class ParticleEffectsLayer extends BaseEffectsLayer {
   static get layerOptions() {
     return foundry.utils.mergeObject(super.layerOptions, { name: "particle-effects" });
   }
 
-  /**
-   * Construct a new layer for particle effects.
-   */
   constructor() {
     super();
     this.#initializeInverseOcclusionFilter();
     this.mask = canvas.masks.scene;
-    this.sortableChildren = true;
-    this.eventMode = "none";
 
     this.particleEffects = new Map();
     this.regionEffects = new Map();
     this._regionMaskRTs = new Map();
-    this._rtPool = new RTPool();
 
     this._belowContainer = null;
     this._aboveContent = null;
-    this._ticker = false;
-    this._lastRegionsMatrix = null;
     this._scratchGfx = null;
     this._aboveMaskGfx = null;
     this._dyingSceneEffects = new Set();
-    this._tearingDown = false;
     this._lastViewSize = { w: canvas.app.renderer.view?.width | 0, h: canvas.app.renderer.view?.height | 0 };
-
     this._gatePassCache = new Map();
     this._lastSceneMaskMatrix = null;
+    this._currentCameraMatrix = null;
   }
 
-  /** @type {WeatherOcclusionMaskFilter} */
   occlusionFilter;
 
-  /**
-   * Elevation key used by occlusion filters.
-   * @type {number}
-   */
   get elevation() {
     return this.#elevation;
   }
   set elevation(value) {
     if (typeof value !== "number" || Number.isNaN(value))
-      throw new Error("ParticleEffectsRegionLayer#elevation must be numeric.");
+      throw new Error("ParticleEffectsLayer#elevation must be numeric.");
     if (value === this.#elevation) return;
     this.#elevation = value;
     try {
@@ -83,46 +65,23 @@ export class ParticleEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObject
   }
   #elevation = Infinity;
 
-  /**
-   * Draw the layer and start the frame ticker.
-   * @override
-   * @returns {Promise<void>}
-   */
   async _draw() {
     if (!isEnabled()) return;
-    await this.#draw();
+    await this.drawParticleEffects();
     if (!this._ticker) {
       const PRIO = PIXI.UPDATE_PRIORITY?.HIGH ?? 25;
       try {
-        canvas.app.ticker.add(this.#tick, this, PRIO);
+        canvas.app.ticker.add(this._animate, this, PRIO);
       } catch {
-        canvas.app.ticker.add(this.#tick, this);
+        canvas.app.ticker.add(this._animate, this);
       }
       this._ticker = true;
     }
   }
 
-  /**
-   * Tear down the layer.
-   * @returns {Promise<void>}
-   * @protected
-   */
   async _tearDown() {
-    this._tearingDown = true;
-
-    try {
-      if (this.requestRegionMaskRefreshAll?.cancel) this.requestRegionMaskRefreshAll.cancel();
-      if (this.requestRegionMaskRefresh?.cancel) this.requestRegionMaskRefresh.cancel();
-    } catch {}
-
-    if (this._ticker) {
-      try {
-        canvas.app.ticker.remove(this.#tick, this);
-      } catch {}
-      this._ticker = false;
-    }
-
-    this._lastRegionsMatrix = null;
+    if (this.requestRegionMaskRefreshAll?.cancel) this.requestRegionMaskRefreshAll.cancel();
+    if (this.requestRegionMaskRefresh?.cancel) this.requestRegionMaskRefresh.cancel();
 
     this.#destroyEffects();
 
@@ -152,26 +111,12 @@ export class ParticleEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObject
     try {
       this.filters = [];
     } catch {}
-    try {
-      if (this._belowContainer) this._belowContainer.filters = [];
-    } catch {}
-    try {
-      if (this._aboveContent) this._aboveContent.filters = [];
-    } catch {}
     this._belowOccl = null;
     this._aboveOccl = null;
 
-    this._drainRtPool();
-
-    const res = await super._tearDown();
-    this._tearingDown = false;
-    return res;
+    return super._tearDown();
   }
 
-  /**
-   * Destroy all live effects, sprites, and render textures.
-   * @private
-   */
   #destroyEffects() {
     for (const fx of this.particleEffects.values()) {
       try {
@@ -268,56 +213,26 @@ export class ParticleEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObject
       }
     } catch {}
     this._regionMaskRTs.clear?.();
-
-    try {
-      this._drainRtPool();
-    } catch {}
   }
 
-  /**
-   * Internal draw entry for scene effects.
-   * @private
-   * @returns {Promise<void>}
-   */
-  async #draw() {
-    await this.drawParticleEffects();
-  }
-
-  #updateSceneParticlesSuppressionForCamera() {
-    if (!canvas?.scene) return;
-
-    const hasSceneFx = (this.particleEffects && this.particleEffects.size > 0) || canvas.weather?.children?.length > 0;
-
-    if (!hasSceneFx) return;
-
-    const M = snappedStageMatrix(canvas.regions ?? canvas.stage);
-    const last = this._lastSceneMaskMatrix;
-
+  #updateSceneParticlesSuppressionForCamera(M = this._currentCameraMatrix ?? snappedStageMatrix()) {
+    const L = this._lastSceneMaskMatrix;
     const eps = 1e-4;
-    if (
-      last &&
-      Math.abs(M.a - last.a) < eps &&
-      Math.abs(M.b - last.b) < eps &&
-      Math.abs(M.c - last.c) < eps &&
-      Math.abs(M.d - last.d) < eps &&
-      Math.abs(M.tx - last.tx) < eps &&
-      Math.abs(M.ty - last.ty) < eps
-    ) {
-      return;
-    }
+    const changed =
+      !L ||
+      Math.abs(L.a - M.a) > eps ||
+      Math.abs(L.b - M.b) > eps ||
+      Math.abs(L.c - M.c) > eps ||
+      Math.abs(L.d - M.d) > eps ||
+      Math.abs(L.tx - M.tx) > eps ||
+      Math.abs(L.ty - M.ty) > eps;
+
+    if (!changed) return;
 
     this._lastSceneMaskMatrix = { a: M.a, b: M.b, c: M.c, d: M.d, tx: M.tx, ty: M.ty };
-
-    try {
-      refreshSceneParticlesSuppressionMasks?.();
-    } catch {}
+    refreshSceneParticlesSuppressionMasks();
   }
 
-  /**
-   * Reconcile scene flags with live scene-level particle effects.
-   * @param {{soft?: boolean}} [opts]
-   * @returns {Promise<void>}
-   */
   async drawParticleEffects({ soft = false } = {}) {
     if (!canvas.scene) return;
 
@@ -496,12 +411,6 @@ export class ParticleEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObject
     }
   }
 
-  /**
-   * Draw all particle effects for a region and establish a mask per entry.
-   * @param {PlaceableObject} placeable
-   * @param {{soft?: boolean}} [opts]
-   * @returns {Promise<void>}
-   */
   async drawRegionParticleEffects(placeable, { soft = false } = {}) {
     const regionId = placeable.id;
     this._ensureSceneContainers();
@@ -535,9 +444,9 @@ export class ParticleEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObject
     const behaviors = (placeable?.document?.behaviors || []).filter((b) => b.type === TYPE && !b.disabled);
     if (!behaviors.length) return;
 
-    const { deviceRect } = getCssViewportMetrics();
-    const VW = deviceRect.width | 0;
-    const VH = deviceRect.height | 0;
+    const { cssW, cssH } = getCssViewportMetrics();
+    const VW = cssW | 0;
+    const VH = cssH | 0;
 
     for (const behavior of behaviors) {
       const defs = behavior.getFlag(packageId, "particleEffects") || {};
@@ -596,9 +505,6 @@ export class ParticleEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObject
     this._updateOcclusionGates();
   }
 
-  /**
-   * Rebuild region masks for all active regions.
-   */
   forceRegionMaskRefreshAll() {
     if (!this.regionEffects.size) return;
     for (const [regionId] of this.regionEffects.entries()) {
@@ -607,47 +513,22 @@ export class ParticleEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObject
     }
   }
 
-  /**
-   * Rebuild region mask for a specific region.
-   * @param {string} regionId
-   */
   forceRegionMaskRefresh(regionId) {
     const placeable = canvas.regions?.get(regionId);
     if (!placeable) return;
     this._rebuildRegionMaskFor(placeable);
   }
 
-  /**
-   * Schedule a single-region mask refresh on the next animation frame.
-   * @param {string} regionId
-   */
   requestRegionMaskRefresh(regionId) {
-    this._coalescedRegionRefresh ??= coalesceNextFrame(
-      function (rid) {
-        this.forceRegionMaskRefresh(rid);
-      },
-      { key: this },
-    );
+    this._coalescedRegionRefresh ??= coalesceNextFrame((rid) => this.forceRegionMaskRefresh(rid), { key: this });
     this._coalescedRegionRefresh(regionId);
   }
 
-  /**
-   * Schedule a full mask refresh on the next animation frame.
-   */
   requestRegionMaskRefreshAll() {
-    this._coalescedRefreshAll ??= coalesceNextFrame(
-      function () {
-        this.forceRegionMaskRefreshAll();
-      },
-      { key: this },
-    );
+    this._coalescedRefreshAll ??= coalesceNextFrame(() => this.forceRegionMaskRefreshAll(), { key: this });
     this._coalescedRefreshAll();
   }
 
-  /**
-   * Destroy all particle-effect entries for a region and release its RTs.
-   * @param {string} regionId
-   */
   destroyRegionParticleEffects(regionId) {
     const entries = this.regionEffects.get(regionId) || [];
     for (const entry of entries) {
@@ -691,10 +572,6 @@ export class ParticleEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObject
     }
   }
 
-  /**
-   * Initialize the layer-level inverse occlusion filter.
-   * @private
-   */
   #initializeInverseOcclusionFilter() {
     this.occlusionFilter = CONFIG.fxmaster.WeatherOcclusionMaskFilterNS.create({
       occlusionTexture: canvas.masks.depth.renderTexture,
@@ -706,9 +583,6 @@ export class ParticleEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObject
     this.filters = [this.occlusionFilter];
   }
 
-  /**
-   * Apply the scene mask to the above-darkness host.
-   */
   refreshAboveSceneMask() {
     if (!this._aboveContent) return;
     const sceneMask = canvas?.masks?.scene || null;
@@ -723,10 +597,6 @@ export class ParticleEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObject
     this._aboveMaskGfx = null;
   }
 
-  /**
-   * Ensure scene-level host containers exist and carry occlusion filters.
-   * @private
-   */
   _ensureSceneContainers() {
     if (!this._belowContainer || this._belowContainer.destroyed) {
       this._belowContainer = new PIXI.Container();
@@ -800,19 +670,14 @@ export class ParticleEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObject
     this._updateOcclusionGates();
   }
 
-  /**
-   * Rebuild the mask RT and sprite for a single region to match the current view.
-   * @param {PlaceableObject} placeable
-   * @private
-   */
   _rebuildRegionMaskFor(placeable) {
     const regionId = placeable.id;
     const entries = this.regionEffects.get(regionId);
     if (!entries?.length) return;
 
-    const { deviceRect } = getCssViewportMetrics();
-    const VW = deviceRect.width | 0;
-    const VH = deviceRect.height | 0;
+    const { cssW, cssH } = getCssViewportMetrics();
+    const VW = cssW | 0;
+    const VH = cssH | 0;
 
     const newBase = buildRegionMaskRT(placeable, { rtPool: this._rtPool });
     let shared = this._regionMaskRTs.get(regionId) || { base: null, cutout: null };
@@ -846,9 +711,14 @@ export class ParticleEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObject
       const want = entry?.fx?.__fxmBelowTokens && shared.cutout ? shared.cutout : shared.base;
       spr.texture = safeMaskTexture(want);
 
-      spr.width = VW;
-      spr.height = VH;
-      applyMaskSpriteTransform(cont, spr);
+      if (!spr._texture) continue;
+      try {
+        spr.width = VW;
+        spr.height = VH;
+      } catch {}
+      try {
+        applyMaskSpriteTransform(cont, spr);
+      } catch {}
       if (cont.mask !== spr) {
         try {
           cont.mask = spr;
@@ -859,44 +729,19 @@ export class ParticleEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObject
     if (oldBase && oldBase !== newBase) this._releaseRT(oldBase);
   }
 
-  /**
-   * Per-frame watcher driving mask rebuilds and elevation gating.
-   * @private
-   */
-  #tick() {
-    if (this._tearingDown) return;
+  _animate() {
+    super._animate();
 
-    this.#updateSceneParticlesSuppressionForCamera();
+    this._sanitizeSceneMasks();
 
     if (this.regionEffects.size === 0) return;
 
-    const r = canvas?.app?.renderer;
-    if (r) {
-      const w = r.view?.width | 0 || r.screen?.width | 0 || 1;
-      const h = r.view?.height | 0 || r.screen?.height | 0 || 1;
-      if (w !== this._lastViewSize.w || h !== this._lastViewSize.h) {
-        this._lastViewSize = { w, h };
-        this.forceRegionMaskRefreshAll();
-      }
-    }
-
-    const Msnap = snappedStageMatrix();
-    if (Msnap) {
-      const M = { a: Msnap.a, b: Msnap.b, c: Msnap.c, d: Msnap.d, tx: Msnap.tx, ty: Msnap.ty };
-      const L = this._lastRegionsMatrix;
-      const eps = 1e-4;
-      const changed =
-        !L ||
-        Math.abs(L.a - M.a) > eps ||
-        Math.abs(L.b - M.b) > eps ||
-        Math.abs(L.c - M.c) > eps ||
-        Math.abs(L.d - M.d) > eps ||
-        Math.abs(L.tx - M.tx) > eps ||
-        Math.abs(L.ty - M.ty) > eps;
-      if (changed) {
-        this.forceRegionMaskRefreshAll();
-        this._lastRegionsMatrix = M;
-      }
+    const { deviceRect } = getCssViewportMetrics();
+    const w = deviceRect.width | 0;
+    const h = deviceRect.height | 0;
+    if (w !== this._lastViewSize.w || h !== this._lastViewSize.h) {
+      this._lastViewSize = { w, h };
+      this.forceRegionMaskRefreshAll();
     }
 
     this._sanitizeRegionMasks();
@@ -909,9 +754,6 @@ export class ParticleEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObject
     } catch {}
   }
 
-  /**
-   * Re-apply the elevation gate for all active regions.
-   */
   applyElevationGateForAll() {
     try {
       for (const [regionId] of this.regionEffects) {
@@ -921,12 +763,6 @@ export class ParticleEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObject
     } catch {}
   }
 
-  /**
-   * Apply elevation/visibility gate to region entries.
-   * @param {PlaceableObject} placeable
-   * @param {{force?: boolean}} [opts]
-   * @private
-   */
   _applyElevationGate(placeable, { force = false } = {}) {
     const entries = this.regionEffects.get(placeable.id) || [];
     if (!entries.length) return;
@@ -959,10 +795,6 @@ export class ParticleEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObject
     this._gatePassCache.set(placeable.id, pass);
   }
 
-  /**
-   * Enable or disable occlusion filters based on current content.
-   * @private
-   */
   _updateOcclusionGates() {
     const hasBelow =
       !!this._belowContainer && !this._belowContainer.destroyed && this._belowContainer.children?.length > 0;
@@ -984,11 +816,6 @@ export class ParticleEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObject
     }
   }
 
-  /**
-   * Detect if any region FX container is mounted directly under this layer.
-   * @returns {boolean}
-   * @private
-   */
   _hasRegionDefaultFX() {
     for (const entries of this.regionEffects.values()) {
       for (const e of entries) if (e?.container?.parent === this) return true;
@@ -996,15 +823,10 @@ export class ParticleEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObject
     return false;
   }
 
-  /**
-   * Sanitize all region mask sprites to ensure valid textures and transforms.
-   * @private
-   */
   _sanitizeRegionMasks() {
     if (!this.regionEffects.size) return;
-    const { deviceRect } = getCssViewportMetrics();
-    const VW = deviceRect.width | 0;
-    const VH = deviceRect.height | 0;
+
+    const { cssW, cssH } = getCssViewportMetrics();
 
     for (const [regionId, entries] of this.regionEffects.entries()) {
       const shared = this._regionMaskRTs.get(regionId);
@@ -1014,41 +836,112 @@ export class ParticleEffectsRegionLayer extends CONFIG.fxmaster.FullCanvasObject
         if (!spr || spr.destroyed || !cont || cont.destroyed) continue;
 
         const want = entry?.fx?.__fxmBelowTokens ? shared?.cutout || shared?.base || null : shared?.base || null;
+
         spr.texture = safeMaskTexture(want);
-        spr.width = VW;
-        spr.height = VH;
-        applyMaskSpriteTransform(cont, spr);
-        if (cont.mask !== spr) cont.mask = spr;
+        if (!spr._texture || !spr._texture.orig) {
+          try {
+            spr.texture = safeMaskTexture(null);
+          } catch {}
+        }
+        if (!spr._texture || !spr._texture.orig) continue;
+        try {
+          spr.width = cssW;
+          spr.height = cssH;
+        } catch {}
+        try {
+          applyMaskSpriteTransform(cont, spr);
+        } catch {}
+        if (cont.mask !== spr) {
+          try {
+            cont.mask = spr;
+          } catch {}
+        }
       }
     }
   }
 
   /**
-   * Acquire a pooled RenderTexture.
-   * @param {number} w
-   * @param {number} h
-   * @param {number} res
-   * @returns {PIXI.RenderTexture}
-   * @private
+   * Keep scene-level particle suppression masks in sync with the current camera
+   * and viewport size, similar to _sanitizeRegionMasks but for scene FX.
    */
-  _acquireRT(w, h, res) {
-    return this._rtPool.acquire(w, h, res);
+  _sanitizeSceneMasks() {
+    const hasSceneFx =
+      (this.particleEffects && this.particleEffects.size > 0) ||
+      (this._dyingSceneEffects && this._dyingSceneEffects.size > 0);
+
+    const hasSceneContainers =
+      (!!this._belowContainer && !this._belowContainer.destroyed) ||
+      (!!this._aboveContent && !this._aboveContent.destroyed);
+
+    if (!hasSceneFx && !hasSceneContainers) return;
+
+    const { cssW, cssH } = getCssViewportMetrics();
+
+    const updateSprite = (node, spr) => {
+      if (!spr || spr.destroyed || !node || node.destroyed) return;
+
+      if (!spr.texture) {
+        try {
+          spr.texture = safeMaskTexture(null);
+        } catch {}
+      }
+
+      if (!spr._texture || !spr._texture.orig) {
+        try {
+          spr.texture = safeMaskTexture(null);
+        } catch {}
+      }
+
+      if (!spr._texture || !spr._texture.orig) return;
+
+      spr.width = cssW;
+      spr.height = cssH;
+
+      try {
+        applyMaskSpriteTransform(node, spr);
+      } catch {}
+
+      if (node.mask !== spr) {
+        try {
+          node.mask = spr;
+        } catch {}
+      }
+    };
+
+    if (this.particleEffects && this.particleEffects.size) {
+      for (const fx of this.particleEffects.values()) {
+        const spr = fx?._fxmSceneParticlesMaskSprite || null;
+        if (spr) updateSprite(fx, spr);
+      }
+    }
+
+    if (this._dyingSceneEffects && this._dyingSceneEffects.size) {
+      for (const fx of this._dyingSceneEffects) {
+        const spr = fx?._fxmSceneParticlesMaskSprite || null;
+        if (spr) updateSprite(fx, spr);
+      }
+    }
+
+    const updateContainerMask = (cont) => {
+      if (!cont || cont.destroyed) return;
+
+      const spr =
+        cont.children?.find?.(
+          (c) => c && !c.destroyed && c.name === "fxmSceneParticlesMaskSprite" && c instanceof PIXI.Sprite,
+        ) || null;
+
+      if (spr) updateSprite(cont, spr);
+    };
+
+    updateContainerMask(this._belowContainer);
+    updateContainerMask(this._aboveContent);
   }
 
-  /**
-   * Release a RenderTexture back to the pool.
-   * @param {PIXI.RenderTexture} rt
-   * @private
-   */
-  _releaseRT(rt) {
-    return this._rtPool.release(rt);
-  }
+  _onCameraChange() {
+    if (!canvas?.scene) return;
 
-  /**
-   * Drain the RT pool.
-   * @private
-   */
-  _drainRtPool() {
-    return this._rtPool.drain();
+    this.#updateSceneParticlesSuppressionForCamera(this._currentCameraMatrix);
+
+    if (this.regionEffects?.size) this.requestRegionMaskRefreshAll();
   }
 }

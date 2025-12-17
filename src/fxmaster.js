@@ -4,19 +4,20 @@ import { FXMASTER } from "./config.js";
 import { registerHandlebarsHelpers } from "./handlebars-helpers.js";
 import { registerGetSceneControlButtonsHook } from "./controls.js";
 import { packageId } from "./constants.js";
-import { ParticleEffectsRegionLayer } from "./particle-effects/particle-effects-region-layer.js";
+import { ParticleEffectsLayer } from "./particle-effects/particle-effects-layer.js";
 import { ParticleRegionBehaviorType } from "./particle-effects/particle-effects-region-behavior.js";
 import { DefaultRectangleSpawnMixin } from "./particle-effects/effects/mixins/default-rectangle-spawn.js";
 import { FXMasterParticleEffect } from "./particle-effects/effects/effect.js";
 import { SuppressSceneParticlesBehaviorType } from "./particle-effects/suppress-scene-particles-region-behavior.js";
 import { FilterEffectsSceneManager } from "./filter-effects/filter-effects-scene-manager.js";
-import { FilterEffectsRegionLayer } from "./filter-effects/filter-effects-region-layer.js";
+import { FilterEffectsLayer } from "./filter-effects/filter-effects-layer.js";
 import { FilterRegionBehaviorType } from "./filter-effects/filter-effects-region-behavior.js";
 import { FXMasterFilterEffectMixin } from "./filter-effects/filters/mixins/filter.js";
 import { SuppressSceneFiltersBehaviorType } from "./filter-effects/suppress-scene-filters-region-behavior.js";
 import customVertex2D from "./filter-effects/filters/shaders/custom-vertex-2d.vert";
 import { SpecialEffectsLayer } from "./special-effects/special-effects-layer.js";
 import { regionWorldBoundsAligned, regionWorldBounds, rectFromAligned } from "./utils.js";
+import { FXMasterBaseFormV2 } from "./base-form.js";
 import "../css/filters-config.css";
 import "../css/particle-effects-config.css";
 import "../css/specials-config.css";
@@ -24,6 +25,7 @@ import "../css/common.css";
 
 CONFIG.fxmaster = CONFIG.fxmaster || {};
 CONFIG.fxmaster.FXMasterParticleEffect = FXMasterParticleEffect;
+CONFIG.fxmaster.FXMasterBaseFormV2 = FXMasterBaseFormV2;
 CONFIG.fxmaster.DefaultRectangleSpawnMixin = DefaultRectangleSpawnMixin;
 CONFIG.fxmaster.customVertex2D = customVertex2D;
 CONFIG.fxmaster.FXMasterFilterEffectMixin = FXMasterFilterEffectMixin;
@@ -36,9 +38,9 @@ window.FXMASTER = {
 };
 
 function registerLayers() {
-  CONFIG.Canvas.layers.particleeffects = { layerClass: ParticleEffectsRegionLayer, group: "primary" };
+  CONFIG.Canvas.layers.particleeffects = { layerClass: ParticleEffectsLayer, group: "primary" };
   CONFIG.Canvas.layers.specials = { layerClass: SpecialEffectsLayer, group: "interface" };
-  CONFIG.Canvas.layers.filtereffects = { layerClass: FilterEffectsRegionLayer, group: "primary" };
+  CONFIG.Canvas.layers.filtereffects = { layerClass: FilterEffectsLayer, group: "primary" };
 }
 
 Hooks.once("init", function () {
@@ -47,7 +49,7 @@ Hooks.once("init", function () {
   registerLayers();
   registerHandlebarsHelpers();
 
-  const TYPE = `${packageId}.particleEffectsRegion`;
+  const PARTICLE_TYPE = `${packageId}.particleEffectsRegion`;
   const FILTER_TYPE = `${packageId}.filterEffectsRegion`;
   const SUPPRESS_SCENE_FILTERS = `${packageId}.suppressSceneFilters`;
   const SUPPRESS_SCENE_PARTICLES = `${packageId}.suppressSceneParticles`;
@@ -74,9 +76,9 @@ Hooks.once("init", function () {
 
   CONFIG.originalWeatherEffects = CONFIG.weatherEffects;
   CONFIG.weatherEffects = { ...CONFIG.weatherEffects, ...weatherEffects };
-  CONFIG.RegionBehavior.dataModels[TYPE] = ParticleRegionBehaviorType;
-  CONFIG.RegionBehavior.typeIcons[TYPE] = "fas fa-hat-wizard";
-  CONFIG.RegionBehavior.typeLabels[TYPE] = "FXMASTER.Regions.BehaviorNames.ParticleEffectRegionBehaviorName";
+  CONFIG.RegionBehavior.dataModels[PARTICLE_TYPE] = ParticleRegionBehaviorType;
+  CONFIG.RegionBehavior.typeIcons[PARTICLE_TYPE] = "fas fa-hat-wizard";
+  CONFIG.RegionBehavior.typeLabels[PARTICLE_TYPE] = "FXMASTER.Regions.BehaviorNames.ParticleEffectRegionBehaviorName";
   CONFIG.RegionBehavior.dataModels[FILTER_TYPE] = FilterRegionBehaviorType;
   CONFIG.RegionBehavior.typeIcons[FILTER_TYPE] = "fas fa-filter";
   CONFIG.RegionBehavior.typeLabels[FILTER_TYPE] = "FXMASTER.Regions.BehaviorNames.FilterEffectRegionBehaviorName";

@@ -105,6 +105,63 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
     return Object.fromEntries(Object.entries(this.parameters).map(([name, cfg]) => [name, cfg.value]));
   }
 
+  /**
+   * Global density scalar applied on top of user density and performance mode.
+   * Subclasses may override to make their effect globally denser or sparser.
+   */
+  static get densityScalar() {
+    return 0.25;
+  }
+
+  /**
+   * Compute a density scale factor from Foundry's canvas Performance Mode.
+   * MAX = 1.0, HIGH = 0.75, MED = 0.5, LOW = 0.25
+   * Falls back to 1.0 if the setting or CONST are unavailable.
+   */
+  static getPerformanceDensityScale() {
+    let scale = 1.0;
+
+    try {
+      const mode = game.settings.get("core", "performanceMode");
+      const PM = globalThis.CONST?.CANVAS_PERFORMANCE_MODES;
+
+      if (PM && typeof mode === "number") {
+        switch (mode) {
+          case PM.LOW:
+            scale = 0.25;
+            break;
+          case PM.MED:
+            scale = 0.5;
+            break;
+          case PM.HIGH:
+            scale = 0.75;
+            break;
+          case PM.MAX:
+            scale = 1.0;
+            break;
+          default:
+            scale = 1.0;
+            break;
+        }
+      }
+    } catch {
+      scale = 1.0;
+    }
+
+    return scale;
+  }
+
+  /**
+   * Convenience helper: take a base density (e.g. from options.density.value)
+   * and apply both performance-mode scaling and the class's densityScalar.
+   * @param {number} baseDensity
+   * @returns {number}
+   */
+  static getScaledDensity(baseDensity) {
+    const perfScale = this.getPerformanceDensityScale();
+    return (Number(baseDensity) || 0) * perfScale * this.densityScalar;
+  }
+
   /** Apply user options onto a mutable emitter config. */
   applyOptionsToConfig(options, config) {
     this._applyScaleToConfig(options, config);
@@ -355,5 +412,18 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
     const gridUnits = (d.width / d.size) * (d.height / d.size);
     const decimals = this.parameters.density?.decimals ?? 1;
     return roundToDecimals(density / gridUnits, decimals);
+  }
+
+  static computeMaxParticlesFromView(options = {}, { minViewCells = 3000 } = {}) {
+    const d = canvas.dimensions;
+    const rawViewCells = (d.width / d.size) * (d.height / d.size);
+    const viewCells = Math.max(1, Math.max(rawViewCells, minViewCells));
+
+    const baseDensity = options.density?.value ?? this.parameters?.density?.value ?? 0;
+    const density = this.getScaledDensity(baseDensity);
+
+    const maxParticles = Math.max(1, Math.round(viewCells * density));
+
+    return { viewCells, density, maxParticles };
   }
 }

@@ -21,31 +21,20 @@ export class FogFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   constructor(options = {}, id) {
     super(options, id, customVertex2D, fragment);
 
-    const r = canvas?.app?.renderer;
-    if (r) {
-      try {
-        this.filterArea = new PIXI.Rectangle(0, 0, r.screen.width | 0, r.screen.height | 0);
-      } catch {}
-    }
-
     const u = (this.uniforms ??= {});
-    // Standard mask & strength (fade-out on removal)
     this.initMaskUniforms(u, { withStrength: true, strengthDefault: 1.0 });
     this.initFadeUniforms(u);
     this.initRegionFadeUniforms(u, { maxEdges: MAX_EDGES });
 
-    // Pipeline state (used by shader math)
     this.ensureVec4Uniform("srcFrame", [0, 0, 1, 1]);
     this.ensureVec2Uniform("camFrac", [0, 0]);
     u.viewSize = u.viewSize instanceof Float32Array ? u.viewSize : new Float32Array([1, 1]);
 
-    // Fog parameters
     u.time = typeof u.time === "number" ? u.time : 0.0;
     u.density = typeof u.density === "number" ? u.density : 0.65;
     u.dimensions = u.dimensions instanceof Float32Array ? u.dimensions : new Float32Array([1.0, 1.0]);
     u.color = u.color instanceof Float32Array ? u.color : new Float32Array([0, 0, 0]);
 
-    // Internal speed scalar
     this._speed = typeof this._speed === "number" ? this._speed : 1.0;
 
     this.configure(options);
@@ -76,7 +65,7 @@ export class FogFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
         max: 5,
         min: 0,
         step: 0.1,
-        value: 1,
+        value: 0.1,
         skipInitialAnimation: true,
       },
       speed: {
@@ -85,16 +74,16 @@ export class FogFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
         max: 5,
         min: 0,
         step: 0.1,
-        value: 1,
+        value: 0.5,
         skipInitialAnimation: true,
       },
       density: {
-        label: "FXMASTER.Params.Density",
+        label: "FXMASTER.Params.Opacity",
         type: "range",
         max: 1,
         min: 0,
         step: 0.05,
-        value: 0.65,
+        value: 0.5,
         skipInitialAnimation: true,
       },
     };

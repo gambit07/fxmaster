@@ -1,5 +1,6 @@
 import { FXMasterParticleEffect } from "./effect.js";
 import { withSteppedGradientColor } from "./helpers/with-stepped-gradient-color.js";
+
 /**
  * A full-screen particle effect which renders drifting stars.
  */
@@ -108,18 +109,35 @@ export class StarsParticleEffect extends FXMasterParticleEffect {
   /** @override */
   getParticleEmitters(options = {}) {
     options = this.constructor.mergeWithDefaults(options);
+
     const d = canvas.dimensions;
-    const maxParticles = (d.width / d.size) * (d.height / d.size) * options.density.value;
+
+    const { maxParticles } = this.constructor.computeMaxParticlesFromView(options, {
+      minViewCells: this.constructor.MIN_VIEW_CELLS ?? 3000,
+    });
+
     const config = foundry.utils.deepClone(this.constructor.STARS_CONFIG);
     config.maxParticles = maxParticles;
-    config.frequency = config.lifetime.min / maxParticles;
+
+    const lifetime = config.lifetime ?? 1;
+    const lifetimeMin = typeof lifetime === "number" ? lifetime : lifetime.min ?? lifetime.max ?? 1;
+    config.frequency = lifetimeMin / maxParticles;
+
+    config.behaviors ??= [];
+
     config.behaviors.push({
       type: "spawnShape",
       config: {
         type: "rect",
-        data: { x: d.sceneRect.x, y: d.sceneRect.y, w: d.sceneRect.width, h: d.sceneRect.height },
+        data: {
+          x: d.sceneRect.x,
+          y: d.sceneRect.y,
+          w: d.sceneRect.width,
+          h: d.sceneRect.height,
+        },
       },
     });
+
     this.applyOptionsToConfig(options, config);
 
     const emitter = withSteppedGradientColor(this.createEmitter(config), config);

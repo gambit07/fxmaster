@@ -11,3 +11,4 @@ CONFIG.fxmaster.DrawingNS = foundry.canvas?.placeables?.Drawing ?? Drawing;
 CONFIG.fxmaster.WeatherOcclusionMaskFilterNS = foundry.canvas?.rendering?.filters?.WeatherOcclusionMaskFilter ?? WeatherOcclusionMaskFilter;
 CONFIG.fxmaster.PrimaryCanvasGroupNS = foundry.canvas?.groups?.PrimaryCanvasGroup ?? PrimaryCanvasGroup;
 CONFIG.fxmaster.ImagePopoutNS = foundry.applications?.apps?.ImagePopout ?? ImagePopout;
+CONFIG.fxmaster.PrimarySpriteMeshNS = foundry.canvas?.primary?.PrimarySpriteMesh ?? PrimarySpriteMesh;

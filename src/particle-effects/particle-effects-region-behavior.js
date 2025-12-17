@@ -175,7 +175,6 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
 
     let changedAny = false;
 
-    // Persist particle effects (create/update/delete)
     const prevFX = this.parent.getFlag(packageId, "particleEffects") ?? {};
     const diff1 = foundry.utils.diffObject(prevFX, nextFX);
     const diff2 = foundry.utils.diffObject(nextFX, prevFX);
@@ -185,7 +184,6 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
       changedAny = true;
     }
 
-    // Elevation: always-visible GM override
     const gmAlwaysVisible = !!system._elev_gmAlwaysVisible;
     const prevGM = !!this.parent.getFlag(packageId, "gmAlwaysVisible");
     if (gmAlwaysVisible !== prevGM) {
@@ -194,7 +192,6 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
       changedAny = true;
     }
 
-    // Elevation: gate mode (none | pov | targets)
     const gateMode = system._elev_gateMode ?? "none";
     const prevGate = this.parent.getFlag(packageId, "gateMode") ?? "none";
     if (gateMode !== prevGate) {
@@ -203,7 +200,6 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
       changedAny = true;
     }
 
-    // Elevation: token targets (when gateMode === "targets")
     if (gateMode === "targets") {
       const targetsSet = system._elev_tokenTargets ?? new Set();
       const nextTargets = Array.from(targetsSet ?? []);

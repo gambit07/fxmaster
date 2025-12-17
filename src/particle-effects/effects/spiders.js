@@ -18,6 +18,12 @@ export class SpiderParticleEffect extends DefaultRectangleSpawnMixin(FXMasterPar
     return "animals";
   }
 
+  static get densityScalar() {
+    return 0.5;
+  }
+
+  static MIN_VIEW_CELLS = 15000;
+
   /** @override */
   static get parameters() {
     return foundry.utils.mergeObject(

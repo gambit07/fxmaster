@@ -23,20 +23,29 @@ export function registerHandlebarsHelpers() {
 
     switch (parameterConfig.type) {
       case "color": {
-        const colorValue = typeof _default === "object" ? _default.value : "#000000";
+        let colorValue = typeof _default === "object" ? _default.value : _default;
+        if (typeof colorValue !== "string") colorValue = "#000000";
+        if (/^[0-9a-f]{6,8}$/i.test(colorValue)) colorValue = `#${colorValue}`;
+        if (!/^#[0-9a-f]{6,8}$/i.test(colorValue)) colorValue = "#000000";
+
         const applyChecked = _default?.apply ? "checked" : "";
         const applyName = `${nameBase}_apply`;
         const applyId = `${safeId(applyName)}_switch`;
+
+        const hasColorPickerEl = !!globalThis.customElements?.get?.("color-picker");
+        const pickerHTML = hasColorPickerEl
+          ? `<color-picker name="${nameBase}" value="${colorValue}" data-action="updateParam"></color-picker>`
+          : `<input type="text" name="${nameBase}" value="${colorValue}" data-action="updateParam" />`;
 
         return `
           <div class="fxmaster-input-color"${tipAttrs}>
             <label class="fxm-switch">
               <input id="${applyId}" type="checkbox"
-                     name="${applyName}" ${applyChecked} data-action="updateParam"
-                     aria-label="${parameterConfig.label ?? "Apply"}" />
+                    name="${applyName}" ${applyChecked} data-action="updateParam"
+                    aria-label="${parameterConfig.label ?? "Apply"}" />
               <span class="fxm-slider" aria-hidden="true"></span>
             </label>
-            <input type="color" name="${nameBase}" value="${colorValue}" data-action="updateParam" />
+            ${pickerHTML}
           </div>
         `;
       }

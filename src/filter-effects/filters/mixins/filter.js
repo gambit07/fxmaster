@@ -1,19 +1,20 @@
+import { snappedStageMatrix, getCssViewportMetrics, mat3FromPixi, safeResolutionForCssArea } from "../../../utils.js";
+
 /**
  * FXMasterFilterEffectMixin
  * -------------------------
  * Provides option plumbing, viewport locking, mask helpers, and lifecycle.
- * `applyWithLock()` clamps `this.resolution` so the pass never exceeds gl.MAX_TEXTURE_SIZE along either edge.
+ * Automatically injects `uCssToWorld` uniform to lock patterns to the stage.
  */
 
 export const normalize = (opts) => {
   const out = {};
   if (!opts || typeof opts !== "object") return out;
+
   for (const [k, v] of Object.entries(opts)) {
     if (v && typeof v === "object" && "value" in v && Object.keys(v).length <= 2) {
-      out[k] = v.value;
-      if (k === "color" && typeof v.apply === "boolean") {
-        out.color = { value: v.value, apply: v.apply };
-      }
+      if (typeof v.apply === "boolean") out[k] = { value: v.value, apply: v.apply };
+      else out[k] = v.value;
     } else {
       out[k] = v;
     }
@@ -30,11 +31,11 @@ export function FXMasterFilterEffectMixin(Base) {
 
       try {
         const r = canvas?.app?.renderer;
-        if (r) {
-          this.resolution = r.resolution || 1;
-          this.filterArea = new PIXI.Rectangle(0, 0, r.screen.width | 0, r.screen.height | 0);
-        }
-      } catch {}
+        this.resolution = r?.resolution || 1;
+        this.filterArea = new PIXI.Rectangle(0, 0, 1, 1);
+      } catch {
+        this.filterArea = new PIXI.Rectangle(0, 0, 1, 1);
+      }
       this.autoFit = false;
       this.padding = 0;
 
@@ -107,76 +108,63 @@ export function FXMasterFilterEffectMixin(Base) {
 
     async step() {}
 
+    /**
+     * Lock viewport logic.
+     * Projects the SceneRect (World) into Screen Space and intersects with the Viewport.
+     * Uses strict clamping to prevent invalid Framebuffer sizes on extreme zoom.
+     */
     lockViewport(opts = {}) {
-      const { area = "sceneRect", setSrcFrame = true, setCamFrac = true, setDeviceToCss = true } = opts;
+      const { setCamFrac = true, setDeviceToCss = true } = opts;
 
       const r = canvas?.app?.renderer;
       if (!r) return;
 
-      const sw = r.screen?.width | 0 || 1;
-      const sh = r.screen?.height | 0 || 1;
+      const { cssW, cssH } = getCssViewportMetrics();
+      const viewportWidth = cssW;
+      const viewportHeight = cssH;
 
-      let fx = 0,
-        fy = 0,
-        fw = sw,
-        fh = sh;
-      if (area === "sceneRect") {
-        try {
-          const rect = canvas?.scene?.dimensions?.sceneRect;
-          if (rect) {
-            const rx0 = rect.x | 0,
-              ry0 = rect.y | 0;
-            const rx1 = (rect.x + rect.width) | 0;
-            const ry1 = (rect.y + rect.height) | 0;
-            const ix0 = Math.max(0, rx0),
-              iy0 = Math.max(0, ry0);
-            const ix1 = Math.min(sw, rx1),
-              iy1 = Math.min(sh, ry1);
-            fx = Math.max(0, ix0);
-            fy = Math.max(0, iy0);
-            fw = Math.max(0, ix1 - ix0);
-            fh = Math.max(0, iy1 - iy0);
-            if (fw === 0 || fh === 0) {
-              fx = 0;
-              fy = 0;
-              fw = sw;
-              fh = sh;
-            }
-          }
-        } catch {}
-      }
+      const sw = Math.max(1, viewportWidth | 0);
+      const sh = Math.max(1, viewportHeight | 0);
+
+      let fx = 0;
+      let fy = 0;
+      let fw = sw;
+      let fh = sh;
+
+      fx = Math.floor(fx);
+      fy = Math.floor(fy);
+      fw = Math.max(1, Math.ceil(fw));
+      fh = Math.max(1, Math.ceil(fh));
 
       try {
-        this.filterArea = new PIXI.Rectangle(fx, fy, fw, fh);
+        if (!(this.filterArea instanceof PIXI.Rectangle)) this.filterArea = new PIXI.Rectangle();
+        this.filterArea.x = fx;
+        this.filterArea.y = fy;
+        this.filterArea.width = fw;
+        this.filterArea.height = fh;
       } catch {}
+
       this.autoFit = false;
       this.padding = 0;
 
-      const u = this.uniforms || {};
-
-      if (setSrcFrame && "srcFrame" in u) {
-        u.srcFrame =
-          u.srcFrame instanceof Float32Array
-            ? (u.srcFrame.set([0, 0, sw, sh]), u.srcFrame)
-            : new Float32Array([0, 0, sw, sh]);
-      }
-
-      if (setCamFrac && "camFrac" in u) {
-        const r = canvas?.app?.renderer;
-        const res = r?.resolution || window.devicePixelRatio || 1;
-        const M = canvas?.stage?.worldTransform;
-
-        const fxFrac = M ? (M.tx * res - Math.round(M.tx * res)) / res : 0;
-        const fyFrac = M ? (M.ty * res - Math.round(M.ty * res)) / res : 0;
-        u.camFrac =
-          u.camFrac instanceof Float32Array
-            ? (u.camFrac.set([fxFrac, fyFrac]), u.camFrac)
-            : new Float32Array([fxFrac, fyFrac]);
-      }
+      const u = (this.uniforms ??= {});
 
       if (setDeviceToCss && "deviceToCss" in u) {
-        const v = 1 / (r.resolution || window.devicePixelRatio || 1);
-        if (!(typeof u.deviceToCss === "number" && u.deviceToCss > 0)) u.deviceToCss = v;
+        const v = 1 / (r.resolution || 1);
+        u.deviceToCss = v;
+      }
+
+      if (setCamFrac && "camFrac" in u && canvas?.stage?.transform) {
+        const stageM = canvas.stage.worldTransform;
+        const Msnap = snappedStageMatrix();
+
+        const dx = stageM.tx - Msnap.tx;
+        const dy = stageM.ty - Msnap.ty;
+
+        const arr = u.camFrac instanceof Float32Array && u.camFrac.length >= 2 ? u.camFrac : new Float32Array(2);
+        arr[0] = dx;
+        arr[1] = dy;
+        u.camFrac = arr;
       }
     }
 
@@ -229,7 +217,6 @@ export function FXMasterFilterEffectMixin(Base) {
       this.updateOutputFrame(filterSystem);
     }
 
-    /** FINAL GUARD: clamp this.resolution before delegating to Pixi.Filter.apply */
     applyWithLock(
       filterSystem,
       input,
@@ -240,18 +227,19 @@ export function FXMasterFilterEffectMixin(Base) {
     ) {
       this.lockAndSync(filterSystem, currentState, lockOpts);
 
+      if (this.uniforms && "uCssToWorld" in this.uniforms) {
+        const M = (canvas.stage?.worldTransform ?? PIXI.Matrix.IDENTITY).clone().invert();
+        this.uniforms.uCssToWorld = mat3FromPixi(M);
+      }
+
       try {
         const r = canvas?.app?.renderer;
-        const gl = r?.gl;
-        const max = gl?.getParameter?.(gl.MAX_TEXTURE_SIZE) || 8192;
 
         const area = this.filterArea instanceof PIXI.Rectangle ? this.filterArea : r?.screen ?? { width: 1, height: 1 };
         const wCSS = Math.max(1, area.width | 0);
         const hCSS = Math.max(1, area.height | 0);
 
-        const base = r?.resolution || window.devicePixelRatio || 1;
-        const safe = Math.max(0.5, Math.min(base, max / Math.max(wCSS, hCSS)));
-
+        const safe = safeResolutionForCssArea(wCSS, hCSS);
         if (!Number.isFinite(this.resolution) || this.resolution > safe || this.resolution <= 0) {
           this.resolution = safe;
         }
@@ -382,7 +370,6 @@ export function FXMasterFilterEffectMixin(Base) {
       super.destroy?.(options);
     }
 
-    /** Cancel any active uniform fade, if present. */
     cancelUniformFade() {
       try {
         this._fadeCancel?.();
@@ -390,10 +377,6 @@ export function FXMasterFilterEffectMixin(Base) {
       this._fadeCancel = null;
     }
 
-    /**
-     * Animate a uniform from its current numeric value to 'to' over durationMs.
-     * Stores a cancel function on this._fadeCancel for cancelUniformFade().
-     */
     _startUniformFade(uniformKey, { to, durationMs, easing, onDone }) {
       const tkr = canvas?.app?.ticker;
       if (!tkr || !this.uniforms) {
@@ -437,21 +420,6 @@ export function FXMasterFilterEffectMixin(Base) {
       };
     }
 
-    /**
-     * Fade a uniform to a target value, then stop the filter with consistent teardown.
-     * Returns a Promise<boolean> that resolves true when fully stopped.
-     *
-     * options:
-     * - uniformKey: string                // which uniform to fade (default "strength")
-     * - durationMs: number                // fade duration in ms (default 3000)
-     * - to: number                        // target uniform value (default 0)
-     * - skipFading: boolean               // if true, jumps to 'to' immediately
-     * - disableOnDone: boolean            // disable filter when done (default true)
-     * - neutralizeMaskOnStop: boolean     // clear mask uniforms when done (default true)
-     * - removeTickersOnStop: boolean      // remove any filter tickers (default true)
-     * - easing: (t)=>t                    // easing function, t in [0,1] (default linear)
-     * - onDone: ()=>void                  // optional hook after stop completes
-     */
     stopWithUniformFade({
       uniformKey = "strength",
       durationMs = 3000,

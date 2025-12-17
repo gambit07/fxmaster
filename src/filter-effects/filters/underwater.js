@@ -25,13 +25,6 @@ export class UnderwaterFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   constructor(options = {}, id) {
     super({}, id, PIXI.Filter.defaultVertex, fragment);
 
-    const r = canvas?.app?.renderer;
-    if (r) {
-      try {
-        this.filterArea = new PIXI.Rectangle(0, 0, r.screen.width | 0, r.screen.height | 0);
-      } catch {}
-    }
-
     const u = (this.uniforms ||= {});
     this.initMaskUniforms(u, { withStrength: true, strengthDefault: 1.0 });
     this.initFadeUniforms(u);
@@ -56,8 +49,8 @@ export class UnderwaterFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
     this._phaseY = 0.0;
     u.mapOffset = u.mapOffset || new Float32Array([u.mapTexel[0] * 0.5, u.mapTexel[1] * 0.5]);
 
-    u.tokenSampler = u.tokenSampler || PIXI.Texture.EMPTY; // NEW
-    u.hasTokenMask = typeof u.hasTokenMask === "number" ? u.hasTokenMask : 0.0; // NEW
+    u.tokenSampler = u.tokenSampler || PIXI.Texture.EMPTY;
+    u.hasTokenMask = typeof u.hasTokenMask === "number" ? u.hasTokenMask : 0.0;
     u.mapWorldPeriod = u.mapWorldPeriod || new Float32Array([1000.0, 1000.0]);
     u.sceneRect = u.sceneRect || new Float32Array([0, 0, 1, 1]);
 

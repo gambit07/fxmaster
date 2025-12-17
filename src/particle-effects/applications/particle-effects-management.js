@@ -98,35 +98,11 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
 
     const content = this.element.querySelector(".window-content");
 
-    this.element.querySelectorAll("input[type=range]").forEach((slider) => {
-      slider.addEventListener(
-        "wheel",
-        (e) => {
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          let wrapper = slider.closest(".fxmaster-particles-group-wrapper");
-          if (!wrapper) wrapper = content;
-          wrapper.scrollTop += e.deltaY;
-        },
-        { passive: false, capture: true },
-      );
-
-      const output = slider.closest(".fxmaster-input-range")?.querySelector("output");
-      if (output) {
-        slider.addEventListener("input", (event) => {
-          output.textContent = slider.value;
-          ParticleEffectsManagement.updateParam.call(this, event, slider);
-        });
-      }
+    this._wireRangeWheelBehavior({
+      getScrollWrapper: (slider) => slider.closest(".fxmaster-particles-group-wrapper") ?? content,
+      onInput: (event, slider) => ParticleEffectsManagement.updateParam.call(this, event, slider),
     });
-
-    this.element.querySelectorAll(".fxmaster-input-color input[type=checkbox]").forEach((cb) => {
-      cb.addEventListener("change", (e) => ParticleEffectsManagement.updateParam.call(this, e, cb));
-    });
-    this.element.querySelectorAll(".fxmaster-input-color input[type=color]").forEach((inp) => {
-      inp.addEventListener("input", (e) => ParticleEffectsManagement.updateParam.call(this, e, inp));
-      inp.addEventListener("change", (e) => ParticleEffectsManagement.updateParam.call(this, e, inp));
-    });
+    this.wireColorInputs(this.element, ParticleEffectsManagement.updateParam);
   }
 
   async updateEnabledState(type, enabled) {
@@ -157,24 +133,12 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
     await resetFlag(scene, "effects", current);
 
     const hasParticles = Object.keys(current).some((key) => !key.startsWith("-="));
-    const btn = document.querySelector(`[data-tool="particle-effects"]`);
-    if (hasParticles) {
-      btn?.style?.setProperty("background-color", "var(--color-warm-2)");
-      btn?.style?.setProperty("border-color", "var(--color-warm-3)");
-    } else {
-      btn?.style?.removeProperty("background-color");
-      btn?.style?.removeProperty("border-color");
-    }
+    FXMasterBaseFormV2.setToolButtonHighlight("particle-effects", hasParticles);
   }
 
   static updateParam(event, input) {
     if (!input?.name) return;
-
-    if (input.type === "range") {
-      const container = input.closest(".fxmaster-input-range");
-      const output = container?.querySelector(".range-value");
-      if (output) output.textContent = input.value;
-    }
+    FXMasterBaseFormV2.updateRangeOutput(input);
 
     const type = input.closest(".fxmaster-particle-expand")?.previousElementSibling?.dataset?.type;
     if (!type) return;
