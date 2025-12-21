@@ -1,1 +1,2 @@
 - A number of fixes to masks, including some important changes to prevent losing webgl context
+- Updated pt-br localization, thanks Kharmans!
