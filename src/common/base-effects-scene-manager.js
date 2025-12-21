@@ -7,18 +7,26 @@
  * - Builds separate base allow masks for particles and filters:
  *   - Particles: Scene Rect − (suppressWeather + fxmaster.suppressSceneParticles)
  *   - Filters:   Scene Rect − (suppressWeather + fxmaster.suppressSceneFilters)
- * - Derives "below tokens" cutout masks (Base Mask − Token Silhouettes) per kind.
- * - Maintains a shared tokens-only mask used by both systems.
+ * - Optionally derives "below tokens" cutout masks (Base Mask − Token Silhouettes) per kind,
+ *   only when needed by active consumers.
+ * - Optionally maintains a shared tokens-only mask used by both systems, only when needed.
  * - Reacts to camera or viewport changes via a coalesced refresh.
  */
 
 import { packageId } from "../constants.js";
 import {
   buildSceneAllowMaskRT,
-  ensureBelowTokensArtifacts,
   coalesceNextFrame,
   computeRegionGatePass,
+  getCssViewportMetrics,
+  repaintTokensMaskInto,
+  safeMaskResolutionForCssArea,
 } from "../utils.js";
+
+/** @type {PIXI.Sprite|null} */
+let _tmpBaseCopySprite = null;
+/** @type {PIXI.Sprite|null} */
+let _tmpTokensEraseSprite = null;
 
 const SUPPRESS_WEATHER = "suppressWeather";
 const SUPPRESS_SCENE_PARTICLES = `${packageId}.suppressSceneParticles`;
@@ -48,24 +56,101 @@ function regionPassesSuppressionGate(placeable, kind) {
   let pass = false;
 
   if (kind === "particles") {
-    if (hasParticles && computeRegionGatePass(placeable, { behaviorType: SUPPRESS_SCENE_PARTICLES })) {
-      pass = true;
-    }
-    if (hasWeather && computeRegionGatePass(placeable, { behaviorType: SUPPRESS_WEATHER })) {
-      pass = true;
-    }
+    if (hasParticles && computeRegionGatePass(placeable, { behaviorType: SUPPRESS_SCENE_PARTICLES })) pass = true;
+    if (hasWeather && computeRegionGatePass(placeable, { behaviorType: SUPPRESS_WEATHER })) pass = true;
   }
 
   if (kind === "filters") {
-    if (hasFilters && computeRegionGatePass(placeable, { behaviorType: SUPPRESS_SCENE_FILTERS })) {
-      pass = true;
-    }
-    if (hasWeather && computeRegionGatePass(placeable, { behaviorType: SUPPRESS_WEATHER })) {
-      pass = true;
-    }
+    if (hasFilters && computeRegionGatePass(placeable, { behaviorType: SUPPRESS_SCENE_FILTERS })) pass = true;
+    if (hasWeather && computeRegionGatePass(placeable, { behaviorType: SUPPRESS_WEATHER })) pass = true;
   }
 
   return pass;
+}
+
+/**
+ * Ensure a RenderTexture matches the provided logical dimensions and resolution.
+ *
+ * @param {PIXI.RenderTexture|null} reuseRT
+ * @param {{width:number,height:number,resolution:number}} spec
+ * @returns {PIXI.RenderTexture}
+ * @private
+ */
+function ensureRenderTexture(reuseRT, { width, height, resolution }) {
+  const W = Math.max(1, width | 0);
+  const H = Math.max(1, height | 0);
+  const res = resolution || 1;
+
+  const bad =
+    !reuseRT ||
+    reuseRT.destroyed ||
+    (reuseRT.width | 0) !== W ||
+    (reuseRT.height | 0) !== H ||
+    (reuseRT.resolution || 1) !== res;
+
+  if (!bad) return reuseRT;
+
+  try {
+    reuseRT?.destroy(true);
+  } catch {}
+
+  const rt = PIXI.RenderTexture.create({
+    width: W,
+    height: H,
+    resolution: res,
+    multisample: 0,
+  });
+
+  try {
+    rt.baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
+    rt.baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
+  } catch {}
+
+  return rt;
+}
+
+/**
+ * Rebuild (or reuse) a cutout render texture: baseRT minus token silhouettes.
+ *
+ * @param {PIXI.RenderTexture} baseRT
+ * @param {PIXI.RenderTexture} tokensRT
+ * @param {PIXI.RenderTexture|null} reuseCutoutRT
+ * @returns {PIXI.RenderTexture|null}
+ * @private
+ */
+function rebuildCutoutFromBase(baseRT, tokensRT, reuseCutoutRT) {
+  const r = canvas?.app?.renderer;
+  if (!r || !baseRT || !tokensRT) return null;
+
+  const W = Math.max(1, baseRT.width | 0);
+  const H = Math.max(1, baseRT.height | 0);
+  const res = baseRT.resolution || 1;
+
+  const cutoutRT = ensureRenderTexture(reuseCutoutRT, { width: W, height: H, resolution: res });
+
+  try {
+    const spr = (_tmpBaseCopySprite ??= new PIXI.Sprite());
+    spr.texture = baseRT;
+    spr.blendMode = PIXI.BLEND_MODES.NORMAL;
+    spr.alpha = 1;
+    spr.position.set(0, 0);
+    spr.scale.set(1, 1);
+    spr.rotation = 0;
+    r.render(spr, { renderTexture: cutoutRT, clear: true });
+  } catch {}
+
+  try {
+    const spr = (_tmpTokensEraseSprite ??= new PIXI.Sprite());
+    spr.texture = tokensRT;
+    spr.blendMode = PIXI.BLEND_MODES.ERASE;
+    spr.alpha = 1;
+    spr.position.set(0, 0);
+    spr.scale.set(1, 1);
+    spr.rotation = 0;
+    r.render(spr, { renderTexture: cutoutRT, clear: false });
+  } catch {}
+
+  return cutoutRT;
 }
 
 /**
@@ -76,51 +161,39 @@ function regionPassesSuppressionGate(placeable, kind) {
  */
 export class SceneMaskManager {
   constructor() {
-    /**
-     * Scene-level base allow mask for particles.
-     *
-     * @type {PIXI.RenderTexture|null}
-     * @private
-     */
+    /** @type {PIXI.RenderTexture|null} */
     this._baseParticlesRT = null;
-
-    /**
-     * Scene-level base allow mask for filters.
-     *
-     * @type {PIXI.RenderTexture|null}
-     * @private
-     */
+    /** @type {PIXI.RenderTexture|null} */
     this._baseFiltersRT = null;
 
-    /**
-     * Particles "below tokens" cutout mask.
-     *
-     * @type {PIXI.RenderTexture|null}
-     * @private
-     */
+    /** @type {PIXI.RenderTexture|null} */
     this._cutoutParticlesRT = null;
-
-    /**
-     * Filters "below tokens" cutout mask.
-     *
-     * @type {PIXI.RenderTexture|null}
-     * @private
-     */
+    /** @type {PIXI.RenderTexture|null} */
     this._cutoutFiltersRT = null;
 
+    /** @type {PIXI.RenderTexture|null} */
+    this._tokensRT = null;
+
     /**
-     * Shared tokens-only mask for both particles and filters.
-     *
-     * @type {PIXI.RenderTexture|null}
+     * Whether each pipeline currently has any active consumers.
+     * Defaults to true to preserve existing behavior until callers declare otherwise.
+     * @type {{particles:boolean, filters:boolean}}
      * @private
      */
-    this._tokensRT = null;
+    this._kindActive = { particles: true, filters: true };
+
+    /**
+     * Whether each pipeline currently needs "below tokens" artifacts (cutout + tokens mask).
+     * Defaults to true to preserve existing behavior until callers declare otherwise.
+     * @type {{particles:boolean, filters:boolean}}
+     * @private
+     */
+    this._belowTokensNeeded = { particles: true, filters: true };
 
     this._pendingKinds = new Set();
 
     /**
-     * Coalesced refresh callback used to delay recomputation until the next animation frame.
-     *
+     * Coalesced refresh callback used to delay recomputation until next animation frame.
      * @type {Function}
      * @private
      */
@@ -134,10 +207,12 @@ export class SceneMaskManager {
     );
   }
 
+  /** @type {SceneMaskManager|undefined} */
+  static #instance;
+
   /**
    * Singleton accessor.
-   *
-   * @returns {SceneMaskManager} The shared {@link SceneMaskManager} instance.
+   * @returns {SceneMaskManager}
    */
   static get instance() {
     if (!this.#instance) this.#instance = new this();
@@ -145,18 +220,8 @@ export class SceneMaskManager {
   }
 
   /**
-   * Internal singleton backing field.
-   *
-   * @type {SceneMaskManager|undefined}
-   * @private
-   */
-  static #instance;
-
-  /**
    * Backwards-compatible getter that returns the particle masks by default.
-   *
    * @returns {{base: PIXI.RenderTexture|null, cutout: PIXI.RenderTexture|null, tokens: PIXI.RenderTexture|null}}
-   *          A mask bundle for the particle system.
    */
   get masks() {
     return this.getMasks("particles");
@@ -164,94 +229,264 @@ export class SceneMaskManager {
 
   /**
    * Retrieve the precomputed mask bundle for a given system kind.
-   *
-   * @param {"particles"|"filters"} [kind="particles"] - Which mask set to retrieve.
+   * @param {"particles"|"filters"} [kind="particles"]
    * @returns {{base: PIXI.RenderTexture|null, cutout: PIXI.RenderTexture|null, tokens: PIXI.RenderTexture|null}}
-   *          An object containing the base allow mask, the "below tokens" cutout mask,
-   *          and the shared tokens-only mask.
    */
   getMasks(kind = "particles") {
     if (kind === "filters") {
-      return {
-        base: this._baseFiltersRT,
-        cutout: this._cutoutFiltersRT,
-        tokens: this._tokensRT,
-      };
+      return { base: this._baseFiltersRT, cutout: this._cutoutFiltersRT, tokens: this._tokensRT };
+    }
+    return { base: this._baseParticlesRT, cutout: this._cutoutParticlesRT, tokens: this._tokensRT };
+  }
+
+  /**
+   * Declare whether a pipeline currently has active consumers.
+   * When inactive, its base and derived RTs are released to reduce VRAM pressure.
+   *
+   * @param {"particles"|"filters"} kind
+   * @param {boolean} active
+   */
+  setKindActive(kind, active) {
+    if (kind !== "particles" && kind !== "filters") return;
+
+    const next = !!active;
+    const prev = !!this._kindActive[kind];
+    if (prev === next) return;
+
+    this._kindActive[kind] = next;
+
+    if (!next) {
+      if (kind === "particles") {
+        try {
+          this._baseParticlesRT?.destroy(true);
+        } catch {}
+        this._baseParticlesRT = null;
+
+        try {
+          this._cutoutParticlesRT?.destroy(true);
+        } catch {}
+        this._cutoutParticlesRT = null;
+      } else {
+        try {
+          this._baseFiltersRT?.destroy(true);
+        } catch {}
+        this._baseFiltersRT = null;
+
+        try {
+          this._cutoutFiltersRT?.destroy(true);
+        } catch {}
+        this._cutoutFiltersRT = null;
+      }
+
+      const needTokens =
+        (this._kindActive.particles && this._belowTokensNeeded.particles) ||
+        (this._kindActive.filters && this._belowTokensNeeded.filters);
+
+      if (!needTokens && this._tokensRT) {
+        try {
+          this._tokensRT.destroy(true);
+        } catch {}
+        this._tokensRT = null;
+      }
+
+      return;
     }
 
-    return {
-      base: this._baseParticlesRT,
-      cutout: this._cutoutParticlesRT,
-      tokens: this._tokensRT,
-    };
+    this.refresh(kind);
+  }
+
+  /**
+   * Declare whether a pipeline needs "below tokens" artifacts (cutout + tokens-only).
+   * @param {"particles"|"filters"} kind
+   * @param {boolean} needed
+   */
+  setBelowTokensNeeded(kind, needed) {
+    if (kind !== "particles" && kind !== "filters") return;
+
+    const next = !!needed;
+    const prev = !!this._belowTokensNeeded[kind];
+    if (prev === next) return;
+
+    this._belowTokensNeeded[kind] = next;
+
+    if (!next) {
+      if (kind === "particles") {
+        try {
+          this._cutoutParticlesRT?.destroy(true);
+        } catch {}
+        this._cutoutParticlesRT = null;
+      } else {
+        try {
+          this._cutoutFiltersRT?.destroy(true);
+        } catch {}
+        this._cutoutFiltersRT = null;
+      }
+
+      const needTokens =
+        (this._kindActive.particles && this._belowTokensNeeded.particles) ||
+        (this._kindActive.filters && this._belowTokensNeeded.filters);
+
+      if (!needTokens && this._tokensRT) {
+        try {
+          this._tokensRT.destroy(true);
+        } catch {}
+        this._tokensRT = null;
+      }
+
+      return;
+    }
+
+    if (this._kindActive[kind]) this.refresh(kind);
   }
 
   /**
    * Schedule a mask refresh on the next animation frame.
-   *
-   * @returns {void}
+   * @param {"particles"|"filters"|"all"} [kind="all"]
    */
   refresh(kind = "all") {
     if (kind === "all") {
       this._pendingKinds.add("particles");
       this._pendingKinds.add("filters");
-    } else {
+    } else if (kind === "particles" || kind === "filters") {
       this._pendingKinds.add(kind);
+    } else {
+      return;
     }
     this._scheduleRefresh();
   }
 
   /**
-   * Force an immediate, synchronous refresh of all masks.
-   *
-   * @returns {void}
+   * Force an immediate, synchronous refresh of masks.
+   * @param {"particles"|"filters"|"all"} [kind="all"]
    */
   refreshSync(kind = "all") {
-    this._scheduleRefresh.cancel();
+    try {
+      this._scheduleRefresh?.cancel?.();
+    } catch {}
+
     const kinds = kind === "all" ? ["particles", "filters"] : [kind];
     this._refreshImpl(kinds);
   }
 
   /**
-   * Internal implementation of the mask refresh pipeline.
+   * Force an immediate, synchronous repaint of the shared tokens-only RT (and any derived cutouts),
+   * without rebuilding base allow masks.
    *
-   * @returns {void}
+   * This is intended for sub-pixel camera translation updates (camFrac) and token motion,
+   * where rebuilding suppression geometry would be wasted work but stale token silhouettes would
+   * cause visible "sliding" or jitter in below-tokens masks.
+   */
+  refreshTokensSync() {
+    if (!canvas?.ready) return;
+
+    const needTokens =
+      (this._kindActive.particles && this._belowTokensNeeded.particles) ||
+      (this._kindActive.filters && this._belowTokensNeeded.filters);
+
+    if (!needTokens) return;
+
+    const { cssW, cssH } = getCssViewportMetrics();
+    const res = safeMaskResolutionForCssArea(cssW, cssH, 1);
+
+    this._tokensRT = ensureRenderTexture(this._tokensRT, { width: cssW, height: cssH, resolution: res });
+
+    repaintTokensMaskInto(this._tokensRT);
+
+    if (this._kindActive.particles && this._belowTokensNeeded.particles && this._baseParticlesRT && this._tokensRT) {
+      this._cutoutParticlesRT = rebuildCutoutFromBase(this._baseParticlesRT, this._tokensRT, this._cutoutParticlesRT);
+    }
+    if (this._kindActive.filters && this._belowTokensNeeded.filters && this._baseFiltersRT && this._tokensRT) {
+      this._cutoutFiltersRT = rebuildCutoutFromBase(this._baseFiltersRT, this._tokensRT, this._cutoutFiltersRT);
+    }
+  }
+
+  /**
+   * Internal implementation of the mask refresh pipeline.
+   * @param {Array<"particles"|"filters">} kinds
    * @private
    */
-
   _refreshImpl(kinds = ["particles", "filters"]) {
     if (!canvas?.ready) return;
 
     const regions = canvas.regions?.placeables ?? [];
 
     if (kinds.includes("particles")) {
-      const suppressParticleRegions = regions.filter((reg) => regionPassesSuppressionGate(reg, "particles"));
-      this._baseParticlesRT = buildSceneAllowMaskRT({
-        regions: suppressParticleRegions,
-        reuseRT: this._baseParticlesRT,
-      });
+      if (!this._kindActive.particles) {
+        try {
+          this._baseParticlesRT?.destroy(true);
+        } catch {}
+        this._baseParticlesRT = null;
 
-      if (this._baseParticlesRT) {
-        const updated = ensureBelowTokensArtifacts(this._baseParticlesRT, {
-          cutoutRT: this._cutoutParticlesRT,
-          tokensMaskRT: this._tokensRT,
+        try {
+          this._cutoutParticlesRT?.destroy(true);
+        } catch {}
+        this._cutoutParticlesRT = null;
+      } else {
+        const suppressParticleRegions = regions.filter((reg) => regionPassesSuppressionGate(reg, "particles"));
+        this._baseParticlesRT = buildSceneAllowMaskRT({
+          regions: suppressParticleRegions,
+          reuseRT: this._baseParticlesRT,
         });
-        this._cutoutParticlesRT = updated.cutoutRT;
-        this._tokensRT = updated.tokensMaskRT;
       }
     }
 
     if (kinds.includes("filters")) {
-      const suppressFilterRegions = regions.filter((reg) => regionPassesSuppressionGate(reg, "filters"));
-      this._baseFiltersRT = buildSceneAllowMaskRT({ regions: suppressFilterRegions, reuseRT: this._baseFiltersRT });
+      if (!this._kindActive.filters) {
+        try {
+          this._baseFiltersRT?.destroy(true);
+        } catch {}
+        this._baseFiltersRT = null;
 
-      if (this._baseFiltersRT) {
-        const updated = ensureBelowTokensArtifacts(this._baseFiltersRT, {
-          cutoutRT: this._cutoutFiltersRT,
-          tokensMaskRT: this._tokensRT,
+        try {
+          this._cutoutFiltersRT?.destroy(true);
+        } catch {}
+        this._cutoutFiltersRT = null;
+      } else {
+        const suppressFilterRegions = regions.filter((reg) => regionPassesSuppressionGate(reg, "filters"));
+        this._baseFiltersRT = buildSceneAllowMaskRT({
+          regions: suppressFilterRegions,
+          reuseRT: this._baseFiltersRT,
         });
-        this._cutoutFiltersRT = updated.cutoutRT;
-        this._tokensRT = updated.tokensMaskRT;
+      }
+    }
+
+    const needTokens =
+      (this._kindActive.particles && this._belowTokensNeeded.particles) ||
+      (this._kindActive.filters && this._belowTokensNeeded.filters);
+
+    if (needTokens) {
+      const { cssW, cssH } = getCssViewportMetrics();
+      const res = safeMaskResolutionForCssArea(cssW, cssH, 1);
+
+      this._tokensRT = ensureRenderTexture(this._tokensRT, { width: cssW, height: cssH, resolution: res });
+
+      repaintTokensMaskInto(this._tokensRT);
+    } else if (this._tokensRT) {
+      try {
+        this._tokensRT.destroy(true);
+      } catch {}
+      this._tokensRT = null;
+    }
+
+    if (kinds.includes("particles")) {
+      if (this._kindActive.particles && this._belowTokensNeeded.particles && this._baseParticlesRT && this._tokensRT) {
+        this._cutoutParticlesRT = rebuildCutoutFromBase(this._baseParticlesRT, this._tokensRT, this._cutoutParticlesRT);
+      } else if (this._cutoutParticlesRT) {
+        try {
+          this._cutoutParticlesRT.destroy(true);
+        } catch {}
+        this._cutoutParticlesRT = null;
+      }
+    }
+
+    if (kinds.includes("filters")) {
+      if (this._kindActive.filters && this._belowTokensNeeded.filters && this._baseFiltersRT && this._tokensRT) {
+        this._cutoutFiltersRT = rebuildCutoutFromBase(this._baseFiltersRT, this._tokensRT, this._cutoutFiltersRT);
+      } else if (this._cutoutFiltersRT) {
+        try {
+          this._cutoutFiltersRT.destroy(true);
+        } catch {}
+        this._cutoutFiltersRT = null;
       }
     }
   }
@@ -259,8 +494,6 @@ export class SceneMaskManager {
   /**
    * Destroy and clear all derived masks (cutouts and tokens-only),
    * but leave base allow masks untouched.
-   *
-   * @returns {void}
    * @private
    */
   _cleanupArtifacts() {
@@ -286,15 +519,13 @@ export class SceneMaskManager {
 
   /**
    * Fully clear the manager:
-   * - Cancels any pending coalesced refresh.
-   * - Destroys and nulls out base and derived render textures.
-   *
-   * Intended to be called when the scene is torn down or the canvas resets.
-   *
-   * @returns {void}
+   * - Cancels any pending refresh
+   * - Destroys and nulls out base and derived render textures
    */
   clear() {
-    this._scheduleRefresh.cancel();
+    try {
+      this._scheduleRefresh?.cancel?.();
+    } catch {}
 
     const destroyRT = (key) => {
       const rt = this[key];

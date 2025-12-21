@@ -171,6 +171,51 @@ export const asFloat3 = (arr) => new Float32Array([arr[0], arr[1], arr[2]]);
 
 const TAU = Math.PI * 2;
 
+/** @type {PIXI.Sprite|null} */
+let _tmpRTCopySprite = null;
+let _tmpTokensEraseSprite = null;
+
+/** @type {{ solids: PIXI.Graphics, holes: PIXI.Graphics }|null} */
+let _regionMaskGfx = null;
+
+/** @returns {{ solids: PIXI.Graphics, holes: PIXI.Graphics }} */
+function _getRegionMaskGfx() {
+  if (_regionMaskGfx?.solids && _regionMaskGfx?.holes) return _regionMaskGfx;
+  _regionMaskGfx = { solids: new PIXI.Graphics(), holes: new PIXI.Graphics() };
+  return _regionMaskGfx;
+}
+
+/** @type {{ bg: PIXI.Graphics, scene: PIXI.Graphics, solids: PIXI.Graphics, holes: PIXI.Graphics }|null} */
+let _sceneAllowMaskGfx = null;
+
+/** @returns {{ bg: PIXI.Graphics, scene: PIXI.Graphics, solids: PIXI.Graphics, holes: PIXI.Graphics }} */
+function _getSceneAllowMaskGfx() {
+  if (_sceneAllowMaskGfx?.bg && _sceneAllowMaskGfx?.scene && _sceneAllowMaskGfx?.solids && _sceneAllowMaskGfx?.holes)
+    return _sceneAllowMaskGfx;
+  _sceneAllowMaskGfx = {
+    bg: new PIXI.Graphics(),
+    scene: new PIXI.Graphics(),
+    solids: new PIXI.Graphics(),
+    holes: new PIXI.Graphics(),
+  };
+  return _sceneAllowMaskGfx;
+}
+
+/**
+ * Interpret a belowTokens option consistently.
+ * Supports:
+ * - boolean
+ * - { value: boolean }
+ * @param {*} v
+ * @returns {boolean}
+ * @private
+ */
+function _belowTokensEnabled(v) {
+  if (v === true) return true;
+  if (v && typeof v === "object" && "value" in v) return !!v.value;
+  return !!v;
+}
+
 /**
  * Rotate a point around a center by radians.
  * @param {number} px
@@ -401,10 +446,6 @@ export function traceRegionShapePath2D(ctx, s) {
   }
 }
 
-/**
- * Return snapped camera translation in CSS space and fractional offset.
- * @returns {{ txCss: number, tyCss: number, txSnapCss: number, tySnapCss: number, camFracX: number, camFracY: number }}
- */
 /**
  * Return snapped camera translation in CSS space and fractional offset.
  * @returns {{ txCss: number, tyCss: number, txSnapCss: number, tySnapCss: number, camFracX: number, camFracY: number }}
@@ -877,7 +918,14 @@ export function composeMaskMinusTokens(baseRT, { outRT } = {}) {
       resolution: baseRT.resolution || 1,
     });
 
-  r.render(new PIXI.Sprite(baseRT), { renderTexture: out, clear: true });
+  const spr = (_tmpRTCopySprite ??= new PIXI.Sprite());
+  spr.texture = baseRT;
+  spr.blendMode = PIXI.BLEND_MODES.NORMAL;
+  spr.alpha = 1;
+  spr.position.set(0, 0);
+  spr.scale.set(1, 1);
+  spr.rotation = 0;
+  r.render(spr, { renderTexture: out, clear: true });
 
   const Msnap = snappedStageMatrix();
   const c = new PIXI.Container();
@@ -899,6 +947,56 @@ export function composeMaskMinusTokens(baseRT, { outRT } = {}) {
     out.baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
     out.baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
   } catch {}
+  return out;
+}
+
+/**
+ * Compose a cutout mask by subtracting an existing tokens silhouette RT from a base mask.
+ *
+ * This is a cheaper alternative to {@link composeMaskMinusTokens} because it avoids
+ * re-collecting and re-rendering token sprites for each cutout. It assumes both RTs
+ * are in the same CSS-space viewport coordinates (e.g. produced by {@link buildSceneAllowMaskRT}
+ * and {@link repaintTokensMaskInto}).
+ *
+ * @param {PIXI.RenderTexture} baseRT
+ * @param {PIXI.RenderTexture} tokensRT
+ * @param {{outRT?: PIXI.RenderTexture}} [opts]
+ * @returns {PIXI.RenderTexture|null}
+ */
+export function composeMaskMinusTokensRT(baseRT, tokensRT, { outRT } = {}) {
+  const r = canvas?.app?.renderer;
+  if (!r || !baseRT || !tokensRT) return baseRT;
+
+  const out =
+    outRT ??
+    PIXI.RenderTexture.create({
+      width: baseRT.width | 0,
+      height: baseRT.height | 0,
+      resolution: baseRT.resolution || 1,
+    });
+
+  try {
+    const spr = (_tmpRTCopySprite ??= new PIXI.Sprite());
+    spr.texture = baseRT;
+    spr.blendMode = PIXI.BLEND_MODES.NORMAL;
+    spr.alpha = 1;
+    spr.position.set(0, 0);
+    spr.scale.set(1, 1);
+    spr.rotation = 0;
+    r.render(spr, { renderTexture: out, clear: true });
+  } catch {}
+
+  try {
+    const spr = (_tmpTokensEraseSprite ??= new PIXI.Sprite());
+    spr.texture = tokensRT;
+    spr.blendMode = PIXI.BLEND_MODES.ERASE;
+    spr.alpha = 1;
+    spr.position.set(0, 0);
+    spr.scale.set(1, 1);
+    spr.rotation = 0;
+    r.render(spr, { renderTexture: out, clear: false });
+  } catch {}
+
   return out;
 }
 
@@ -981,22 +1079,21 @@ export function safeMaskTexture(tex) {
  */
 export function buildRegionMaskRT(region, { rtPool, resolution } = {}) {
   const r = canvas?.app?.renderer;
-  const screen = r?.screen ?? r?.view ?? { width: 1, height: 1 };
-  const VW = Math.max(1, screen.width | 0);
-  const VH = Math.max(1, screen.height | 0);
+  if (!r) return null;
 
-  const gl = r?.gl;
-  const MAX_GL = gl?.getParameter?.(gl.MAX_TEXTURE_SIZE) || 8192;
+  const { cssW, cssH } = getCssViewportMetrics();
+  const VW = Math.max(1, cssW | 0);
+  const VH = Math.max(1, cssH | 0);
 
-  const baseRes = window.devicePixelRatio || 1;
-  const res = resolution ?? Math.min(baseRes, MAX_GL / Math.max(VW, VH));
+  const res = resolution ?? safeMaskResolutionForCssArea(VW, VH, 1);
 
   const rt = rtPool
     ? rtPool.acquire(VW, VH, res)
     : PIXI.RenderTexture.create({ width: VW, height: VH, resolution: res });
 
-  const solidsGfx = new PIXI.Graphics();
-  const holesGfx = new PIXI.Graphics();
+  const { solids: solidsGfx, holes: holesGfx } = _getRegionMaskGfx();
+  solidsGfx.clear();
+  holesGfx.clear();
 
   const M = snappedStageMatrix();
   solidsGfx.transform.setFromMatrix(M);
@@ -1025,13 +1122,6 @@ export function buildRegionMaskRT(region, { rtPool, resolution } = {}) {
     rt.baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
   } catch {}
 
-  try {
-    solidsGfx.destroy(true);
-  } catch {}
-  try {
-    holesGfx.destroy(true);
-  } catch {}
-
   return rt;
 }
 
@@ -1043,8 +1133,9 @@ export function buildRegionMaskRT(region, { rtPool, resolution } = {}) {
  * @param {PIXI.Sprite} spr
  */
 export function applyMaskSpriteTransform(container, spr) {
+  const r = canvas?.app?.renderer;
   const Minv = container.worldTransform.clone().invert();
-  const res = window.devicePixelRatio || 1;
+  const res = r.resolution || window.devicePixelRatio || 1;
   Minv.tx = Math.round(Minv.tx * res) / res;
   Minv.ty = Math.round(Minv.ty * res) / res;
   spr.transform.setFromMatrix(Minv);
@@ -1215,7 +1306,7 @@ export function coalesceNextFrame(fn, { key } = {}) {
  * @returns {{cssW:number, cssH:number, deviceToCss:number, rect: PIXI.Rectangle, deviceRect: PIXI.Rectangle}}
  */
 export function getCssViewportMetrics() {
-  const r = globalThis.canvas?.app?.renderer;
+  const r = canvas?.app?.renderer;
   const res = r?.resolution || window.devicePixelRatio || 1;
 
   const deviceW = Math.max(1, (r?.view?.width ?? r?.screen?.width ?? 1) | 0);
@@ -1230,12 +1321,12 @@ export function getCssViewportMetrics() {
 }
 
 /**
- * Build (or reuse) a CSS-space allow-mask RT for the current scene view,
- * then paint the scene-rect minus suppression regions into it.
+ * Build a scene-allow alpha mask RT in CSS space:
+ * - Black background (suppressed)
+ * - White scene rect (allowed)
+ * - Optionally subtract regions (solids erase, holes add back)
  *
- * White = allow, transparent = suppress.
- *
- * @param {{ regions?: PlaceableObject[], reuseRT?: PIXI.RenderTexture|null }} [opts]
+ * @param {{regions?: PlaceableObject[], reuseRT?: PIXI.RenderTexture|null}} [opts]
  * @returns {PIXI.RenderTexture|null}
  */
 export function buildSceneAllowMaskRT({ regions = [], reuseRT = null } = {}) {
@@ -1244,7 +1335,7 @@ export function buildSceneAllowMaskRT({ regions = [], reuseRT = null } = {}) {
 
   const { cssW, cssH } = getCssViewportMetrics();
 
-  const res = safeResolutionForCssArea(cssW, cssH);
+  const res = safeMaskResolutionForCssArea(cssW, cssH);
 
   let rt = reuseRT ?? null;
   const needsNew =
@@ -1268,34 +1359,61 @@ export function buildSceneAllowMaskRT({ regions = [], reuseRT = null } = {}) {
 
   // Paint Background Black (Everything suppressed by default)
   {
-    const bg = new PIXI.Graphics();
+    const { bg } = _getSceneAllowMaskGfx();
+    bg.clear();
     bg.beginFill(0x000000, 1).drawRect(0, 0, cssW, cssH).endFill();
     r.render(bg, { renderTexture: rt, clear: true });
-    try {
-      bg.destroy(true);
-    } catch {}
   }
 
   // Paint Scene Area White (Allow effects only inside scene dimensions)
   const M = snappedStageMatrix();
   const d = canvas.dimensions;
   if (d) {
-    const sceneGfx = new PIXI.Graphics();
-    sceneGfx.transform.setFromMatrix(M);
-    sceneGfx.beginFill(0xffffff, 1.0);
-    sceneGfx.drawRect(d.sceneRect.x, d.sceneRect.y, d.sceneRect.width, d.sceneRect.height);
-    sceneGfx.endFill();
-    r.render(sceneGfx, { renderTexture: rt, clear: false });
-    try {
-      sceneGfx.destroy(true);
-    } catch {}
+    const { scene } = _getSceneAllowMaskGfx();
+    scene.clear();
+
+    scene.transform.setFromMatrix(new PIXI.Matrix());
+
+    const x0w = d.sceneRect.x;
+    const y0w = d.sceneRect.y;
+    const x1w = x0w + d.sceneRect.width;
+    const y1w = y0w + d.sceneRect.height;
+
+    const p0 = new PIXI.Point();
+    const p1 = new PIXI.Point();
+    M.apply({ x: x0w, y: y0w }, p0);
+    M.apply({ x: x1w, y: y1w }, p1);
+
+    const minX = Math.min(p0.x, p1.x);
+    const minY = Math.min(p0.y, p1.y);
+    const maxX = Math.max(p0.x, p1.x);
+    const maxY = Math.max(p0.y, p1.y);
+
+    const left = Math.ceil(minX - 0.5);
+    const top = Math.ceil(minY - 0.5);
+    const right = Math.ceil(maxX - 0.5);
+    const bottom = Math.ceil(maxY - 0.5);
+
+    const x = Math.max(0, Math.min(cssW, left));
+    const y = Math.max(0, Math.min(cssH, top));
+    const w = Math.max(0, Math.min(cssW, right) - x);
+    const h = Math.max(0, Math.min(cssH, bottom) - y);
+
+    if (w > 0 && h > 0) {
+      scene.beginFill(0xffffff, 1.0);
+      scene.drawRect(x, y, w, h);
+      scene.endFill();
+      r.render(scene, { renderTexture: rt, clear: false });
+    }
   }
 
   // Subtract suppression-region solids (ERASE), add back holes (NORMAL)
   if (Array.isArray(regions) && regions.length) {
-    const solidsGfx = new PIXI.Graphics();
+    const { solids: solidsGfx, holes: holesGfx } = _getSceneAllowMaskGfx();
+    solidsGfx.clear();
+    holesGfx.clear();
+
     solidsGfx.transform.setFromMatrix(M);
-    const holesGfx = new PIXI.Graphics();
     holesGfx.transform.setFromMatrix(M);
 
     solidsGfx.beginFill(0xffffff, 1);
@@ -1317,11 +1435,6 @@ export function buildSceneAllowMaskRT({ regions = [], reuseRT = null } = {}) {
 
     r.render(solidsGfx, { renderTexture: rt, clear: false });
     r.render(holesGfx, { renderTexture: rt, clear: false });
-
-    try {
-      solidsGfx.destroy(true);
-      holesGfx.destroy(true);
-    } catch {}
   }
 
   return rt;
@@ -1401,7 +1514,7 @@ export function applyMaskUniformsToFilters(
   for (const f of filters) {
     if (!f) continue;
     const u = f.uniforms || {};
-    const wantBelow = !!(f?.__fxmBelowTokens ?? f?.options?.belowTokens);
+    const wantBelow = _belowTokensEnabled(f?.__fxmBelowTokens ?? f?.options?.belowTokens);
     const rt = wantBelow ? cutoutRT || baseMaskRT : baseMaskRT;
 
     if ("maskSampler" in u) u.maskSampler = rt;
@@ -1421,6 +1534,7 @@ export function applyMaskUniformsToFilters(
       if ("tokenSampler" in u) u.tokenSampler = tokensMaskRT;
       if ("hasTokenMask" in u) u.hasTokenMask = 1.0;
     } else {
+      if ("tokenSampler" in u) u.tokenSampler = PIXI.Texture.EMPTY;
       if ("hasTokenMask" in u) u.hasTokenMask = 0.0;
     }
   }
@@ -1496,4 +1610,20 @@ export function safeResolutionForCssArea(cssW, cssH) {
 
   const safe = Math.max(0.5, Math.min(base, texLimited));
   return safe;
+}
+
+/**
+ * Compute a safe resolution for alpha/binary mask render textures.
+ * This function delegates to {@link safeResolutionForCssArea} and additionally caps the
+ * returned resolution to a maximum (default 1.0).
+ *
+ * @param {number} cssW - Viewport width in CSS pixels.
+ * @param {number} cssH - Viewport height in CSS pixels.
+ * @param {number} [max=1] - Maximum allowed resolution.
+ * @returns {number}
+ */
+export function safeMaskResolutionForCssArea(cssW, cssH, max = 1) {
+  const safe = safeResolutionForCssArea(cssW, cssH);
+  const cap = Number.isFinite(max) ? max : 1;
+  return Math.max(0.5, Math.min(cap, safe));
 }

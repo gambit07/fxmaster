@@ -34,6 +34,83 @@ export const registerHooks = function () {
   let _flResizeHandler = null;
   let _fxResizeHandler = null;
 
+  const _sceneHasAnySceneFilters = () => {
+    try {
+      const f = canvas?.scene?.getFlag?.(packageId, "filters") ?? {};
+      return !!f && Object.keys(f).length > 0;
+    } catch {
+      return false;
+    }
+  };
+
+  const _sceneHasAnySceneParticles = () => {
+    try {
+      const e = canvas?.scene?.getFlag?.(packageId, "effects") ?? {};
+      return !!e && Object.keys(e).length > 0;
+    } catch {
+      return false;
+    }
+  };
+
+  const _sceneWantsBelowTokensFilters = () => {
+    try {
+      const infos = canvas?.scene?.getFlag?.(packageId, "filters") ?? {};
+      for (const v of Object.values(infos)) {
+        const bt = v?.options?.belowTokens;
+        if (bt === true) return true;
+        if (bt && typeof bt === "object" && "value" in bt && !!bt.value) return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
+  const _sceneWantsBelowTokensParticles = () => {
+    try {
+      const infos = canvas?.scene?.getFlag?.(packageId, "effects") ?? {};
+      for (const v of Object.values(infos)) {
+        const bt = v?.options?.belowTokens;
+        if (bt === true) return true;
+        if (bt && typeof bt === "object" && "value" in bt && !!bt.value) return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
+  const _regionWantsBelowTokensFilters = () => {
+    try {
+      const rm = canvas?.filtereffects?.regionMasks;
+      if (!rm || !rm.size) return false;
+      for (const entry of rm.values()) {
+        for (const f of entry?.filters ?? []) {
+          if (f?.__fxmBelowTokens) return true;
+        }
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
+  const _regionWantsBelowTokensParticles = () => {
+    try {
+      const re = canvas?.particleeffects?.regionEffects;
+      if (!re || !re.size) return false;
+      for (const entries of re.values()) {
+        for (const e of entries ?? []) {
+          const fx = e?.fx ?? e;
+          if (fx?.__fxmBelowTokens) return true;
+        }
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
   const requestFilterSuppressionRefresh = () => {
     if (isEnabled()) FilterEffectsSceneManager.instance.refreshSceneFilterSuppressionMasks();
   };
@@ -55,21 +132,28 @@ export const registerHooks = function () {
     function requestTokenMaskRefresh() {
       if (!isEnabled()) return;
 
-      try {
-        FilterEffectsSceneManager.instance.refreshSceneFilterSuppressionMasks();
-      } catch {}
+      const needFilterTokens = _sceneWantsBelowTokensFilters() || _regionWantsBelowTokensFilters();
+      const needParticleTokens = _sceneWantsBelowTokensParticles() || _regionWantsBelowTokensParticles();
 
-      try {
-        canvas.filtereffects?.forceRegionMaskRefreshAll?.();
-      } catch {}
+      if (needFilterTokens) {
+        try {
+          FilterEffectsSceneManager.instance.refreshSceneFilterSuppressionMasks();
+        } catch {}
 
-      try {
-        refreshSceneParticlesSuppressionMasks?.();
-      } catch {}
+        try {
+          canvas.filtereffects?.notifyTokensChanged?.();
+        } catch {}
+      }
 
-      try {
-        canvas.particleeffects?.forceRegionMaskRefreshAll?.();
-      } catch {}
+      if (needParticleTokens) {
+        try {
+          refreshSceneParticlesSuppressionMasks?.();
+        } catch {}
+
+        try {
+          canvas.particleeffects?.notifyTokensChanged?.();
+        } catch {}
+      }
     },
     { key: "fxm:token:maskRefresh" },
   );
@@ -224,7 +308,7 @@ export const registerHooks = function () {
       }
     }
 
-    refreshSceneParticlesSuppressionMasks?.();
+    requestSceneParticlesSuppressionRefresh();
     requestFilterSuppressionRefresh();
 
     const hasSuppression = regionDoc?.behaviors?.some(
@@ -243,7 +327,7 @@ export const registerHooks = function () {
       canvas.filtereffects?.destroyRegionFilterEffects?.(regionDoc.id);
     } catch {}
 
-    refreshSceneParticlesSuppressionMasks?.();
+    requestSceneParticlesSuppressionRefresh();
     requestFilterSuppressionRefresh();
     if (isEnabled()) {
       try {
@@ -283,7 +367,7 @@ export const registerHooks = function () {
       }
     }
 
-    refreshSceneParticlesSuppressionMasks?.();
+    requestSceneParticlesSuppressionRefresh();
     requestFilterSuppressionRefresh();
 
     const hasSuppression = regionDoc?.behaviors?.some(
@@ -308,7 +392,7 @@ export const registerHooks = function () {
     if (!placeable) return;
 
     if (t === "suppressWeather" || t === SUPPRESS_SCENE_PARTICLES) {
-      refreshSceneParticlesSuppressionMasks?.();
+      requestSceneParticlesSuppressionRefresh();
       try {
         canvas.particleeffects?.forceRegionMaskRefreshAll?.();
       } catch {}
@@ -332,7 +416,7 @@ export const registerHooks = function () {
     if (!placeable) return;
 
     if (t === "suppressWeather" || t === SUPPRESS_SCENE_PARTICLES) {
-      refreshSceneParticlesSuppressionMasks?.();
+      requestSceneParticlesSuppressionRefresh();
       try {
         canvas.particleeffects?.forceRegionMaskRefreshAll?.();
       } catch {}
@@ -356,7 +440,7 @@ export const registerHooks = function () {
     if (!placeable) return;
 
     if (t === "suppressWeather" || t === SUPPRESS_SCENE_PARTICLES) {
-      refreshSceneParticlesSuppressionMasks?.();
+      requestSceneParticlesSuppressionRefresh();
       try {
         canvas.particleeffects?.forceRegionMaskRefreshAll?.();
       } catch {}
@@ -384,6 +468,9 @@ export const registerHooks = function () {
       }
       if (_flResizeHandler && globalThis.canvas?.app?.renderer) {
         globalThis.canvas.app.renderer.off("resize", _flResizeHandler);
+      }
+      if (_fxResizeHandler && globalThis.canvas?.app?.renderer) {
+        globalThis.canvas.app.renderer.off("resize", _fxResizeHandler);
       }
     } catch {}
     _fmResizeHandler = null;
@@ -430,7 +517,7 @@ export const registerHooks = function () {
         if (_fxResizeHandler && canvas?.app?.renderer) canvas.app.renderer.off("resize", _fxResizeHandler);
         _fxResizeHandler = () => {
           try {
-            refreshSceneParticlesSuppressionMasks?.();
+            if (_sceneHasAnySceneParticles()) requestSceneParticlesSuppressionRefresh();
           } catch {}
           try {
             canvas.particleeffects?.forceRegionMaskRefreshAll?.();
@@ -462,7 +549,7 @@ export const registerHooks = function () {
         canvas.filtereffects?.forceRegionMaskRefreshAll?.();
       } catch {}
       try {
-        refreshSceneParticlesSuppressionMasks?.();
+        if (_sceneHasAnySceneParticles()) requestSceneParticlesSuppressionRefresh();
       } catch {}
       try {
         canvas.particleeffects?.forceRegionMaskRefreshAll?.();
@@ -478,7 +565,10 @@ export const registerHooks = function () {
     }
 
     try {
-      SceneMaskManager.instance.refreshSync?.("all");
+      const needFilterTokens = _sceneWantsBelowTokensFilters() || _regionWantsBelowTokensFilters();
+      const needParticleTokens = _sceneWantsBelowTokensParticles() || _regionWantsBelowTokensParticles();
+      if (needFilterTokens) SceneMaskManager.instance.refreshSync?.("filters");
+      if (needParticleTokens) SceneMaskManager.instance.refreshSync?.("particles");
     } catch {}
 
     if (isEnabled()) {
@@ -499,8 +589,8 @@ export const registerHooks = function () {
     if (game.settings.get(packageId, "releaseMessage") !== version) {
       const content = `
         <div class="fxmaster-announcement" style="border:4px solid #4A90E2; border-radius:6px; padding:12px;">
-          <h3 style="margin:0;">🎉Welcome to Gambit's FXMaster V7.2!</h3>
-            <p style="font-size: 1em;">This release improves the performance of Particle Effects and adds new handling for Foundry's Performance Modes. Please check out the <a href= "https://github.com/gambit07/fxmaster/releases/latest" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Release Notes</a> for more detail. </p>
+          <h3 style="margin:0;">🎉Welcome to Gambit's FXMaster V7.2.1!</h3>
+            <p style="font-size: 1em;">This release resolves some masking issues from 7.2. Please check out the <a href= "https://github.com/gambit07/fxmaster/releases/latest" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Release Notes</a> for more detail. </p>
             <p style="font-size: 1em;">If you'd like to support my development time and get access to the <b>Gambit's FXMaster+</b> and <b>Gambit's Asset Previewer</b> modules, please consider supporting the project on <a href="https://patreon.com/GambitsLounge" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Patreon</a>.</p><p>FXMaster+ Effects: <ul><li><span style="color: #3bd1ffff; text-decoration: none; font-weight: bold;">Ice</span></li><li><span style="color: #a08332ff; text-decoration: none; font-weight: bold;">Sandstorm</span></li><li><span style="color: #74653fff; text-decoration: none; font-weight: bold;">Duststorm</span></li><li><span style="color: #73ffa9; text-decoration: none; font-weight: bold;">Ghosts</span></li><li><span style="color: #ffd500ff; text-decoration: none; font-weight: bold;">Sunlight</span></li><li><span style="color: #7f00ff; text-decoration: none; font-weight: bold;">Magic Crystals</span></li><li><span style="color: #d5b60a; text-decoration: none; font-weight: bold;">Fireflies</span></li><li><span style="color: #ffb7c5; text-decoration: none; font-weight: bold;">Sakura Bloom</span></li><li><span style="color: #ffb7c5; text-decoration: none; font-weight: bold;">Sakura Blossoms</span></li><li><span style="text-decoration: none; font-weight: bold;">And add your own Particle Effects!</span></li></ul></p><p>If you have any questions about the module feel free to join the <a href= "https://discord.gg/YvxHrJ4tVu" target="_blank" style="color: #4e5d94; text-decoration: none; font-weight: bold;">Discord</a>!
           </div>
       `;
@@ -523,22 +613,20 @@ export const registerHooks = function () {
   Hooks.on("updateScene", async (scene, data) => {
     if (scene !== canvas.scene) return;
 
-    try {
-      refreshSceneParticlesSuppressionMasks?.();
-    } catch {}
-
-    if (
+    const effectsChanged =
       foundry.utils.hasProperty(data, `flags.${packageId}.effects`) ||
-      foundry.utils.hasProperty(data, `flags.${packageId}.-=effects`)
-    ) {
+      foundry.utils.hasProperty(data, `flags.${packageId}.-=effects`);
+
+    const filtersChanged =
+      foundry.utils.hasProperty(data, `flags.${packageId}.filters`) ||
+      foundry.utils.hasProperty(data, `flags.${packageId}.-=filters`);
+
+    if (effectsChanged) {
       if (isEnabled()) canvas.particleeffects?.drawParticleEffects?.({ soft: true });
-      refreshSceneParticlesSuppressionMasks?.();
+      requestSceneParticlesSuppressionRefresh();
     }
 
-    if (
-      foundry.utils.hasProperty(data, `flags.${packageId}.filters`) ||
-      foundry.utils.hasProperty(data, `flags.${packageId}.-=filters`)
-    ) {
+    if (filtersChanged) {
       if (isEnabled()) {
         FilterEffectsSceneManager.instance.update();
         ensurePinned();
@@ -559,24 +647,24 @@ export const registerHooks = function () {
         try {
           canvas.particleeffects?.refreshBelowTokensSceneMask?.();
         } catch {}
+        requestSceneParticlesSuppressionRefresh();
+        requestFilterSuppressionRefresh();
       }
     }
   });
 
-  Hooks.on("canvasPan", () => {
-    if (!isEnabled()) return;
-    requestFilterSuppressionRefresh();
-    requestRegionMaskRefreshAll();
-    requestSceneParticlesSuppressionRefresh();
-  });
+  const requestViewMaskRefresh = coalesceNextFrame(
+    function requestViewMaskRefresh() {
+      if (!isEnabled()) return;
 
-  Hooks.on("canvasZoom", () => {
-    if (isEnabled()) {
-      requestFilterSuppressionRefresh();
-      requestRegionMaskRefreshAll();
-      requestSceneParticlesSuppressionRefresh();
-    }
-  });
+      if (_sceneHasAnySceneFilters()) requestFilterSuppressionRefresh();
+      if (_sceneHasAnySceneParticles()) requestSceneParticlesSuppressionRefresh();
+    },
+    { key: "fxm:view:maskRefresh" },
+  );
+
+  Hooks.on("canvasPan", () => requestViewMaskRefresh());
+  Hooks.on("canvasZoom", () => requestViewMaskRefresh());
 
   Hooks.on("dropCanvasData", async (canvas, data) => {
     if (data.type !== "SpecialEffect") return;

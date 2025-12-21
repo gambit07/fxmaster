@@ -13,6 +13,13 @@ import { resetFlag, applyMaskUniformsToFilters, getCssViewportMetrics, snappedSt
 
 import { SceneMaskManager } from "../common/base-effects-scene-manager.js";
 
+function isBelowTokensFilter(f) {
+  const v = f?.__fxmBelowTokens ?? f?.options?.belowTokens;
+  if (v === true) return true;
+  if (v && typeof v === "object" && "value" in v) return !!v.value;
+  return !!v;
+}
+
 export class FilterEffectsSceneManager {
   constructor() {
     this.filters = {};
@@ -69,6 +76,11 @@ export class FilterEffectsSceneManager {
       canvas?.app?.ticker?.remove?.(this.#animate, this);
     } catch {}
     this._ticker = false;
+
+    try {
+      SceneMaskManager.instance.setBelowTokensNeeded?.("filters", false);
+      SceneMaskManager.instance.setKindActive?.("filters", false);
+    } catch {}
   }
 
   async update({ skipFading = false } = {}) {
@@ -160,18 +172,26 @@ export class FilterEffectsSceneManager {
 
   #applySuppressMaskToFilters(sync = false) {
     const filtersArr = [...Object.values(this.filters), ...this._dyingFilters];
-    if (!filtersArr.length) return;
+    const hasAny = filtersArr.length > 0;
+
+    const anyBelow = hasAny ? filtersArr.some((f) => isBelowTokensFilter(f)) : false;
+
+    try {
+      SceneMaskManager.instance.setKindActive?.("filters", hasAny);
+      SceneMaskManager.instance.setBelowTokensNeeded?.("filters", anyBelow);
+    } catch {}
+
+    if (!hasAny) return;
 
     try {
       const r = canvas?.app?.renderer;
       const hiDpi = (r?.resolution ?? window.devicePixelRatio ?? 1) !== 1;
-      const anyBelow = this.#anyBelowTokens();
+
       if (sync || (anyBelow && hiDpi)) SceneMaskManager.instance.refreshSync("filters");
       else SceneMaskManager.instance.refresh("filters");
     } catch {}
 
     const { base, cutout, tokens } = SceneMaskManager.instance.getMasks("filters");
-    const anyBelow = filtersArr.some((f) => !!(f?.__fxmBelowTokens ?? f?.options?.belowTokens));
 
     if (!base) {
       for (const f of filtersArr) {
@@ -201,6 +221,12 @@ export class FilterEffectsSceneManager {
   #refreshSceneFilterSuppressionMasks(sync = false) {
     const hasAny = Object.keys(this.filters).length > 0 || this._dyingFilters.size > 0;
     if (hasAny) this.#applySuppressMaskToFilters(sync);
+    else {
+      try {
+        SceneMaskManager.instance.setBelowTokensNeeded?.("filters", false);
+        SceneMaskManager.instance.setKindActive?.("filters", false);
+      } catch {}
+    }
 
     const M = snappedStageMatrix();
     if (!M) return;
@@ -218,9 +244,8 @@ export class FilterEffectsSceneManager {
     const existing = env.filters ?? [];
     const others = existing.filter((f) => !oursAll.includes(f));
 
-    const isBelow = (f) => !!(f?.__fxmBelowTokens ?? f?.options?.belowTokens);
-    const nonBelow = oursAll.filter((f) => !isBelow(f));
-    const below = oursAll.filter((f) => isBelow(f));
+    const nonBelow = oursAll.filter((f) => !isBelowTokensFilter(f));
+    const below = oursAll.filter((f) => isBelowTokensFilter(f));
 
     env.filters = [...nonBelow, ...others, ...below];
   }
@@ -233,9 +258,7 @@ export class FilterEffectsSceneManager {
   }
 
   #anyBelowTokens() {
-    return [...Object.values(this.filters), ...this._dyingFilters].some(
-      (f) => !!(f?.__fxmBelowTokens ?? f?.options?.belowTokens),
-    );
+    return [...Object.values(this.filters), ...this._dyingFilters].some((f) => isBelowTokensFilter(f));
   }
 
   #animate() {
@@ -269,21 +292,29 @@ export class FilterEffectsSceneManager {
     }
 
     try {
+      const anyBelowTokens = this.#anyBelowTokens();
+      if (!anyBelowTokens) return;
+
       const r = canvas?.app?.renderer;
       const res = r?.resolution || window.devicePixelRatio || 1;
       const stageM = canvas?.stage?.worldTransform;
-      const fxFrac = stageM ? (stageM.tx * res - Math.round(stageM.tx * res)) / res : 0;
-      const fyFrac = stageM ? (stageM.ty * res - Math.round(stageM.ty * res)) / res : 0;
+
+      const tx = stageM?.tx ?? 0;
+      const ty = stageM?.ty ?? 0;
+
+      const fxFrac = (((tx * res) % 1) + 1) % 1;
+      const fyFrac = (((ty * res) % 1) + 1) % 1;
+
       if (!this._lastCamFrac) this._lastCamFrac = { x: fxFrac, y: fyFrac };
-      const anyBelowTokens = [...Object.values(this.filters), ...this._dyingFilters].some((f) => {
-        return !!(f?.__fxmBelowTokens ?? f?.options?.belowTokens);
-      });
-      const fracMoved = Math.abs(fxFrac - this._lastCamFrac.x) > 1e-4 || Math.abs(fyFrac - this._lastCamFrac.y) > 1e-4;
-      if (anyBelowTokens && fracMoved) {
-        this.#applySuppressMaskToFilters(true);
-        this._lastCamFrac.x = fxFrac;
-        this._lastCamFrac.y = fyFrac;
+
+      const fracMoved = Math.abs(fxFrac - this._lastCamFrac.x) > 1e-6 || Math.abs(fyFrac - this._lastCamFrac.y) > 1e-6;
+
+      if (!changed && fracMoved) {
+        SceneMaskManager.instance.refreshTokensSync?.();
       }
+
+      this._lastCamFrac.x = fxFrac;
+      this._lastCamFrac.y = fyFrac;
     } catch {}
   }
 }

@@ -57,7 +57,6 @@ Hooks.once("init", function () {
   foundry.utils.mergeObject(CONFIG.fxmaster, {
     filterEffects: FXMASTER.filterEffects,
     particleEffects: FXMASTER.particleEffects,
-    specialEffects: FXMASTER.specialEffects,
   });
 
   Hooks.callAll(`${packageId}.preRegisterParticleEffects`, CONFIG.fxmaster);

@@ -18,6 +18,9 @@ uniform vec2  viewSize;
 uniform vec4  inputSize;   // xy: input size in CSS px; zw: 1/size
 uniform vec4  outputFrame; // CSS px: (x,y,w,h) spanned by vTextureCoord
 
+// CSS px: (stage unsnapped) - (stage snapped). Used to align with snapped-mask RTs.
+uniform vec2  camFrac;
+
 // Region-mask flags
 uniform float hasMask;
 uniform float maskReady;
@@ -195,6 +198,7 @@ void main(){
 
   // CSS px of the sampled screen point
   vec2 screenPx = outputFrame.xy + vTextureCoord * inputSize.xy;
+  vec2 snapPx   = screenPx - camFrac;
 
   // Region/suppression mask in screen pixels
   float inMask = src.a;
@@ -203,10 +207,17 @@ void main(){
                       (viewSize.x >= 1.0) &&
                       (viewSize.y >= 1.0);
     if (maskUsable) {
-      vec2 maskUV = screenPx / max(viewSize, vec2(1.0));
-      float aRaw  = texture2D(maskSampler, maskUV).r;
-      float a     = clamp(aRaw, 0.0, 1.0);
-      float m     = smoothstep(0.48, 0.52, a);
+      // Scene masks are binary and should be stable across pan/zoom.
+      // Use screen-space sampling for scene (uRegionShape < 0), and snapped sampling for region masks.
+      vec2 samplePx = (uRegionShape < 0) ? screenPx : snapPx;
+
+      // Sample at texel centers to reduce boundary jitter.
+      vec2 maskPx = floor(samplePx) + 0.5;
+      vec2 maskUV = clamp(maskPx / max(viewSize, vec2(1.0)), 0.0, 1.0);
+      float a     = clamp(texture2D(maskSampler, maskUV).r, 0.0, 1.0);
+
+      // Hard step for scene allow-mask to avoid 1px seams; soft edge for region masks.
+      float m     = (uRegionShape < 0) ? step(0.5, a) : smoothstep(0.48, 0.52, a);
       if (invertMask > 0.5) m = 1.0 - m;
       inMask *= m;
     }
@@ -214,7 +225,7 @@ void main(){
 
   // Per-pixel region fade (percent or absolute)
   float fadeEdge = 1.0;
-  vec2  pW       = applyCssToWorld(screenPx);
+  vec2  pW       = applyCssToWorld((uRegionShape < 0) ? screenPx : snapPx);
 
   if (uUsePct > 0.5) {
     float pct = clamp(uFadePct, 0.0, 1.0);

@@ -99,7 +99,7 @@ export class SpecialEffectsLayer extends CONFIG.fxmaster.InteractionLayerNS {
         canvas.primary.removeChild(mesh);
         canvas.primary.videoMeshes.delete(mesh);
         resolve();
-        if (!mesh?._destroyed) mesh?.destroy({ children: true });
+        if (!mesh?._destroyed) mesh?.destroy({ children: true, texture: true, baseTexture: true });
       };
 
       video.oncanplay = onCanPlay;

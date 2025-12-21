@@ -13,11 +13,12 @@ import {
   coalesceNextFrame,
   getCssViewportMetrics,
   snappedStageMatrix,
-  composeMaskMinusTokens,
+  composeMaskMinusTokensRT,
 } from "../utils.js";
 import { refreshSceneParticlesSuppressionMasks } from "./particle-effects-scene-manager.js";
 import { BaseEffectsLayer } from "../common/base-effects-layer.js";
 import { logger } from "../logger.js";
+import { SceneMaskManager } from "../common/base-effects-scene-manager.js";
 
 const TYPE = `${packageId}.particleEffectsRegion`;
 
@@ -34,16 +35,35 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     this.particleEffects = new Map();
     this.regionEffects = new Map();
     this._regionMaskRTs = new Map();
+    this._regionBelowTokensNeeded = false;
 
     this._belowContainer = null;
     this._aboveContent = null;
+
+    this._sceneBelowBase = null;
+    this._sceneBelowCutout = null;
+    this._sceneAboveBase = null;
+    this._sceneAboveCutout = null;
+
+    this._sceneBelowBaseMask = null;
+    this._sceneBelowCutoutMask = null;
+    this._sceneAboveBaseMask = null;
+    this._sceneAboveCutoutMask = null;
+
     this._scratchGfx = null;
     this._aboveMaskGfx = null;
     this._dyingSceneEffects = new Set();
     this._lastViewSize = { w: canvas.app.renderer.view?.width | 0, h: canvas.app.renderer.view?.height | 0 };
     this._gatePassCache = new Map();
+
     this._lastSceneMaskMatrix = null;
     this._currentCameraMatrix = null;
+
+    this._lastRegionMaskMatrix = null;
+
+    this._tokensDirty = false;
+
+    this._coalescedSceneSuppressionRefresh = null;
   }
 
   occlusionFilter;
@@ -82,6 +102,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
   async _tearDown() {
     if (this.requestRegionMaskRefreshAll?.cancel) this.requestRegionMaskRefreshAll.cancel();
     if (this.requestRegionMaskRefresh?.cancel) this.requestRegionMaskRefresh.cancel();
+    if (this._coalescedSceneSuppressionRefresh?.cancel) this._coalescedSceneSuppressionRefresh.cancel();
 
     this.#destroyEffects();
 
@@ -90,6 +111,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     } catch {}
     this._scratchGfx = null;
 
+    // Above band
     try {
       if (this._aboveContent?.mask) this._aboveContent.mask = null;
     } catch {}
@@ -98,10 +120,21 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     } catch {}
     this._aboveContent = null;
 
+    // Below band
     try {
       this._belowContainer?.destroy({ children: true });
     } catch {}
     this._belowContainer = null;
+
+    // Bucket refs
+    this._sceneBelowBase = null;
+    this._sceneBelowCutout = null;
+    this._sceneAboveBase = null;
+    this._sceneAboveCutout = null;
+    this._sceneBelowBaseMask = null;
+    this._sceneBelowCutoutMask = null;
+    this._sceneAboveBaseMask = null;
+    this._sceneAboveCutoutMask = null;
 
     try {
       this._aboveMaskGfx?.destroy(true);
@@ -114,30 +147,19 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     this._belowOccl = null;
     this._aboveOccl = null;
 
+    this._tokensDirty = false;
+    this._lastSceneMaskMatrix = null;
+    this._currentCameraMatrix = null;
+    this._lastRegionMaskMatrix = null;
+
     return super._tearDown();
   }
 
   #destroyEffects() {
+    // Scene FX
     for (const fx of this.particleEffects.values()) {
       try {
         fx.stop?.();
-      } catch {}
-      try {
-        const spr = fx?._fxmSceneParticlesMaskSprite;
-        if (spr && !spr.destroyed) {
-          try {
-            if (fx.mask === spr) fx.mask = null;
-          } catch {}
-          try {
-            spr.texture = safeMaskTexture(null);
-          } catch {}
-          try {
-            fx.removeChild(spr);
-          } catch {}
-          try {
-            spr.destroy({ texture: false, baseTexture: false });
-          } catch {}
-        }
       } catch {}
       try {
         fx.destroy?.();
@@ -147,23 +169,6 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
 
     for (const fx of this._dyingSceneEffects) {
       try {
-        const spr = fx?._fxmSceneParticlesMaskSprite;
-        if (spr && !spr.destroyed) {
-          try {
-            if (fx.mask === spr) fx.mask = null;
-          } catch {}
-          try {
-            spr.texture = safeMaskTexture(null);
-          } catch {}
-          try {
-            fx.removeChild(spr);
-          } catch {}
-          try {
-            spr.destroy({ texture: false, baseTexture: false });
-          } catch {}
-        }
-      } catch {}
-      try {
         fx.stop?.();
       } catch {}
       try {
@@ -172,6 +177,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     }
     this._dyingSceneEffects.clear();
 
+    // Region FX
     for (const entries of this.regionEffects.values()) {
       for (const entry of entries) {
         const fx = entry?.fx ?? null;
@@ -215,6 +221,55 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     this._regionMaskRTs.clear?.();
   }
 
+  /**
+   * Notify the layer that token silhouettes changed (movement, resize, visibility, etc).
+   * - For scene FX: scene manager can use this to refresh cutout RT.
+   * - For region FX: cheaply recompose cutout (base - tokens) without rebuilding base.
+   */
+  notifyTokensChanged() {
+    this._tokensDirty = true;
+  }
+
+  /**
+   * Recompute whether any REGION particle effects require below-tokens cutouts,
+   * and inform the shared {@link SceneMaskManager} so it can maintain the tokens RT.
+   * @private
+   */
+  _updateRegionBelowTokensNeeded() {
+    let any = false;
+    try {
+      for (const entries of this.regionEffects.values()) {
+        if ((entries ?? []).some((e) => !!e?.fx?.__fxmBelowTokens)) {
+          any = true;
+          break;
+        }
+      }
+    } catch {}
+
+    if (this._regionBelowTokensNeeded === any) return;
+    this._regionBelowTokensNeeded = any;
+
+    try {
+      SceneMaskManager.instance.setBelowTokensNeeded?.("particles", any, "regions");
+    } catch {}
+  }
+  /**
+   * Scene manager calls this after it refreshes SceneMaskManager RTs for particles.
+   * @param {{ base: PIXI.RenderTexture|null, cutout: PIXI.RenderTexture|null }} masks
+   */
+  setSceneMaskTextures({ base = null, cutout = null } = {}) {
+    const baseTex = safeMaskTexture(base);
+    const cutoutTex = safeMaskTexture(cutout);
+
+    if (this._sceneBelowBaseMask && !this._sceneBelowBaseMask.destroyed) this._sceneBelowBaseMask.texture = baseTex;
+    if (this._sceneAboveBaseMask && !this._sceneAboveBaseMask.destroyed) this._sceneAboveBaseMask.texture = baseTex;
+
+    if (this._sceneBelowCutoutMask && !this._sceneBelowCutoutMask.destroyed)
+      this._sceneBelowCutoutMask.texture = cutoutTex;
+    if (this._sceneAboveCutoutMask && !this._sceneAboveCutoutMask.destroyed)
+      this._sceneAboveCutoutMask.texture = cutoutTex;
+  }
+
   #updateSceneParticlesSuppressionForCamera(M = this._currentCameraMatrix ?? snappedStageMatrix()) {
     const L = this._lastSceneMaskMatrix;
     const eps = 1e-4;
@@ -230,7 +285,18 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     if (!changed) return;
 
     this._lastSceneMaskMatrix = { a: M.a, b: M.b, c: M.c, d: M.d, tx: M.tx, ty: M.ty };
-    refreshSceneParticlesSuppressionMasks();
+
+    this._coalescedSceneSuppressionRefresh ??= coalesceNextFrame(
+      () => {
+        try {
+          refreshSceneParticlesSuppressionMasks();
+        } catch (err) {
+          logger?.error?.(err);
+        }
+      },
+      { key: "fxm:sceneParticlesSuppressionRefresh" },
+    );
+    this._coalescedSceneSuppressionRefresh();
   }
 
   async drawParticleEffects({ soft = false } = {}) {
@@ -254,28 +320,10 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
               else fx.stop?.();
             } catch {}
             try {
-              const spr = fx._fxmSceneParticlesMaskSprite;
-              if (spr && !spr.destroyed) {
-                try {
-                  if (fx.mask === spr) fx.mask = null;
-                } catch {}
-                try {
-                  spr.texture = safeMaskTexture(null);
-                } catch {}
-                try {
-                  fx.removeChild(spr);
-                } catch {}
-                try {
-                  spr.destroy({ texture: false, baseTexture: false });
-                } catch {}
-              }
-              fx._fxmSceneParticlesMaskSprite = null;
+              fx.parent?.removeChild?.(fx);
             } catch {}
             try {
               fx.destroy?.();
-            } catch {}
-            try {
-              fx.parent?.removeChild?.(fx);
             } catch {}
             this._dyingSceneEffects.delete(fx);
           })(),
@@ -297,10 +345,19 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       const defaultBlend = EffectClass?.defaultConfig?.blendMode ?? PIXI.BLEND_MODES.NORMAL;
       const existing = cur.get(id);
 
+      const belowTokens = !!options?.belowTokens?.value;
+
       const addToLayer = (fx) => {
         const { layerLevel = "belowDarkness" } = EffectClass.defaultConfig || {};
-        if (layerLevel === "aboveDarkness") this._aboveContent.addChild(fx);
-        else this._belowContainer.addChild(fx);
+        fx.__fxmBelowTokens = belowTokens;
+
+        if (layerLevel === "aboveDarkness") {
+          if (belowTokens) this._sceneAboveCutout.addChild(fx);
+          else this._sceneAboveBase.addChild(fx);
+        } else {
+          if (belowTokens) this._sceneBelowCutout.addChild(fx);
+          else this._sceneBelowBase.addChild(fx);
+        }
       };
 
       if (existing) {
@@ -341,28 +398,10 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
                 await Promise.all([existing?.fadeOut?.({ timeout: XFADE_MS }), ec?.fadeIn?.({ timeout: XFADE_MS })]);
               } catch {}
               try {
-                const spr = existing._fxmSceneParticlesMaskSprite;
-                if (spr && !spr.destroyed) {
-                  try {
-                    if (existing.mask === spr) existing.mask = null;
-                  } catch {}
-                  try {
-                    spr.texture = safeMaskTexture(null);
-                  } catch {}
-                  try {
-                    existing.removeChild(spr);
-                  } catch {}
-                  try {
-                    spr.destroy({ texture: false, baseTexture: false });
-                  } catch {}
-                }
-                existing._fxmSceneParticlesMaskSprite = null;
+                existing.parent?.removeChild?.(existing);
               } catch {}
               try {
                 existing.destroy?.();
-              } catch {}
-              try {
-                existing.parent?.removeChild?.(existing);
               } catch {}
               this._dyingSceneEffects.delete(existing);
             })(),
@@ -374,10 +413,10 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
           existing.stop?.();
         } catch {}
         try {
-          existing.destroy?.();
+          existing.parent?.removeChild?.(existing);
         } catch {}
         try {
-          existing.parent?.removeChild?.(existing);
+          existing.destroy?.();
         } catch {}
         cur.delete(id);
 
@@ -403,6 +442,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     }
 
     this._updateOcclusionGates();
+    this._updateRegionBelowTokensNeeded();
 
     if (removalPromises.length) {
       try {
@@ -484,8 +524,17 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         if (!shared.base) shared.base = buildRegionMaskRT(placeable, { rtPool: this._rtPool });
 
         if (belowTokens && !shared.cutout) {
-          const outRT = this._acquireRT(shared.base.width | 0, shared.base.height | 0, shared.base.resolution || 1);
-          shared.cutout = composeMaskMinusTokens(shared.base, { outRT });
+          try {
+            SceneMaskManager.instance.setBelowTokensNeeded?.("particles", true, "regions");
+          } catch {}
+          try {
+            SceneMaskManager.instance.refreshTokensSync?.();
+          } catch {}
+          const tokensRT = SceneMaskManager.instance.getMasks?.("particles")?.tokens ?? null;
+          if (tokensRT) {
+            const outRT = this._acquireRT(shared.base.width | 0, shared.base.height | 0, shared.base.resolution || 1);
+            shared.cutout = composeMaskMinusTokensRT(shared.base, tokensRT, { outRT });
+          }
         }
 
         const maskTex = belowTokens && shared.cutout ? shared.cutout : shared.base;
@@ -503,6 +552,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
 
     this._applyElevationGate(placeable, { force: true });
     this._updateOcclusionGates();
+    this._updateRegionBelowTokensNeeded();
   }
 
   forceRegionMaskRefreshAll() {
@@ -559,6 +609,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       } catch {}
     }
     this.regionEffects.delete(regionId);
+    this._updateRegionBelowTokensNeeded();
 
     const rt = this._regionMaskRTs.get(regionId);
     if (rt) {
@@ -600,7 +651,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
   _ensureSceneContainers() {
     if (!this._belowContainer || this._belowContainer.destroyed) {
       this._belowContainer = new PIXI.Container();
-      this._belowContainer.name = "fxmSceneBelowDarkness";
+      this._belowContainer.name = "fxmSceneBelowBand";
       this._belowContainer.sortableChildren = true;
       this._belowContainer.eventMode = "none";
       this.addChild(this._belowContainer);
@@ -630,10 +681,36 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       this._belowContainer.filterArea = canvas.app.renderer.screen;
     }
 
+    if (!this._sceneBelowCutout || this._sceneBelowCutout.destroyed) {
+      this._sceneBelowCutout = new PIXI.Container();
+      this._sceneBelowCutout.name = "fxmSceneBelowCutout";
+      this._sceneBelowCutout.sortableChildren = true;
+      this._sceneBelowCutout.eventMode = "none";
+      this._belowContainer.addChild(this._sceneBelowCutout);
+    } else if (this._sceneBelowCutout.parent !== this._belowContainer) {
+      try {
+        this._sceneBelowCutout.parent?.removeChild?.(this._sceneBelowCutout);
+      } catch {}
+      this._belowContainer.addChild(this._sceneBelowCutout);
+    }
+
+    if (!this._sceneBelowBase || this._sceneBelowBase.destroyed) {
+      this._sceneBelowBase = new PIXI.Container();
+      this._sceneBelowBase.name = "fxmSceneBelowBase";
+      this._sceneBelowBase.sortableChildren = true;
+      this._sceneBelowBase.eventMode = "none";
+      this._belowContainer.addChild(this._sceneBelowBase);
+    } else if (this._sceneBelowBase.parent !== this._belowContainer) {
+      try {
+        this._sceneBelowBase.parent?.removeChild?.(this._sceneBelowBase);
+      } catch {}
+      this._belowContainer.addChild(this._sceneBelowBase);
+    }
+
     const expectParent = canvas.effects ?? canvas.rendered ?? this;
     if (!this._aboveContent || this._aboveContent.destroyed) {
       this._aboveContent = new PIXI.Container();
-      this._aboveContent.name = "fxmSceneAboveDarknessContent";
+      this._aboveContent.name = "fxmSceneAboveBand";
       this._aboveContent.sortableChildren = true;
       this._aboveContent.eventMode = "none";
       expectParent.addChild(this._aboveContent);
@@ -667,7 +744,61 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       this._aboveContent.filterArea = canvas.app.renderer.screen;
     }
 
+    if (!this._sceneAboveCutout || this._sceneAboveCutout.destroyed) {
+      this._sceneAboveCutout = new PIXI.Container();
+      this._sceneAboveCutout.name = "fxmSceneAboveCutout";
+      this._sceneAboveCutout.sortableChildren = true;
+      this._sceneAboveCutout.eventMode = "none";
+      this._aboveContent.addChild(this._sceneAboveCutout);
+    } else if (this._sceneAboveCutout.parent !== this._aboveContent) {
+      try {
+        this._sceneAboveCutout.parent?.removeChild?.(this._sceneAboveCutout);
+      } catch {}
+      this._aboveContent.addChild(this._sceneAboveCutout);
+    }
+
+    if (!this._sceneAboveBase || this._sceneAboveBase.destroyed) {
+      this._sceneAboveBase = new PIXI.Container();
+      this._sceneAboveBase.name = "fxmSceneAboveBase";
+      this._sceneAboveBase.sortableChildren = true;
+      this._sceneAboveBase.eventMode = "none";
+      this._aboveContent.addChild(this._sceneAboveBase);
+    } else if (this._sceneAboveBase.parent !== this._aboveContent) {
+      try {
+        this._sceneAboveBase.parent?.removeChild?.(this._sceneAboveBase);
+      } catch {}
+      this._aboveContent.addChild(this._sceneAboveBase);
+    }
+
+    const ensureBucketMask = (bucket, propName, spriteName) => {
+      if (!bucket || bucket.destroyed) return null;
+
+      let spr = this[propName];
+      if (!spr || spr.destroyed) {
+        spr = new PIXI.Sprite(safeMaskTexture(null));
+        spr.name = spriteName;
+        bucket.addChild(spr);
+        bucket.mask = spr;
+        this[propName] = spr;
+      } else if (spr.parent !== bucket) {
+        try {
+          spr.parent?.removeChild?.(spr);
+        } catch {}
+        bucket.addChild(spr);
+        bucket.mask = spr;
+      } else if (bucket.mask !== spr) {
+        bucket.mask = spr;
+      }
+      return spr;
+    };
+
+    ensureBucketMask(this._sceneBelowCutout, "_sceneBelowCutoutMask", "fxmSceneParticlesMask:belowCutout");
+    ensureBucketMask(this._sceneBelowBase, "_sceneBelowBaseMask", "fxmSceneParticlesMask:belowBase");
+    ensureBucketMask(this._sceneAboveCutout, "_sceneAboveCutoutMask", "fxmSceneParticlesMask:aboveCutout");
+    ensureBucketMask(this._sceneAboveBase, "_sceneAboveBaseMask", "fxmSceneParticlesMask:aboveBase");
+
     this._updateOcclusionGates();
+    this._updateRegionBelowTokensNeeded();
   }
 
   _rebuildRegionMaskFor(placeable) {
@@ -691,10 +822,22 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         shared.cutout.width === newBase.width &&
         shared.cutout.height === newBase.height &&
         (shared.cutout.resolution || 1) === (newBase.resolution || 1);
-      const outRT = reuse
-        ? shared.cutout
-        : this._acquireRT(newBase.width | 0, newBase.height | 0, newBase.resolution || 1);
-      shared.cutout = composeMaskMinusTokens(newBase, { outRT });
+      try {
+        SceneMaskManager.instance.refreshTokensSync?.();
+      } catch {}
+      const tokensRT = SceneMaskManager.instance.getMasks?.("particles")?.tokens ?? null;
+
+      if (tokensRT) {
+        const outRT = reuse
+          ? shared.cutout
+          : this._acquireRT(newBase.width | 0, newBase.height | 0, newBase.resolution || 1);
+        shared.cutout = composeMaskMinusTokensRT(newBase, tokensRT, { outRT });
+      } else if (shared.cutout && !reuse) {
+        try {
+          this._releaseRT(shared.cutout);
+        } catch {}
+        shared.cutout = null;
+      }
     } else {
       if (shared.cutout) {
         this._releaseRT(shared.cutout);
@@ -746,6 +889,32 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
 
     this._sanitizeRegionMasks();
 
+    if (this._tokensDirty) {
+      try {
+        this._updateRegionBelowTokensNeeded();
+
+        if (this._regionBelowTokensNeeded) {
+          try {
+            SceneMaskManager.instance.refreshTokensSync?.();
+          } catch {}
+          const tokensRT = SceneMaskManager.instance.getMasks?.("particles")?.tokens ?? null;
+
+          if (tokensRT) {
+            for (const [regionId, shared] of this._regionMaskRTs.entries()) {
+              if (!shared?.base || !shared?.cutout) continue;
+              const entries = this.regionEffects.get(regionId) ?? [];
+              const anyBelow = entries.some((e) => !!e?.fx?.__fxmBelowTokens);
+              if (!anyBelow) continue;
+              composeMaskMinusTokensRT(shared.base, tokensRT, { outRT: shared.cutout });
+            }
+          }
+        }
+      } catch (err) {
+        logger?.error?.("FXMaster: error recomposing particle token cutout masks", err);
+      }
+      this._tokensDirty = false;
+    }
+
     try {
       for (const [regionId] of this.regionEffects) {
         const reg = canvas.regions?.get(regionId);
@@ -796,22 +965,37 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
   }
 
   _updateOcclusionGates() {
-    const hasBelow =
-      !!this._belowContainer && !this._belowContainer.destroyed && this._belowContainer.children?.length > 0;
-    const hasAbove = !!this._aboveContent && !this._aboveContent.destroyed && this._aboveContent.children?.length > 0;
+    const hasChildrenExceptMask = (container, maskSprite) => {
+      if (!container || container.destroyed) return false;
+      const kids = container.children ?? [];
+      if (!kids.length) return false;
+      if (kids.length === 1 && maskSprite && kids[0] === maskSprite) return false;
+      if (maskSprite && kids.length > 0) {
+        return kids.some((c) => c !== maskSprite);
+      }
+      return kids.length > 0;
+    };
+
+    const hasBelowScene =
+      hasChildrenExceptMask(this._sceneBelowBase, this._sceneBelowBaseMask) ||
+      hasChildrenExceptMask(this._sceneBelowCutout, this._sceneBelowCutoutMask);
+
+    const hasAboveScene =
+      hasChildrenExceptMask(this._sceneAboveBase, this._sceneAboveBaseMask) ||
+      hasChildrenExceptMask(this._sceneAboveCutout, this._sceneAboveCutoutMask);
 
     if (this.occlusionFilter) {
-      const hasUnderLayer = hasBelow || this._hasRegionDefaultFX();
+      const hasUnderLayer = hasBelowScene || this._hasRegionDefaultFX();
       this.occlusionFilter.enabled = !!hasUnderLayer;
       this.occlusionFilter.elevation = this.#elevation;
     }
 
     if (this._belowOccl) {
-      this._belowOccl.enabled = !!hasBelow;
+      this._belowOccl.enabled = !!hasBelowScene;
       this._belowOccl.elevation = this.#elevation;
     }
     if (this._aboveOccl) {
-      this._aboveOccl.enabled = !!hasAbove;
+      this._aboveOccl.enabled = !!hasAboveScene;
       this._aboveOccl.elevation = this.#elevation;
     }
   }
@@ -861,24 +1045,21 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
   }
 
   /**
-   * Keep scene-level particle suppression masks in sync with the current camera
-   * and viewport size, similar to _sanitizeRegionMasks but for scene FX.
+   * Keep Scene particle bucket masks in sync with viewport size and camera transforms.
    */
   _sanitizeSceneMasks() {
-    const hasSceneFx =
-      (this.particleEffects && this.particleEffects.size > 0) ||
-      (this._dyingSceneEffects && this._dyingSceneEffects.size > 0);
+    const hasSceneBuckets =
+      (!!this._sceneBelowBase && !this._sceneBelowBase.destroyed) ||
+      (!!this._sceneBelowCutout && !this._sceneBelowCutout.destroyed) ||
+      (!!this._sceneAboveBase && !this._sceneAboveBase.destroyed) ||
+      (!!this._sceneAboveCutout && !this._sceneAboveCutout.destroyed);
 
-    const hasSceneContainers =
-      (!!this._belowContainer && !this._belowContainer.destroyed) ||
-      (!!this._aboveContent && !this._aboveContent.destroyed);
-
-    if (!hasSceneFx && !hasSceneContainers) return;
+    if (!hasSceneBuckets) return;
 
     const { cssW, cssH } = getCssViewportMetrics();
 
-    const updateSprite = (node, spr) => {
-      if (!spr || spr.destroyed || !node || node.destroyed) return;
+    const updateBucketMask = (bucket, spr) => {
+      if (!bucket || bucket.destroyed || !spr || spr.destroyed) return;
 
       if (!spr.texture) {
         try {
@@ -892,56 +1073,51 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         } catch {}
       }
 
-      if (!spr._texture || !spr._texture.orig) return;
-
-      spr.width = cssW;
-      spr.height = cssH;
-
       try {
-        applyMaskSpriteTransform(node, spr);
+        spr.width = cssW;
+        spr.height = cssH;
       } catch {}
 
-      if (node.mask !== spr) {
+      try {
+        applyMaskSpriteTransform(bucket, spr);
+      } catch {}
+
+      if (bucket.mask !== spr) {
         try {
-          node.mask = spr;
+          bucket.mask = spr;
         } catch {}
       }
     };
 
-    if (this.particleEffects && this.particleEffects.size) {
-      for (const fx of this.particleEffects.values()) {
-        const spr = fx?._fxmSceneParticlesMaskSprite || null;
-        if (spr) updateSprite(fx, spr);
-      }
-    }
-
-    if (this._dyingSceneEffects && this._dyingSceneEffects.size) {
-      for (const fx of this._dyingSceneEffects) {
-        const spr = fx?._fxmSceneParticlesMaskSprite || null;
-        if (spr) updateSprite(fx, spr);
-      }
-    }
-
-    const updateContainerMask = (cont) => {
-      if (!cont || cont.destroyed) return;
-
-      const spr =
-        cont.children?.find?.(
-          (c) => c && !c.destroyed && c.name === "fxmSceneParticlesMaskSprite" && c instanceof PIXI.Sprite,
-        ) || null;
-
-      if (spr) updateSprite(cont, spr);
-    };
-
-    updateContainerMask(this._belowContainer);
-    updateContainerMask(this._aboveContent);
+    updateBucketMask(this._sceneBelowBase, this._sceneBelowBaseMask);
+    updateBucketMask(this._sceneBelowCutout, this._sceneBelowCutoutMask);
+    updateBucketMask(this._sceneAboveBase, this._sceneAboveBaseMask);
+    updateBucketMask(this._sceneAboveCutout, this._sceneAboveCutoutMask);
   }
 
   _onCameraChange() {
     if (!canvas?.scene) return;
 
-    this.#updateSceneParticlesSuppressionForCamera(this._currentCameraMatrix);
+    const M = this._currentCameraMatrix ?? snappedStageMatrix();
+    this.#updateSceneParticlesSuppressionForCamera(M);
 
-    if (this.regionEffects?.size) this.requestRegionMaskRefreshAll();
+    if (!this.regionEffects?.size) return;
+
+    const L = this._lastRegionMaskMatrix;
+    const eps = 1e-4;
+    const changed =
+      !L ||
+      Math.abs(L.a - M.a) > eps ||
+      Math.abs(L.b - M.b) > eps ||
+      Math.abs(L.c - M.c) > eps ||
+      Math.abs(L.d - M.d) > eps ||
+      Math.abs(L.tx - M.tx) > eps ||
+      Math.abs(L.ty - M.ty) > eps;
+
+    if (!changed) return;
+
+    this._lastRegionMaskMatrix = { a: M.a, b: M.b, c: M.c, d: M.d, tx: M.tx, ty: M.ty };
+
+    this.requestRegionMaskRefreshAll();
   }
 }
