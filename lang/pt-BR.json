@@ -1,7 +1,7 @@
 {
   "I18N": {
     "LANGUAGE": "Português (Brasil)",
-    "MAINTAINERS": "Bellenus#5269, Innocenti#1455, Kharmans#0710"
+    "MAINTAINERS": "Kharmans"
   },
 
   "CONTROLS": {
@@ -106,7 +106,19 @@
       "WobbleFrequency": "Frequência de Oscilação",
       "Streakiness": "Listras",
       "Lift": "Elevador",
-      "Rainbow": "Arco-Íris"
+      "Rainbow": "Arco-Íris",
+      "FrostStrength": "Intensidade do Gelo",
+      "Depth": "Profundidade",
+      "VeinStrength": "Intensidade das Veias",
+      "WaterTint": "Tonalidade de Água",
+      "WaterStrength": "Intensidade da Água",
+      "WaterSpeed": "Velocidade da Água",
+      "SheenStrength": "Intensidade do Brilho",
+      "SheenTint": "Tonalidade do Brilho",
+      "ReflectionStrength": "Intensidade do Reflexo",
+      "ReflectionDistance": "Distância do Reflexo",
+      "ReflectionBlur": "Desfoque do Reflexo",
+      "ReflectionFresnel": "Reflexão Fresnel"
     },
     "ParamTooltips": {
       "Saturation": "Intensidade da cor. 0 = tons de cinza; 1 = original; >1 = supersaturado.",
@@ -164,7 +176,19 @@
       "WobbleFrequency": "Controla a velocidade de oscilação das partículas. Maior = oscilação mais rápida.",
       "Streakiness": "Controla o quanto o filtro se estica e forma faixas ao longo do percurso do movimento. Valores mais baixos criam uma névoa mais uniforme, enquanto valores mais altos criam faixas mais longas.",
       "Lift": "Controla a espessura do filtro no centro de cada folha em comparação com as bordas. Valores mais baixos resultam em uma superfície mais plana e uniforme; valores mais altos tornam o centro mais denso e as bordas mais finas, adicionando profundidade, mas reduzindo a cobertura geral.",
-      "Rainbow": "Substitui a Tonalidade e ativa um efeito de arco-íris aleatório e cíclico nas partículas."
+      "Rainbow": "Substitui a Tonalidade e ativa um efeito de arco-íris aleatório e cíclico nas partículas.",
+      "FrostStrength": "Controla a intensidade com que a veia de gelo (geada) tinge a cena. Maior = gelo mais fosco/opaco.",
+      "Depth": "Controla a contribuição da camada sob o gelo (movimento/cáusticas). Maior = maior profundidade visível sob o gelo.",
+      "VeinStrength": "Escurece e adiciona uma estrutura sutil semelhante a veias no gelo. 0 desativa as veias.",
+      "WaterTint": "Defina a cor da camada de água animada sob o gelo.",
+      "WaterStrength": "Intensidade da refração e da tonalidade da água sob o gelo. Maior = movimento mais visível.",
+      "WaterSpeed": "Velocidade do movimento da água sob o gelo. Maior = movimento mais rápido.",
+      "SheenStrength": "Intensidade da camada de brilho do gelo. Maior = brilho mais brilhante.",
+      "SheenTint": "Aplique a cor para dar brilho à camada de realce.",
+      "ReflectionStrength": "Intensidade da amostragem semelhante à reflexão para gelo brilhante. Maior = reflexão mais forte.",
+      "ReflectionDistance": "A distância de amostragem/deslocamento da reflexão. Maior = mudança de reflexão mais pronunciada.",
+      "ReflectionBlur": "Desfoque aplicado à amostra de reflexão. Maior = reflexão mais suave.",
+      "ReflectionFresnel": "Controla o quanto a reflexão depende do ângulo de visão. Maior = reflexão mais densa e com maior ênfase nas bordas."
     },
 
     "Particles": {
@@ -228,6 +252,45 @@
       "TypeErrors": {
         "TypeUnknown": "O efeito de partícula \"{id}\" é de tipo desconhecido \"{type}\". Ignorado.",
         "TypeNotFound": "Nenhum efeito de partícula encontrado para o tipo: {type}"
+      },
+      "CustomParticles": {
+        "ManagementHeader": "Efeitos de Partículas de {name}",
+        "NoCustomParticleEffects": "Nenhum efeito de partículas personalizado foi criado ainda.",
+        "AddEffect": "Adicionar Efeito",
+        "ParticleNamePlaceholder": "Meu Nome de Partícula Personalizado",
+        "BaseEffect": "Efeito Base",
+        "Group": "Grupo",
+        "Textures": "Texturas",
+        "TexturePathsPlaceholder": "Caminhos de imagem separados por vírgulas, seleção sequencial do Filepicker suportada. Recomenda-se manter os tamanhos das texturas o menor possível para melhor desempenho, preferencialmente 50kb ou menos.",
+        "Icon": "Ícone",
+        "IconPath": "Caminho do Ícone",
+        "Name": "Nome de Partícula Personalizado",
+        "Save": "Salvar",
+        "Cancel": "Cancelar",
+        "Edit": "Editar",
+        "Delete": "Excluir",
+        "ControlTitle": "Gerenciar Efeitos de Partículas do Usuário",
+        "ManagementTitle": "Efeitos de Partículas do Usuário",
+        "ConfigTitle": "Efeito de Partícula Personalizado",
+        "AmbientFloat": "Flutuação Ambiente",
+        "DirectionalDrift": "Deslocamento Direcional",
+        "RefreshBrowserTitle": "Atualizar Navegador",
+        "RefreshBrowserContentNew": "Deseja atualizar o navegador agora? O efeito {name} não estará disponível no menu Efeitos de Partículas de Região até que a atualização ocorra.",
+        "RefreshBrowserContentUpdated": "Deseja atualizar o navegador agora? O efeito {name} não será atualizado no menu Efeitos de Partículas de Região até que a atualização ocorra. Podem ocorrer problemas se o efeito tiver sido modificado para usar tipos de efeito base ou caminhos de textura diferentes.",
+        "Tooltips": {
+          "Name": "Nome exibido na lista de partículas FXMaster.",
+          "BaseEffect": "Escolha o estilo de movimento. Deslocamento Direcional move as partículas em uma direção principal. Flutuação Ambiente gera partículas aleatoriamente e as deixa flutuar na tela.",
+          "Group": "Em qual categoria do FXMaster este efeito aparece (Clima, Ambiente ou Animais).",
+          "Textures": "Um ou mais caminhos de imagem, separados por vírgulas. Várias imagens serão escolhidas aleatoriamente por partícula.",
+          "Icon": "Ícone exibido na lista de partículas."
+        },
+        "Errors": {
+          "NameRequired": "O nome é obrigatório.",
+          "TexturesRequired": "Você deve escolher pelo menos uma imagem para a textura de partículas.",
+          "IconRequired": "Você deve escolher uma imagem de ícone para o efeito personalizado.",
+          "InvalidTexture": "Textura não é um arquivo de imagem compatível: {path}",
+          "InvalidIcon": "O ícone não é um arquivo de imagem compatível: {path}"
+        }
       }
     },
 
@@ -241,7 +304,8 @@
         "Predator": "Predador",
         "Underwater": "Subaquático",
         "Sunlight": "Luz do Sol",
-        "Duststorm": "Tempestade de Poeira"
+        "Duststorm": "Tempestade de Poeira",
+        "Ice": "Gelo"
       },
       "TypeErrors": {
         "TypeUnknown": "O efeito de filtro \"{id}\" é de tipo desconhecido \"{type}\". Ignorado.",
