@@ -1,5 +1,11 @@
 # Changelog
 
+## [v7.2.2] - 2026-01-05
+- Made a few adjustments to reduce minimum density for Spiders particle effect
+- Resolved User-made Particle Effects from FXMaster+ not sorting alphabetically in the Particle Effects Management window
+- Added a few integration pieces for my upcoming Gambit's Lounge module Gambit's Image Viewer, which will add functionality enabling Particle Effects in an Image Popout window.
+- Added a note to the Animation Effects window to indicate it will be removed in the V14 release
+
 ## [v7.2.1] - 2025-12-20
 - A number of fixes to masks, including some important changes to prevent losing webgl context
 - Updated pt-br localization, thanks Kharmans!
