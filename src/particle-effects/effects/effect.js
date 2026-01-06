@@ -69,7 +69,16 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
 
   /** Merge provided options into the parameter schema without inserting new keys. */
   static mergeWithDefaults(options) {
-    return foundry.utils.mergeObject(this.parameters, options, { insertKeys: false, inplace: false });
+    const merged = foundry.utils.mergeObject(this.parameters, options, { insertKeys: false, inplace: false });
+
+    if (options && typeof options === "object") {
+      for (const [k, v] of Object.entries(options)) {
+        if (k in merged) continue;
+        if (k.startsWith("__") || k.startsWith("_")) merged[k] = v;
+      }
+    }
+
+    return merged;
   }
 
   /**
@@ -415,7 +424,7 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
   }
 
   static computeMaxParticlesFromView(options = {}, { minViewCells = 3000 } = {}) {
-    const d = canvas.dimensions;
+    const d = options?.__fxmParticleContext?.dimensions ?? canvas.dimensions;
     const rawViewCells = (d.width / d.size) * (d.height / d.size);
     const viewCells = Math.max(1, Math.max(rawViewCells, minViewCells));
 

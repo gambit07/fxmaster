@@ -84,7 +84,7 @@ export class SnowstormParticleEffect extends FXMasterParticleEffect {
   getParticleEmitters(options = {}) {
     options = this.constructor.mergeWithDefaults(options);
 
-    const d = canvas.dimensions;
+    const d = CONFIG.fxmaster.getParticleDimensions(options);
 
     const { maxParticles } = this.constructor.computeMaxParticlesFromView(options, {
       minViewCells: this.constructor.MIN_VIEW_CELLS ?? 10000,

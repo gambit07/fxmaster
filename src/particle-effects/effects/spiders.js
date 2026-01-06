@@ -22,14 +22,14 @@ export class SpiderParticleEffect extends DefaultRectangleSpawnMixin(FXMasterPar
     return 0.5;
   }
 
-  static MIN_VIEW_CELLS = 15000;
+  static MIN_VIEW_CELLS = 10000;
 
   /** @override */
   static get parameters() {
     return foundry.utils.mergeObject(
       super.parameters,
       {
-        density: { min: 0.05, value: 0.3, max: 0.7, step: 0.05, decimals: 2 },
+        density: { min: 0.05, value: 0.1, max: 0.7, step: 0.05, decimals: 2 },
         "-=direction": null,
       },
       { performDeletions: true },

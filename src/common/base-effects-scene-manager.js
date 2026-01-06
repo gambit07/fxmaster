@@ -540,4 +540,13 @@ export class SceneMaskManager {
     destroyRT("_baseFiltersRT");
     this._cleanupArtifacts();
   }
+
+  /**
+   * @param {"particles"|"filters"} kind
+   * @returns {boolean}
+   */
+  hasSuppressionRegions(kind = "particles") {
+    const regions = canvas?.regions?.placeables ?? [];
+    return regions.some((reg) => regionPassesSuppressionGate(reg, kind));
+  }
 }

@@ -103,7 +103,7 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
   /** @override */
   getParticleEmitters(options = {}) {
     options = this.constructor.mergeWithDefaults(options);
-    const d = canvas.dimensions;
+    const d = CONFIG.fxmaster.getParticleDimensions(options);
 
     const { maxParticles } = this.constructor.computeMaxParticlesFromView(options, {
       minViewCells: this.constructor.MIN_VIEW_CELLS ?? 3000,
@@ -180,7 +180,7 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
 
     if (!config._dropShadowEnabled) return emitter;
 
-    const r = canvas?.app?.renderer;
+    const r = CONFIG.fxmaster.getParticleRenderer(this);
     if (!r) return emitter;
 
     const DropShadowCtor = PIXI.filters.DropShadowFilter;

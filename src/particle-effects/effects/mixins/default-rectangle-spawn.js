@@ -13,7 +13,7 @@ export function DefaultRectangleSpawnMixin(Base) {
         minViewCells: this.constructor.MIN_VIEW_CELLS ?? 3000,
       });
 
-      const d = canvas.dimensions;
+      const d = CONFIG.fxmaster.getParticleDimensions(options);
       const config = foundry.utils.deepClone(this.constructor.defaultConfig);
 
       config.maxParticles = maxParticles;

@@ -39,9 +39,27 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
     const passiveEffects = game.settings.get(packageId, "passiveParticleConfig") ?? {};
     const { particleEffects } = CONFIG.fxmaster;
 
+    const getSortLabel = (cls) => {
+      const raw = String(cls?.label ?? "");
+      try {
+        return String(game.i18n?.localize?.(raw) ?? raw);
+      } catch {
+        return raw;
+      }
+    };
+
     const initialGroups = {};
     const particleEffectGroups = Object.entries(particleEffects)
-      .sort(([, clsA], [, clsB]) => clsA.group.localeCompare(clsB.group) || clsA.label.localeCompare(clsB.label))
+      .sort(([, clsA], [, clsB]) => {
+        const gA = String(clsA?.group ?? "");
+        const gB = String(clsB?.group ?? "");
+        const gCmp = gA.localeCompare(gB, undefined, { sensitivity: "base", numeric: true });
+        if (gCmp) return gCmp;
+
+        const lA = getSortLabel(clsA);
+        const lB = getSortLabel(clsB);
+        return lA.localeCompare(lB, undefined, { sensitivity: "base", numeric: true });
+      })
       .reduce((groups, [type, cls]) => {
         const grp = cls.group;
         const isExpanded = groups[grp]?.expanded || Object.keys(activeEffects).includes(type);

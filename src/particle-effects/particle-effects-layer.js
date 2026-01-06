@@ -258,16 +258,19 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
    * @param {{ base: PIXI.RenderTexture|null, cutout: PIXI.RenderTexture|null }} masks
    */
   setSceneMaskTextures({ base = null, cutout = null } = {}) {
-    const baseTex = safeMaskTexture(base);
-    const cutoutTex = safeMaskTexture(cutout);
+    const baseTex = base ?? PIXI.Texture.EMPTY;
+    const cutoutTex = cutout ?? PIXI.Texture.EMPTY;
 
-    if (this._sceneBelowBaseMask && !this._sceneBelowBaseMask.destroyed) this._sceneBelowBaseMask.texture = baseTex;
-    if (this._sceneAboveBaseMask && !this._sceneAboveBaseMask.destroyed) this._sceneAboveBaseMask.texture = baseTex;
+    const apply = (spr, tex, enabled) => {
+      if (!spr || spr.destroyed) return;
+      spr.texture = tex;
+      spr._fxmMaskEnabled = !!enabled;
+    };
 
-    if (this._sceneBelowCutoutMask && !this._sceneBelowCutoutMask.destroyed)
-      this._sceneBelowCutoutMask.texture = cutoutTex;
-    if (this._sceneAboveCutoutMask && !this._sceneAboveCutoutMask.destroyed)
-      this._sceneAboveCutoutMask.texture = cutoutTex;
+    apply(this._sceneBelowBaseMask, baseTex, !!base);
+    apply(this._sceneAboveBaseMask, baseTex, !!base);
+    apply(this._sceneBelowCutoutMask, cutoutTex, !!cutout);
+    apply(this._sceneAboveCutoutMask, cutoutTex, !!cutout);
   }
 
   #updateSceneParticlesSuppressionForCamera(M = this._currentCameraMatrix ?? snappedStageMatrix()) {
@@ -664,21 +667,6 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       this._belowOccl.blendMode = PIXI.BLEND_MODES.NORMAL;
       this._belowContainer.filters = [this._belowOccl];
       this._belowContainer.filterArea = canvas.app.renderer.screen;
-    } else if (this._belowContainer.parent !== this) {
-      try {
-        this._belowContainer.parent?.removeChild?.(this._belowContainer);
-      } catch {}
-      this.addChild(this._belowContainer);
-      if (!this._belowOccl) {
-        this._belowOccl = CONFIG.fxmaster.WeatherOcclusionMaskFilterNS.create({
-          occlusionTexture: canvas.masks.depth.renderTexture,
-        });
-        this._belowOccl.enabled = false;
-        this._belowOccl.elevation = this.#elevation;
-        this._belowOccl.blendMode = PIXI.BLEND_MODES.NORMAL;
-      }
-      this._belowContainer.filters = [this._belowOccl];
-      this._belowContainer.filterArea = canvas.app.renderer.screen;
     }
 
     if (!this._sceneBelowCutout || this._sceneBelowCutout.destroyed) {
@@ -724,24 +712,11 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       this._aboveOccl.blendMode = PIXI.BLEND_MODES.NORMAL;
       this._aboveContent.filters = [this._aboveOccl];
       this._aboveContent.filterArea = canvas.app.renderer.screen;
-    } else {
-      if (this._aboveContent.parent !== expectParent) {
-        try {
-          this._aboveContent.parent?.removeChild?.(this._aboveContent);
-        } catch {}
-        expectParent.addChild(this._aboveContent);
-        this.refreshAboveSceneMask();
-      }
-      if (!this._aboveOccl) {
-        this._aboveOccl = CONFIG.fxmaster.WeatherOcclusionMaskFilterNS.create({
-          occlusionTexture: canvas.masks.depth.renderTexture,
-        });
-        this._aboveOccl.enabled = false;
-        this._aboveOccl.elevation = this.#elevation;
-        this._aboveOccl.blendMode = PIXI.BLEND_MODES.NORMAL;
-      }
-      this._aboveContent.filters = [this._aboveOccl];
-      this._aboveContent.filterArea = canvas.app.renderer.screen;
+    } else if (this._aboveContent.parent !== expectParent) {
+      try {
+        this._aboveContent.parent?.removeChild?.(this._aboveContent);
+      } catch {}
+      expectParent.addChild(this._aboveContent);
     }
 
     if (!this._sceneAboveCutout || this._sceneAboveCutout.destroyed) {
@@ -770,25 +745,33 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       this._aboveContent.addChild(this._sceneAboveBase);
     }
 
-    const ensureBucketMask = (bucket, propName, spriteName) => {
+    const { cssW, cssH } = getCssViewportMetrics();
+
+    const ensureBucketMask = (bucket, prop, name) => {
       if (!bucket || bucket.destroyed) return null;
 
-      let spr = this[propName];
+      let spr = this[prop];
       if (!spr || spr.destroyed) {
-        spr = new PIXI.Sprite(safeMaskTexture(null));
-        spr.name = spriteName;
-        bucket.addChild(spr);
-        bucket.mask = spr;
-        this[propName] = spr;
+        spr = new PIXI.Sprite(PIXI.Texture.EMPTY);
+        spr.name = name;
+        spr.eventMode = "none";
+        spr._fxmMaskEnabled = false;
+        this[prop] = spr;
+        try {
+          bucket.addChild(spr);
+        } catch {}
       } else if (spr.parent !== bucket) {
         try {
           spr.parent?.removeChild?.(spr);
         } catch {}
-        bucket.addChild(spr);
-        bucket.mask = spr;
-      } else if (bucket.mask !== spr) {
-        bucket.mask = spr;
+        try {
+          bucket.addChild(spr);
+        } catch {}
       }
+
+      spr.width = cssW;
+      spr.height = cssH;
+
       return spr;
     };
 
@@ -1061,22 +1044,17 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     const updateBucketMask = (bucket, spr) => {
       if (!bucket || bucket.destroyed || !spr || spr.destroyed) return;
 
-      if (!spr.texture) {
-        try {
-          spr.texture = safeMaskTexture(null);
-        } catch {}
+      if (!spr._fxmMaskEnabled) {
+        if (bucket.mask === spr) {
+          try {
+            bucket.mask = null;
+          } catch {}
+        }
+        return;
       }
 
-      if (!spr._texture || !spr._texture.orig) {
-        try {
-          spr.texture = safeMaskTexture(null);
-        } catch {}
-      }
-
-      try {
-        spr.width = cssW;
-        spr.height = cssH;
-      } catch {}
+      spr.width = cssW;
+      spr.height = cssH;
 
       try {
         applyMaskSpriteTransform(bucket, spr);

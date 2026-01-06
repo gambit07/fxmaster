@@ -108,7 +108,7 @@ export class RainTopParticleEffect extends FXMasterParticleEffect {
   getParticleEmitters(options = {}) {
     options = this.constructor.mergeWithDefaults(options);
 
-    const d = canvas.dimensions;
+    const d = CONFIG.fxmaster.getParticleDimensions?.(options ?? this) ?? canvas.dimensions;
 
     const { maxParticles, viewCells, density } = this.constructor.computeMaxParticlesFromView(options, {
       minViewCells: this.constructor.MIN_VIEW_CELLS ?? 3000,
@@ -159,8 +159,9 @@ export class RainTopParticleEffect extends FXMasterParticleEffect {
 
     const rainEmitter = this.createEmitter(config);
 
-    const ownerX = canvas.stage.pivot.x - d.sceneX - d.sceneWidth / 2;
-    const ownerY = canvas.stage.pivot.y - d.sceneY - d.sceneHeight / 2;
+    const ctx = options?.__fxmParticleContext ?? this.__fxmParticleContext;
+    const ownerX = ctx ? 0 : canvas.stage.pivot.x - d.sceneX - d.sceneWidth / 2;
+    const ownerY = ctx ? 0 : canvas.stage.pivot.y - d.sceneY - d.sceneHeight / 2;
     rainEmitter.updateOwnerPos(ownerX, ownerY);
 
     const emitters = [rainEmitter];
@@ -181,10 +182,13 @@ export class RainTopParticleEffect extends FXMasterParticleEffect {
         config: {
           type: "rect",
           data: {
-            x: d.sceneRect.x + d.sceneWidth / 2 - d.width / 2,
-            y: d.sceneRect.y + d.sceneHeight / 2 - d.height / 2,
-            w: d.width,
-            h: d.height,
+            // In the main canvas, d.width/d.height represent the current view size.
+            // In embedded/viewer runtimes, those fields may not exist, so fall back
+            // to the full scene dimensions.
+            x: d.sceneRect.x + d.sceneWidth / 2 - (d.width ?? d.sceneWidth) / 2,
+            y: d.sceneRect.y + d.sceneHeight / 2 - (d.height ?? d.sceneHeight) / 2,
+            w: d.width ?? d.sceneWidth,
+            h: d.height ?? d.sceneHeight,
           },
         },
       });
@@ -202,12 +206,15 @@ export class RainTopParticleEffect extends FXMasterParticleEffect {
   /** @override */
   play() {
     this._unregisterCanvasPanHook();
-    this._canvasPanHookId = Hooks.on("canvasPan", (_canvas, position) => {
-      const d = canvas.dimensions;
-      for (let e of this.emitters) {
-        e.updateOwnerPos(position.x - d.sceneX - d.sceneWidth / 2, position.y - d.sceneY - d.sceneHeight / 2);
-      }
-    });
+    const ctx = this.__fxmParticleContext;
+    if (!ctx) {
+      this._canvasPanHookId = Hooks.on("canvasPan", (_canvas, position) => {
+        const d = CONFIG.fxmaster.getParticleDimensions?.(this) ?? canvas.dimensions;
+        for (const e of this.emitters) {
+          e.updateOwnerPos(position.x - d.sceneX - d.sceneWidth / 2, position.y - d.sceneY - d.sceneHeight / 2);
+        }
+      });
+    }
     super.play();
   }
 

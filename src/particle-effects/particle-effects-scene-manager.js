@@ -15,7 +15,7 @@ import { SceneMaskManager } from "../common/base-effects-scene-manager.js";
 /**
  * Recompute and attach suppression masks for scene-level particles.
  */
-export function refreshSceneParticlesSuppressionMasks() {
+export function refreshSceneParticlesSuppressionMasks({ sync = false } = {}) {
   try {
     const layer = canvas.particleeffects;
     if (!layer) return;
@@ -55,6 +55,26 @@ export function refreshSceneParticlesSuppressionMasks() {
       return !!bt;
     });
 
+    const hasSuppression = !!SceneMaskManager.instance.hasSuppressionRegions?.("particles");
+    const needsMasking = anyBelow || hasSuppression;
+
+    try {
+      SceneMaskManager.instance.setKindActive?.("particles", needsMasking);
+      SceneMaskManager.instance.setBelowTokensNeeded?.("particles", anyBelow);
+    } catch {}
+
+    if (!needsMasking) {
+      try {
+        layer.setSceneMaskTextures?.({ base: null, cutout: null });
+      } catch {}
+
+      try {
+        layer._sanitizeSceneMasks?.();
+      } catch {}
+
+      return;
+    }
+
     try {
       SceneMaskManager.instance.setKindActive?.("particles", true);
       SceneMaskManager.instance.setBelowTokensNeeded?.("particles", anyBelow);
@@ -63,7 +83,7 @@ export function refreshSceneParticlesSuppressionMasks() {
     const r = canvas?.app?.renderer;
     const hiDpi = (r?.resolution ?? window.devicePixelRatio ?? 1) !== 1;
 
-    const wantSync = anyBelow && hiDpi;
+    const wantSync = sync || (anyBelow && hiDpi);
 
     try {
       if (wantSync) SceneMaskManager.instance.refreshSync("particles");

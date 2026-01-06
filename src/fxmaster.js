@@ -33,6 +33,27 @@ CONFIG.fxmaster.regionWorldBoundsAligned = regionWorldBoundsAligned;
 CONFIG.fxmaster.regionWorldBounds = regionWorldBounds;
 CONFIG.fxmaster.rectFromAligned = rectFromAligned;
 
+/**
+ * Helpers to allow particle effects to run in other renderers ie not Canvas
+ * Provides an override context on either:
+ *  - the effect instance: effect.__fxmParticleContext
+ *  - the options object passed to the effect: options.__fxmParticleContext
+ * The override shape is:
+ *   { dimensions: {width,height,size,sceneRect}, renderer, ticker }
+ */
+CONFIG.fxmaster.getParticleContext = function (source) {
+  return source?.__fxmParticleContext ?? null;
+};
+CONFIG.fxmaster.getParticleDimensions = function (source) {
+  return CONFIG.fxmaster.getParticleContext(source)?.dimensions ?? canvas?.dimensions ?? null;
+};
+CONFIG.fxmaster.getParticleRenderer = function (source) {
+  return CONFIG.fxmaster.getParticleContext(source)?.renderer ?? canvas?.app?.renderer ?? null;
+};
+CONFIG.fxmaster.getParticleTicker = function (source) {
+  return CONFIG.fxmaster.getParticleContext(source)?.ticker ?? canvas?.app?.ticker ?? PIXI?.Ticker?.shared ?? null;
+};
+
 window.FXMASTER = {
   filters: FilterEffectsSceneManager.instance,
 };
