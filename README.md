@@ -174,6 +174,14 @@ https://github.com/gambit07/fxmaster/releases/latest/download/module.json
 The functionality of FXMaster can be accessed via _Effect Controls_ <picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/wand-magic-sparkles-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/wand-magic-sparkles-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/wand-magic-sparkles-dark.svg" alt="Effect Controls Icon" height="20" width="20" style="vertical-align:middle;"></picture> in scene controls. Each FXMaster app has its own tool inside scene controls.
 
 ### Animation Effects&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/hat-wizard-light.svg" media="(prefers-color-scheme: dark)"><source srcset="./media/font-awesome/hat-wizard-dark.svg" media="(prefers-color-scheme: light)"><img src="./media/font-awesome/hat-wizard-dark.svg" alt="" aria-hidden="true" role="presentation" height="20" width="20" style="vertical-align:middle;"></picture>
+> ⚠️ **Notice**
+>
+> This window (Animation Effects) will be removed in FXMaster's Foundry V14 release. Sequencer's Database Viewer has been the standard for viewing animation assets for some time and can continue to be used in place of this application. I've created a new premium module called
+> [Gambit's Asset Previewer](https://foundryvtt.com/packages/gambitsAssetPreviewer)
+> to better handle functionality like this moving forward as well.
+>
+> Asset Previewer uses a grid-based viewer similar to this application, along with much broader support for general Assets (Tokens, Sounds, Scenes, etc), Tagging, Custom Sources, and more. View a preview
+> [here](https://www.youtube.com/watch?v=lm5fNiaXbGU&t)!
 
 _Animation Effects_ are video files that can be previewed and/or placed on the canvas via clicking and dragging. FXMaster aggregates animations from popular animation module providers including: [JB2A], [Jinker's Animated Art], [Jack Kerouac's Animated Spell Effects], [Jack Kerouac's Animated Spell Effects Cartoon], [Boss Loot Animated Assets], and [Wild Magic Surge]. Along side the built in module support, you can also add your own Custom folder of animations from the modules settings.
 
