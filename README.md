@@ -123,7 +123,7 @@ This module also provides ways to easily configure these effects.
     - [Particle Effects](#particle-effects)&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/cloud-rain-light.svg" media="(prefers-color-scheme: dark)"><source srcset="./media/font-awesome/cloud-rain-dark.svg" media="(prefers-color-scheme: light)"><img src="./media/font-awesome/cloud-rain-dark.svg" alt="Particle Effects Icon" height="20" width="20" style="display:inline-block; vertical-align:bottom;"></picture>
       - [Particle Effects via Region Behavior](#particle-effects-via-region-behavior)
       - [Masking Particle Effects](#masking-particle-effects)
-      - [⚠ Warning Regarding Large Scenes](#-warning-regarding-large-scenes)
+      - [⚠ Performance Note](#-performance-note)
     - [Filter Effects](#filter-effects)&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/filter-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/filter-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/filter-dark.svg" alt="Filter Effects Icon" height="20" width="20" style="vertical-align:middle;"></picture>
       - [Filter Effects via Region Behavior](#filter-effects-via-region-behavior)
       - [Masking Filter Effects](#masking-filter-effects)
@@ -223,30 +223,55 @@ After adding a Region, open the Region config menu and navigate to the Behaviors
 
 ![Particle Effects Management](./media/screenshots/particle-effects-region-management.webp)
 
-In this menu, you can configure individual _Particle Effects_ in the same way as in the main app, and add region elevation visibility handling. Selecting the checkbox next to a _Particle Effect_ will display a dropdown of its options. Saving the Region behavior will add the selected _Particle Effects_ to the region. For region elevation, use the Elevation Constraints dropdown.
+- In this menu, you can configure individual _Particle Effects_ in the same way as in the main app, and add region elevation visibility handling.
+  - Selecting the checkbox next to a _Particle Effect_ will display a dropdown of its options.
+  - Saving the Region behavior will add the selected _Particle Effects_ to the region.
+  - For region elevation, use the **Elevation Constraints** dropdown.
 
-None - No elevation restrictions are considered.
-Tokens POV - Visibility will be restricted to a given tokens POV. For example, if the region elevation bottom is set to 10 feet, and region elevation top is set to 20 feet, the particle effect will be visible to the token while their elevation is between 10 and 20 feet. If the region elevation bottom is set to 10 feet, and region elevation top is infinite, the particle effect will be visible to the token while their elevation is 10 feet or above. If the region elevation bottom is infinite, and region elevation top is 20, the particle effect will be visible to the token while their elevation is 20 feet or below.
-Specific Tokens POV - Same visibility as Tokens POV, but only allows that visibility based on Token UUID's entered. Any Token UUID not entered will not be able to see the particle effect. 
+- **Elevation Constraints**
+  - **None** — No elevation restrictions are considered.
+  - **Tokens POV** — Visibility will be restricted to a given token’s POV.
+    - Example: If the region elevation bottom is set to 10 feet and the region elevation top is set to 20 feet, the particle effect will be visible to the token while their elevation is between 10 and 20 feet.
+    - Example: If the region elevation bottom is set to 10 feet and the region elevation top is infinite, the particle effect will be visible to the token while their elevation is 10 feet or above.
+    - Example: If the region elevation bottom is infinite and the region elevation top is set to 20 feet, the particle effect will be visible to the token while their elevation is 20 feet or below.
+  - **Specific Tokens POV** — Same visibility as **Tokens POV**, but only allows visibility for Token UUIDs entered. Any Token UUID not entered will not be able to see the particle effect.
+  - **Always Visible for GM** — Ignores **Tokens POV** for GM and makes the effect always visible.
 
-Always Visible for GM - Ignores Tokens POV for GM and makes the effect always visible.
+- In addition, you can subscribe the Particle Region behavior to the **Token Enters** and **Token Exits** events.
+  - These events can work in concert with the **Elevation Constraints** options, or on their own.
 
-In addition, you can subscribe the Particle Region behavior to the Token Enters and Token Exits events. These events can work in concert with the Elevation Constraints options, or on their own.
+- **Events**
+  - **Token Enters** — Effect becomes visible when a token enters the bounds of the region.
+    - This event can be paired with **Token Exits** to turn an effect on and off when a token moves in/out.
+    - Alternatively, you can only add **Token Enters**; in that case the effect becomes visible once a token enters and remains visible even if they exit.
+  - **Token Exits** — Effect becomes not visible when a token exits the bounds of the region.
 
-Token Enters: Effect becomes visible when a token enters the bounds of the region. This event can be paired with Token Exits to turn an effect on and off when a token moves in/out. Alternatively, you can only add the Token Enters event, in which case the effect will become visible once a token enters, and remain visible even if they exit.
-Token Exits: Effect becomes not visible when a token exits the bounds of the region.
 
 #### Masking Particle Effects
 
 By default, _Particle Effects_ added via the app are displayed across the entire scene. However, it is possible to mask them from specific areas. This can be achieved within Regions by using the Region behavior "Suppress Weather" or "FXMaster: Suppress Scene Particles". "Suppress Weather" masks all Particle and Filter effects along with core Foundry effects, "FXMaster: Suppress Scene Particles" only masks FXMaster Particle Effects.
 
+- When using "FXMaster: Suppress Scene Particles", there is additional region elevation visibility handling.
+- **Elevation Constraints**
+  - **None** — No elevation restrictions are considered.
+  - **Tokens POV** — Visibility suppression will be restricted to a given token’s POV.
+  - **Specific Tokens POV** — Same visibility as **Tokens POV**, but only allows visibility for Token UUIDs entered. Any Token UUID not entered will not be able to see the suppression.
+  - **Always Visible for GM** — Ignores **Tokens POV** for GM and makes the suppression always visible.
+
+- In addition, you can subscribe the Particle Region behavior to the **Token Enters** and **Token Exits** events.
+  - These events can work in concert with the **Elevation Constraints** options, or on their own.
+
+- **Events**
+  - **Token Enters** — Effect becomes suppressed when a token enters the bounds of the region.
+    - This event can be paired with **Token Exits** to turn suppression on and off when a token moves in/out.
+    - Alternatively, you can only add **Token Enters**; in that case the effect becomes suppressed once a token enters and remains suppressed even if they exit.
+  - **Token Exits** — Suppression becomes disabled when a token exits the bounds of the region.
+
 _Particle Effects_ are only displayed outside the region areas when masked. If a Hole shape is added to the region, scene particle effects will display in the hole area cutout.
 
-#### ⚠ Warning Regarding Large Scenes
+#### ⚠ Performance Note
 
-The _Particle Effects_ provided by FXMaster can have a pretty significant impact on performance, primarily due to the amount of customization FXMaster offers. 
-Increasing density and particle size particularly in large scenes (around 10,000 px × 10,000 px and larger) can be very costly.
-Be careful when enabling _Particle Effects_ in such scenes as it might make them crash. If that happens, launch the world in safe configuration
+The _Particle Effects_ provided by FXMaster have recently had an overhaul for Performance in versions 7.2.0+. I've normalized particle density and added in support for Foundrys built-in Performance Mode client setting. FXMaster will now adjust density based on that setting, where percentage is the fraction of total particles set in the manager that will be emitted, Maximum = 100%, High = 75%, Medium = 50%, Low = 25%. These changes allow much more flexibility for the GM across different player PC configurations and should prevent issues that could occur in the past on very large scenes where maximum density for a given particle effect could crash the scene. If there is an issue where too many particle effects cause a crash, launch the world in safe configuration
 and delete the configured _Particle Effects_ for the scene by running the following as a script macro or in the
 developer console (F12):
 
@@ -254,7 +279,7 @@ developer console (F12):
 canvas.scene.unsetFlag("fxmaster", "effects");
 ```
 
-You can then safely reactivate your modules. When creating Particle Effects on large scenes like the above, try to limit density and size as much as possible for a more performant experience.
+You can then safely reactivate your modules.
 
 ### Filter Effects&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/filter-light.svg" media="(prefers-color-scheme: dark)"><source srcset="./media/font-awesome/filter-dark.svg" media="(prefers-color-scheme: light)"><img src="./media/font-awesome/filter-dark.svg" alt="" aria-hidden="true" role="presentation" height="20" width="20" style="vertical-align:middle;"></picture>
 
@@ -284,22 +309,48 @@ After adding a Region, open the Region config menu and navigate to the Behaviors
 
 ![Particle Effects Management](./media/screenshots/filter-effects-region-management.webp)
 
-In this menu, you can configure individual _Filter Effects_ in the same way as in the main app, and add region elevation visibility handling. Selecting the checkbox next to a _Filter Effect_ will display a dropdown of its options. Saving the Region behavior will add the selected _Filter Effects_ to the region. For region elevation, use the Elevation Constraints dropdown.
+- In this menu, you can configure individual _Filter Effects_ in the same way as in the main app, and add region elevation visibility handling.
+  - Selecting the checkbox next to a _Filter Effect_ will display a dropdown of its options.
+  - Saving the Region behavior will add the selected _Filter Effects_ to the region.
+  - For region elevation, use the **Elevation Constraints** dropdown.
 
-None - No elevation restrictions are considered.<br/>
-Tokens POV - Visibility will be restricted to a given tokens POV. For example, if the region elevation bottom is set to 10 feet, and region elevation top is set to 20 feet, the filter effect will be visible to the token while their elevation is between 10 and 20 feet. If the region elevation bottom is set to 10 feet, and region elevation top is infinite, the filter effect will be visible to the token while their elevation is 10 feet or above. If the region elevation bottom is infinite, and region elevation top is 20, the filter effect will be visible to the token while their elevation is 20 feet or below.<br/>
-Specific Tokens POV - Same visibility as Tokens POV, but only allows that visibility based on Token UUID's entered. Any Token UUID not entered will not be able to see the filter effect. 
+- **Elevation Constraints**
+  - **None** — No elevation restrictions are considered.
+  - **Tokens POV** — Visibility will be restricted to a given token’s POV.
+    - Example: If the region elevation bottom is set to 10 feet and the region elevation top is set to 20 feet, the filter effect will be visible to the token while their elevation is between 10 and 20 feet.
+    - Example: If the region elevation bottom is set to 10 feet and the region elevation top is infinite, the filter effect will be visible to the token while their elevation is 10 feet or above.
+    - Example: If the region elevation bottom is infinite and the region elevation top is set to 20 feet, the filter effect will be visible to the token while their elevation is 20 feet or below.
+  - **Specific Tokens POV** — Same visibility as **Tokens POV**, but only allows visibility for Token UUIDs entered. Any Token UUID not entered will not be able to see the filter effect.
+  - **Always Visible for GM** — Ignores **Tokens POV** for GM and makes the effect always visible.
 
-Always Visible for GM - Ignores Tokens POV for GM and makes the effect always visible.
+- In addition, you can subscribe the Filter Region behavior to the **Token Enters** and **Token Exits** events.
+  - These events can work in concert with the **Elevation Constraints** options, or on their own.
 
-In addition, you can subscribe the Filter Region behavior to the Token Enters and Token Exits events. These events can work in concert with the Elevation Constraints options, or on their own.
-
-Token Enters: Effect becomes visible when a token enters the bounds of the region. This event can be paired with Token Exits to turn an effect on and off when a token moves in/out. Alternatively, you can only add the Token Enters event, in which case the effect will become visible once a token enters, and remain visible even if they exit.<br/>
-Token Exits: Effect becomes not visible when a token exits the bounds of the region.
+- **Events**
+  - **Token Enters** — Effect becomes visible when a token enters the bounds of the region.
+    - This event can be paired with **Token Exits** to turn an effect on and off when a token moves in/out.
+    - Alternatively, you can only add **Token Enters**; in that case the effect becomes visible once a token enters and remains visible even if they exit.
+  - **Token Exits** — Effect becomes not visible when a token exits the bounds of the region.
 
 #### Masking Filter Effects
 
 By default, _Filter Effects_ added via the scene app are displayed across the entire scene. However, it is possible to mask them from specific areas. This can be achieved within Regions by using the Region behavior "Suppress Weather" or "FXMaster: Suppress Scene Filters". "Suppress Weather" masks all Particle and Filter effects along with core Foundry effects, "FXMaster: Suppress Scene Filters" only masks FXMaster Filter Effects.
+
+- When using "FXMaster: Suppress Scene Filters", there is additional region elevation visibility handling.
+- **Elevation Constraints**
+  - **None** — No elevation restrictions are considered.
+  - **Tokens POV** — Suppression will be restricted to a given token’s POV.
+  - **Specific Tokens POV** — Same visibility as **Tokens POV**, but only allows visibility for Token UUIDs entered. Any Token UUID not entered will not be able to see the suppression.
+  - **Always Visible for GM** — Ignores **Tokens POV** for GM and makes the suppression always visible.
+
+- In addition, you can subscribe the Filter Region behavior to the **Token Enters** and **Token Exits** events.
+  - These events can work in concert with the **Elevation Constraints** options, or on their own.
+
+- **Events**
+  - **Token Enters** — Suppression becomes visible when a token enters the bounds of the region.
+    - This event can be paired with **Token Exits** to turn suppression on and off when a token moves in/out.
+    - Alternatively, you can only add **Token Enters**; in that case the suppression becomes visible once a token enters and remains visible even if they exit.
+  - **Token Exits** — Suppression becomes disabled when a token exits the bounds of the region.
 
 _Filter Effects_ are only displayed outside the region areas when masked. If a Hole shape is added to the region, scene filter effects will display in the hole area cutout.
 
