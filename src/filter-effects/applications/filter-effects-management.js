@@ -2,10 +2,12 @@ import { FXMasterBaseFormV2 } from "../../base-form.js";
 import { packageId } from "../../constants.js";
 import { resetFlag } from "../../utils.js";
 import { logger } from "../../logger.js";
+import { getHiddenEffectsCount, openEffectsVisibilityManager } from "../../common/effects-visibility-manager.js";
 
 export class FilterEffectsManagement extends FXMasterBaseFormV2 {
   constructor(scene, options = {}) {
     super(options);
+    FilterEffectsManagement.instance = this;
     this.scene = scene;
   }
 
@@ -15,9 +17,18 @@ export class FilterEffectsManagement extends FXMasterBaseFormV2 {
     classes: ["fxmaster", "form-v2", "ui-control"],
     actions: {
       updateParam: FilterEffectsManagement.updateParam,
+      openHideEffects: FilterEffectsManagement.openHideEffects,
     },
     window: {
       title: "FXMASTER.Common.FilterEffectsManagementTitle",
+      controls: [
+        {
+          icon: "fas fa-eye-slash",
+          label: "FXMASTER.Common.HideEffects",
+          action: "openHideEffects",
+          visible: () => true,
+        },
+      ],
     },
     position: {
       width: 325,
@@ -33,14 +44,24 @@ export class FilterEffectsManagement extends FXMasterBaseFormV2 {
 
   async _prepareContext() {
     const currentFilters = canvas.scene?.getFlag(packageId, "filters") ?? {};
-    const activeFilters = Object.fromEntries(
-      Object.values(currentFilters).map((filter) => [filter.type, filter.options]),
-    );
+
+    const currentCoreFilters = Object.entries(currentFilters)
+      .filter(([id, filter]) => id?.startsWith?.("core_") && filter?.type)
+      .map(([, filter]) => filter);
+
+    const activeFilters = Object.fromEntries(currentCoreFilters.map((filter) => [filter.type, filter.options]));
+
+    const activeFilterTypes = new Set(currentCoreFilters.map((filter) => filter.type));
+
+    const hidden = game.user.getFlag(packageId, "hiddenFilterEffects");
+    const hiddenFilterEffects = new Set(Array.isArray(hidden) ? hidden : []);
 
     const passiveFilters = game.settings.get(packageId, "passiveFilterConfig") ?? {};
 
     const filters = Object.fromEntries(
-      Object.entries(CONFIG.fxmaster.filterEffects).sort(([, a], [, b]) => a.label.localeCompare(b.label)),
+      Object.entries(CONFIG.fxmaster.filterEffects)
+        .filter(([type]) => !hiddenFilterEffects.has(type) || activeFilterTypes.has(type))
+        .sort(([, a], [, b]) => a.label.localeCompare(b.label)),
     );
 
     return {
@@ -50,8 +71,37 @@ export class FilterEffectsManagement extends FXMasterBaseFormV2 {
     };
   }
 
+  /**
+   * Open the per-user filter visibility manager.
+   * @returns {void}
+   */
+  static openHideEffects() {
+    openEffectsVisibilityManager({
+      kind: "filter",
+      onChange: async () => FilterEffectsManagement.instance?.render(true),
+    });
+  }
+
+  /**
+   * Update the Hide Effects header control tooltip with the current hidden count.
+   * @returns {void}
+   */
+  _updateHideEffectsTooltip() {
+    const count = getHiddenEffectsCount("filter");
+    const tooltip = game.i18n.format("FXMASTER.Common.HideEffectsTooltip", { count });
+
+    const control =
+      this.element?.querySelector?.('.window-header [data-action="openHideEffects"]') ??
+      this.element?.querySelector?.('[data-action="openHideEffects"]') ??
+      null;
+
+    if (control) control.dataset.tooltip = tooltip;
+  }
+
   async _onRender(...args) {
     await super._onRender(...args);
+
+    this._updateHideEffectsTooltip();
 
     const pos = game.user.getFlag(packageId, "dialog-position-filtereffects");
     if (!pos) return;
@@ -73,6 +123,7 @@ export class FilterEffectsManagement extends FXMasterBaseFormV2 {
     });
 
     this.wireColorInputs(this.element, FilterEffectsManagement.updateParam);
+    this.wireMultiSelectInputs?.(this.element, FilterEffectsManagement.updateParam);
   }
 
   async close(options) {
@@ -107,15 +158,18 @@ export class FilterEffectsManagement extends FXMasterBaseFormV2 {
 
     resetFlag(scene, "filters", current);
 
-    const hasFilters = Object.keys(current).some((key) => !key.startsWith("-="));
+    const hasFilters = Object.keys(current).some((key) => key.startsWith("core_"));
     FXMasterBaseFormV2.setToolButtonHighlight("filters", hasFilters);
   }
 
   static updateParam(event, input) {
-    if (!input?.name) return;
-    FXMasterBaseFormV2.updateRangeOutput(input);
+    const control =
+      (input?.name ? input : null) || input?.closest?.("[name]") || event?.target?.closest?.("[name]") || null;
 
-    const type = input.closest(".fxmaster-filter-expand")?.previousElementSibling?.dataset?.type;
+    if (!control?.name) return;
+    FXMasterBaseFormV2.updateRangeOutput(control);
+
+    const type = control.closest(".fxmaster-filter-expand")?.previousElementSibling?.dataset?.type;
     if (!type) return;
 
     const scene = canvas.scene;

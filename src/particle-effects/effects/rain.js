@@ -28,14 +28,19 @@ export class RainParticleEffect extends FXMasterParticleEffect {
 
   /** @override */
   static get parameters() {
-    return foundry.utils.mergeObject(
-      super.parameters,
-      {
-        lifetime: { min: 2, value: 2.5, max: 5, step: 0.1, decimals: 1 },
-        splash: { label: "FXMASTER.Params.Splash", type: "checkbox", value: true },
-      },
-      { performDeletions: true },
-    );
+    const p = super.parameters;
+    return {
+      belowTokens: p.belowTokens,
+      tint: p.tint,
+      topDown: { label: "FXMASTER.Params.TopDown", type: "checkbox", value: false },
+      splash: { label: "FXMASTER.Params.Splash", type: "checkbox", value: true },
+      scale: p.scale,
+      direction: { ...p.direction, showWhen: { topDown: false } },
+      speed: p.speed,
+      lifetime: { ...p.lifetime, min: 2, value: 2.5, max: 5, step: 0.1, decimals: 1 },
+      density: p.density,
+      alpha: p.alpha,
+    };
   }
 
   /**
@@ -60,6 +65,47 @@ export class RainParticleEffect extends FXMasterParticleEffect {
       { type: "moveSpeedStatic", config: { min: 2800, max: 3500 } },
       { type: "scaleStatic", config: { min: 0.8, max: 1 } },
       { type: "rotationStatic", config: { min: 75, max: 75 } },
+      {
+        type: "textureSingle",
+        config: {
+          texture: "modules/fxmaster/assets/particle-effects/effects/rain/rain.webp",
+        },
+      },
+    ],
+  };
+
+  /**
+   * Top-down rain config (legacy "rain-top" behavior).
+   * @type {PIXI.particles.EmitterConfigV3}
+   */
+  static RAIN_TOP_CONFIG = {
+    lifetime: { min: 0.6, max: 0.7 },
+    behaviors: [
+      {
+        type: "alpha",
+        config: {
+          alpha: {
+            list: [
+              { value: 0, time: 0 },
+              { value: 0.6, time: 0.8 },
+              { value: 0.23, time: 1 },
+            ],
+          },
+        },
+      },
+      {
+        type: "scale",
+        config: {
+          scale: {
+            list: [
+              { value: 3, time: 0 },
+              { value: 0.4, time: 1 },
+            ],
+          },
+          minMult: 0.7,
+        },
+      },
+      { type: "rotationStatic", config: { min: 180, max: 180 } },
       {
         type: "textureSingle",
         config: {
@@ -121,6 +167,11 @@ export class RainParticleEffect extends FXMasterParticleEffect {
   getParticleEmitters(options = {}) {
     options = this.constructor.mergeWithDefaults(options);
 
+    const topDown = !!options?.topDown?.value;
+    if (topDown) return this._getTopDownEmitters(options);
+
+    this._fxmCanvasPanOwnerPosEnabled = false;
+
     const splashEnabled = options?.splash?.value ?? true;
     const splashIntensity = 1;
 
@@ -175,6 +226,113 @@ export class RainParticleEffect extends FXMasterParticleEffect {
 
       this.applyOptionsToConfig(options, splashConfig);
       emitters.push(this.createEmitter(splashConfig));
+    }
+
+    return emitters;
+  }
+
+  /**
+   * Build top-down rain (and optional splash) emitters.
+   * @private
+   */
+  _getTopDownEmitters(options) {
+    this._fxmCanvasPanOwnerPosEnabled = true;
+
+    const d = CONFIG.fxmaster.getParticleDimensions?.(options ?? this) ?? canvas.dimensions;
+
+    const { maxParticles, viewCells, density } = this.constructor.computeMaxParticlesFromView(options, {
+      minViewCells: this.constructor.MIN_VIEW_CELLS ?? 3000,
+    });
+
+    const sceneRadius = Math.sqrt(d.sceneWidth * d.sceneWidth + d.sceneHeight * d.sceneHeight) / 2;
+
+    const config = foundry.utils.deepClone(this.constructor.RAIN_TOP_CONFIG);
+    config.maxParticles = maxParticles;
+
+    const lifetime = config.lifetime ?? 1;
+    const lifetimeMin = typeof lifetime === "number" ? lifetime : lifetime.min ?? lifetime.max ?? 1;
+    config.frequency = lifetimeMin / maxParticles;
+
+    config.behaviors.push({
+      type: "moveSpeed",
+      config: {
+        speed: {
+          list: [
+            { time: 0, value: 1600 },
+            { time: 1, value: 2000 },
+          ],
+        },
+        minMult: 0.8,
+      },
+    });
+
+    // Overrides any user-selected direction in top-down mode cause bad
+    const optsNoDir = foundry.utils.deepClone(options);
+    try {
+      delete optsNoDir.direction;
+    } catch {}
+
+    this.applyOptionsToConfig(optsNoDir, config);
+
+    const moveSpeedBehavior = config.behaviors.find(({ type }) => type === "moveSpeed");
+    const moveSpeedList = moveSpeedBehavior?.config?.speed?.list ?? [{ value: 1600 }, { value: 2000 }];
+    const averageSpeed =
+      moveSpeedList.reduce((acc, cur) => acc + (cur.value ?? 0), 0) / Math.max(1, moveSpeedList.length);
+
+    const lifetimeMax = typeof config.lifetime === "number" ? config.lifetime : config.lifetime?.max ?? lifetimeMin;
+
+    config.behaviors.push({
+      type: "spawnShape",
+      config: {
+        type: "torus",
+        data: {
+          x: d.sceneRect.x + d.sceneWidth / 2,
+          y: d.sceneRect.y + d.sceneHeight / 2,
+          radius: averageSpeed * lifetimeMax + sceneRadius * 2,
+          innerRadius: averageSpeed * lifetimeMax,
+          affectRotation: true,
+        },
+      },
+    });
+
+    const rainEmitter = this.createEmitter(config);
+
+    const ctx = options?.__fxmParticleContext ?? this.__fxmParticleContext;
+    const ownerX = ctx ? 0 : canvas.stage.pivot.x - d.sceneX - d.sceneWidth / 2;
+    const ownerY = ctx ? 0 : canvas.stage.pivot.y - d.sceneY - d.sceneHeight / 2;
+    rainEmitter.updateOwnerPos(ownerX, ownerY);
+
+    const emitters = [rainEmitter];
+
+    const splashEnabled = options?.splash?.value ?? true;
+    if (splashEnabled) {
+      const splashConfig = foundry.utils.deepClone(this.constructor.SPLASH_CONFIG);
+
+      const splashBase = viewCells * density * 0.4;
+      const splashMax = Math.max(1, Math.round(Math.min(splashBase, maxParticles)));
+      splashConfig.maxParticles = splashMax;
+
+      const splashLifetime = splashConfig.lifetime?.min ?? 0.5;
+      splashConfig.frequency = splashLifetime / splashMax;
+
+      splashConfig.behaviors.push({
+        type: "spawnShape",
+        config: {
+          type: "rect",
+          data: {
+            x: d.sceneRect.x + d.sceneWidth / 2 - (d.width ?? d.sceneWidth) / 2,
+            y: d.sceneRect.y + d.sceneHeight / 2 - (d.height ?? d.sceneHeight) / 2,
+            w: d.width ?? d.sceneWidth,
+            h: d.height ?? d.sceneHeight,
+          },
+        },
+      });
+
+      this.applyOptionsToConfig(optsNoDir, splashConfig);
+
+      const splashEmitter = this.createEmitter(splashConfig);
+      splashEmitter.updateOwnerPos(ownerX, ownerY);
+      emitters.push(splashEmitter);
     }
 
     return emitters;

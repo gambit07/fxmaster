@@ -3,6 +3,7 @@ import { FilterEffectsSceneManager } from "./filter-effects/filter-effects-scene
 import { ParticleEffectsManagement } from "./particle-effects/applications/particle-effects-management.js";
 import { SpecialEffectsManagement } from "./special-effects/applications/special-effects-management.js";
 import { FilterEffectsManagement } from "./filter-effects/applications/filter-effects-management.js";
+import { ApiEffectsManagement } from "./api-effects/applications/api-effects-management.js";
 import { saveParticleAndFilterEffectsAsMacro } from "./macro.js";
 
 export function registerGetSceneControlButtonsHook() {
@@ -34,6 +35,15 @@ function getSceneControlButtons(t) {
       order: 40,
       button: true,
       [onEvent]: () => new FilterEffectsManagement().render(true),
+      visible: game.user.isGM,
+    },
+    "api-effects": {
+      name: "api-effects",
+      title: "FXMASTER.Common.ApiEffects",
+      icon: "fas fa-plug",
+      order: 47,
+      button: true,
+      [onEvent]: () => new ApiEffectsManagement().render(true),
       visible: game.user.isGM,
     },
     "particle-effects": {
@@ -96,6 +106,22 @@ function getSceneControlButtons(t) {
                   const btnFilters = document.querySelector(`[data-tool="filters"]`);
                   btnFilters?.style?.removeProperty("background-color");
                   btnFilters?.style?.removeProperty("border-color");
+                  const btnApi = document.querySelector(`[data-tool="api-effects"]`);
+                  btnApi?.style?.removeProperty("background-color");
+                  btnApi?.style?.removeProperty("border-color");
+                  const btnControl =
+                    document.querySelector(`#scene-controls-layers button.control[data-control="effects"]`) ||
+                    document.querySelector(
+                      `#scene-controls-layers button[data-action="control"][data-control="effects"]`,
+                    ) ||
+                    document.querySelector(`button[data-action="control"][data-control="effects"]`) ||
+                    document.querySelector(`li.scene-control[data-control="effects"] button`) ||
+                    document.querySelector(`li.scene-control[data-control="effects"]`);
+                  const btnControlEl = btnControl?.matches?.("li")
+                    ? btnControl.querySelector?.("button") ?? btnControl
+                    : btnControl;
+                  btnControlEl?.style?.removeProperty("background-color");
+                  btnControlEl?.style?.removeProperty("border-color");
                 }
               },
               default: true,

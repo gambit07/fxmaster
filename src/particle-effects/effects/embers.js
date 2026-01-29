@@ -26,15 +26,17 @@ export class EmbersParticleEffect extends FXMasterParticleEffect {
 
   /** @override */
   static get parameters() {
-    return foundry.utils.mergeObject(
-      super.parameters,
-      {
-        density: { min: 0.05, value: 0.7, max: 1.4, step: 0.05, decimals: 2 },
-        tint: { value: { value: "#f77300" } },
-        "-=direction": null,
-      },
-      { performDeletions: true },
-    );
+    const p = super.parameters;
+    return {
+      belowTokens: p.belowTokens,
+      tint: { ...p.tint, value: { ...p.tint.value, value: "#f77300" } },
+      topDown: { label: "FXMASTER.Params.TopDown", type: "checkbox", value: false },
+      scale: p.scale,
+      speed: p.speed,
+      lifetime: p.lifetime,
+      density: { ...p.density, min: 0.05, value: 0.7, max: 1.4, step: 0.05, decimals: 2 },
+      alpha: p.alpha,
+    };
   }
 
   /**
@@ -111,6 +113,7 @@ export class EmbersParticleEffect extends FXMasterParticleEffect {
   /** @override */
   getParticleEmitters(options = {}) {
     options = this.constructor.mergeWithDefaults(options);
+    const topDown = !!options?.topDown?.value;
 
     const d = CONFIG.fxmaster.getParticleDimensions(options);
 
@@ -127,22 +130,66 @@ export class EmbersParticleEffect extends FXMasterParticleEffect {
 
     config.behaviors ??= [];
 
+    if (!topDown) {
+      this._fxmCanvasPanOwnerPosEnabled = false;
+      config.behaviors.push({
+        type: "spawnShape",
+        config: {
+          type: "rect",
+          data: {
+            x: d.sceneRect.x,
+            y: d.sceneRect.y,
+            w: d.sceneRect.width,
+            h: d.sceneRect.height,
+          },
+        },
+      });
+
+      this.applyOptionsToConfig(options, config);
+      const emitter = withSteppedGradientColor(this.createEmitter(config), config);
+      return [emitter];
+    }
+
+    this._fxmCanvasPanOwnerPosEnabled = true;
+
+    const sceneRadius = Math.sqrt(d.sceneWidth * d.sceneWidth + d.sceneHeight * d.sceneHeight) / 2;
+
+    config.behaviors = config.behaviors.filter((b) => b.type !== "rotation" && b.type !== "rotationStatic");
+    config.behaviors.push({ type: "rotationStatic", config: { min: 180, max: 180 } });
+
+    this.applyOptionsToConfig(options, config);
+
+    const ms = config.behaviors.find(({ type }) => type === "moveSpeedStatic")?.config;
+    const avgSpeed = ms ? ((ms.min ?? 0) + (ms.max ?? 0)) / 2 : 0;
+    const lifetimeMax = typeof config.lifetime === "number" ? config.lifetime : config.lifetime?.max ?? lifetimeMin;
+
+    const holeRadius = this.getTopDownDeadzoneRadius(d);
+
+    const travel = avgSpeed * lifetimeMax;
+    const innerRadius = travel + holeRadius;
+    const outerRadius = innerRadius + sceneRadius * 2;
+
     config.behaviors.push({
       type: "spawnShape",
       config: {
-        type: "rect",
+        type: "torus",
         data: {
-          x: d.sceneRect.x,
-          y: d.sceneRect.y,
-          w: d.sceneRect.width,
-          h: d.sceneRect.height,
+          x: d.sceneRect.x + d.sceneWidth / 2,
+          y: d.sceneRect.y + d.sceneHeight / 2,
+          radius: outerRadius,
+          innerRadius,
+          affectRotation: true,
         },
       },
     });
 
-    this.applyOptionsToConfig(options, config);
-
     const emitter = withSteppedGradientColor(this.createEmitter(config), config);
+
+    const ctx = options?.__fxmParticleContext ?? this.__fxmParticleContext;
+    const ownerX = ctx ? 0 : canvas.stage.pivot.x - d.sceneX - d.sceneWidth / 2;
+    const ownerY = ctx ? 0 : canvas.stage.pivot.y - d.sceneY - d.sceneHeight / 2;
+    emitter.updateOwnerPos(ownerX, ownerY);
+
     return [emitter];
   }
 }

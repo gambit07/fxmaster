@@ -3,9 +3,8 @@
     "LANGUAGE": "English",
     "MAINTAINERS": "gambit"
   },
-
   "CONTROLS": {
-    "Effects": "Effect Controls",
+    "Effects": "FXMaster Controls",
     "SpecialFX": "Animation Effects",
     "ParticleEffects": "Particle Effects",
     "InvertMask": "Invert Particle Effect Mask",
@@ -14,7 +13,6 @@
     "ClearFX": "Clear Scene Particle and Filter Effects",
     "ToolsActive": "Tools Active"
   },
-
   "FXMASTER": {
     "Common": {
       "ParticleEffect": "Particle Effect",
@@ -45,9 +43,25 @@
       "Interface": "Interface",
       "Music": "Music",
       "EnableTooltips": "Enable Tooltips",
-      "EnableTooltipsHint": "Enables tooltip descriptions for Particle and Filter effect parameters."
+      "EnableTooltipsHint": "Enables tooltip descriptions for Particle and Filter effect parameters.",
+      "HideEffects": "Hide Effects",
+      "HideParticleEffectsTitle": "Hide Particle Effects",
+      "HideFilterEffectsTitle": "Hide Filter Effects",
+      "HiddenEffectsHint": "Toggle effects to hide them from this management list (per-user). Hidden effects can still be enabled via the API.",
+      "ActiveEffectTooltip": "Currently active",
+      "HideEffectsTooltip": "Hidden effects: {count}",
+      "ApiEffects": "API Effects",
+      "ApiEffectsManagementTitle": "API Effects",
+      "ApiEffectsKind": "Kind",
+      "ApiEffectsName": "Name",
+      "ApiEffectsType": "Type",
+      "ApiEffectsActions": "Actions",
+      "ApiEffectsDelete": "Delete",
+      "ApiEffectsDetails": "API Parameters",
+      "ApiEffectsNone": "No API effects are active on this Scene.",
+      "ApiEffectsKindParticle": "Particle",
+      "ApiEffectsKindFilter": "Filter"
     },
-
     "Params": {
       "Saturation": "Saturation",
       "Gamma": "Gamma",
@@ -107,7 +121,6 @@
       "Streakiness": "Streakiness",
       "Lift": "Lift",
       "Rainbow": "Rainbow",
-
       "FrostStrength": "Frost Strength",
       "Depth": "Depth",
       "VeinStrength": "Vein Strength",
@@ -119,9 +132,70 @@
       "ReflectionStrength": "Reflection Strength",
       "ReflectionDistance": "Reflection Distance",
       "ReflectionBlur": "Reflection Blur",
-      "ReflectionFresnel": "Reflection Fresnel"
+      "ReflectionFresnel": "Reflection Fresnel",
+      "FillMode": "Fill Mode",
+      "Slices": "Slices",
+      "Offset": "Offset",
+      "RedX": "Red X",
+      "RedY": "Red Y",
+      "GreenX": "Green X",
+      "GreenY": "Green Y",
+      "BlueX": "Blue X",
+      "BlueY": "Blue Y",
+      "Seed": "Seed",
+      "RefreshRate": "Refresh Rate",
+      "SliceEnable": "Enable Slices",
+      "SliceCrosshatch": "Slice Crosshatch",
+      "SliceCount": "Slice Count",
+      "SliceSpeed": "Slice Speed",
+      "SliceBurstRate": "Slice Randomization",
+      "SliceOffset": "Slice Offset",
+      "SliceDirection": "Slice Direction",
+      "SlicePixelation": "Slice Pixelation",
+      "SliceShardAngle": "Slice Shard Angle",
+      "SliceRedX": "Slice Red X",
+      "SliceRedY": "Slice Red Y",
+      "SliceGreenX": "Slice Green X",
+      "SliceGreenY": "Slice Green Y",
+      "SliceBlueX": "Slice Blue X",
+      "SliceBlueY": "Slice Blue Y",
+      "MatrixGlyphs": "Enable Glyphs",
+      "GlyphDirection": "Glyph Direction",
+      "GlyphColor": "Glyph Tint",
+      "GlyphIntensity": "Glyph Intensity",
+      "GlyphCellSize": "Glyph Cell Size",
+      "GlyphMoveSpeed": "Glyph Move Speed",
+      "GlyphDensity": "Glyph Density",
+      "GlyphSlicePct": "Glyph Slice %",
+      "GlyphFlickerSpeed": "Glyph Flicker Speed",
+      "TopDown": "Top Down",
+      "DirectionalMovement": "Directional Movement",
+      "Spread": "Directional Spread",
+      "FishType": {
+        "Name": "Fish Type",
+        "Koi": "Koi",
+        "KoiSpirit": "Koi Spirit",
+        "KoiPainted": "Koi Painted",
+        "Betta": "Betta",
+        "MantaRay": "Manta Ray",
+        "MantaRaySpirit": "Manta Ray Spirit",
+        "MantaRayPainted": "Manta Ray Painted",
+        "BettaRainbow": "Betta Rainbow",
+        "BettaBluePink": "Betta Blue/Pink",
+        "BettaPurple": "Betta Purple",
+        "BettaGreen": "Betta Green",
+        "BettaRed": "Betta Red",
+        "BettaRedYellow": "Betta Red/Yellow"
+      },
+      "FishAnimations": {
+        "Glide": "Glide",
+        "Swim": "Swim",
+        "Mixed": "Mixed"
+      },
+      "RotationStrength": "Rotation Strength",
+      "Trail": "Trail",
+      "LateralMovement": "Lateral Movement"
     },
-
     "ParamTooltips": {
       "Saturation": "Color intensity. 0 = grayscale; 1 = original; >1 = oversaturated.",
       "Gamma": "Midtone curve. Lower brightens midtones; higher darkens midtones.",
@@ -179,7 +253,6 @@
       "Streakiness": "Controls how stretched and banded the filter is along the movement path. Lower values look more like uniform haze, higher values create longer streaks.",
       "Lift": "Controls how thick the filter is in the middle of each sheet compared to its edges. Lower values are more flat and even; higher values make the centers denser and the edges thinner, adding depth but reducing overall coverage.",
       "Rainbow": "Overrides Tint and enables a random cycling rainbow effect on particles.",
-
       "FrostStrength": "Controls how strongly the ice veil (frost) tints the scene. Higher = more frosty/opaque ice look.",
       "Depth": "Controls how much the under-ice layer contributes (movement/caustics). Higher = more visible depth beneath the ice.",
       "VeinStrength": "Darkens and adds subtle vein-like structure within the ice. 0 disables the veins.",
@@ -191,9 +264,38 @@
       "ReflectionStrength": "Strength of the reflection-like sampling for glossy ice. Higher = stronger reflection.",
       "ReflectionDistance": "How far the reflection is sampled/offset. Higher = more pronounced reflection shift.",
       "ReflectionBlur": "Blur applied to the reflection sample. Higher = softer reflection.",
-      "ReflectionFresnel": "Controls how view-angle dependent the reflection is. Higher = tighter, more edge-weighted reflection."
+      "ReflectionFresnel": "Controls how view-angle dependent the reflection is. Higher = tighter, more edge-weighted reflection.",
+      "SliceEnable": "Enables slice displacement and RGB split. Turn off to run Matrix-only.",
+      "SliceCrosshatch": "Adds a second slice band pattern at a different phase for a crosshatch look.",
+      "SliceCount": "Number of horizontal slices. Higher = more fragmented slices.",
+      "SliceSpeed": "How fast the slice pattern scrolls. 0 disables slice scrolling.",
+      "SliceBurstRate": "How often slice sizes/offsets re-randomize, in seconds. 0 disables randomization.",
+      "SliceOffset": "Maximum displacement amount for each slice.",
+      "SliceDirection": "Direction (degrees) that slices displace.",
+      "SlicePixelation": "Adds blocky pixel stepping to slices. 0 = smooth.",
+      "SliceShardAngle": "Adds angular shard-like shearing to slices. 0 = none.",
+      "SliceRedX": "Red channel X offset (chromatic split).",
+      "SliceRedY": "Red channel Y offset (chromatic split).",
+      "SliceGreenX": "Green channel X offset (chromatic split).",
+      "SliceGreenY": "Green channel Y offset (chromatic split).",
+      "SliceBlueX": "Blue channel X offset (chromatic split).",
+      "SliceBlueY": "Blue channel Y offset (chromatic split).",
+      "MatrixGlyphs": "Overlay Matrix-style glyphs. Works with or without slices.",
+      "MatrixDirection": "Direction (degrees) the Matrix field is oriented.",
+      "GlyphColor": "Tint color for glyphs. Toggle Apply off to use the rainbow mode instead.",
+      "GlyphIntensity": "Brightness of the glyph overlay. 0 disables glyph visibility.",
+      "GlyphCellSize": "Size of each glyph cell in pixels.",
+      "GlyphMoveSpeed": "Speed of Matrix motion simulation. 0 disables movement.",
+      "GlyphDensity": "How many glyph columns are active. 0 = none; 1 = all columns.",
+      "GlyphSlicePct": "If slices are enabled, how much of the slice region gets glyphs.",
+      "GlyphFlickerSpeed": "How fast glyphs blink. 0 disables flicker. Max is intentionally low to avoid noisy strobing.",
+      "TopDown": "Play effect in top-down mode",
+      "DirectionalMovement": "Play effect in specific direction",
+      "Spread": "Determine spread offset from direction in degrees",
+      "RotationStrength": "How strongly particles rotate as they move. Higher = more rotation.",
+      "Trail": "Trail intensity/length behind particle sprites. Higher = longer/stronger trails (can impact performance).",
+      "LateralMovement": "Adds smooth side-to-side drifting to particle movement. Higher = more lateral drift."
     },
-
     "Particles": {
       "Groups": {
         "Other": "Other",
@@ -212,7 +314,6 @@
         "Fog": "Fog",
         "AutumnLeaves": "Autumn Leaves",
         "Rain": "Rain",
-        "RainTop": "Rain Top Down",
         "Rats": "Rats",
         "Snow": "Snow",
         "Snowstorm": "Snowstorm",
@@ -224,6 +325,7 @@
         "MagicCrystals": "Magic Crystals",
         "Ghosts": "Ghosts",
         "Sandstorm": "Sandstorm",
+        "Fish": "Fish",
         "BatsWeatherEffectsConfig": "Bats (FXMaster)",
         "BirdsWeatherEffectsConfig": "Birds (FXMaster)",
         "BubblesWeatherEffectsConfig": "Bubbles (FXMaster)",
@@ -234,7 +336,6 @@
         "FogWeatherEffectsConfig": "Fog (FXMaster)",
         "AutumnLeavesWeatherEffectsConfig": "Autumn Leaves (FXMaster)",
         "RainWeatherEffectsConfig": "Rain (FXMaster)",
-        "RainTopWeatherEffectsConfig": "Rain Top Down (FXMaster)",
         "RatsWeatherEffectsConfig": "Rats (FXMaster)",
         "SnowWeatherEffectsConfig": "Snow (FXMaster)",
         "SnowstormWeatherEffectsConfig": "Snowstorm (FXMaster)",
@@ -245,7 +346,8 @@
         "FirefliesWeatherEffectsConfig": "Fireflies (FXMaster)",
         "MagicCrystalsWeatherEffectsConfig": "Magic Crystals (FXMaster)",
         "GhostsWeatherEffectsConfig": "Ghosts (FXMaster)",
-        "SandstormWeatherEffectsConfig": "Sandstorm (FXMaster)"
+        "SandstormWeatherEffectsConfig": "Sandstorm (FXMaster)",
+        "FishWeatherEffectsConfig": "Fish (FXMaster)"
       },
       "BirdsAnimations": {
         "Glide": "Glide",
@@ -296,7 +398,6 @@
         }
       }
     },
-
     "Filters": {
       "Effects": {
         "Bloom": "Bloom",
@@ -308,14 +409,14 @@
         "Underwater": "Underwater",
         "Sunlight": "Sunlight",
         "Duststorm": "Duststorm",
-        "Ice": "Ice"
+        "Ice": "Ice",
+        "Glitch": "Glitch"
       },
       "TypeErrors": {
         "TypeUnknown": "Filter effect '{id}' is of unknown type '{type}', skipping it.",
         "TypeNotFound": "No filter effect found for type: {type}"
       }
     },
-
     "Regions": {
       "BehaviorNames": {
         "ParticleEffectRegionBehaviorName": "FXMaster: Particle Effects",
@@ -332,7 +433,6 @@
         "AlwaysVisibleForGM": "Always Visible for GM"
       }
     },
-
     "AnimationEffect": {
       "AllAnimations": "All Animations",
       "FilterHint": "Filter animations by tag. Where present includes module provider names, a Custom tag for a user-added animation folder, and a Favorites tag for favorited animations.",

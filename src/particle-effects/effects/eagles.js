@@ -26,23 +26,50 @@ export class EaglesParticleEffect extends FXMasterParticleEffect {
 
   /** @override */
   static get parameters() {
-    return foundry.utils.mergeObject(
-      super.parameters,
-      {
-        density: { min: 0.0005, value: 0.002, max: 0.01, step: 0.0005, decimals: 4 },
-        "-=direction": null,
-        animations: {
-          label: "FXMASTER.Params.Animations",
-          type: "multi-select",
-          options: {
-            flap: "FXMASTER.Particles.BirdsAnimations.Flap",
-            glide: "FXMASTER.Particles.BirdsAnimations.Glide",
-          },
-          value: ["glide"],
-        },
+    const p = super.parameters;
+    return {
+      belowTokens: p.belowTokens,
+      tint: p.tint,
+      directionalMovement: {
+        label: "FXMASTER.Params.DirectionalMovement",
+        type: "checkbox",
+        value: false,
       },
-      { performDeletions: true },
-    );
+      direction: { ...p.direction, showWhen: { directionalMovement: true } },
+      spread: {
+        label: "FXMASTER.Params.Spread",
+        type: "range",
+        min: 0,
+        value: 0,
+        max: 20,
+        step: 1,
+        decimals: 0,
+        showWhen: { directionalMovement: true },
+      },
+      lateralMovement: {
+        label: "FXMASTER.Params.LateralMovement",
+        type: "range",
+        min: 0,
+        value: 0,
+        max: 1,
+        step: 0.05,
+        decimals: 2,
+      },
+      scale: p.scale,
+      speed: p.speed,
+      lifetime: p.lifetime,
+      density: { ...p.density, min: 0.0005, value: 0.002, max: 0.01, step: 0.0005, decimals: 4 },
+      alpha: p.alpha,
+      animations: {
+        label: "FXMASTER.Params.Animations",
+        type: "multi-select",
+        options: {
+          flap: "FXMASTER.Particles.BirdsAnimations.Flap",
+          glide: "FXMASTER.Particles.BirdsAnimations.Glide",
+        },
+        value: ["glide"],
+      },
+    };
   }
 
   /**

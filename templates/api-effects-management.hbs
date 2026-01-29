@@ -1,0 +1,49 @@
+<section class="fxmaster-api-effects-container">
+  {{#if apiEffects.length}}
+    <div class="fxmaster-api-effects-header">
+      <div class="fxmaster-api-effects-col kind">{{localize "FXMASTER.Common.ApiEffectsType"}}</div>
+      <div class="fxmaster-api-effects-col type">{{localize "FXMASTER.Common.ApiEffectsName"}}</div>
+      <div class="fxmaster-api-effects-col actions">{{localize "FXMASTER.Common.ApiEffectsActions"}}</div>
+    </div>
+
+    {{#each apiEffects as |ef|}}
+      <div
+        class="fxmaster-api-effects-row{{#if ef.expanded}} open{{/if}}"
+        data-uid="{{ef.uid}}"
+        data-action="toggleApiCollapse"
+      >
+        <div class="fxmaster-api-effects-kind" title="{{ef.kindLabel}}">
+          <i class="{{ef.icon}}"></i>
+          <span class="fxmaster-api-effects-kind-label">{{ef.kindLabel}}</span>
+        </div>
+
+        <div class="fxmaster-api-effects-type" title="{{ef.name}}">{{ef.name}}</div>
+
+        <button
+          type="button"
+          class="fxmaster-api-effects-delete"
+          data-action="deleteApiEffect"
+          data-kind="{{ef.kind}}"
+          data-id="{{ef.id}}"
+          data-uid="{{ef.uid}}"
+          data-tooltip="{{localize 'FXMASTER.Common.ApiEffectsDelete'}}"
+        >
+          <i class="fas fa-trash"></i>
+        </button>
+
+        <span class="fxmaster-collapse-arrow">
+          <i class="fa-solid fa-chevron-down"></i>
+        </span>
+      </div>
+
+      <div class="fxmaster-api-effects-expand">
+        <div class="fxmaster-api-effects-details">
+          <div class="fxmaster-api-effects-details-title">{{localize "FXMASTER.Common.ApiEffectsDetails"}}</div>
+          <pre class="fxmaster-api-effects-pre">{{ef.details}}</pre>
+        </div>
+      </div>
+    {{/each}}
+  {{else}}
+    <p class="fxmaster-api-effects-empty">{{localize "FXMASTER.Common.ApiEffectsNone"}}</p>
+  {{/if}}
+</section>

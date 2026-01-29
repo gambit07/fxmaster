@@ -13,6 +13,20 @@ export class RatsParticleEffect extends DefaultRectangleSpawnMixin(FXMasterParti
     return "modules/fxmaster/assets/particle-effects/icons/rats.webp";
   }
 
+  /** Lateral Movement tuning for small sprites. */
+  static get lateralMovementPeriodMin() {
+    return 1;
+  }
+  static get lateralMovementPeriodMax() {
+    return 5;
+  }
+  static get lateralMovementAmplitudeFactor() {
+    return 3.0;
+  }
+  static get lateralMovementAmplitudeMinPx() {
+    return 2.5;
+  }
+
   /** @override */
   static get group() {
     return "animals";
@@ -26,14 +40,41 @@ export class RatsParticleEffect extends DefaultRectangleSpawnMixin(FXMasterParti
 
   /** @override */
   static get parameters() {
-    return foundry.utils.mergeObject(
-      super.parameters,
-      {
-        density: { min: 0.001, value: 0.006, max: 1, step: 0.001, decimals: 3 },
-        "-=direction": null,
+    const p = super.parameters;
+    return {
+      belowTokens: p.belowTokens,
+      tint: p.tint,
+      directionalMovement: {
+        label: "FXMASTER.Params.DirectionalMovement",
+        type: "checkbox",
+        value: false,
       },
-      { performDeletions: true },
-    );
+      direction: { ...p.direction, showWhen: { directionalMovement: true } },
+      spread: {
+        label: "FXMASTER.Params.Spread",
+        type: "range",
+        min: 0,
+        value: 0,
+        max: 180,
+        step: 1,
+        decimals: 0,
+        showWhen: { directionalMovement: true },
+      },
+      lateralMovement: {
+        label: "FXMASTER.Params.LateralMovement",
+        type: "range",
+        min: 0,
+        value: 0,
+        max: 1,
+        step: 0.05,
+        decimals: 2,
+      },
+      scale: p.scale,
+      speed: p.speed,
+      lifetime: p.lifetime,
+      density: { ...p.density, min: 0.001, value: 0.006, max: 1, step: 0.001, decimals: 3 },
+      alpha: p.alpha,
+    };
   }
 
   /**

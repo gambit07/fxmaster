@@ -143,11 +143,8 @@ export function cleanupRegionParticleEffects(regionId) {
  */
 export async function parseSpecialEffects() {
   let effectsMap = game.settings.get(packageId, "dbSpecialEffects") || {};
-  if (!effectsMap || Object.keys(effectsMap).length === 0) {
-    const { registerAnimations } = await import("./animation-files.js");
-    effectsMap = await registerAnimations({ initialScan: true });
-    await game.settings.set(packageId, "dbSpecialEffects", effectsMap);
-  }
+  if (!effectsMap || typeof effectsMap !== "object") effectsMap = {};
+
   CONFIG.fxmaster.userSpecials = effectsMap;
 }
 
@@ -1626,4 +1623,42 @@ export function safeMaskResolutionForCssArea(cssW, cssH, max = 1) {
   const safe = safeResolutionForCssArea(cssW, cssH);
   const cap = Number.isFinite(max) ? max : 1;
   return Math.max(0.5, Math.min(cap, safe));
+}
+
+export function updateSceneControlHighlights() {
+  const scene = canvas?.scene;
+  if (!scene) return;
+
+  const effects = scene.getFlag(packageId, "effects") ?? {};
+  const filters = scene.getFlag(packageId, "filters") ?? {};
+
+  const isDeletionKey = (id) => typeof id === "string" && id.startsWith("-=");
+  const isCoreKey = (id) => typeof id === "string" && id.startsWith("core_");
+
+  const hasCoreParticles = Object.entries(effects).some(([id, v]) => !isDeletionKey(id) && isCoreKey(id) && v);
+  const hasApiParticles = Object.entries(effects).some(([id, v]) => !isDeletionKey(id) && !isCoreKey(id) && v);
+
+  const hasCoreFilters = Object.entries(filters).some(([id, v]) => !isDeletionKey(id) && isCoreKey(id) && v);
+  const hasApiFilters = Object.entries(filters).some(([id, v]) => !isDeletionKey(id) && !isCoreKey(id) && v);
+
+  const hasApiEffects = hasApiParticles || hasApiFilters;
+  const hasAnyEffects = hasCoreParticles || hasCoreFilters || hasApiEffects;
+
+  CONFIG.fxmaster.FXMasterBaseFormV2.setToolButtonHighlight("particle-effects", hasCoreParticles);
+  CONFIG.fxmaster.FXMasterBaseFormV2.setToolButtonHighlight("filters", hasCoreFilters);
+  CONFIG.fxmaster.FXMasterBaseFormV2.setToolButtonHighlight("api-effects", hasApiEffects);
+
+  const controlBtn = document.querySelector(`#scene-controls-layers button.control[data-control="effects"]`);
+
+  const controlEl = controlBtn?.matches?.("li") ? controlBtn.querySelector?.("button") ?? controlBtn : controlBtn;
+
+  if (controlEl) {
+    if (hasAnyEffects) {
+      controlEl.style.setProperty("background-color", "var(--color-warm-2)");
+      controlEl.style.setProperty("border-color", "var(--color-warm-3)");
+    } else {
+      controlEl.style.removeProperty("background-color");
+      controlEl.style.removeProperty("border-color");
+    }
+  }
 }

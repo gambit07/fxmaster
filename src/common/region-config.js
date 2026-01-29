@@ -20,6 +20,7 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
     this._groupByEnabled(fieldset);
 
     this._wireElevationGateVisibility(rendered.form);
+    this._wireFxmasterConditionalVisibility(rendered.form);
 
     return rendered;
   }
@@ -78,5 +79,133 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
     applyVisibility();
     gateModeInput.addEventListener("change", applyVisibility);
     gateModeInput.addEventListener("input", applyVisibility);
+  }
+
+  _wireFxmasterConditionalVisibility(form) {
+    if (!form) return;
+
+    try {
+      this._fxmConditionalVisibilityAbort?.abort();
+    } catch {}
+    const ac = new AbortController();
+    this._fxmConditionalVisibilityAbort = ac;
+
+    const sources = [];
+    try {
+      const cfg = CONFIG?.fxmaster;
+      if (cfg?.particleEffects) sources.push(cfg.particleEffects);
+      if (cfg?.filterEffects) sources.push(cfg.filterEffects);
+    } catch {}
+
+    const rules = [];
+
+    const findGroupByName = (name) => {
+      let el = form.querySelector(`.form-group [name="system.${name}"]`);
+      if (el) return el.closest(".form-group");
+      el = form.querySelector(`.form-group [data-edit="system.${name}"], .form-group [name^="system.${name}["]`);
+      return el ? el.closest(".form-group") : null;
+    };
+
+    const findControl = (name) =>
+      form.querySelector(`[name="system.${name}"]`) ||
+      form.querySelector(`[data-edit="system.${name}"]`) ||
+      form.querySelector(`[name^="system.${name}["]`);
+
+    const readValue = (el) => {
+      if (!el) return undefined;
+      if (el instanceof HTMLSelectElement) {
+        if (el.multiple) return Array.from(el.selectedOptions).map((o) => o.value);
+        return el.value;
+      }
+      if (el instanceof HTMLInputElement) {
+        if (el.type === "checkbox") return !!el.checked;
+        if (el.type === "range" || el.type === "number") {
+          const n = Number(el.value);
+          return Number.isFinite(n) ? n : undefined;
+        }
+        return el.value;
+      }
+      const tag = (el.tagName ?? "").toLowerCase();
+      if (tag === "color-picker") return el.value ?? el.getAttribute?.("value");
+      return el.value ?? el.getAttribute?.("value");
+    };
+
+    const looseEquals = (actual, expected) => {
+      if (typeof expected === "boolean") {
+        if (typeof actual === "string") return (actual === "true") === expected;
+        return !!actual === expected;
+      }
+      if (typeof expected === "number") {
+        const n = Number(actual);
+        if (!Number.isFinite(n)) return false;
+        return n === expected;
+      }
+      if (Array.isArray(expected)) {
+        if (!Array.isArray(actual)) return false;
+        return expected.length === actual.length && expected.every((v) => actual.includes(v));
+      }
+      return actual === expected;
+    };
+
+    const evalCond = (cond, type) => {
+      if (!cond) return true;
+      if (typeof cond === "function") {
+        try {
+          return !!cond({ get: (k) => readValue(findControl(`${type}_${k}`)) });
+        } catch {
+          return true;
+        }
+      }
+      if (typeof cond === "object") {
+        return Object.entries(cond).every(([k, expected]) => {
+          const actual = readValue(findControl(`${type}_${k}`));
+          return looseEquals(actual, expected);
+        });
+      }
+      return true;
+    };
+
+    for (const defs of sources) {
+      for (const [type, cls] of Object.entries(defs ?? {})) {
+        const params = cls?.parameters;
+        if (!params) continue;
+
+        for (const [paramName, paramCfg] of Object.entries(params)) {
+          const showWhen = paramCfg?.showWhen;
+          const hideWhen = paramCfg?.hideWhen;
+          if (!showWhen && !hideWhen) continue;
+
+          const group = findGroupByName(`${type}_${paramName}`);
+          if (!group) continue;
+
+          rules.push({ type, paramName, showWhen, hideWhen, group });
+        }
+      }
+    }
+
+    if (!rules.length) return;
+
+    const applyAll = () => {
+      for (const r of rules) {
+        const showOk = evalCond(r.showWhen, r.type);
+        const hideOk = r.hideWhen ? evalCond(r.hideWhen, r.type) : false;
+        const visible = showOk && !hideOk;
+        r.group.style.display = visible ? "" : "none";
+      }
+    };
+
+    applyAll();
+
+    let raf = null;
+    const schedule = () => {
+      if (raf != null) return;
+      raf = requestAnimationFrame(() => {
+        raf = null;
+        applyAll();
+      });
+    };
+
+    form.addEventListener("change", schedule, { signal: ac.signal, capture: true });
+    form.addEventListener("input", schedule, { signal: ac.signal, capture: true });
   }
 }

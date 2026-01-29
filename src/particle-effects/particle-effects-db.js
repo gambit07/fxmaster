@@ -10,7 +10,6 @@ import { EaglesParticleEffect } from "./effects/eagles.js";
 import { EmbersParticleEffect } from "./effects/embers.js";
 import { FogParticleEffect } from "./effects/fog.js";
 import { RainParticleEffect } from "./effects/rain.js";
-import { RainTopParticleEffect } from "./effects/rain-top.js";
 import { RatsParticleEffect } from "./effects/rats.js";
 import { SnowParticleEffect } from "./effects/snow.js";
 import { SnowstormParticleEffect } from "./effects/snowstorm.js";
@@ -34,7 +33,6 @@ export const particleEffects = {
   clouds: CloudsParticleEffect,
   fog: FogParticleEffect,
   rain: RainParticleEffect,
-  raintop: RainTopParticleEffect,
   snow: SnowParticleEffect,
   snowstorm: SnowstormParticleEffect,
 };

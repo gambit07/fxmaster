@@ -35,7 +35,7 @@ export function registerHandlebarsHelpers() {
         const hasColorPickerEl = !!globalThis.customElements?.get?.("color-picker");
         const pickerHTML = hasColorPickerEl
           ? `<color-picker name="${nameBase}" value="${colorValue}" data-action="updateParam"></color-picker>`
-          : `<input type="text" name="${nameBase}" value="${colorValue}" data-action="updateParam" />`;
+          : `<input type="color" name="${nameBase}" value="${colorValue}" data-action="updateParam" />`;
 
         return `
           <div class="fxmaster-input-color"${tipAttrs}>

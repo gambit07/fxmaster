@@ -1,4 +1,13 @@
-- Made a few adjustments to reduce minimum density for Spiders particle effect
-- Resolved User-made Particle Effects from FXMaster+ not sorting alphabetically in the Particle Effects Management window
-- Added a few integration pieces for my upcoming Gambit's Lounge module Gambit's Image Viewer, which will add functionality enabling Particle Effects in an Image Popout window.
-- Added a note to the Animation Effects window to indicate it will be removed in the V14 release
+Welcome to Gambit's FXMaster V7.3.0! This release brings some fun and functional usability enhancements to Particle Effects.
+- Added new API Effects controls button to FXMaster. This button will open a window where you can manage active api effects for a given scene. 
+- Added conditional visibility for relevant toggle on/off style parameters. Ex: When Directional Movement is off, the direction and spread parameters will not be visible. They become visible if that option is toggled on. This should make it clearer which parameters actually have an effect in a given mode.
+- Added a new title bar menu item 'Hide Effects' to both the Particle Effects Management and Filter Effects Management windows. This option will open a list of current effects from FXMaster or FXMaster+ and allow them to be hidden from the management windows. This option should help to reduce clutter in instances where a given effect is not relevant for your campaign, especially for FXMaster+ users as the effects list continues to grow
+- Added localization keys for the new top down mode, directional movement mode, and lateral movement pieces, as well as the Hide Effects menu. Additional keys also added for the new FXMaster+ Glitch and Fish effects
+- Updated the Controls button localization label to FXMaster Controls from Effect Controls to make it clearer the tab is related to FXMaster
+- Updated a number of Particle Effects to give them a Top Down mode: Bubbles, Embers, Leaves, Snow, and Snowstorm in FXMaster, and Sakura Bloom plus the Directional Drift custom user template in FXMaster+
+- Updated Animals Particle Effects to give them an optional Directional Movement parameter. When enabled, all animals particles will move in the same specified direction, with an optional spread parameter to determine how much movement in that direction deviates.
+- Updated Animals Particle Effects to give them an optional Lateral Movement parameter. This option causes the particles to move in a randomized sine wave pattern and should enable more naturalistic movement.
+- Updated Top Down to be a toggleable parameter in the Rain effect and removed the separate Rain Top Down effect - no longer needed with the toggleable parameter
+- Resolved Color Picker not changing color when closing the color picker selector which made a toggle of the effect necessary to change colors. Foundrys native color picker was implemented in 7.2.0 for consistency, but it is more restrictive so live updates to colors while the color picker window is open are no longer possible.
+- Resolved a visual jump issue that could occur in the Filter Effects window when toggling certain parameters
+- Resolved multi-select inconsistently updating parameters for effects that were on, which often required a toggle of the effect to apply

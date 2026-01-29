@@ -70,6 +70,7 @@ export class LightningFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
               interface: "FXMASTER.Common.Interface",
             },
             value: ["environment"],
+            showWhen: { audioAware: true },
           },
           audioBassThreshold: {
             label: "FXMASTER.Params.ThunderBassThreshold",
@@ -78,6 +79,7 @@ export class LightningFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
             min: 0.0,
             step: 0.01,
             value: 0.75,
+            showWhen: { audioAware: true },
           },
         }
       : {};

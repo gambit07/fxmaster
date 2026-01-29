@@ -1,0 +1,45 @@
+<form class="fxmaster-v2-form" data-fxm-kind="{{kind}}">
+  <div class="fxmaster-v2-body" style="gap: 0.75rem;">
+    <p class="notes" style="margin: 0;">{{localize hintKey}}</p>
+
+    <div class="fxmaster-visibility-list-scroll">
+      {{#each groups}}
+        <h3 class="fxmaster-visibility-group-title" style="margin: 0;">{{localize label}}</h3>
+
+        {{#each effects}}
+          <div class="fxmaster-visibility-row {{#if isHidden}}fxmaster-visibility-row--inactive{{else}}fxmaster-visibility-row--active{{/if}}">
+            <span class="fxmaster-visibility-label">{{localize label}}</span>
+
+            <div class="fxmaster-visibility-actions">
+              {{#if isActive}}
+                <i class="fa-solid fa-bolt" data-tooltip="{{localize 'FXMASTER.Common.ActiveEffectTooltip'}}"></i>
+              {{/if}}
+
+              {{#if iconImg}}
+                <img class="fxmaster-visibility-icon"
+                     src="{{iconImg}}"
+                     width="30"
+                     height="30"
+                     alt="{{localize label}}">
+              {{else}}
+                {{#if iconClass}}
+                  <i class="{{iconClass}}" style="font-size: 24px;"></i>
+                {{else}}
+                  <i class="fa-solid fa-circle-notch" style="font-size: 24px;"></i>
+                {{/if}}
+              {{/if}}
+
+              <button type="button"
+                      data-action="toggle"
+                      data-type="{{type}}"
+                      data-mode="{{#if isHidden}}unhide{{else}}hide{{/if}}"
+                      style="background:none; border:none; cursor:pointer;">
+                <i class="fas fa-user-secret"></i>
+              </button>
+            </div>
+          </div>
+        {{/each}}
+      {{/each}}
+    </div>
+  </div>
+</form>

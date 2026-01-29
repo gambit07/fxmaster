@@ -21,6 +21,22 @@ export class SnowParticleEffect extends FXMasterParticleEffect {
     return 0.05;
   }
 
+  /** @override */
+  static get parameters() {
+    const p = super.parameters;
+    return {
+      belowTokens: p.belowTokens,
+      tint: p.tint,
+      topDown: { label: "FXMASTER.Params.TopDown", type: "checkbox", value: false },
+      scale: p.scale,
+      direction: { ...p.direction, showWhen: { topDown: false } },
+      speed: p.speed,
+      lifetime: p.lifetime,
+      density: p.density,
+      alpha: p.alpha,
+    };
+  }
+
   /**
    * Configuration for the particle emitter for snow
    * @type {PIXI.particles.EmitterConfigV3}
@@ -85,6 +101,8 @@ export class SnowParticleEffect extends FXMasterParticleEffect {
   getParticleEmitters(options = {}) {
     options = this.constructor.mergeWithDefaults(options);
 
+    const topDown = !!options?.topDown?.value;
+
     const d = CONFIG.fxmaster.getParticleDimensions(options);
 
     const { maxParticles } = this.constructor.computeMaxParticlesFromView(options, {
@@ -107,15 +125,68 @@ export class SnowParticleEffect extends FXMasterParticleEffect {
 
     config.behaviors ??= [];
 
+    if (!topDown) {
+      this._fxmCanvasPanOwnerPosEnabled = false;
+      config.behaviors.push({
+        type: "spawnShape",
+        config: {
+          type: "rect",
+          data: { x: 0, y: -0.1 * d.height, w: d.width, h: d.height },
+        },
+      });
+
+      this.applyOptionsToConfig(options, config);
+      return [this.createEmitter(config)];
+    }
+
+    this._fxmCanvasPanOwnerPosEnabled = true;
+
+    const sceneRadius = Math.sqrt(d.sceneWidth * d.sceneWidth + d.sceneHeight * d.sceneHeight) / 2;
+
+    config.behaviors = config.behaviors.filter((b) => b.type !== "rotation" && b.type !== "rotationStatic");
+    config.behaviors.push({ type: "rotationStatic", config: { min: 180, max: 180 } });
+
+    const optsNoDir = foundry.utils.deepClone(options);
+    try {
+      delete optsNoDir.direction;
+    } catch {}
+
+    this.applyOptionsToConfig(optsNoDir, config);
+
+    const moveSpeedBehavior = config.behaviors.find(({ type }) => type === "moveSpeed");
+    const moveSpeedList = moveSpeedBehavior?.config?.speed?.list ?? [];
+    const averageSpeed =
+      moveSpeedList.reduce((acc, cur) => acc + (cur.value ?? 0), 0) / Math.max(1, moveSpeedList.length);
+
+    const lifetimeMax = typeof config.lifetime === "number" ? config.lifetime : config.lifetime?.max ?? avgLifetime;
+
+    const holeRadius = this.getTopDownDeadzoneRadius(d);
+
+    const travel = averageSpeed * lifetimeMax;
+    const innerRadius = travel + holeRadius;
+    const outerRadius = innerRadius + sceneRadius * 2;
+
     config.behaviors.push({
       type: "spawnShape",
       config: {
-        type: "rect",
-        data: { x: 0, y: -0.1 * d.height, w: d.width, h: d.height },
+        type: "torus",
+        data: {
+          x: d.sceneRect.x + d.sceneWidth / 2,
+          y: d.sceneRect.y + d.sceneHeight / 2,
+          radius: outerRadius,
+          innerRadius,
+          affectRotation: true,
+        },
       },
     });
 
-    this.applyOptionsToConfig(options, config);
-    return [this.createEmitter(config)];
+    const emitter = this.createEmitter(config);
+
+    const ctx = options?.__fxmParticleContext ?? this.__fxmParticleContext;
+    const ownerX = ctx ? 0 : canvas.stage.pivot.x - d.sceneX - d.sceneWidth / 2;
+    const ownerY = ctx ? 0 : canvas.stage.pivot.y - d.sceneY - d.sceneHeight / 2;
+    emitter.updateOwnerPos(ownerX, ownerY);
+
+    return [emitter];
   }
 }

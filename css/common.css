@@ -12,6 +12,8 @@
 /* Base styles for headers & rows */
 .fxmaster-filters-header,
 .fxmaster-filters-row,
+.fxmaster-api-effects-header,
+.fxmaster-api-effects-row,
 .fxmaster-particles-group,
 .fxmaster-particles-row {
   display: flex;
@@ -26,6 +28,7 @@
 
 /* Header variations */
 .fxmaster-filters-header,
+.fxmaster-api-effects-header,
 .fxmaster-particles-group {
   font-weight: bold;
   border-bottom: 2px solid var(--color-border-dark-2);
@@ -34,6 +37,7 @@
 
 /* Hover for rows */
 .fxmaster-filters-row:hover,
+.fxmaster-api-effects-row:hover,
 .fxmaster-particles-row:hover {
   background: rgba(255, 255, 255, 0.05);
   cursor: pointer;
@@ -97,6 +101,7 @@
 
 /* Expand-panel basics */
 .fxmaster-filter-expand,
+.fxmaster-api-effects-expand,
 .fxmaster-particles-group-expand,
 .fxmaster-particle-expand {
   display: none;
@@ -110,6 +115,7 @@
   border-radius: 0 0 var(--fxmaster-radius) var(--fxmaster-radius);
 }
 .fxmaster-filters-row.open + .fxmaster-filter-expand,
+.fxmaster-api-effects-row.open + .fxmaster-api-effects-expand,
 .fxmaster-particles-group.open + .fxmaster-particles-group-expand,
 .fxmaster-particles-row.open + .fxmaster-particle-expand {
   display: flex;
@@ -122,6 +128,7 @@
   transition: transform 0.2s ease;
 }
 .fxmaster-filters-row.open .fxmaster-collapse-arrow i,
+.fxmaster-api-effects-row.open .fxmaster-collapse-arrow i,
 .fxmaster-particles-group.open .fxmaster-collapse-arrow i,
 .fxmaster-particles-row.open .fxmaster-collapse-arrow i {
   transform: rotate(180deg);
@@ -170,14 +177,18 @@
   font-size: 0.9em;
   cursor: pointer;
   margin-inline: 0;
+  position: relative;
 }
 
 /* Visually hide the native checkbox but keep it accessible */
 .fxm-switch input[type="checkbox"] {
   position: absolute;
   opacity: 0;
-  inline-size: 0;
-  block-size: 0;
+  top: 0;
+  left: 0;
+  width: 38px;
+  height: 24px;
+  margin: 0;
 }
 
 /* Track – slightly taller */
@@ -241,4 +252,272 @@
   align-items: center;
   gap: 0.5rem;
   justify-content: flex-start;
+}
+.fxmaster-effects-visibility .fxmaster-visibility-list-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.fxmaster-effects-visibility form.fxmaster-v2-form {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.fxmaster-effects-visibility .fxmaster-v2-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.fxmaster-effects-visibility .fxmaster-visibility-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  gap: 0.75rem;
+}
+
+.fxmaster-effects-visibility .fxmaster-visibility-row--active {
+  background: color-mix(in srgb, var(--color-bg) 88%, var(--color-warm-2) 12%);
+  border-color: var(--color-warm-2);
+}
+
+.fxmaster-effects-visibility .fxmaster-visibility-row--inactive {
+  background: transparent;
+  border-color: var(--color-border);
+  opacity: 0.75;
+}
+
+.fxmaster-effects-visibility .fxmaster-visibility-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.fxmaster-effects-visibility .fxmaster-visibility-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fxmaster-effects-visibility .fxmaster-visibility-icon {
+  border-radius: 4px;
+}
+
+/* API Effects (scene flags added via API) */
+.fxmaster-api-effects-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.fxmaster-api-effects-header {
+  gap: 0.75rem;
+}
+
+.fxmaster-api-effects-col {
+  font-size: 0.85em;
+  opacity: 0.9;
+}
+
+.fxmaster-api-effects-row {
+  gap: 0.75rem;
+}
+
+.fxmaster-api-effects-kind {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 8.5rem;
+  min-width: 8.5rem;
+}
+
+.fxmaster-api-effects-kind-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fxmaster-api-effects-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fxmaster-api-effects-type {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fxmaster-api-effects-delete {
+  width: 1.875rem;
+  height: 1.875rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.fxmaster-api-effects-delete:hover {
+  background-color: var(--color-warm-2);
+}
+
+.fxmaster-api-effects-details {
+  width: 100%;
+}
+
+.fxmaster-api-effects-details-title {
+  font-weight: bold;
+  margin-bottom: 0.35rem;
+}
+
+.fxmaster-api-effects-pre {
+  margin: 0;
+  padding: 0.5rem;
+  border: 1px dashed var(--color-border-dark-4);
+  border-radius: var(--fxmaster-radius);
+  background: rgba(0, 0, 0, 0.15);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 22rem;
+  overflow: auto;
+}
+
+.fxmaster-api-effects-empty {
+  padding: 0.5rem;
+  opacity: 0.85;
+}
+
+/* -------------------------------------------- */
+/* API Effects management window                */
+/* -------------------------------------------- */
+
+.fxmaster-api-effects-container {
+  max-height: var(--fxmaster-max-height);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.fxmaster-api-effects-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.fxmaster-api-effects-col {
+  font-weight: bold;
+}
+
+.fxmaster-api-effects-col.kind,
+.fxmaster-api-effects-kind {
+  flex: 0 0 8.5rem;
+  gap: 0.4rem;
+  display: flex;
+  align-items: center;
+}
+
+.fxmaster-api-effects-col.name,
+.fxmaster-api-effects-name {
+  flex: 1;
+  min-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fxmaster-api-effects-col.type,
+.fxmaster-api-effects-type {
+  flex: 1;
+  min-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fxmaster-api-effects-col.actions {
+  flex: 0 0 3rem;
+  text-align: right;
+}
+
+.fxmaster-api-effects-delete {
+  contain: layout paint;
+  will-change: transform;
+  transform: translateZ(0);
+  width: 1.875rem;
+  height: 1.875rem;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.fxmaster-api-effects-delete:hover {
+  background-color: var(--color-warm-2);
+}
+
+.fxmaster-api-effects-delete:focus {
+  outline: 2px solid var(--color-warm-3);
+  outline-offset: 2px;
+}
+
+.fxmaster-api-effects-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.fxmaster-api-effects-details-title {
+  font-weight: bold;
+  opacity: 0.9;
+}
+
+.fxmaster-api-effects-pre {
+  margin: 0;
+  padding: 0.5rem;
+  border-radius: 0.35rem;
+  border: 1px solid var(--color-border-dark-4);
+  background: rgba(0, 0, 0, 0.15);
+  max-height: 40vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.85em;
+}
+
+.fxmaster-api-effects-empty {
+  padding: 0.75rem;
+  opacity: 0.85;
+}
+
+.fxmaster-api-effects-row .fxmaster-collapse-arrow {
+  right: 3.2rem;
+  opacity: 0.6;
+}
+
+/* Open-state boxing */
+#api-effects-config .fxmaster-api-effects-row.open {
+  border: 1px solid var(--color-warm-2);
+  border-bottom: none;
+  border-radius: var(--fxmaster-radius) var(--fxmaster-radius) 0 0;
+}
+
+#api-effects-config .fxmaster-api-effects-row.open + .fxmaster-api-effects-expand {
+  border: 1px solid var(--color-warm-2);
+  border-top: none;
+  border-radius: 0 0 var(--fxmaster-radius) var(--fxmaster-radius);
+  margin-bottom: 0.25rem;
 }

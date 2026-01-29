@@ -24,14 +24,41 @@ export class BatsParticleEffect extends DefaultRectangleSpawnMixin(FXMasterParti
 
   /** @override */
   static get parameters() {
-    return foundry.utils.mergeObject(
-      super.parameters,
-      {
-        density: { min: 0.005, value: 0.05, max: 0.1, step: 0.005, decimals: 3 },
-        "-=direction": null,
+    const p = super.parameters;
+    return {
+      belowTokens: p.belowTokens,
+      tint: p.tint,
+      directionalMovement: {
+        label: "FXMASTER.Params.DirectionalMovement",
+        type: "checkbox",
+        value: false,
       },
-      { performDeletions: true },
-    );
+      direction: { ...p.direction, showWhen: { directionalMovement: true } },
+      spread: {
+        label: "FXMASTER.Params.Spread",
+        type: "range",
+        min: 0,
+        value: 0,
+        max: 20,
+        step: 1,
+        decimals: 0,
+        showWhen: { directionalMovement: true },
+      },
+      lateralMovement: {
+        label: "FXMASTER.Params.LateralMovement",
+        type: "range",
+        min: 0,
+        value: 0,
+        max: 1,
+        step: 0.05,
+        decimals: 2,
+      },
+      scale: p.scale,
+      speed: p.speed,
+      lifetime: p.lifetime,
+      density: { ...p.density, min: 0.005, value: 0.05, max: 0.1, step: 0.005, decimals: 3 },
+      alpha: p.alpha,
+    };
   }
 
   /**

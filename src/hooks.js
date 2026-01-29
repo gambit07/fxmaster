@@ -13,7 +13,7 @@ import {
   SuppressSceneFiltersRegionBehaviorConfig,
 } from "./filter-effects/filter-effects-region-config.js";
 import { FilterEffectsSceneManager } from "./filter-effects/filter-effects-scene-manager.js";
-import { coalesceNextFrame, getCssViewportMetrics } from "./utils.js";
+import { coalesceNextFrame, getCssViewportMetrics, updateSceneControlHighlights } from "./utils.js";
 import { SceneMaskManager } from "./common/base-effects-scene-manager.js";
 
 /**
@@ -28,6 +28,7 @@ const SUPPRESS_SCENE_PARTICLES = `${packageId}.suppressSceneParticles`;
 
 const _openPFx = new Set();
 const _openFFx = new Set();
+const _openAFx = new Set();
 
 export const registerHooks = function () {
   let _fmResizeHandler = null;
@@ -239,8 +240,16 @@ export const registerHooks = function () {
     _openFFx.delete(app);
   });
 
+  Hooks.on("renderApiEffectsManagement", (app) => {
+    _openAFx.add(app);
+  });
+
+  Hooks.on("closeApiEffectsManagement", (app) => {
+    _openAFx.delete(app);
+  });
+
   const refreshOpenFxMasterWindows = ({ hard = true } = {}) => {
-    for (const app of [..._openPFx, ..._openFFx]) {
+    for (const app of [..._openPFx, ..._openFFx, ..._openAFx]) {
       if (hard) {
         const Cls = app.constructor;
         const opts = foundry.utils.deepClone(app.options ?? {});
@@ -589,9 +598,9 @@ export const registerHooks = function () {
     if (game.settings.get(packageId, "releaseMessage") !== version) {
       const content = `
         <div class="fxmaster-announcement" style="border:4px solid #4A90E2; border-radius:6px; padding:12px;">
-          <h3 style="margin:0;">🎉Welcome to Gambit's FXMaster V7.2.1!</h3>
-            <p style="font-size: 1em;">This release cleans up a few things and adds pieces for the upcoming Gambit's Image Viewer particle effects. Please check out the <a href= "https://github.com/gambit07/fxmaster/releases/latest" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Release Notes</a> for more detail. </p>
-            <p style="font-size: 1em;">If you'd like to support my development time and get access to the <b>Gambit's FXMaster+</b> and <b>Gambit's Asset Previewer</b> modules, please consider supporting the project on <a href="https://patreon.com/GambitsLounge" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Patreon</a>.</p><p>FXMaster+ Effects: <ul><li><span style="color: #3bd1ffff; text-decoration: none; font-weight: bold;">Ice</span></li><li><span style="color: #a08332ff; text-decoration: none; font-weight: bold;">Sandstorm</span></li><li><span style="color: #74653fff; text-decoration: none; font-weight: bold;">Duststorm</span></li><li><span style="color: #73ffa9; text-decoration: none; font-weight: bold;">Ghosts</span></li><li><span style="color: #ffd500ff; text-decoration: none; font-weight: bold;">Sunlight</span></li><li><span style="color: #7f00ff; text-decoration: none; font-weight: bold;">Magic Crystals</span></li><li><span style="color: #d5b60a; text-decoration: none; font-weight: bold;">Fireflies</span></li><li><span style="color: #ffb7c5; text-decoration: none; font-weight: bold;">Sakura Bloom</span></li><li><span style="color: #ffb7c5; text-decoration: none; font-weight: bold;">Sakura Blossoms</span></li><li><span style="text-decoration: none; font-weight: bold;">And add your own Particle Effects!</span></li></ul></p><p>If you have any questions about the module feel free to join the <a href= "https://discord.gg/YvxHrJ4tVu" target="_blank" style="color: #4e5d94; text-decoration: none; font-weight: bold;">Discord</a>!
+          <h3 style="margin:0;">🎉Welcome to Gambit's FXMaster V7.3!</h3>
+            <p style="font-size: 1em;">This is a major release that brings some fun and functional usability enhancements! The major features are new Top Down modes for various particle effects, Directional Movement options for Animal particle effects, a new API Effects UI Manager, the ability to hide specific effects, and much more! Please check out the <a href= "https://github.com/gambit07/fxmaster/releases/latest" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Release Notes</a> for more detail. </p>
+            <p style="font-size: 1em;">If you'd like to support my development time and get access to the <a href="https://foundryvtt.com/packages/fxmaster-plus" target="_blank" style="color: #CC66CC; text-decoration: none; font-weight: bold;">Gambit's FXMaster+</a>, <a href="https://foundryvtt.com/packages/gambitsAssetPreviewer" target="_blank" style="color: #CC66CC; text-decoration: none; font-weight: bold;">Gambit's Asset Previewer</a>, and <a href="https://foundryvtt.com/packages/gambitsImageViewer" target="_blank" style="color: #CC66CC; text-decoration: none; font-weight: bold;">Gambit's Image Viewer</a> modules, please consider supporting the project on <a href="https://patreon.com/GambitsLounge" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Patreon</a>.</p><p>FXMaster+ Effects: <ul><li><span style="color: #0ada64; text-decoration: none; font-weight: bold;">Glitch</span></li><li><span style="color: #017371; text-decoration: none; font-weight: bold;">Fish</span></li><li><span style="color: #3bd1ffff; text-decoration: none; font-weight: bold;">Ice</span></li><li><span style="color: #a08332ff; text-decoration: none; font-weight: bold;">Sandstorm</span></li><li><span style="color: #74653fff; text-decoration: none; font-weight: bold;">Duststorm</span></li><li><span style="color: #53c57e; text-decoration: none; font-weight: bold;">Ghosts</span></li><li><span style="color: rgb(211, 176, 0); text-decoration: none; font-weight: bold;">Sunlight</span></li><li><span style="color: #7f00ff; text-decoration: none; font-weight: bold;">Magic Crystals</span></li><li><span style="color: #d5b60a; text-decoration: none; font-weight: bold;">Fireflies</span></li><li><span style="color: #ffb7c5; text-decoration: none; font-weight: bold;">Sakura Bloom</span></li><li><span style="color: #ffb7c5; text-decoration: none; font-weight: bold;">Sakura Blossoms</span></li><li><span style="text-decoration: none; font-weight: bold;">And add your own Particle Effects!</span></li></ul></p><p>If you have any questions about the module feel free to join the <a href= "https://discord.gg/YvxHrJ4tVu" target="_blank" style="color: #4e5d94; text-decoration: none; font-weight: bold;">Discord</a>!
           </div>
       `;
       ChatMessage.create({ content });
@@ -613,13 +622,15 @@ export const registerHooks = function () {
   Hooks.on("updateScene", async (scene, data) => {
     if (scene !== canvas.scene) return;
 
-    const effectsChanged =
-      foundry.utils.hasProperty(data, `flags.${packageId}.effects`) ||
-      foundry.utils.hasProperty(data, `flags.${packageId}.-=effects`);
+    const flat = foundry.utils.flattenObject(data ?? {});
 
-    const filtersChanged =
-      foundry.utils.hasProperty(data, `flags.${packageId}.filters`) ||
-      foundry.utils.hasProperty(data, `flags.${packageId}.-=filters`);
+    const effectsChanged = Object.keys(flat).some(
+      (k) => k.startsWith(`flags.${packageId}.effects`) || k.startsWith(`flags.${packageId}.-=effects`),
+    );
+
+    const filtersChanged = Object.keys(flat).some(
+      (k) => k.startsWith(`flags.${packageId}.filters`) || k.startsWith(`flags.${packageId}.-=filters`),
+    );
 
     if (effectsChanged) {
       if (isEnabled()) canvas.particleeffects?.drawParticleEffects?.({ soft: true });
@@ -632,6 +643,8 @@ export const registerHooks = function () {
         ensurePinned();
       }
     }
+
+    if (effectsChanged || filtersChanged || data.active === true) updateSceneControlHighlights();
 
     if (data.active === true) scheduleOpenWindowsRefresh(true);
 
@@ -727,23 +740,28 @@ export const registerHooks = function () {
     }
   });
 
-  Hooks.on("renderSceneControls", (controls) => {
-    if (controls.control.name !== "effects") return;
+  const scheduleSceneControlHighlights = coalesceNextFrame(
+    function scheduleSceneControlHighlights() {
+      updateSceneControlHighlights();
+    },
+    { key: "fxm:sceneControls:highlights" },
+  );
 
-    const hasParticles = !!Object.keys(canvas.scene.getFlag(packageId, "effects") || {}).length;
-    const hasFilters = !!Object.keys(canvas.scene.getFlag(packageId, "filters") || {}).length;
-    if (!hasParticles && !hasFilters) return;
-
-    const particlesBtn = document.querySelector(`[data-tool="particle-effects"]`);
-    const filtersBtn = document.querySelector(`[data-tool="filters"]`);
-
-    if (hasParticles && particlesBtn) {
-      particlesBtn.style.setProperty("background-color", "var(--color-warm-2)");
-      particlesBtn.style.setProperty("border-color", "var(--color-warm-3)");
-    }
-    if (hasFilters && filtersBtn) {
-      filtersBtn.style.setProperty("background-color", "var(--color-warm-2)");
-      filtersBtn.style.setProperty("border-color", "var(--color-warm-3)");
-    }
+  Hooks.on("renderSceneControls", () => {
+    scheduleSceneControlHighlights();
   });
+
+  Hooks.on("updateScene", (scene, change) => {
+    if (scene !== canvas?.scene) return;
+
+    const f = change?.flags?.[packageId];
+    if (!f) return;
+
+    if (!("effects" in f) && !("filters" in f)) return;
+
+    scheduleSceneControlHighlights();
+  });
+
+  Hooks.on("canvasReady", () => scheduleSceneControlHighlights());
+  Hooks.on("activateScene", () => scheduleSceneControlHighlights());
 };
