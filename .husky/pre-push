@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-. "$(dirname "$0")/_/husky.sh"
 
 VERSION=$(git log -1 --pretty=%B | grep -o -E '[0-9]+\.[0-9]+\.[0-9]+')
+
 npm run release -- "$VERSION"
