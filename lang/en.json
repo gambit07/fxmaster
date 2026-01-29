@@ -280,7 +280,7 @@
       "SliceGreenY": "Green channel Y offset (chromatic split).",
       "SliceBlueX": "Blue channel X offset (chromatic split).",
       "SliceBlueY": "Blue channel Y offset (chromatic split).",
-      "MatrixGlyphs": "Overlay glyphs.",
+      "MatrixGlyphs": "Overlay Glyph pattern.",
       "MatrixDirection": "Direction (degrees) the Glyph field is oriented.",
       "GlyphColor": "Tint color for glyphs. Toggle Apply off to use the rainbow mode instead.",
       "GlyphIntensity": "Brightness of the glyph overlay. 0 disables glyph visibility.",
