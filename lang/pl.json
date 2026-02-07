@@ -1,11 +1,10 @@
 {
   "I18N": {
     "LANGUAGE": "Polski",
-    "MAINTAINERS": "ghost#2000"
+    "MAINTAINERS": "zagrywka"
   },
-
   "CONTROLS": {
-    "Effects": "Sterowanie efektami",
+    "Effects": "Sterowanie FXMaster",
     "SpecialFX": "Efekty animacji",
     "ParticleEffects": "Efekty cząsteczkowe",
     "InvertMask": "Odwróć maskę efektu cząsteczkowego",
@@ -14,7 +13,6 @@
     "ClearFX": "Wyczyść efekty cząsteczkowe i filtry",
     "ToolsActive": "Narzędzia aktywne"
   },
-
   "FXMASTER": {
     "Common": {
       "ParticleEffect": "Efekt cząsteczkowy",
@@ -45,9 +43,25 @@
       "Interface": "Interfejs",
       "Music": "Muzyka",
       "EnableTooltips": "Włącz podpowiedzi",
-      "EnableTooltipsHint": "Włącza opisy podpowiedzi dla parametrów efektów cząsteczkowych i filtrów."
+      "EnableTooltipsHint": "Włącza opisy podpowiedzi dla parametrów efektów cząsteczkowych i filtrów.",
+      "HideEffects": "Ukryj efekty",
+      "HideParticleEffectsTitle": "Ukryj efekty cząsteczkowe",
+      "HideFilterEffectsTitle": "Ukryj filtry efektów",
+      "HiddenEffectsHint": "Przełącz efekty, aby ukryć je z tej listy zarządzania (dla każdego użytkownika). Ukryte efekty nadal można włączyć za pośrednictwem API.",
+      "ActiveEffectTooltip": "Obecnie aktywny",
+      "HideEffectsTooltip": "Ukryte efekty: {count}",
+      "ApiEffects": "Efekty API",
+      "ApiEffectsManagementTitle": "Efekty API",
+      "ApiEffectsKind": "Rodzaj",
+      "ApiEffectsName": "Nazwa",
+      "ApiEffectsType": "Typ",
+      "ApiEffectsActions": "Akcje",
+      "ApiEffectsDelete": "Usuń",
+      "ApiEffectsDetails": "Parametry API",
+      "ApiEffectsNone": "W tej scenie nie są aktywne żadne efekty API.",
+      "ApiEffectsKindParticle": "Cząsteczkowy",
+      "ApiEffectsKindFilter": "Filtr"
     },
-
     "Params": {
       "Saturation": "Saturacja",
       "Gamma": "Gamma",
@@ -106,9 +120,82 @@
       "WobbleFrequency": "Częstotliwość wahań",
       "Streakiness": "Pasmo",
       "Lift": "Unoszenie",
-      "Rainbow": "Tęcza"
+      "Rainbow": "Tęcza",
+      "FrostStrength": "Siła mrozu",
+      "Depth": "Głębokość",
+      "VeinStrength": "Siła żyłek",
+      "WaterTint": "Barwa wody",
+      "WaterStrength": "Siła wody",
+      "WaterSpeed": "Szybkość wody",
+      "SheenStrength": "Siła połysku",
+      "SheenTint": "Barwa połysku",
+      "ReflectionStrength": "Siła odbicia",
+      "ReflectionDistance": "Dystans odbicia",
+      "ReflectionBlur": "Rozmycie odbicia",
+      "ReflectionFresnel": "Odbicie Fresnela",
+      "FillMode": "Tryb wypełniania",
+      "Slices": "Fragmenty",
+      "Offset": "Przesunięcie",
+      "RedX": "Czerwony X",
+      "RedY": "Czerwony Y",
+      "GreenX": "Zielony X",
+      "GreenY": "Zielony Y",
+      "BlueX": "Niebieski X",
+      "BlueY": "Niebieski Y",
+      "Seed": "Ziarno",
+      "RefreshRate": "Częstotliwość odświeżania",
+      "SliceEnable": "Włącz przekroje",
+      "SliceCrosshatch": "Przecięcie przekrojów",
+      "SliceCount": "Liczba przekrojów",
+      "SliceSpeed": "Szybkość przekrojów",
+      "SliceBurstRate": "Losowość przekrojów",
+      "SliceOffset": "Przesunięcie przekrojów",
+      "SliceDirection": "Kierunek przekrojów",
+      "SlicePixelation": "Pikselizacja przekrojów",
+      "SliceShardAngle": "Kąt cięcia przekrojów",
+      "SliceRedX": "Czerwony X przekroju",
+      "SliceRedY": "Czerwony Y przekroju",
+      "SliceGreenX": "Zielony X przekroju",
+      "SliceGreenY": "Zielony Y przekroju",
+      "SliceBlueX": "Niebieski X przekroju",
+      "SliceBlueY": "Niebieski Y przekroju",
+      "MatrixGlyphs": "Włącz glify",
+      "GlyphDirection": "Kierunek glifów",
+      "GlyphColor": "Barwa glifów",
+      "GlyphIntensity": "Intensywność glifów",
+      "GlyphCellSize": "Rozmiar komórki glifów",
+      "GlyphMoveSpeed": "Szybkość glifów",
+      "GlyphDensity": "Gęstość glifów",
+      "GlyphSlicePct": "% przekrojów glifów",
+      "GlyphFlickerSpeed": "Szybkość migotania glifów",
+      "TopDown": "Od góry do dołu",
+      "DirectionalMovement": "Ruch kierunkowy",
+      "Spread": "Rozproszenie kierunkowe",
+      "FishType": {
+        "Name": "Rodzaj ryby",
+        "Koi": "Karp koi",
+        "KoiSpirit": "Duch karpia koi",
+        "KoiPainted": "Malowany karp koi",
+        "Betta": "Bojownik",
+        "MantaRay": "Diabeł morski",
+        "MantaRaySpirit": "Duch diabła morskiego",
+        "MantaRayPainted": "Malowany diabeł morski",
+        "BettaRainbow": "Tęczowy bojownik",
+        "BettaBluePink": "Niebieski / różowy bojownik",
+        "BettaPurple": "Fioletowy bojownik",
+        "BettaGreen": "Zielony bojownik",
+        "BettaRed": "Czerwony bojownik",
+        "BettaRedYellow": "Czerwony / żółty bojownik"
+      },
+      "FishAnimations": {
+        "Glide": "Szybowanie",
+        "Swim": "Pływanie",
+        "Mixed": "Mieszane"
+      },
+      "RotationStrength": "Siła obrotu",
+      "Trail": "Ścieżka",
+      "LateralMovement": "Ruch boczny"
     },
-
     "ParamTooltips": {
       "Saturation": "Intensywność koloru. 0 = skala szarości; 1 = oryginał; >1 = przesycone.",
       "Gamma": "Krzywa półcieni. Niższa wartość rozjaśnia półcienie, wyższa przyciemnia półcienie.",
@@ -165,9 +252,50 @@
       "WobbleFrequency": "Kontroluje szybkość drgań cząstek. Wyższa wartość = szybsze drgania.",
       "Streakiness": "Kontroluje stopień rozciągnięcia i pasmowości filtra wzdłuż ścieżki ruchu. Niższe wartości wyglądają bardziej jak jednolita mgła, wyższe wartości tworzą dłuższe smugi.",
       "Lift": "Kontroluje grubość filtra w środkowej części każdego arkusza w porównaniu z jego krawędziami. Niższe wartości zapewniają bardziej płaski i równomierny efekt, natomiast wyższe wartości sprawiają, że środek jest gęstszy, a krawędzie cieńsze, co dodaje głębi, ale zmniejsza ogólne pokrycie.",
-      "Rainbow": "Zastępuje opcję Barwy i włącza losowy efekt tęczy na cząstkach."
+      "Rainbow": "Zastępuje opcję Barwy i włącza losowy efekt tęczy na cząstkach.",
+      "FrostStrength": "Kontroluje intensywność zabarwienia sceny przez lodową zasłonę (szron). Wyższa wartość = bardziej matowy wygląd lodu.",
+      "Depth": "Kontroluje wpływ warstwy pod lodem (ruch/kaustyka). Wyższa wartość = większa widoczna głębokość pod lodem.",
+      "VeinStrength": "Ciemnieje i dodaje subtelną strukturę przypominającą żyłki w lodzie. 0 wyłącza żyłki.",
+      "WaterTint": "Kolor odcienia dla animowanej warstwy wody pod lodem.",
+      "WaterStrength": "Siła animowanego załamania światła i zabarwienia wody pod lodem. Wyższa wartość = bardziej widoczny ruch.",
+      "WaterSpeed": "Szybkość ruchu wody pod lodem. Wyższa wartość = szybszy ruch.",
+      "SheenStrength": "Siła warstwy podkreślającej połysk lodu. Wyższa wartość = jaśniejszy połysk.",
+      "SheenTint": "Kolor odcienia dla warstwy podkreślającej połysk.",
+      "ReflectionStrength": "Siła próbkowania typu odbicia dla lodu błyszczącego. Wyższa wartość = silniejsze odbicie.",
+      "ReflectionDistance": "Jak daleko jest próbkowane/przesunięte odbicie. Wyższa wartość = bardziej wyraźne przesunięcie odbicia.",
+      "ReflectionBlur": "Rozmycie zastosowane do próbki odbicia. Wyższa wartość = bardziej miękkie odbicie.",
+      "ReflectionFresnel": "Kontroluje, w jakim stopniu odbicie zależy od kąta widzenia. Wyższa wartość = bardziej ograniczone odbicie, z większym naciskiem na krawędzie.",
+      "SliceEnable": "Włącza przesunięcie przekrojów i podział RGB.",
+      "SliceCrosshatch": "Dodaje drugi wzór pasków w innej fazie, aby uzyskać efekt krzyżowego cieniowania.",
+      "SliceCount": "Liczba poziomych przekrojów. Wyższa wartość = bardziej fragmentaryczne przekroje.",
+      "SliceSpeed": "Szybkość przewijania wzorca przekroju. Wartość 0 wyłącza przewijanie przekroju.",
+      "SliceBurstRate": "Jak często rozmiary/przesunięcia przekrojów są ponownie losowane, w sekundach. 0 wyłącza losowanie.",
+      "SliceOffset": "Maksymalna wartość przemieszczenia dla każdego przekroju.",
+      "SliceDirection": "Kierunek (w stopniach), w którym następuje przemieszczenie przekrojów.",
+      "SlicePixelation": "Dodaje blokowe kroki pikseli do przekrojów. 0 = płynne.",
+      "SliceShardAngle": "Dodaje do przekrojów kanciaste ścinanie przypominające odłamki. 0 = brak.",
+      "SliceRedX": "Przesunięcie kanału czerwonego X (podział chromatyczny).",
+      "SliceRedY": "Przesunięcie kanału czerwonego Y (podział chromatyczny).",
+      "SliceGreenX": "Przesunięcie kanału zielonego X (podział chromatyczny).",
+      "SliceGreenY": "Przesunięcie kanału zielonego Y (podział chromatyczny).",
+      "SliceBlueX": "Przesunięcie kanału niebieskiego X (podział chromatyczny).",
+      "SliceBlueY": "Przesunięcie kanału niebieskiego Y (podział chromatyczny).",
+      "MatrixGlyphs": "Wzorzec nakładki glifu.",
+      "MatrixDirection": "Kierunek (w stopniach) orientacji pola glifu.",
+      "GlyphColor": "Kolor odcienia dla glifów. Przełącz opcję Zastosuj na wyłączoną, aby zamiast tego użyć trybu tęczy.",
+      "GlyphIntensity": "Jasność nakładki glifu. 0 wyłącza widoczność glifu.",
+      "GlyphCellSize": "Rozmiar każdego pola glifu w pikselach.",
+      "GlyphMoveSpeed": "Szybkość symulacji ruchu glifów. 0 wyłącza ruch.",
+      "GlyphDensity": "Ile kolumn glifów jest aktywnych. 0 = żadna; 1 = wszystkie kolumny.",
+      "GlyphSlicePct": "Jeśli włączono przekroje, jaka część regionu przekroju otrzymuje glify.",
+      "GlyphFlickerSpeed": "Jak szybko migają glify. 0 wyłącza migotanie.",
+      "TopDown": "Efekt odtwarzania w trybie odgórnym",
+      "DirectionalMovement": "Efekt odtwarzania w określonym kierunku",
+      "Spread": "Określ przesunięcie rozrzutu względem kierunku w stopniach",
+      "RotationStrength": "Jak silnie cząsteczki obracają się podczas ruchu. Wyższa wartość = większy obrót.",
+      "Trail": "Intensywność/długość śladu za cząstkami. Wyższa wartość = dłuższe/silniejsze ślady.",
+      "LateralMovement": "Dodaje płynne dryfowanie na boki do ruchu cząstek. Wyższa wartość = większe dryfowanie boczne."
     },
-
     "Particles": {
       "Groups": {
         "Other": "Inne",
@@ -186,7 +314,6 @@
         "Fog": "Mgła",
         "AutumnLeaves": "Jesienne liście",
         "Rain": "Deszcz",
-        "RainTop": "Deszcz z góry",
         "Rats": "Szczury",
         "Snow": "Śnieg",
         "Snowstorm": "Burza śnieżna",
@@ -198,6 +325,7 @@
         "MagicCrystals": "Magiczne kryształy",
         "Ghosts": "Duchy",
         "Sandstorm": "Burza piaskowa",
+        "Fish": "Ryba",
         "BatsWeatherEffectsConfig": "Nietoperze (FXMaster)",
         "BirdsWeatherEffectsConfig": "Ptaki (FXMaster)",
         "BubblesWeatherEffectsConfig": "Bąbelki (FXMaster)",
@@ -208,7 +336,6 @@
         "FogWeatherEffectsConfig": "Mgła (FXMaster)",
         "AutumnLeavesWeatherEffectsConfig": "Jesienne liście (FXMaster)",
         "RainWeatherEffectsConfig": "Deszcz (FXMaster)",
-        "RainTopWeatherEffectsConfig": "Deszcz z góry (FXMaster)",
         "RatsWeatherEffectsConfig": "Szczury (FXMaster)",
         "SnowWeatherEffectsConfig": "Śnieg (FXMaster)",
         "SnowstormWeatherEffectsConfig": "Burza śnieżna (FXMaster)",
@@ -219,7 +346,8 @@
         "FirefliesWeatherEffectsConfig": "Świetliki (FXMaster)",
         "MagicCrystalsWeatherEffectsConfig": "Magiczne kryształy (FXMaster)",
         "GhostsWeatherEffectsConfig": "Duchy (FXMaster)",
-        "SandstormWeatherEffectsConfig": "Burza piaskowa (FXMaster)"
+        "SandstormWeatherEffectsConfig": "Burza piaskowa (FXMaster)",
+        "FishWeatherEffectsConfig": "Ryba (FXMaster)"
       },
       "BirdsAnimations": {
         "Glide": "Szybowanie",
@@ -229,9 +357,47 @@
       "TypeErrors": {
         "TypeUnknown": "Efekt cząsteczkowy „{id}” jest nieznanego typu „{type}”, pomijam.",
         "TypeNotFound": "Nie znaleziono efektu cząsteczkowego dla typu: {type}"
+      },
+      "CustomParticles": {
+        "ManagementHeader": "Efekty cząsteczkowe - {name}",
+        "NoCustomParticleEffects": "Nie utworzono jeszcze żadnych niestandardowych efektów cząsteczkowych.",
+        "AddEffect": "Dodaj efekt",
+        "ParticleNamePlaceholder": "Moja niestandardowa nazwa cząsteczki",
+        "BaseEffect": "Bazowy efekt",
+        "Group": "Grupa",
+        "Textures": "Tekstury",
+        "TexturePathsPlaceholder": "Ścieżki obrazów oddzielone przecinkami, obsługiwany sekwencyjny wybór plików. Zaleca się, aby rozmiary tekstur były jak najmniejsze dla zapewnienia wydajności, najlepiej 50 kb lub mniej.",
+        "Icon": "Ikona",
+        "IconPath": "Ścieżka ikony",
+        "Name": "Niestandardowa nazwa cząsteczki",
+        "Save": "Zapisz",
+        "Cancel": "Anuluj",
+        "Edit": "Edytuj",
+        "Delete": "Usuń",
+        "ControlTitle": "Zarządzaj efektami cząsteczkowymi użytkownika",
+        "ManagementTitle": "Efekty cząsteczkowe użytkownika",
+        "ConfigTitle": "Niestandardowy efekt cząsteczkowy",
+        "AmbientFloat": "Pływający ambient",
+        "DirectionalDrift": "Dryf kierunkowy",
+        "RefreshBrowserTitle": "Odśwież przeglądarkę",
+        "RefreshBrowserContentNew": "Czy chcesz teraz odświeżyć przeglądarkę? Efekt {name} nie będzie dostępny w menu Efekty cząsteczkowe regionu, dopóki nie nastąpi odświeżenie.",
+        "RefreshBrowserContentUpdated": "Czy chcesz teraz odświeżyć przeglądarkę? Efekt {name} nie zostanie zaktualizowany w menu Efekty cząsteczkowe regionu, dopóki nie nastąpi odświeżenie. Mogą wystąpić problemy, jeśli efekt został zmodyfikowany w celu użycia innych typów efektów podstawowych lub ścieżek tekstur.",
+        "Tooltips": {
+          "Name": "Nazwa wyświetlana na liście cząstek FXMaster.",
+          "BaseEffect": "Wybierz styl ruchu. Dryf kierunkowy przesuwa cząsteczki w głównym kierunku. Pływający ambient generuje cząsteczki losowo i pozwala im dryfować po ekranie.",
+          "Group": "W której kategorii FXMaster pojawia się ten efekt (Pogoda, Otoczenie lub Zwierzęta).",
+          "Textures": "Jedna lub więcej ścieżek obrazów, oddzielonych przecinkami. Wiele obrazów zostanie wybranych losowo dla każdej cząstki.",
+          "Icon": "Ikona wyświetlana na liście cząstek."
+        },
+        "Errors": {
+          "NameRequired": "Nazwa jest wymagana.",
+          "TexturesRequired": "Musisz wybrać co najmniej jeden obraz dla tekstury cząsteczki.",
+          "IconRequired": "Musisz wybrać obraz ikony dla niestandardowego efektu.",
+          "InvalidTexture": "Tekstura nie jest obsługiwanym plikiem graficznym: {path}",
+          "InvalidIcon": "Ikona nie jest obsługiwanym plikiem graficznym: {path}"
+        }
       }
     },
-
     "Filters": {
       "Effects": {
         "Bloom": "Bloom",
@@ -242,14 +408,15 @@
         "Predator": "Predator",
         "Underwater": "Pod wodą",
         "Sunlight": "Światło słoneczne",
-        "Duststorm": "Burza pyłowa"
+        "Duststorm": "Burza pyłowa",
+        "Ice": "Lód",
+        "Glitch": "Zakłócenie"
       },
       "TypeErrors": {
         "TypeUnknown": "Efekt filtru „{id}” jest nieznanego typu „{type}”, pomijam.",
         "TypeNotFound": "Nie znaleziono efektu filtra dla typu: {type}"
       }
     },
-
     "Regions": {
       "BehaviorNames": {
         "ParticleEffectRegionBehaviorName": "FXMaster: Efekty cząsteczkowe",
@@ -262,11 +429,10 @@
         "None": "Brak",
         "POV": "Widok tokenów",
         "Targets": "Widok wybranych tokenów",
-        "TokenTargets": "UUID żetonu",
+        "TokenTargets": "UUID tokenu",
         "AlwaysVisibleForGM": "Zawsze widoczne dla MG"
       }
     },
-
     "AnimationEffect": {
       "AllAnimations": "Wszystkie animacje",
       "FilterHint": "Filtruj animacje według tagów. Jeśli są dostępne, zawierają nazwy dostawców modułów, tag niestandardowy dla folderu animacji dodanego przez użytkownika oraz tag Ulubione dla animacji dodanych do ulubionych.",
