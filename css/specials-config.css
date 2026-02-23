@@ -5,6 +5,77 @@
 }
 
 /* ─────────────────────────────────────
+ * Deprecation / warning notice (Animation Effects)
+ * Can be collapsed to a single line.
+ * ───────────────────────────────────── */
+.fxmaster.specials-management .fxm-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0 0 0.5rem 0;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--color-warm-1);
+}
+
+.fxmaster.specials-management .fxm-notice__toggle {
+  flex: 0 0 auto;
+  width: 1.6rem;
+  height: 1.6rem;
+  line-height: 1.6rem;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-bg);
+  cursor: pointer;
+}
+
+.fxmaster.specials-management .fxm-notice__toggle i {
+  font-size: 0.85rem;
+}
+
+.fxmaster.specials-management .fxm-notice__text {
+  flex: 1 1 auto;
+  min-width: 0; /* required for ellipsis inside flex */
+}
+
+/* Collapsed state: make it more compact (single-line strip) */
+.fxmaster.specials-management .fxm-notice.is-collapsed {
+  align-items: center;
+  padding: 0.25rem 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.fxmaster.specials-management .fxm-notice.is-collapsed .fxm-notice__toggle {
+  min-width: 0;
+  min-height: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  line-height: 1.25rem;
+}
+
+.fxmaster.specials-management .fxm-notice.is-collapsed .fxm-notice__toggle i {
+  font-size: 0.75rem;
+}
+
+.fxmaster.specials-management .fxm-notice.is-collapsed .fxm-notice__text {
+  line-height: 1.2;
+  font-size: 0.9em;
+}
+
+.fxmaster.specials-management .fxm-notice.is-collapsed .fxm-notice__text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fxmaster.specials-management .fxm-notice__link {
+  text-decoration: underline;
+}
+
+/* ─────────────────────────────────────
  * Specials filters bar (Animation Effects)
  * Layout: [Search] [Refresh] [Slider] [Tag Select]
  * ───────────────────────────────────── */

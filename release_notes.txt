@@ -1,14 +1,3 @@
-Welcome to Gambit's FXMaster V7.4.0! Following hot on the heels of 7.3, this release brings a new presets api for module integrations which starts with an official integration with the excellent Calendaria module by Tyler! Additionally, this release brings a bunch of things to get FXMaster ready for Foundry V14 on day 1.
-- Added new api FXMASTER.api.presets. Use FXMASTER.api.presets.list() for a list of all pre-built effects!
-- Added API Manager Edit button & window. This allows editing an api effect while it is in progress in a single instance editor window. Should allow even more flexibility when dealing with API ran effects.
-- Added integration pieces for fxmaster-plus' new Sound Effects Manager which ties sounds into particle or filter effect activation/deactivation within a scene or region
-- Added localization keys for the new FXMaster+ SoundFX toggles and Sound Effects Manager
-- Added localization keys for the new FXMaster+ Filter Effect Lightning Bolt
-- Added new free Particle Effect to celebrate the collaboration with Calendaria! The new effect is Hail.
-- Updated FXMaster version max to v14. This is primarily for anyone who wants to test Foundrys pre-release V14 builds, I think FXMaster is in a good enough spot for testing at this point.
-- Updated special key handling for V14 to resolve deprecation warnings
-- Updated Region behaviors to accept new region shapes present in V14
-- Updated Region Edge Fade % behavior. This behavior is now much more consistent and should cover all region shapes and multi-shape situations. When a simple shape is present FXMaster uses a polygon-edge fast path for fade, falling back to SDF rendering for more complex shapes. The idea is to allow fast updates for moving regions if a user decides to attach a region to a token with an FXMaster effect present, which should typically be a simple circle/squircle/rectangle
-- Updated the static placeholder FXMaster Controls icon from a power button FA icon to an Informational I FA icon, and changed the text to FXMaster Tools
-- TBD: V14 Levels integration. At the moment it appears FXMaster mostly just works with V14 levels, I'll be waiting for future pre-release builds to fully verify that functionality.
-- Resolved player permission errors when a GM modified FXMaster region behaviors while a player was logged in (Thank yous to Michael)
+- Updated Presets after a full pass. Many effects have had a reduction to their opacity to make tokens more visible on canvas. Many other adjustments as well
+- Added the ability to minimize the Animation Effects window warning noting that it will be removed in V14.
+- Merged pt-br localizations, thanks Kharmans!

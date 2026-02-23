@@ -40,8 +40,9 @@ export class SpecialEffectsManagement extends FXMasterBaseFormV2 {
   static PARTS = [{ template: "modules/fxmaster/templates/special-effects-management.hbs" }];
 
   async _prepareContext() {
+    const noticeCollapsed = !!game.user?.getFlag?.(packageId, "specialEffectsNoticeCollapsed");
     const buckets = CONFIG.fxmaster.userSpecials;
-    if (!buckets) return { effects: [], tags: [] };
+    if (!buckets) return { effects: [], tags: [], noticeCollapsed };
 
     const overrides = game.settings.get(packageId, "customSpecialEffects") || {};
 
@@ -74,7 +75,7 @@ export class SpecialEffectsManagement extends FXMasterBaseFormV2 {
     this.fullEffects = effects;
     this.visibleEffects = effects;
 
-    return { effects: [], tags };
+    return { effects: [], tags, noticeCollapsed };
   }
 
   async _onRender(...args) {
@@ -90,6 +91,32 @@ export class SpecialEffectsManagement extends FXMasterBaseFormV2 {
       });
     }
     const html = this.element;
+
+    const notice = html?.querySelector?.("[data-fxm-notice]");
+    const noticeToggle = notice?.querySelector?.(".fxm-notice__toggle");
+    if (notice && noticeToggle) {
+      noticeToggle.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+
+        const collapsed = notice.classList.toggle("is-collapsed");
+
+        const icon = noticeToggle.querySelector("i");
+        if (icon) {
+          icon.classList.toggle("fa-chevron-down", collapsed);
+          icon.classList.toggle("fa-chevron-up", !collapsed);
+        }
+
+        noticeToggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+        noticeToggle.setAttribute("data-tooltip", collapsed ? "Expand notice" : "Collapse notice");
+
+        try {
+          await game.user.setFlag(packageId, "specialEffectsNoticeCollapsed", collapsed);
+        } catch (err) {
+          console.error(err);
+        }
+      });
+    }
 
     this.searchFilter.bind(html);
 
