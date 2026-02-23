@@ -1,5 +1,10 @@
 # Changelog
 
+## [v7.4.1] - 2026-02-23
+- Updated Presets after a full pass. Many effects have had a reduction to their opacity to make tokens more visible on canvas. Many other adjustments as well
+- Added the ability to minimize the Animation Effects window warning noting that it will be removed in V14.
+- Merged pt-br localizations, thanks Kharmans!
+
 ## [v7.4.0] - 2026-02-22
 Welcome to Gambit's FXMaster V7.4.0! Following hot on the heels of 7.3, this release brings a new presets api for module integrations which starts with an official integration with the excellent Calendaria module by Tyler! Additionally, this release brings a bunch of things to get FXMaster ready for Foundry V14 on day 1.
 - Added new api FXMASTER.api.presets. Use FXMASTER.api.presets.list() for a list of all pre-built effects!
