@@ -12,7 +12,7 @@
     "Filters": "Efeitos de Filtro",
     "SaveMacro": "Salvar Efeitos e Filtros como Macro",
     "ClearFX": "Limpar Filtros e Efeitos",
-    "ToolsActive": "Ferramentas Ativas"
+    "ToolsActive": "Ferramentas do FXMaster"
   },
 
   "FXMASTER": {
@@ -62,7 +62,11 @@
       "ApiEffectsDetails": "Parâmetros de API",
       "ApiEffectsNone": "Nenhum efeito de API está ativo nesta Cena.",
       "ApiEffectsKindParticle": "Partícula",
-      "ApiEffectsKindFilter": "Filtro"
+      "ApiEffectsKindFilter": "Filtro",
+      "ApiEffectsEdit": "Editar",
+      "ApiEffectsEditUnavailable": "Editar (indisponível)",
+      "ApiEffectEditorTitle": "Editar Efeito da API",
+      "ApiEffectMissing": "Este efeito da API não existe mais nesta Cena."
     },
 
     "Params": {
@@ -172,6 +176,7 @@
       "GlyphSlicePct": "Fatias de Glifo %",
       "GlyphFlickerSpeed": "Velocidade de Cintilação do Glifo",
       "TopDown": "Cima para Baixo",
+      "Jitter": "Tremor",
       "DirectionalMovement": "Movimento Direcional",
       "Spread": "Propagação Direcional",
       "FishType": {
@@ -197,7 +202,18 @@
       },
       "RotationStrength": "Força da Rotação",
       "Trail": "Rastro",
-      "LateralMovement": "Movimento Lateral"
+      "LateralMovement": "Movimento Lateral",
+      "SoundFxEnabled": "Sound FX",
+      "LightningMode": "Modo do Relâmpago",
+      "LightningModeHorizontal": "Horizontal",
+      "LightningModeMixed": "Mesclado",
+      "BoltFrequency": "Frequência do Raio",
+      "BoltLength": "Comprimento do Raio",
+      "Branchiness": "Ramificação",
+      "SyncFlash": "Sincronizar com o Lightning Flash",
+      "TopDownScale": "Escala de Cima para Baixo",
+      "TopDownBolts": "Raios de Cima para Baixo",
+      "TopDownBoltsVariable": "Contagem Variável de Raios"
     },
     "ParamTooltips": {
       "Saturation": "Intensidade da cor. 0 = tons de cinza; 1 = original; >1 = supersaturado.",
@@ -293,11 +309,20 @@
       "GlyphSlicePct": "Se as fatias estiverem ativadas, qual a porcentagem da região da fatia que receberá glifos.",
       "GlyphFlickerSpeed": "Velocidade com que os glifos piscam. 0 desativa a cintilação.",
       "TopDown": "Reproduzir efeito no modo de visão de cima para baixo",
+      "Jitter": "Quão irregular é a trajetória do raio. Valores mais altos criam arcos e ramificações mais caóticos.",
       "DirectionalMovement": "Reproduzir efeito em uma direção específica",
       "Spread": "Determine o desvio da dispersão em relação à direção, em graus",
       "RotationStrength": "A intensidade com que as partículas giram enquanto se movem. Maior = mais rotação.",
       "Trail": "Intensidade/comprimento do rastro deixado pelas sprites de partículas. Maior = rastro mais longo/intenso.",
-      "LateralMovement": "Adiciona um movimento lateral suave ao desvio das partículas. Maior = mais movimento lateral."
+      "LateralMovement": "Adiciona um movimento lateral suave ao desvio das partículas. Maior = mais movimento lateral.",
+      "LightningMode": "Escolha como os raios serão gerados: listras horizontais, raios de cima para baixo ou uma combinação de ambos.",
+      "BoltFrequency": "Com que frequência um raio surge em média. Valores mais altos resultam em raios surgindo com mais frequência.",
+      "BoltLength": "Controla o comprimento total do raio. No modo de Cima para Baixo, define a profundidade de impacto reduzida.",
+      "Branchiness": "Controla a intensidade com que o raio se ramifica e quantos sub-ramos ele pode formar.",
+      "SyncFlash": "Quando ativado, os Relâmpagos acionarão clarões do filtro de Raios base e suprimirá seu clarão autônomo, de modo que os clarões ocorram apenas quando raios forem gerados.",
+      "TopDownScale": "Dimensiona o tamanho dos raios de Cima para Baixo (feixe e clarão de origem). Não afeta raios horizontais.",
+      "TopDownBolts": "Número máximo de disparos simultâneos de cima para baixo. No modo de contagem variável de raios, este é o número máximo possível de raios por evento de disparo.",
+      "TopDownBoltsVariable": "Se ativado, escolhe um número aleatório de raios de Cima para Baixo até o máximo (com tendência a números menores). Se desativado, sempre gera exatamente o número máximo."
     },
 
     "Particles": {
@@ -316,6 +341,7 @@
         "Eagles": "Águias",
         "Embers": "Brasas",
         "Fog": "Névoa",
+        "Hail": "Granizo",
         "AutumnLeaves": "Folhas de Outono",
         "Rain": "Chuva",
         "Rats": "Ratos",
@@ -338,6 +364,7 @@
         "EaglesWeatherEffectsConfig": "Águias (FXMaster)",
         "EmbersWeatherEffectsConfig": "Brasas (FXMaster)",
         "FogWeatherEffectsConfig": "Névoa (FXMaster)",
+        "HailWeatherEffectsConfig": "Granizo (FXMaster)",
         "AutumnLeavesWeatherEffectsConfig": "Folhas de Outono (FXMaster)",
         "RainWeatherEffectsConfig": "Chuva (FXMaster)",
         "RatsWeatherEffectsConfig": "Ratos (FXMaster)",
@@ -415,7 +442,8 @@
         "Sunlight": "Luz do Sol",
         "Duststorm": "Tempestade de Poeira",
         "Ice": "Gelo",
-        "Glitch": "Glitch"
+        "Glitch": "Glitch",
+        "LightningBolts": "Raios de Relâmpagos"
       },
       "TypeErrors": {
         "TypeUnknown": "O efeito de filtro \"{id}\" é de tipo desconhecido \"{type}\". Ignorado.",
@@ -481,6 +509,72 @@
       "ScanCompleteEmpty": "FXMaster | Busca concluída — nenhum efeito de animação encontrado. Adicione animações e atualize novamente.",
       "Thumbnails": "Miniaturas",
       "ThumbnailsHint": "Permite a busca de miniaturas de animações durante a verificação de Atualização de Animações. Os provedores de animação que suportam a busca de miniaturas são JB2A e Eskie Effects."
+    },
+    "SoundFX": {
+      "ControlTitle": "Gerenciar Efeitos Sonoros",
+      "ManagerTitle": "Gerenciador de Efeitos Sonoros",
+      "AddRule": "Adicionar Regra de Som",
+      "DeleteRule": "Excluir Regra",
+      "AddSound": "Adicionar Som",
+      "DeleteSound": "Excluir Som",
+      "Effects": "Efeitos",
+      "Mode": "Modo Multi-Som",
+      "ModeParallel": "Paralelo (todos os sons tocam simultaneamente)",
+      "ModeSequential": "Sequencial (um som de cada vez, reproduzido em ordem de prioridade)",
+      "File": "Arquivo de Som",
+      "Browse": "Navegar",
+      "Level": "Nível",
+      "DragPriority": "Arraste para redefinir a prioridade",
+      "NoRules": "Nenhuma regra de Efeitos Sonoros configurada.",
+      "NoSounds": "Sem sons nesta regra.",
+      "V13Only": "Os efeitos sonoros requerem o Foundry VTT V13+.",
+      "KindParticle": "Partícula",
+      "KindFilter": "Filtro",
+      "RuleConfigTitle": "Regra de Som",
+      "EditRule": "Editar Regra",
+      "Save": "Salvar",
+      "Cancel": "Cancelar",
+      "Sounds": "Sons",
+      "FadeTime": "Tempo de Fade",
+      "FadeTimeHint": "Tempo de fade in/fade out em milissegundos.",
+      "EffectsHint": "Selecione um efeito para uma regra de som de efeito único ou selecione vários efeitos para criar uma regra combinada com maior prioridade.",
+      "NoEffectsSelected": "Nenhum efeito selecionado.",
+      "PausePlaylists": "Pausar Playlists",
+      "PausePlaylistsHint": "Quando esta regra estiver ativa no escopo da Cena ou do Visualizador, pause todas as faixas da playlist que estiver sendo reproduzidas neste cliente. A reprodução será retomada quando não houver mais regras correspondentes com esta opção ativas.",
+      "RegionSoundOptions": "Opções de Som de Região",
+      "RegionRadius": "Raio da Região",
+      "RegionRadiusHintPct": "O Raio da Região é expresso como uma porcentagem do tamanho de cada componente da Região desconectada (0-500%).",
+      "RegionBoundsOnly": "Reproduzir dentro dos limites da Região",
+      "RegionEasing": "Usar flexibilização",
+      "RegionWalls": "Limitado por paredes",
+      "UnitMs": "ms",
+      "UnitPercent": "%",
+      "ConfigDescription": {
+        "SceneWide": "Reproduz em toda a cena enquanto os efeitos selecionados estiverem ativos. Os efeitos de nível de cena sempre são reproduzidos em toda a cena.",
+        "PointSource": "Cada forma de Região desconectada emite a partir de seu centro com um raio de ~{pct}% do tamanho dessa forma.",
+        "RegionOnly": "Audível somente enquanto um Token controlado estiver dentro de uma Região correspondente.",
+        "RegionPadding": "Volume máximo dentro de uma Região correspondente, diminuindo gradualmente até ~{pct}% além do limite."
+      },
+      "ConfigMode": {
+        "Scene": "Cena",
+        "RegionOnly": "Apenas Região",
+        "RegionPadding": "Região + Preenchimento",
+        "RegionPointSource": "Fonte do Ponto da Região"
+      },
+      "Scope": {
+        "Scene": "Cena",
+        "Region": "Região",
+        "Viewer": "Visualizador"
+      },
+      "ActiveIn": "Ativo em: {scopes}",
+      "Priority": "Prioridade",
+      "FilePlaceholder": "assets/sounds/...",
+      "RuleName": "Nome da Regra",
+      "RuleNamePlaceholder": "Nome opcional (para identificação)",
+      "Enabled": "Habilitado",
+      "Disabled": "Desabilitado",
+      "UnnamedRule": "Regra Sem Nome",
+      "CurrentMode": "Modo Atual: {mode}"
     }
   }
 }
