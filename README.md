@@ -489,7 +489,7 @@ All preset methods accept an optional `opts` object.
 | -------------- | ------------------- | ------- | ----------- |
 | `topDown`      | `boolean`           | `false` | Prefer the preset's top-down variant (if defined). |
 | `direction`    | `string` | -       | Overrides the direction used by the preset. Strings support `north/south/east/west/northeast/northwest/southeast/southwest`. |
-| `belowTokens`  | `boolean`           | -       | Overrides whether the effect renders below tokens (where supported). |
+| `belowTokens`  | `boolean`           | -       | Overrides whether the effect renders below tokens. |
 | `soundFx`      | `boolean`           | -       | Enables/disables `soundFxEnabled` for preset effects **when FXMaster+ is active**. If FXMaster+ isn’t active, sound FX are forced off. |
 | `silent`       | `boolean`           | `false` | Suppress UI warning notifications (e.g. if a preset name can’t be resolved). |
 
