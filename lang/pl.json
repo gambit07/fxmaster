@@ -1,7 +1,7 @@
 {
   "I18N": {
     "LANGUAGE": "Polski",
-    "MAINTAINERS": "zagrywka"
+    "MAINTAINERS": "manewr"
   },
   "CONTROLS": {
     "Effects": "Sterowanie FXMaster",
@@ -11,7 +11,7 @@
     "Filters": "Efekty filtrów",
     "SaveMacro": "Zapisz efekty cząsteczkowe i filtrów jako makro",
     "ClearFX": "Wyczyść efekty cząsteczkowe i filtry",
-    "ToolsActive": "Narzędzia aktywne"
+    "ToolsActive": "Narzędzia FXMaster"
   },
   "FXMASTER": {
     "Common": {
@@ -60,7 +60,11 @@
       "ApiEffectsDetails": "Parametry API",
       "ApiEffectsNone": "W tej scenie nie są aktywne żadne efekty API.",
       "ApiEffectsKindParticle": "Cząsteczkowy",
-      "ApiEffectsKindFilter": "Filtr"
+      "ApiEffectsKindFilter": "Filtr",
+      "ApiEffectsEdit": "Edytuj",
+      "ApiEffectsEditUnavailable": "Edytuj (niedostępne)",
+      "ApiEffectEditorTitle": "Edytuj efekt API",
+      "ApiEffectMissing": "Ten efekt API nie istnieje już w tej scenie."
     },
     "Params": {
       "Saturation": "Saturacja",
@@ -169,6 +173,7 @@
       "GlyphSlicePct": "% przekrojów glifów",
       "GlyphFlickerSpeed": "Szybkość migotania glifów",
       "TopDown": "Od góry do dołu",
+      "Jitter": "Drgania",
       "DirectionalMovement": "Ruch kierunkowy",
       "Spread": "Rozproszenie kierunkowe",
       "FishType": {
@@ -194,7 +199,18 @@
       },
       "RotationStrength": "Siła obrotu",
       "Trail": "Ścieżka",
-      "LateralMovement": "Ruch boczny"
+      "LateralMovement": "Ruch boczny",
+      "SoundFxEnabled": "Efekty dźwiękowe",
+      "LightningMode": "Tryb błyskawicy",
+      "LightningModeHorizontal": "Poziomo",
+      "LightningModeMixed": "Mieszane",
+      "BoltFrequency": "Częstotliwość gromów",
+      "BoltLength": "Długość gromów",
+      "Branchiness": "Rozgałęzienia",
+      "SyncFlash": "Synchronizacja z Błyskawicą",
+      "TopDownScale": "Skala od góry do dołu",
+      "TopDownBolts": "Gromy od góry do dołu",
+      "TopDownBoltsVariable": "Zmienna liczba gromów"
     },
     "ParamTooltips": {
       "Saturation": "Intensywność koloru. 0 = skala szarości; 1 = oryginał; >1 = przesycone.",
@@ -290,11 +306,20 @@
       "GlyphSlicePct": "Jeśli włączono przekroje, jaka część regionu przekroju otrzymuje glify.",
       "GlyphFlickerSpeed": "Jak szybko migają glify. 0 wyłącza migotanie.",
       "TopDown": "Efekt odtwarzania w trybie odgórnym",
+      "Jitter": "Jak bardzo postrzępiona jest trajektoria błyskawicy. Wyższe wartości powodują bardziej chaotyczne łuki i rozgałęzienia.",
       "DirectionalMovement": "Efekt odtwarzania w określonym kierunku",
       "Spread": "Określ przesunięcie rozrzutu względem kierunku w stopniach",
       "RotationStrength": "Jak silnie cząsteczki obracają się podczas ruchu. Wyższa wartość = większy obrót.",
       "Trail": "Intensywność/długość śladu za cząstkami. Wyższa wartość = dłuższe/silniejsze ślady.",
-      "LateralMovement": "Dodaje płynne dryfowanie na boki do ruchu cząstek. Wyższa wartość = większe dryfowanie boczne."
+      "LateralMovement": "Dodaje płynne dryfowanie na boki do ruchu cząstek. Wyższa wartość = większe dryfowanie boczne.",
+      "LightningMode": "Wybierz sposób generowania błyskawic: poziome smugi, uderzenia z góry lub połączenie obu.",
+      "BoltFrequency": "Średnia częstotliwość pojawiania się błyskawic. Wyższe wartości powodują częstsze pojawianie się błyskawic.",
+      "BoltLength": "Kontroluje całkowitą długość błyskawicy. W trybie od góry do dołu ustawia skróconą głębokość uderzenia.",
+      "Branchiness": "Kontroluje, jak silnie rozgałęzia się błyskawica i ile podgałęzień może utworzyć.",
+      "SyncFlash": "Po włączeniu opcji „Błyskawice” spowoduje ona wyzwalanie błysków z podstawowego filtra „Błyskawica” i wyłączy jego autonomiczne błyski, tak aby błyski pojawiały się tylko wtedy, gdy pojawiają się błyskawice.",
+      "TopDownScale": "Skalowanie rozmiaru uderzeń z góry (promień i błysk w punkcie początkowym). Nie ma wpływu na poziome błyskawice.",
+      "TopDownBolts": "Maksymalna liczba jednoczesnych uderzeń typu od góry do dołu. W trybie zmiennej liczby błyskawic jest to maksymalna możliwa liczba błyskawic na jedno uderzenie.",
+      "TopDownBoltsVariable": "Jeśli opcja jest włączona, wybiera losową liczbę błyskawic od góry do maksymalnej wartości (z tendencją do niższych wartości). Jeśli opcja jest wyłączona, zawsze generuje dokładnie maksymalną liczbę."
     },
     "Particles": {
       "Groups": {
@@ -312,6 +337,7 @@
         "Eagles": "Orły",
         "Embers": "Żar",
         "Fog": "Mgła",
+        "Hail": "Grad",
         "AutumnLeaves": "Jesienne liście",
         "Rain": "Deszcz",
         "Rats": "Szczury",
@@ -334,6 +360,7 @@
         "EaglesWeatherEffectsConfig": "Orły (FXMaster)",
         "EmbersWeatherEffectsConfig": "Żar (FXMaster)",
         "FogWeatherEffectsConfig": "Mgła (FXMaster)",
+        "HailWeatherEffectsConfig": "Grad (FXMaster)",
         "AutumnLeavesWeatherEffectsConfig": "Jesienne liście (FXMaster)",
         "RainWeatherEffectsConfig": "Deszcz (FXMaster)",
         "RatsWeatherEffectsConfig": "Szczury (FXMaster)",
@@ -410,7 +437,8 @@
         "Sunlight": "Światło słoneczne",
         "Duststorm": "Burza pyłowa",
         "Ice": "Lód",
-        "Glitch": "Zakłócenie"
+        "Glitch": "Zakłócenie",
+        "LightningBolts": "Błyskawice"
       },
       "TypeErrors": {
         "TypeUnknown": "Efekt filtru „{id}” jest nieznanego typu „{type}”, pomijam.",
@@ -429,7 +457,7 @@
         "None": "Brak",
         "POV": "Widok tokenów",
         "Targets": "Widok wybranych tokenów",
-        "TokenTargets": "UUID tokenu",
+        "TokenTargets": "UUID tokena",
         "AlwaysVisibleForGM": "Zawsze widoczne dla MG"
       }
     },
@@ -474,6 +502,72 @@
       "ScanCompleteEmpty": "FXMaster | Skanowanie zakończone — nie znaleziono efektów animacji. Dodaj animacje i ponów odświeżenie.",
       "Thumbnails": "Miniatury",
       "ThumbnailsHint": "Umożliwia wyszukiwanie miniatur animacji podczas skanowania odświeżania animacji. Dostawcami animacji obsługującymi wyszukiwanie miniatur są JB2A i Eskie Effects."
+    },
+    "SoundFX": {
+      "ControlTitle": "Zarządzanie efektami dźwiękowymi",
+      "ManagerTitle": "Menedżer efektów dźwiękowych",
+      "AddRule": "Dodaj regułę dźwięku",
+      "DeleteRule": "Usuń regułę",
+      "AddSound": "Dodaj dźwięk",
+      "DeleteSound": "Usuń dźwięk",
+      "Effects": "Efekty",
+      "Mode": "Tryb wielu dźwięków",
+      "ModeParallel": "Równoległe (wszystkie dźwięki odtwarzane są jednocześnie)",
+      "ModeSequential": "Sekwencyjny (jeden dźwięk na raz, odtwarzany według priorytetu)",
+      "File": "Plik dźwiękowy",
+      "Browse": "Przeglądaj",
+      "Level": "Poziom",
+      "DragPriority": "Przeciągnij, aby zmienić priorytet",
+      "NoRules": "Nie skonfigurowano żadnych reguł dotyczących efektów dźwiękowych.",
+      "NoSounds": "W tej regule nie ma żadnych dźwięków.",
+      "V13Only": "Efekty dźwiękowe wymagają Foundry VTT V13+.",
+      "KindParticle": "Cząsteczkowy",
+      "KindFilter": "Filtr",
+      "RuleConfigTitle": "Reguła dźwięku",
+      "EditRule": "Edytuj regułę",
+      "Save": "Zapisz",
+      "Cancel": "Anuluj",
+      "Sounds": "Dźwięki",
+      "FadeTime": "Czas zanikania",
+      "FadeTimeHint": "Czas narastania / wygasania w milisekundach.",
+      "EffectsHint": "Wybierz jeden efekt dla reguły dźwiękowej z jednym efektem lub wybierz wiele efektów, aby utworzyć regułę kombinowaną o wyższym priorytecie.",
+      "NoEffectsSelected": "Nie wybrano żadnych efektów.",
+      "PausePlaylists": "Wstrzymaj listy odtwarzania",
+      "PausePlaylistsHint": "Gdy ta reguła jest aktywna w zakresie sceny lub widoku, wstrzymaj odtwarzanie wszystkich utworów z listy odtwarzania na tym kliencie. Odtwarzanie zostanie wznowione, gdy żadna z reguł pasujących do tej opcji nie będzie już aktywna.",
+      "RegionSoundOptions": "Opcje dźwięku stref",
+      "RegionRadius": "Promień strefy",
+      "RegionRadiusHintPct": "Promień strefy jest wyrażony jako procent wielkości każdego odłączonego elementu strefy (0–500%).",
+      "RegionBoundsOnly": "Odtwarzaj w granicach strefy",
+      "RegionEasing": "Zastosuj łagodzenie",
+      "RegionWalls": "Ograniczony przez ściany",
+      "UnitMs": "ms",
+      "UnitPercent": "%",
+      "ConfigDescription": {
+        "SceneWide": "Odtwarzane są w całej scenie, gdy wybrane efekty są aktywne. Efekty na poziomie sceny są zawsze odtwarzane w całej scenie.",
+        "PointSource": "Każdy odłączony kształt strefy emituje promień o długości równej ~{pct}% rozmiaru tego kształtu.",
+        "RegionOnly": "Słyszalny tylko wtedy, gdy kontrolowany token znajduje się w pasującej strefie.",
+        "RegionPadding": "Pełna głośność w dopasowanej strefie, a następnie zanikanie do ~{pct}% poza granicą."
+      },
+      "ConfigMode": {
+        "Scene": "Scena",
+        "RegionOnly": "Tylko strefa",
+        "RegionPadding": "Strefa + Wypełnienie",
+        "RegionPointSource": "Źródło punktowe strefy"
+      },
+      "Scope": {
+        "Scene": "Scena",
+        "Region": "Strefa",
+        "Viewer": "Widz"
+      },
+      "ActiveIn": "Aktywny w: {scopes}",
+      "Priority": "Priorytet",
+      "FilePlaceholder": "assets/sounds/...",
+      "RuleName": "Nazwa reguły",
+      "RuleNamePlaceholder": "Opcjonalna nazwa (do identyfikacji)",
+      "Enabled": "Włączone",
+      "Disabled": "Wyłączony",
+      "UnnamedRule": "Nieznana reguła",
+      "CurrentMode": "Tryb bieżący: {mode}"
     }
   }
 }
