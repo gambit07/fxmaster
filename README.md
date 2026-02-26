@@ -403,7 +403,7 @@ _Filter Effects_ are only displayed outside the region areas when masked. If a H
 
 ### API Effects UI Manager
 
-The _API Effects_ manager is a utility for inspecting, editing, and removing scene-wide effects that were added via macros or other modules through FXMaster’s APIs.
+The _API Effects_ manager is a utility for inspecting, editing, and removing scene-wide effects that were added via macros or presets through FXMaster’s APIs.
 
 To open: **Scene Controls → FXMaster Controls → API Effects** (plug icon).
 
