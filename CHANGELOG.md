@@ -1,5 +1,11 @@
 # Changelog
 
+## [v7.4.2] - 2026-02-27
+- Added new Presets API parameters for additional flexibility. New parameters are Speed, Density, and Color. Speed and Density are best effort approaches, the percentage increase/decrease acts against the medium (default value) for a given preset, if that value is already at min/max for a given preset, there will be no change. Similarly if already close to min/max, low and very low may both display the same because they both reach the absolute minimum/maximum value.
+  - Speed: One of very-low (-100%), low (-50%), medium, high (+50%), very-high (+100%) - Default medium.
+  - Density: One of very-low (-100%), low (-50%), medium, high (+50%), very-high (+100%) - Default medium.
+  - Color: Hex color code, will override and activate a given tint/color parameter when present
+
 ## [v7.4.1] - 2026-02-23
 - Updated Presets after a full pass. Many effects have had a reduction to their opacity to make tokens more visible on canvas. Many other adjustments as well
 - Added the ability to minimize the Animation Effects window warning noting that it will be removed in V14.
