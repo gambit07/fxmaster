@@ -6,7 +6,7 @@
  * Presets are defined in ./api-effects.js
  *
  * Usage:
- *   await FXMASTER.api.presets.play("sunshower", { topDown: false, direction: "north", belowTokens: false, soundFx: false}); //Turns on a given effect, passing play for an effect already on with a change in parameters will update the effect. Options are optional, passing none plays the effect in its default configuration.
+ *   await FXMASTER.api.presets.play("sunshower", { topDown: false, direction: "north", belowTokens: false, soundFx: false, density: "high", speed: "low"}); //Turns on a given effect, passing play for an effect already on with a change in parameters will update the effect. Options are optional, passing none plays the effect in its default configuration.
  *   await FXMASTER.api.presets.stop("blizzard"); //Turns off a given effect
  *   await FXMASTER.api.presets.toggle("blizzard", { topDown: true}); //Toggles a given effect on/off. Options are optional, passing none plays the effect in its default configuration.
  *   await FXMASTER.api.presets.switch("sunshower", { topDown: true }); //Stops any active presets and plays the passed-in preset
@@ -167,6 +167,201 @@ export function parseDirectionDegrees(dir) {
 }
 
 /**
+ * Relative speed/density mapping.
+ *
+ * Preset values are considered medium (1.0).
+ *
+ * - very-low  => -100%
+ * - low       => -50%
+ * - medium    => baseline
+ * - high      => +50%
+ * - very-high => +100%
+ */
+const RELATIVE_LEVEL_SCALE = {
+  "very-low": 0.0,
+  low: 0.5,
+  medium: 1.0,
+  high: 1.5,
+  "very-high": 2.0,
+};
+
+/**
+ * Parse a relative level string into a multiplier.
+ *
+ * Supports: "very-low", "low", "medium", "high", "very-high" (case-insensitive; allows spaces/underscores).
+ *
+ * @param {string|number|null|undefined} level
+ * @returns {{ multiplier: number, provided: boolean, valid: boolean, normalized?: string }}
+ */
+function parseRelativeLevelMultiplier(level) {
+  if (level === null || level === undefined) return { multiplier: 1, provided: false, valid: true };
+
+  if (typeof level === "number" && Number.isFinite(level)) {
+    return { multiplier: level, provided: true, valid: true, normalized: String(level) };
+  }
+
+  const s = String(level ?? "")
+    .trim()
+    .toLowerCase();
+  if (!s) return { multiplier: 1, provided: true, valid: false };
+
+  const norm = s.replace(/[\s_]+/g, "-").replace(/-+/g, "-");
+  const m = RELATIVE_LEVEL_SCALE?.[norm];
+  if (typeof m === "number" && Number.isFinite(m))
+    return { multiplier: m, provided: true, valid: true, normalized: norm };
+
+  const squashed = norm.replace(/-/g, "");
+  if (squashed === "verylow")
+    return { multiplier: RELATIVE_LEVEL_SCALE["very-low"], provided: true, valid: true, normalized: "very-low" };
+  if (squashed === "veryhigh")
+    return { multiplier: RELATIVE_LEVEL_SCALE["very-high"], provided: true, valid: true, normalized: "very-high" };
+
+  return { multiplier: 1, provided: true, valid: false, normalized: norm };
+}
+
+/**
+ * Best-effort lookup of a parameter descriptor (min/max/step/decimals) for a given effect option.
+ *
+ * This lets the Preset API clamp and quantize values so they don't exceed UI ranges and don't produce floating-point artifacts (e.g. 1.499999999).
+ *
+ * @param {{kind?: "particles"|"filters", type?: string}} meta
+ * @param {string} key
+ * @returns {{min?:number, max?:number, step?:number, decimals?:number}|null}
+ */
+function getRegisteredParamDescriptor(meta, key) {
+  try {
+    const kind = meta?.kind;
+    const type = meta?.type;
+    if (!kind || !type) return null;
+
+    const db = kind === "particles" ? CONFIG?.fxmaster?.particleEffects : CONFIG?.fxmaster?.filterEffects;
+    const cls = db?.[type];
+    const params = cls?.parameters;
+    const desc = params?.[key];
+
+    if (!desc || typeof desc !== "object") return null;
+
+    // Only expose numeric rangeish metadata.
+    const min = Number(desc.min);
+    const max = Number(desc.max);
+    const step = Number(desc.step);
+    const decimals = Number(desc.decimals);
+
+    return {
+      ...(Number.isFinite(min) ? { min } : {}),
+      ...(Number.isFinite(max) ? { max } : {}),
+      ...(Number.isFinite(step) && step > 0 ? { step } : {}),
+      ...(Number.isFinite(decimals) && decimals >= 0 ? { decimals } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Infer decimal precision from a step size.
+ * @param {number} step
+ * @returns {number}
+ */
+function decimalsFromStep(step) {
+  if (!Number.isFinite(step) || step <= 0) return 0;
+  const s = String(step);
+  const m = /e-(\d+)$/i.exec(s);
+  if (m) return Number.parseInt(m[1], 10) || 0;
+  const i = s.indexOf(".");
+  return i >= 0 ? s.length - i - 1 : 0;
+}
+
+/**
+ * Clamp and quantize a numeric value to a param descriptor.
+ *
+ * Quantization snaps to the nearest `step`, aligned to `min` (when present).
+ *
+ * @param {number} value
+ * @param {{min?:number, max?:number, step?:number, decimals?:number}|null} desc
+ * @returns {number}
+ */
+function clampAndQuantize(value, desc) {
+  let v = Number(value);
+  if (!Number.isFinite(v)) return value;
+
+  const min = Number.isFinite(desc?.min) ? desc.min : null;
+  const max = Number.isFinite(desc?.max) ? desc.max : null;
+  const step = Number.isFinite(desc?.step) && desc.step > 0 ? desc.step : null;
+
+  if (min !== null) v = Math.max(min, v);
+  if (max !== null) v = Math.min(max, v);
+
+  if (step !== null) {
+    const base = min !== null ? min : 0;
+    const n = Math.round((v - base) / step);
+    v = base + n * step;
+
+    if (min !== null) v = Math.max(min, v);
+    if (max !== null) v = Math.min(max, v);
+  }
+
+  const decimals = Number.isFinite(desc?.decimals) ? desc.decimals : step !== null ? decimalsFromStep(step) : 6;
+  if (Number.isFinite(decimals) && decimals >= 0) v = Number(v.toFixed(decimals));
+
+  return v;
+}
+
+/**
+ * Convenience: clamp/quantize a value for a specific effect parameter.
+ *
+ * @param {{kind?: "particles"|"filters", type?: string}} meta
+ * @param {string} key
+ * @param {number} value
+ * @returns {number}
+ */
+function clampAndQuantizeForEffect(meta, key, value) {
+  const desc = getRegisteredParamDescriptor(meta, key);
+  if (!desc) {
+    const v = Number(value);
+    return Number.isFinite(v) ? Number(v.toFixed(6)) : value;
+  }
+  return clampAndQuantize(value, desc);
+}
+/**
+ * Parse a user-provided hex color string.
+ *
+ * Supports:
+ * - "#RRGGBB" / "#RGB"
+ * - "RRGGBB" / "RGB"
+ * - "0xRRGGBB" / "0xRGB"
+ *
+ * 8-digit values (e.g. "#RRGGBBAA") are accepted but the alpha channel is ignored.
+ *
+ * @param {string|null|undefined} color
+ * @returns {{ provided: boolean, valid: boolean, hex: string|null }}
+ */
+function parseHexColor(color) {
+  if (color === null || color === undefined) return { provided: false, valid: true, hex: null };
+
+  const raw = String(color ?? "").trim();
+  if (!raw) return { provided: true, valid: false, hex: null };
+
+  let s = raw.toLowerCase();
+  if (s.startsWith("0x")) s = s.slice(2);
+  if (s.startsWith("#")) s = s.slice(1);
+
+  if (!/^[0-9a-f]+$/i.test(s)) return { provided: true, valid: false, hex: null };
+
+  if (s.length === 3) {
+    s = s
+      .split("")
+      .map((c) => `${c}${c}`)
+      .join("");
+  } else if (s.length === 8) {
+    s = s.slice(0, 6);
+  }
+
+  if (s.length !== 6) return { provided: true, valid: false, hex: null };
+  return { provided: true, valid: true, hex: `#${s}` };
+}
+
+/**
  * Normalize degrees into the range [-180, 180], mapping 180 => -180.
  *
  * @param {number} deg
@@ -265,6 +460,8 @@ function deepClone(v) {
  *   belowTokens?: boolean,
  *   directionDeg?: number|null,
  *   soundFx?: boolean,
+ *   speedScale?: number,
+ *   densityScale?: number,
  * }} overrides
  * @param {{ plusActive: boolean }} ctx
  * @returns {object}
@@ -279,6 +476,63 @@ function applyOptionOverrides(options = {}, overrides = {}, { plusActive } = {},
     out.soundFxEnabled = plusActive ? overrides.soundFx : false;
   } else if (!plusActive && "soundFxEnabled" in out) {
     out.soundFxEnabled = false;
+  }
+
+  if (typeof overrides.speedScale === "number" && Number.isFinite(overrides.speedScale) && overrides.speedScale !== 1) {
+    if (typeof out.speed === "number" && Number.isFinite(out.speed)) {
+      out.speed = clampAndQuantizeForEffect(meta, "speed", out.speed * overrides.speedScale);
+    }
+  }
+  if (
+    typeof overrides.densityScale === "number" &&
+    Number.isFinite(overrides.densityScale) &&
+    overrides.densityScale !== 1
+  ) {
+    if (typeof out.density === "number" && Number.isFinite(out.density)) {
+      out.density = clampAndQuantizeForEffect(meta, "density", out.density * overrides.densityScale);
+    }
+  }
+
+  if (typeof overrides.colorHex === "string" && overrides.colorHex) {
+    const hex = overrides.colorHex;
+
+    if (meta.kind === "particles") {
+      out.tint = {
+        ...(out.tint && typeof out.tint === "object" ? out.tint : {}),
+        apply: true,
+        value: hex,
+      };
+
+      if ("rainbow" in out) out.rainbow = false;
+    }
+
+    if (meta.kind === "filters") {
+      const setColorObj = (k) => {
+        const v = out?.[k];
+        if (v && typeof v === "object" && "apply" in v && "value" in v) {
+          out[k] = { ...(v ?? {}), apply: true, value: hex };
+          return true;
+        }
+        if (typeof v === "string") {
+          out[k] = { apply: true, value: hex };
+          return true;
+        }
+        return false;
+      };
+
+      if ("color" in out) setColorObj("color");
+      if ("tint" in out) setColorObj("tint");
+
+      for (const [k, v] of Object.entries(out ?? {})) {
+        const lk = String(k).toLowerCase();
+        const looksColorish = lk.includes("tint") || lk.includes("color");
+        if (!looksColorish) continue;
+        if (k === "color" || k === "tint") continue;
+        if (v && typeof v === "object" && "apply" in v && "value" in v && typeof v.value === "string") {
+          out[k] = { ...(v ?? {}), apply: true, value: hex };
+        }
+      }
+    }
   }
 
   if (typeof overrides.directionDeg === "number" && Number.isFinite(overrides.directionDeg)) {
@@ -380,6 +634,9 @@ export async function stopPreset(name, { scene = null } = {}) {
  * @param {{
  *   topDown?: boolean,
  *   direction?: string|number,
+ *   color?: string,
+ *   speed?: "very-low"|"low"|"medium"|"high"|"very-high"|number,
+ *   density?: "very-low"|"low"|"medium"|"high"|"very-high"|number,
  *   belowTokens?: boolean,
  *   soundFx?: boolean,
  *   scene?: any,
@@ -392,6 +649,9 @@ export async function playPreset(
   {
     topDown = false,
     direction = undefined,
+    color = undefined,
+    speed = undefined,
+    density = undefined,
     belowTokens = undefined,
     soundFx = undefined,
     scene = null,
@@ -416,7 +676,36 @@ export async function playPreset(
 
   const directionDeg = parseDirectionDegrees(direction);
 
-  const overrides = { topDown, belowTokens, directionDeg, soundFx };
+  const colorInfo = parseHexColor(color);
+  if (colorInfo.provided && !colorInfo.valid) {
+    const msg = `Invalid color '${color}'. Expected a hex color like #RRGGBB.`;
+    logger.warn(msg);
+    if (!silent) ui?.notifications?.warn?.(msg);
+  }
+
+  const speedScaleInfo = parseRelativeLevelMultiplier(speed);
+  const densityScaleInfo = parseRelativeLevelMultiplier(density);
+
+  if (speedScaleInfo.provided && !speedScaleInfo.valid) {
+    const msg = `Invalid speed level '${speed}'. Supported: very-low, low, medium, high, very-high.`;
+    logger.warn(msg);
+    if (!silent) ui?.notifications?.warn?.(msg);
+  }
+  if (densityScaleInfo.provided && !densityScaleInfo.valid) {
+    const msg = `Invalid density level '${density}'. Supported: very-low, low, medium, high, very-high.`;
+    logger.warn(msg);
+    if (!silent) ui?.notifications?.warn?.(msg);
+  }
+
+  const overrides = {
+    topDown,
+    belowTokens,
+    directionDeg,
+    soundFx,
+    speedScale: speedScaleInfo.multiplier,
+    densityScale: densityScaleInfo.multiplier,
+    colorHex: colorInfo.hex,
+  };
   for (const p of particles) {
     if (!p || typeof p !== "object") continue;
     p.options = applyOptionOverrides(p.options ?? {}, overrides, { plusActive }, { kind: "particles", type: p.type });
