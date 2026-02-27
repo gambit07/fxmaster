@@ -488,8 +488,11 @@ All preset methods accept an optional `opts` object.
 | Option         | Type                | Default | Description |
 | -------------- | ------------------- | ------- | ----------- |
 | `topDown`      | `boolean`           | `false` | Prefer the preset's top-down variant (if defined). |
-| `direction`    | `string` | -       | Overrides the direction used by the preset. Strings support `north/south/east/west/northeast/northwest/southeast/southwest`. |
+| `direction`    | `string`            | -       | Overrides the direction used by the preset. Strings support `north/south/east/west/northeast/northwest/southeast/southwest`. |
 | `belowTokens`  | `boolean`           | -       | Overrides whether the effect renders below tokens. |
+| `speed`        | `string`            | "medium"| Overrides particle or filter speed. One of very-low (-100%), low (-50%), medium, high (+50%), very-high (+100%) - Default medium. |
+| `density`      | `string`            | "medium"| Overrides particle or filter density. One of very-low (-100%), low (-50%), medium, high (+50%), very-high (+100%) - Default medium. |
+| `color`        | `string`            | -       | Hex color code, will override and activate a filter or particles given tint/color parameter when present |
 | `soundFx`      | `boolean`           | -       | Enables/disables `soundFxEnabled` for preset effects **when FXMaster+ is active**. If FXMaster+ isn’t active, sound FX are forced off. |
 | `silent`       | `boolean`           | `false` | Suppress UI warning notifications (e.g. if a preset name can’t be resolved). |
 
