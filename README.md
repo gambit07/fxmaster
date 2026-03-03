@@ -80,7 +80,7 @@
     playsinline
     loop
     preload="auto"
-    src="https://github.com/user-attachments/assets/4bb9492d-dc3b-4d2e-82ee-6950cd2792eb">
+    src="https://github.com/user-attachments/assets/7cb29ad3-7b63-4186-acdd-cd23575d870b">
   </video>
 </details>
 
