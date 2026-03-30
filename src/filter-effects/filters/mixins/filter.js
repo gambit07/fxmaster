@@ -1,4 +1,11 @@
-import { snappedStageMatrix, getCssViewportMetrics, mat3FromPixi, safeResolutionForCssArea } from "../../../utils.js";
+import {
+  snappedStageMatrix,
+  getSnappedCameraCss,
+  getCssViewportMetrics,
+  mat3FromPixi,
+  safeResolutionForCssArea,
+} from "../../../utils.js";
+import { MAX_EDGES } from "../../../constants.js";
 
 /**
  * FXMasterFilterEffectMixin
@@ -12,7 +19,7 @@ export const normalize = (opts) => {
   if (!opts || typeof opts !== "object") return out;
 
   for (const [k, v] of Object.entries(opts)) {
-    if (v && typeof v === "object" && "value" in v && Object.keys(v).length <= 2) {
+    if (v && typeof v === "object" && "value" in v && Object.keys(v).length <= 2 && !Array.isArray(v)) {
       if (typeof v.apply === "boolean") out[k] = { value: v.value, apply: v.apply };
       else out[k] = v.value;
     } else {
@@ -21,6 +28,23 @@ export const normalize = (opts) => {
   }
   return out;
 };
+
+import regionFadeCommonFrag from "../shaders/region-fade-common.frag";
+import { logger } from "../../../logger.js";
+
+/**
+ * Preprocess a GLSL fragment source string:
+ * - Injects the MAX_EDGES constant from JavaScript so the GLSL and JS values are guaranteed to stay in sync.
+ * - Replaces `#include <region-fade-common>` with the shared region fade infrastructure so each shader does not need to duplicate it.
+ * @param {string} src - Raw GLSL source.
+ * @returns {string} Preprocessed GLSL ready for compilation.
+ */
+export function preprocessShader(src) {
+  if (typeof src !== "string") return src;
+  let out = src.replace(/#define MAX_EDGES \d+/g, `#define MAX_EDGES ${MAX_EDGES}`);
+  out = out.replace(/#include\s+<region-fade-common>/g, regionFadeCommonFrag);
+  return out;
+}
 
 export function FXMasterFilterEffectMixin(Base) {
   return class extends Base {
@@ -92,7 +116,9 @@ export function FXMasterFilterEffectMixin(Base) {
               : this.constructor?.default?.strength ?? 1;
           this.uniforms.strength = Number.isFinite(val) ? val : 1;
         }
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
 
       return this;
     }
@@ -142,7 +168,9 @@ export function FXMasterFilterEffectMixin(Base) {
         this.filterArea.y = fy;
         this.filterArea.width = fw;
         this.filterArea.height = fh;
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
 
       this.autoFit = false;
       this.padding = 0;
@@ -155,15 +183,10 @@ export function FXMasterFilterEffectMixin(Base) {
       }
 
       if (setCamFrac && "camFrac" in u && canvas?.stage?.transform) {
-        const stageM = canvas.stage.worldTransform;
-        const Msnap = snappedStageMatrix();
-
-        const dx = stageM.tx - Msnap.tx;
-        const dy = stageM.ty - Msnap.ty;
-
+        const { camFracX, camFracY } = getSnappedCameraCss();
         const arr = u.camFrac instanceof Float32Array && u.camFrac.length >= 2 ? u.camFrac : new Float32Array(2);
-        arr[0] = dx;
-        arr[1] = dy;
+        arr[0] = camFracX;
+        arr[1] = camFracY;
         u.camFrac = arr;
       }
     }
@@ -228,7 +251,7 @@ export function FXMasterFilterEffectMixin(Base) {
       this.lockAndSync(filterSystem, currentState, lockOpts);
 
       if (this.uniforms && "uCssToWorld" in this.uniforms) {
-        const M = (canvas.stage?.worldTransform ?? PIXI.Matrix.IDENTITY).clone().invert();
+        const M = canvas?.stage ? snappedStageMatrix().clone().invert() : PIXI.Matrix.IDENTITY.clone();
         this.uniforms.uCssToWorld = mat3FromPixi(M);
       }
 
@@ -243,7 +266,9 @@ export function FXMasterFilterEffectMixin(Base) {
         if (!Number.isFinite(this.resolution) || this.resolution > safe || this.resolution <= 0) {
           this.resolution = safe;
         }
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
 
       return super.apply(filterSystem, input, output, clear, currentState);
     }
@@ -254,6 +279,7 @@ export function FXMasterFilterEffectMixin(Base) {
       u.viewSize = u.viewSize || new Float32Array([1, 1]);
       u.hasMask = typeof u.hasMask === "number" ? u.hasMask : 0.0;
       u.maskReady = typeof u.maskReady === "number" ? u.maskReady : 0.0;
+      u.maskSoft = typeof u.maskSoft === "number" ? u.maskSoft : 0.0;
       u.invertMask = typeof u.invertMask === "number" ? u.invertMask : 0.0;
       if (withStrength) u.strength = typeof u.strength === "number" ? u.strength : strengthDefault;
       return u;
@@ -270,10 +296,13 @@ export function FXMasterFilterEffectMixin(Base) {
             bt.scaleMode = PIXI.SCALE_MODES.LINEAR;
             if (typeof PIXI.MIPMAP_MODES !== "undefined") bt.mipmap = PIXI.MIPMAP_MODES.OFF;
           }
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
       }
       if ("hasMask" in options && typeof options.hasMask === "number") u.hasMask = options.hasMask;
       if ("maskReady" in options && typeof options.maskReady === "number") u.maskReady = options.maskReady;
+      if ("maskSoft" in options && typeof options.maskSoft === "number") u.maskSoft = options.maskSoft;
       if ("invertMask" in options && typeof options.invertMask === "number") u.invertMask = options.invertMask;
       if ("viewSize" in options && Array.isArray(options.viewSize) && options.viewSize.length === 2) {
         u.viewSize = new Float32Array([Math.max(1, options.viewSize[0] | 0), Math.max(1, options.viewSize[1] | 0)]);
@@ -285,11 +314,14 @@ export function FXMasterFilterEffectMixin(Base) {
       if (!u) return;
       if ("maskReady" in u) u.maskReady = 0.0;
       if ("hasMask" in u) u.hasMask = 0.0;
+      if ("maskSoft" in u) u.maskSoft = 0.0;
       if ("invertMask" in u) u.invertMask = 0.0;
       if ("maskSampler" in u) {
         try {
           u.maskSampler = PIXI.Texture.EMPTY;
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
       }
     }
 
@@ -314,17 +346,21 @@ export function FXMasterFilterEffectMixin(Base) {
         const rgb = [0, 0, 0];
         try {
           PIXI.utils.hex2rgb(PIXI.utils.string2hex(raw), rgb);
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
         return rgb;
       }
       if (raw && typeof raw === "object") {
         const hex = raw.value ?? defaultHex;
         const apply = !!raw.apply;
-        if (!apply) return [0, 0, 0];
+        if (!apply) return null;
         const rgb = [0, 0, 0];
         try {
           PIXI.utils.hex2rgb(PIXI.utils.string2hex(hex), rgb);
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
         return rgb;
       }
       return null;
@@ -336,13 +372,17 @@ export function FXMasterFilterEffectMixin(Base) {
       const fn = () => {
         try {
           cb(ticker.deltaMS ?? 16.6);
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
       };
       try {
         if (priority != null && ticker.add.length >= 3) ticker.add(fn, this, priority);
         else ticker.add(fn, this);
         (this._fxTickers ||= []).push({ ticker, fn });
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       return () => this.removeFilterTicker(fn);
     }
 
@@ -350,7 +390,9 @@ export function FXMasterFilterEffectMixin(Base) {
       const ticker = canvas?.app?.ticker ?? PIXI.Ticker.shared;
       try {
         ticker.remove(fn, this);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       this._fxTickers = (this._fxTickers || []).filter((t) => t.fn !== fn);
     }
 
@@ -359,7 +401,9 @@ export function FXMasterFilterEffectMixin(Base) {
       for (const { fn } of this._fxTickers || []) {
         try {
           ticker.remove(fn, this);
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
       }
       this._fxTickers = [];
     }
@@ -373,7 +417,9 @@ export function FXMasterFilterEffectMixin(Base) {
     cancelUniformFade() {
       try {
         this._fadeCancel?.();
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       this._fadeCancel = null;
     }
 
@@ -382,7 +428,9 @@ export function FXMasterFilterEffectMixin(Base) {
       if (!tkr || !this.uniforms) {
         try {
           this.uniforms[uniformKey] = to;
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
         return onDone?.();
       }
 
@@ -398,17 +446,23 @@ export function FXMasterFilterEffectMixin(Base) {
         const k = ease(t);
         try {
           this.uniforms[uniformKey] = start + delta * k;
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
 
         if (t >= 1) {
           this._fadeCancel?.();
           this._fadeCancel = null;
           try {
             this.uniforms[uniformKey] = to;
-          } catch {}
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
           try {
             onDone?.();
-          } catch {}
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
         }
       };
 
@@ -416,7 +470,9 @@ export function FXMasterFilterEffectMixin(Base) {
       this._fadeCancel = () => {
         try {
           tkr.remove(tick, this);
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
       };
     }
 
@@ -449,7 +505,9 @@ export function FXMasterFilterEffectMixin(Base) {
         const done = (res) => {
           try {
             onDone?.();
-          } catch {}
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
           return !!res;
         };
         return out instanceof Promise ? out.then(done) : Promise.resolve(done(out));
@@ -458,7 +516,9 @@ export function FXMasterFilterEffectMixin(Base) {
       if (skip || !tkr || durationMs <= 0) {
         try {
           if (u) u[uniformKey] = to;
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
         return finish();
       }
 

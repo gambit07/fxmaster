@@ -1,7 +1,8 @@
-import { FXMasterFilterEffectMixin } from "./mixins/filter.js";
+import { FXMasterFilterEffectMixin, preprocessShader } from "./mixins/filter.js";
 import fragment from "./shaders/old-film.frag";
 import { MAX_EDGES } from "../../constants.js";
 import { clamp01, clampNonNeg } from "../../utils.js";
+import { logger } from "../../logger.js";
 
 /**
  * OldFilmFilter
@@ -18,7 +19,7 @@ export class OldFilmFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
    * @param {string} [id] - Stable id for filter instances.
    */
   constructor(options = {}, id) {
-    super(options, id, PIXI.Filter.defaultVertex, fragment);
+    super(options, id, PIXI.Filter.defaultVertex, preprocessShader(fragment));
 
     const u = (this.uniforms ??= {});
     this.initMaskUniforms(u, { withStrength: true, strengthDefault: 1.0 });
@@ -30,9 +31,9 @@ export class OldFilmFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
     u.time = typeof u.time === "number" ? u.time : 0.0;
     u.noiseStrength = typeof u.noiseStrength === "number" ? u.noiseStrength : 0.1;
     u.sepiaAmount = typeof u.sepiaAmount === "number" ? u.sepiaAmount : 0.3;
-    u.noiseSize = Number.isFinite(u.noiseSize) ? u.noiseSize : 1.0; // ≥0
-    u.scratch = typeof u.scratch === "number" ? u.scratch : 0.5; // 0..1
-    u.scratchDensity = typeof u.scratchDensity === "number" ? u.scratchDensity : 0.3; // 0..1
+    u.noiseSize = Number.isFinite(u.noiseSize) ? u.noiseSize : 1.0;
+    u.scratch = typeof u.scratch === "number" ? u.scratch : 0.5;
+    u.scratchDensity = typeof u.scratchDensity === "number" ? u.scratchDensity : 0.3;
 
     this.configure(options);
   }
@@ -165,7 +166,9 @@ export class OldFilmFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
     this.enabled = true;
     try {
       if (this.uniforms) this.uniforms.strength = 1.0;
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
     super.play?.({ skipFading, ...opts });
 
     if (!this._filmTick) {
@@ -174,7 +177,9 @@ export class OldFilmFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
           const dt = (deltaMS ?? 16.6) * 0.001;
           this.uniforms.time = (this.uniforms.time + dt) % 1e6;
           if (typeof this.uniforms.strength !== "number") this.uniforms.strength = 1.0;
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
       });
     }
     return this;
@@ -191,7 +196,7 @@ export class OldFilmFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   }
 
   /**
-   * PIXI.Filter hook: run the filter with FXMaster's lock and scene-rect area.
+   * Run the filter with FXMaster's lock and scene-rect area.
    * @param {PIXI.FilterSystem} filterSystem - Filter system.
    * @param {PIXI.RenderTexture} input - Input texture.
    * @param {PIXI.RenderTexture} output - Output texture.

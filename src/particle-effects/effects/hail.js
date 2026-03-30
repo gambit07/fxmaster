@@ -1,5 +1,6 @@
 import { FXMasterParticleEffect } from "./effect.js";
 import { withSteppedGradientColor } from "./helpers/with-stepped-gradient-color.js";
+import { logger } from "../../logger.js";
 
 /**
  * A full-screen weather effect which renders falling hailstones.
@@ -76,7 +77,9 @@ export class HailParticleEffect extends FXMasterParticleEffect {
 
       try {
         if (base && "scaleMode" in base) base.scaleMode = PIXI.SCALE_MODES.LINEAR;
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
 
       const TILE = 512;
       const COLS = 4;
@@ -237,7 +240,9 @@ export class HailParticleEffect extends FXMasterParticleEffect {
     const optsNoDir = foundry.utils.deepClone(options);
     try {
       delete optsNoDir.direction;
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     this.applyOptionsToConfig(optsNoDir, config);
 

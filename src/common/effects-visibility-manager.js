@@ -1,5 +1,6 @@
 import { FXMasterBaseFormV2 } from "../base-form.js";
 import { packageId } from "../constants.js";
+import { logger } from "../logger.js";
 
 /**
  * @typedef {"particle" | "filter"} EffectVisibilityKind
@@ -73,7 +74,9 @@ export class EffectsVisibilityManagerApp extends FXMasterBaseFormV2 {
       if (typeof onChange === "function") existing.onChange = onChange;
       try {
         existing.setPosition({ height: getVisibilityManagerHeight() });
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       existing.render(true);
       return existing;
     }
@@ -100,7 +103,9 @@ export class EffectsVisibilityManagerApp extends FXMasterBaseFormV2 {
 
     try {
       this.setPosition({ height: getVisibilityManagerHeight() });
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
 
   /** @override */
@@ -201,7 +206,9 @@ function updateVisibilityRow(button, isHidden) {
 
   try {
     button.dataset.mode = isHidden ? "unhide" : "hide";
-  } catch {}
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+  }
 }
 
 /**

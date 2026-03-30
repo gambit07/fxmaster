@@ -11,10 +11,12 @@
 <h2 style="text-align: center;">Supporting The Module</h2>
 <p style="text-align: center;"><a href="https://ko-fi.com/gambit07" target="_blank" rel="nofollow noopener"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="ko-fi" /></a> <a href="https://www.patreon.com/GambitsLounge" target="_blank" rel="nofollow noopener"> <img src="https://img.shields.io/badge/Patreon-Gambits Lounge-F96854?style=for-the-badge&amp;logo=patreon" alt="Patreon Gambits Lounge" /> </a></p>
 <hr/>
-<p>Welcome to the official release of FXMaster V7.4! This release brings some big updates to get ready for V14! This includes handling for new region shapes, new edge fade region handling, some initial compatability with V14's levels, and more! I've bumped max compatability for FXMaster to V14, I believe it is now ready for any enterprising users who would like to test it on pre-release V14 versions. This release also brings a brand new preset api which has been used by Tyler to integrate the excellent <a href="https://foundryvtt.com/packages/calendaria" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Calendaria</a> module directly with FXMaster! Preset effects combine a number of different particle and/or filter effects to create a convincing environmental effect, the api contains an enhanced integration with FXMaster+ as well to use the expanded effects from that module when present in Calendaria. To support Tyler and his continuing work on Calendaria and other free modules, consider supporting him on <a href="https://patreon.com/3deathsaves" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Patreon</a>. Hope everyone enjoys!</p>
+<p>Welcome to the official release of FXMaster V7.5! This release brings some new functionality for Particle regions, as well as Particle and Filter Suppression regions. All of these behavior types now have an optional Edge Fade % parameter that should allow for more naturalistic looking region areas. Hope everyone enjoys!</p>
 
-**<p>Any support via the <a href="https://www.patreon.com/GambitsLounge" target="_blank" rel="nofollow noopener">Patreon</a> or <a href="https://ko-fi.com/gambit07" target="_blank" rel="nofollow noopener">Ko-fi</a> is greatly appreciated! If you are a Patreon subscriber you will receive access to the FXMaster+ module. FXMaster+ can be accessed from Patreon, and it's where I will be adding new particle effects and filters moving forward. For the month of February, it will get you access to the 🟡Lightning Bolts,🔵Fish, 🟢Glitch, 🔵Ice, 🟤Duststorm, 🟤Sandstorm, 🟢Ghosts, 🟡Sunlight, 🟢Magic Crystals, 🟡Fireflies, 🌸Sakura Bloom, and 🌸Sakura Blossoms Effects - Effects are previewed below:</p>**
+**<p>Any support via the <a href="https://www.patreon.com/GambitsLounge" target="_blank" rel="nofollow noopener">Patreon</a> or <a href="https://ko-fi.com/gambit07" target="_blank" rel="nofollow noopener">Ko-fi</a> is greatly appreciated! If you are a Patreon subscriber you will receive access to the FXMaster+ module. FXMaster+ can be accessed from Patreon, and it's where I will be adding new particle effects and filters moving forward. For the month of February, it will get you access to the 🔵Water, 🟡Lightning Bolts, 🔵Fish, 🟢Glitch, 🔵Ice, 🟤Duststorm, 🟤Sandstorm, 🟢Ghosts, 🟡Sunlight, 🟢Magic Crystals, 🟡Fireflies, 🌸Sakura Bloom, and 🌸Sakura Blossoms Effects - Effects are previewed below:</p>**
 
+<details>
+  <summary>Lightning Bolts (click to expand)</summary>
   <video
     autoplay
     muted
@@ -23,6 +25,7 @@
     preload="auto"
     src="https://github.com/user-attachments/assets/c85cc30c-18a2-4de4-8057-87c70a7dcbf4">
   </video>
+</details>
 
 <details>
   <summary>Fish (click to expand)</summary>
@@ -314,6 +317,8 @@ By default, _Particle Effects_ added via the app are displayed across the entire
     - Alternatively, you can only add **Token Enters**; in that case the effect becomes suppressed once a token enters and remains suppressed even if they exit.
   - **Token Exits** - Suppression becomes disabled when a token exits the bounds of the region.
 
+- Finally, you can opt to enable Edge Fade %. When this setting is above 0, scene level filters will be blended into the region edges to create a more natural looking suppression area rather than a stark cutout shape
+
 _Particle Effects_ are only displayed outside the region areas when masked. If a Hole shape is added to the region, scene particle effects will display in the hole area cutout.
 
 #### ⚠ Performance Note
@@ -354,7 +359,7 @@ The options will be adjusted in real-time as you make changes to them.
 
 After adding a Region, open the Region config menu and navigate to the Behaviors tab. Add a new behavior and select the option 'FXMaster: Filter Effects': 
 
-![Particle Effects Management](./media/screenshots/filter-effects-region-management.webp)
+![Filter Effects Management](./media/screenshots/filter-effects-region-management.webp)
 
 - In this menu, you can configure individual _Filter Effects_ in the same way as in the main app, and add region elevation visibility handling.
   - Selecting the checkbox next to a _Filter Effect_ will display a dropdown of its options.
@@ -381,7 +386,7 @@ After adding a Region, open the Region config menu and navigate to the Behaviors
 
 #### Masking Filter Effects
 
-By default, _Filter Effects_ added via the scene app are displayed across the entire scene. However, it is possible to mask them from specific areas. This can be achieved within Regions by using the Region behavior "Suppress Weather" or "FXMaster: Suppress Scene Filters". "Suppress Weather" masks all Particle and Filter effects along with core Foundry effects, "FXMaster: Suppress Scene Filters" only masks FXMaster Filter Effects.
+By default, _Filter Effects_ added via the scene app are displayed across the entire scene. However, it is possible to mask them from specific areas. This can be achieved within Regions by using the Region behavior "Suppress Weather" or "FXMaster: Suppress Scene Filters". "Suppress Weather" masks all Particle and Filter effects along with core Foundry effects, "FXMaster: Suppress Scene Filters" only masks FXMaster Filter Effects and adds additional functionality.
 
 - When using "FXMaster: Suppress Scene Filters", there is additional region elevation visibility handling.
 - **Elevation Constraints**
@@ -398,6 +403,8 @@ By default, _Filter Effects_ added via the scene app are displayed across the en
     - This event can be paired with **Token Exits** to turn suppression on and off when a token moves in/out.
     - Alternatively, you can only add **Token Enters**; in that case the suppression becomes visible once a token enters and remains visible even if they exit.
   - **Token Exits** - Suppression becomes disabled when a token exits the bounds of the region.
+
+- Finally, you can opt to enable Edge Fade %. When this setting is above 0, scene level filters will be blended into the region edges to create a more natural looking suppression area rather than a stark cutout shape
 
 _Filter Effects_ are only displayed outside the region areas when masked. If a Hole shape is added to the region, scene filter effects will display in the hole area cutout.
 

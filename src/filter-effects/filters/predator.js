@@ -1,4 +1,4 @@
-import { FXMasterFilterEffectMixin } from "./mixins/filter.js";
+import { FXMasterFilterEffectMixin, preprocessShader } from "./mixins/filter.js";
 import fragment from "./shaders/predator.frag";
 import { MAX_EDGES } from "../../constants.js";
 import { clampRange, num } from "../../utils.js";
@@ -24,14 +24,13 @@ export class PredatorFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
    * @param {string} [id] - Stable id for filter instances.
    */
   constructor(options = {}, id) {
-    super(options, id, PIXI.Filter.defaultVertex, fragment);
+    super(options, id, PIXI.Filter.defaultVertex, preprocessShader(fragment));
 
     const u = (this.uniforms ??= {});
     this.initMaskUniforms(u, { withStrength: false });
     this.initFadeUniforms(u);
     this.initRegionFadeUniforms(u, { maxEdges: MAX_EDGES });
 
-    // Screen-space mapping (used for mask & gating)
     this.ensureVec4Uniform("srcFrame", [0, 0, 1, 1]);
     this.ensureVec2Uniform("camFrac", [0, 0]);
 
@@ -163,7 +162,7 @@ export class PredatorFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   }
 
   /**
-   * PIXI.Filter hook: run the filter with FXMaster's apply lock and scene-rect area.
+   * Run the filter with FXMaster's apply lock and scene-rect area.
    * @param {PIXI.FilterSystem} filterSystem - Filter system.
    * @param {PIXI.RenderTexture} input - Input texture.
    * @param {PIXI.RenderTexture} output - Output texture.

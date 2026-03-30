@@ -1,4 +1,5 @@
 import { FXMasterParticleEffect } from "./effect.js";
+import { logger } from "../../logger.js";
 
 /**
  * A full-screen weather effect which renders drifting snowflakes.
@@ -150,7 +151,9 @@ export class SnowParticleEffect extends FXMasterParticleEffect {
     const optsNoDir = foundry.utils.deepClone(options);
     try {
       delete optsNoDir.direction;
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     this.applyOptionsToConfig(optsNoDir, config);
 

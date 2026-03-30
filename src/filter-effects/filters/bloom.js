@@ -1,14 +1,13 @@
-import { FXMasterFilterEffectMixin } from "./mixins/filter.js";
+import { FXMasterFilterEffectMixin, preprocessShader } from "./mixins/filter.js";
 import fragment from "./shaders/bloom.frag";
 import { MAX_EDGES } from "../../constants.js";
 import { clampRange } from "../../utils.js";
+import { logger } from "../../logger.js";
 
 /**
  * BloomFilter
  * -----------
- * Scene/region post-process bloom with thresholded bright-pass, separable blur,
- * and additive upsample. Supports region masks, strength, and fade metadata
- * (analytic rect/ellipse or polygon with SDF/edges) provided by the layer.
+ * Scene/region post-process bloom with thresholded bright-pass, separable blur, and additive upsample. Supports region masks, strength, and fade metadata (analytic rect/ellipse or polygon with SDF/edges) provided by the layer.
  */
 export class BloomFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   /**
@@ -18,7 +17,7 @@ export class BloomFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
    * @param {string} [id] - Stable id for filter instances.
    */
   constructor(options = {}, id) {
-    super(options, id, PIXI.Filter.defaultVertex, fragment);
+    super(options, id, PIXI.Filter.defaultVertex, preprocessShader(fragment));
 
     const u = (this.uniforms ??= {});
     this.initMaskUniforms(u, { withStrength: true, strengthDefault: 1.0 });
@@ -108,10 +107,14 @@ export class BloomFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   play(opts = {}) {
     try {
       this.configure(opts);
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
     try {
       if (this.uniforms) this.uniforms.strength = 1.0;
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
     return super.play?.({ skipFading: true, ...opts });
   }
 
@@ -124,7 +127,7 @@ export class BloomFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   }
 
   /**
-   * PIXI.Filter hook: run the filter with FXMaster's apply lock and scene-rect area.
+   * Run the filter with FXMaster's apply lock and scene-rect area.
    * @param {PIXI.FilterSystem} filterSystem - Filter system.
    * @param {PIXI.RenderTexture} input - Input texture.
    * @param {PIXI.RenderTexture} output - Output texture.

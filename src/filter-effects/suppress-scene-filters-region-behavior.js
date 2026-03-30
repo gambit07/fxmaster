@@ -51,6 +51,18 @@ export class SuppressSceneFiltersBehaviorType extends foundry.data.regionBehavio
       localize: true,
     });
 
+    schema._edgeFadePercent = new foundry.data.fields.NumberField({
+      required: false,
+      nullable: false,
+      initial: 0,
+      min: 0,
+      max: 1,
+      step: 0.01,
+      label: "FXMASTER.Params.FadePercent",
+      hint: "FXMASTER.ParamTooltips.FadePercent",
+      localize: true,
+    });
+
     return schema;
   }
 
@@ -100,6 +112,14 @@ export class SuppressSceneFiltersBehaviorType extends foundry.data.regionBehavio
           await this.parent.unsetFlag(packageId, "tokenTargets");
           changedAny = true;
         }
+      }
+
+      const nextFade = Math.min(Math.max(Number(system._edgeFadePercent) || 0, 0), 1);
+      const prevFade = Math.min(Math.max(Number(this.parent.getFlag(packageId, "edgeFadePercent")) || 0, 0), 1);
+      if (nextFade !== prevFade) {
+        if (nextFade > 0) await resetFlag(this.parent, "edgeFadePercent", nextFade);
+        else await this.parent.unsetFlag(packageId, "edgeFadePercent");
+        changedAny = true;
       }
 
       const mode = this._getEventModeFromSelection();

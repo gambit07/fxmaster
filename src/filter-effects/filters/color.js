@@ -1,7 +1,8 @@
-import { FXMasterFilterEffectMixin } from "./mixins/filter.js";
+import { FXMasterFilterEffectMixin, preprocessShader } from "./mixins/filter.js";
 import fragment from "./shaders/color.frag";
 import { MAX_EDGES } from "../../constants.js";
 import { clampMin, clampNonNeg, asFloat3 } from "../../utils.js";
+import { logger } from "../../logger.js";
 
 /**
  * ColorFilter
@@ -10,8 +11,7 @@ import { clampMin, clampNonNeg, asFloat3 } from "../../utils.js";
  * - Region masks and uniform strength (for graceful fades).
  * - Analytic fades (rect/ellipse) and polygon fades (SDF/edge-based).
  * - Saturation/contrast/brightness/gamma and optional tint override.
- * - Below Tokens (via managers): when options.belowTokens=true the managers feed a
- *   token-cutout mask so the filter does not affect tokens.
+ * - Below Tokens (via managers): when options.belowTokens=true the managers feed a token-cutout mask so the filter does not affect tokens.
  */
 export class ColorFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   /**
@@ -20,24 +20,24 @@ export class ColorFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
    * @param {string} [id] - Stable id for filter instances.
    */
   constructor(options = {}, id) {
-    super(options, id, PIXI.Filter.defaultVertex, fragment);
+    super(options, id, PIXI.Filter.defaultVertex, preprocessShader(fragment));
 
     const r = canvas?.app?.renderer;
     if (r) {
       try {
         this.filterArea = new PIXI.Rectangle(0, 0, r.screen.width | 0, r.screen.height | 0);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
     }
 
     const u = (this.uniforms ??= {});
-    // Mask + strength for fade-out on removal
     this.initMaskUniforms(u, { withStrength: true, strengthDefault: 1.0 });
     this.initFadeUniforms(u);
     this.initRegionFadeUniforms(u, { maxEdges: MAX_EDGES });
     this.ensureVec4Uniform("srcFrame", [0, 0, 1, 1]);
     this.ensureVec2Uniform("camFrac", [0, 0]);
 
-    // Color/tone defaults
     u.red = typeof u.red === "number" ? u.red : 1.0;
     u.green = typeof u.green === "number" ? u.green : 1.0;
     u.blue = typeof u.blue === "number" ? u.blue : 1.0;
@@ -60,8 +60,6 @@ export class ColorFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
 
   /**
    * Parameter schema exposed to configuration UIs.
-   * Note: `belowTokens` is used by the managers to route a token-cutout mask
-   *       to this filter; the shader itself does not change.
    * @returns {Record<string, object>} Parameter descriptors.
    */
   static get parameters() {
@@ -101,7 +99,9 @@ export class ColorFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
     if (x === undefined) return;
     try {
       if (this.uniforms) this.uniforms[key] = x;
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
 
   /** @returns {number} Red multiplier. */ get red() {
@@ -256,7 +256,9 @@ export class ColorFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
     if (options.belowTokens !== undefined) {
       try {
         this.options.belowTokens = !!options.belowTokens;
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
     }
 
     super.applyOptions(options);
@@ -279,7 +281,9 @@ export class ColorFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   play(opts = {}) {
     try {
       this.configure(opts);
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
     this._setUniform("strength", 1.0);
     return super.play?.({ skipFading: true, ...opts });
   }
@@ -294,7 +298,7 @@ export class ColorFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   }
 
   /**
-   * PIXI.Filter hook: run the filter with FXMaster's apply lock and scene-rect area.
+   * Run the filter with FXMaster's apply lock and scene-rect area.
    * @param {PIXI.FilterSystem} filterSystem - Filter system.
    * @param {PIXI.RenderTexture} input - Input texture.
    * @param {PIXI.RenderTexture} output - Output texture.

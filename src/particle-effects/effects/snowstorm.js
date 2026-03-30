@@ -1,4 +1,5 @@
 import { FXMasterParticleEffect } from "./effect.js";
+import { logger } from "../../logger.js";
 
 /**
  * A full-screen particle effect which renders heavy snow fall.
@@ -32,6 +33,10 @@ export class SnowstormParticleEffect extends FXMasterParticleEffect {
   /** @override */
   static get group() {
     return "weather";
+  }
+
+  static get densityScalar() {
+    return 0.1;
   }
 
   /** @override */
@@ -216,7 +221,9 @@ export class SnowstormParticleEffect extends FXMasterParticleEffect {
     const optsNoDir = foundry.utils.deepClone(options);
     try {
       delete optsNoDir.direction;
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     this.applyOptionsToConfig(optsNoDir, config);
 
@@ -442,13 +449,17 @@ export class SnowstormParticleEffect extends FXMasterParticleEffect {
           for (let i = 0; i < n; i++) applyVortex(arrayParticles[i]);
         }
       };
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     try {
       const was = !!emitter.autoUpdate;
       emitter.autoUpdate = false;
       emitter.autoUpdate = was;
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     return [emitter];
   }
@@ -465,8 +476,12 @@ export class SnowstormParticleEffect extends FXMasterParticleEffect {
           const was = !!e.autoUpdate;
           e.autoUpdate = false;
           e.autoUpdate = was;
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
       }
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
 }

@@ -3,13 +3,7 @@ import { packageId } from "./constants.js";
 const FXMASTER_PLUS_ID = "fxmaster-plus";
 
 function isV13Plus() {
-  const gen = game?.release?.generation;
-  if (Number.isFinite(gen)) return gen >= 13;
-  try {
-    return foundry.utils.isNewerVersion(game.version, "12.999");
-  } catch {
-    return /^13\./.test(game.version);
-  }
+  return (game?.release?.generation ?? 0) >= 13;
 }
 
 /**

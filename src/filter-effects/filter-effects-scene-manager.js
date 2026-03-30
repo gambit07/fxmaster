@@ -15,7 +15,9 @@ import {
   applyMaskUniformsToFilters,
   coalesceNextFrame,
   getCssViewportMetrics,
+  getSnappedCameraCss,
   snappedStageMatrix,
+  cameraMatrixChanged,
 } from "../utils.js";
 
 import { SceneMaskManager } from "../common/base-effects-scene-manager.js";
@@ -77,20 +79,26 @@ export class FilterEffectsSceneManager {
         const set = new Set([...managed, ...dying]);
         env.filters = env.filters.filter((f) => !set.has(f));
       }
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     this.filters = {};
     this._dyingFilters.clear();
 
     try {
       canvas?.app?.ticker?.remove?.(this.#animate, this);
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
     this._ticker = false;
 
     try {
       SceneMaskManager.instance.setBelowTokensNeeded?.("filters", false);
       SceneMaskManager.instance.setKindActive?.("filters", false);
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
 
   async update({ skipFading = false } = {}) {
@@ -134,7 +142,9 @@ export class FilterEffectsSceneManager {
           this.#removeFromEnvFilters([f]);
           try {
             f.destroy?.();
-          } catch {}
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
           this._dyingFilters.delete(f);
         });
     }
@@ -148,10 +158,18 @@ export class FilterEffectsSceneManager {
     this.#refreshSceneFilterSuppressionMasks(true);
   }
 
+  /**
+   * Refresh scene-filter suppression masks.
+   *
+   * Suppression-active scenes use the synchronous path so the scene allow-mask and region masks stay aligned while the camera moves.
+   *
+   * @returns {void}
+   */
   refreshSceneFilterSuppressionMasks() {
     const r = canvas?.app?.renderer;
     const hiDpi = (r?.resolution ?? window.devicePixelRatio ?? 1) !== 1;
-    const forceSync = this.#anyBelowTokens() && hiDpi;
+    const hasSuppression = !!SceneMaskManager.instance.hasSuppressionRegions?.("filters");
+    const forceSync = hasSuppression || (this.#anyBelowTokens() && hiDpi);
     this.#refreshSceneFilterSuppressionMasks(forceSync);
   }
 
@@ -191,13 +209,15 @@ export class FilterEffectsSceneManager {
 
     const anyBelow = filtersArr.some((f) => isBelowTokensFilter(f));
 
-    let { base, cutout, tokens } = SceneMaskManager.instance.getMasks("filters");
+    let { base, cutout, tokens, soft } = SceneMaskManager.instance.getMasks("filters");
 
     if (!base || base.destroyed) {
       try {
         SceneMaskManager.instance.refreshSync("filters");
-      } catch {}
-      ({ base, cutout, tokens } = SceneMaskManager.instance.getMasks("filters"));
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+      ({ base, cutout, tokens, soft } = SceneMaskManager.instance.getMasks("filters"));
     }
 
     if (!base || base.destroyed) {
@@ -206,6 +226,7 @@ export class FilterEffectsSceneManager {
         if ("maskSampler" in u) u.maskSampler = PIXI.Texture.EMPTY;
         if ("hasMask" in u) u.hasMask = 0.0;
         if ("maskReady" in u) u.maskReady = 0.0;
+        if ("maskSoft" in u) u.maskSoft = 0.0;
         if ("tokenSampler" in u) u.tokenSampler = PIXI.Texture.EMPTY;
         if ("hasTokenMask" in u) u.hasTokenMask = 0.0;
       }
@@ -221,6 +242,7 @@ export class FilterEffectsSceneManager {
       cssW,
       cssH,
       deviceToCss,
+      maskSoft: !!soft,
       filterAreaRect: cssFA,
     });
   }
@@ -228,9 +250,7 @@ export class FilterEffectsSceneManager {
   /**
    * Refresh and bind scene suppression masks for scene-wide filter effects.
    *
-   * {@link SceneMaskManager.refresh} is animation-frame coalesced and may destroy and recreate
-   * render textures when it runs. For asynchronous refreshes, uniform binding is deferred until
-   * the next animation frame to avoid referencing textures that are replaced during refresh.
+   * {@link SceneMaskManager.refresh} is animation-frame coalesced and may destroy and recreate render textures when it runs. For asynchronous refreshes, uniform binding is deferred until the next animation frame to avoid referencing textures that are replaced during refresh.
    *
    * @param {boolean} [sync=false]
    * @private
@@ -243,7 +263,9 @@ export class FilterEffectsSceneManager {
     try {
       SceneMaskManager.instance.setKindActive?.("filters", hasAny);
       SceneMaskManager.instance.setBelowTokensNeeded?.("filters", anyBelow);
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     if (!hasAny) return;
 
@@ -268,7 +290,9 @@ export class FilterEffectsSceneManager {
         );
         this._coalescedBindSceneMask();
       }
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
 
   #refreshSceneFilterSuppressionMasks(sync = false) {
@@ -278,7 +302,9 @@ export class FilterEffectsSceneManager {
       try {
         SceneMaskManager.instance.setBelowTokensNeeded?.("filters", false);
         SceneMaskManager.instance.setKindActive?.("filters", false);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
     }
 
     const M = snappedStageMatrix();
@@ -324,21 +350,15 @@ export class FilterEffectsSceneManager {
           f.lockViewport({ setDeviceToCss: false, setCamFrac: true });
         }
       }
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     const M = snappedStageMatrix();
     if (!M) return;
 
     const L = this._lastRegionsMatrix;
-    const eps = 1e-4;
-    const changed =
-      !L ||
-      Math.abs(L.a - M.a) > eps ||
-      Math.abs(L.b - M.b) > eps ||
-      Math.abs(L.c - M.c) > eps ||
-      Math.abs(L.d - M.d) > eps ||
-      Math.abs(L.tx - M.tx) > eps ||
-      Math.abs(L.ty - M.ty) > eps;
+    const changed = cameraMatrixChanged(M, L);
 
     if (changed) {
       this.#refreshSceneFilterSuppressionMasks(true);
@@ -350,17 +370,20 @@ export class FilterEffectsSceneManager {
 
       const r = canvas?.app?.renderer;
       const res = r?.resolution || window.devicePixelRatio || 1;
-      const stageM = canvas?.stage?.worldTransform;
+      const { txCss, tyCss } = getSnappedCameraCss();
 
-      const tx = stageM?.tx ?? 0;
-      const ty = stageM?.ty ?? 0;
-
-      const fxFrac = (((tx * res) % 1) + 1) % 1;
-      const fyFrac = (((ty * res) % 1) + 1) % 1;
+      const fxFrac = (((txCss * res) % 1) + 1) % 1;
+      const fyFrac = (((tyCss * res) % 1) + 1) % 1;
 
       if (!this._lastCamFrac) this._lastCamFrac = { x: fxFrac, y: fyFrac };
 
-      const fracMoved = Math.abs(fxFrac - this._lastCamFrac.x) > 1e-6 || Math.abs(fyFrac - this._lastCamFrac.y) > 1e-6;
+      /**
+       * Sub-pixel threshold: skip token mask repaints for camera movements smaller than ~1% of a device pixel. This avoids eggspensive per-frame sprite allocation churn during smooth panning.
+       */
+      const SUB_PIXEL_THRESHOLD = 0.01;
+      const fracMoved =
+        Math.abs(fxFrac - this._lastCamFrac.x) > SUB_PIXEL_THRESHOLD ||
+        Math.abs(fyFrac - this._lastCamFrac.y) > SUB_PIXEL_THRESHOLD;
 
       if (!changed && fracMoved) {
         SceneMaskManager.instance.refreshTokensSync?.();
@@ -368,6 +391,8 @@ export class FilterEffectsSceneManager {
 
       this._lastCamFrac.x = fxFrac;
       this._lastCamFrac.y = fyFrac;
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
 }

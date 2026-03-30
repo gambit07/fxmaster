@@ -5,9 +5,17 @@ import { logger } from "../../logger.js";
 import { getHiddenEffectsCount, openEffectsVisibilityManager } from "../../common/effects-visibility-manager.js";
 
 export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
+  /** @type {ParticleEffectsManagement|undefined} */
+  static #instance;
+
+  /** @returns {ParticleEffectsManagement|undefined} */
+  static get instance() {
+    return this.#instance;
+  }
+
   constructor(scene, options = {}) {
     super(options);
-    ParticleEffectsManagement.instance = this;
+    ParticleEffectsManagement.#instance = this;
     this.scene = scene;
   }
 
@@ -250,7 +258,9 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
 
         cur[`core_${type}`].options = options;
         await resetFlag(scene, "effects", cur);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
     }, 750);
 
     this._debouncedEffectsWrite({ type, options: foundry.utils.deepClone(options) });
@@ -275,7 +285,9 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
 
     try {
       this._autosizeCleanup?.();
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
     this._autosizeCleanup = null;
   }
 
@@ -356,10 +368,14 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
     this._autosizeCleanup = () => {
       try {
         stopRows?.();
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       try {
         stopResize?.();
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       window.removeEventListener("resize", onWinResize);
     };
   }

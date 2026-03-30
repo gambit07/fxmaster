@@ -56,7 +56,7 @@ export class RatsParticleEffect extends DefaultRectangleSpawnMixin(FXMasterParti
         type: "range",
         min: 0,
         value: 0,
-        max: 180,
+        max: 20,
         step: 1,
         decimals: 0,
         showWhen: { directionalMovement: true },

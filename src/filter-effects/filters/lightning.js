@@ -1,7 +1,8 @@
-import { FXMasterFilterEffectMixin } from "./mixins/filter.js";
+import { FXMasterFilterEffectMixin, preprocessShader } from "./mixins/filter.js";
 import fragment from "./shaders/lightning.frag";
 import { packageId, MAX_EDGES } from "../../constants.js";
 import { easeFunctions } from "../../ease.js";
+import { logger } from "../../logger.js";
 
 /**
  * LightningFilter
@@ -16,7 +17,7 @@ export class LightningFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
    * @param {string} [id] - Stable id for filter instances.
    */
   constructor(options = {}, id) {
-    super(options, id, PIXI.Filter.defaultVertex, fragment);
+    super(options, id, PIXI.Filter.defaultVertex, preprocessShader(fragment));
 
     const u = (this.uniforms ??= {});
     this.initMaskUniforms(u, { withStrength: false });
@@ -49,12 +50,20 @@ export class LightningFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
    * @returns {Record<string, object>} Parameter descriptors.
    */
   static get parameters() {
-    const v13plus = !foundry.utils.isNewerVersion("13.0.0", game.version);
+    const v13plus = game.release.generation >= 13;
 
     const base = {
       belowTokens: { label: "FXMASTER.Params.BelowTokens", type: "checkbox", value: false },
       soundFxEnabled: { label: "FXMASTER.Params.SoundFxEnabled", type: "checkbox", value: false },
-      frequency: { label: "FXMASTER.Params.Period", type: "range", max: 10000, min: 100, step: 5, value: 500 },
+      frequency: {
+        label: "FXMASTER.Params.Period",
+        type: "range",
+        max: 30000,
+        min: 100,
+        step: 100,
+        value: 5000,
+        showWhen: { audioAware: false },
+      },
       spark_duration: { label: "FXMASTER.Params.Duration", type: "range", max: 2000, min: 100, step: 5, value: 300 },
       brightness: { label: "FXMASTER.Params.Brightness", type: "range", max: 4.0, min: 0.0, step: 0.1, value: 1.3 },
     };
@@ -106,7 +115,9 @@ export class LightningFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   /** @param {number} v */ set brightness(v) {
     try {
       this.uniforms.brightness = Math.max(0, Number(v) || 0);
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
 
   /** @returns {number} Mean flash interval (ms). */ get frequency() {
@@ -189,7 +200,7 @@ export class LightningFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
     if (typeof o.frequency === "number") this.frequency = o.frequency;
     if (typeof o.spark_duration === "number") this.spark_duration = o.spark_duration;
 
-    const v13plus = !foundry.utils.isNewerVersion("13.0.0", game.version);
+    const v13plus = game.release.generation >= 13;
     if (v13plus) {
       if (typeof o.audioAware === "boolean") this.audioAware = o.audioAware;
       if (o.audioChannels !== undefined) this.audioChannels = o.audioChannels;
@@ -345,7 +356,9 @@ export class LightningFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
     if (this._tickerFn) {
       try {
         t.remove(this._tickerFn);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       this._tickerFn = null;
     }
 
@@ -369,7 +382,9 @@ export class LightningFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
     if (this._tickerFn) {
       try {
         t.remove(this._tickerFn);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       this._tickerFn = null;
     }
     this._accumMS = 0;
@@ -384,13 +399,15 @@ export class LightningFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
       if (this.uniforms) {
         this.uniforms.brightness = 1.0;
       }
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     return super.stop?.({ skipFading });
   }
 
   /**
-   *Run apply lock and scene-rect area
+   * Run apply lock and scene-rect area
    * @param {PIXI.FilterSystem} filterSystem - Filter system.
    * @param {PIXI.RenderTexture} input - Input texture.
    * @param {PIXI.RenderTexture} output - Output texture.

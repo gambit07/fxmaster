@@ -1,6 +1,7 @@
 import { FXMasterBaseFormV2 } from "../../base-form.js";
 import { packageId } from "../../constants.js";
 import { deletionUpdate, replacementUpdate } from "../../utils.js";
+import { logger } from "../../logger.js";
 
 function sanitizeIdPart(value) {
   return String(value ?? "")
@@ -42,7 +43,9 @@ export class ApiEffectEditor extends FXMasterBaseFormV2 {
     if (existing) {
       try {
         existing.render(true);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       return existing;
     }
 
@@ -50,7 +53,9 @@ export class ApiEffectEditor extends FXMasterBaseFormV2 {
     ApiEffectEditor.instances.set(uid, inst);
     try {
       inst.render(true);
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
     return inst;
   }
 
@@ -172,7 +177,9 @@ export class ApiEffectEditor extends FXMasterBaseFormV2 {
       if (Number.isFinite(pos.width)) next.width = pos.width;
       try {
         this.setPosition(next);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
     }
 
     const content = this.element?.querySelector?.(".window-content") ?? this.element;
@@ -193,11 +200,15 @@ export class ApiEffectEditor extends FXMasterBaseFormV2 {
     const { top, left, width } = this.position;
     try {
       game.user.setFlag(packageId, posKey, { top, left, width });
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     try {
       ApiEffectEditor.instances.delete(`${this.kind}:${this.effectId}`);
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
 
   static async deleteApiEffect(event, _button) {
@@ -214,16 +225,22 @@ export class ApiEffectEditor extends FXMasterBaseFormV2 {
 
     try {
       await scene.setFlag(packageId, flagKey, deletionUpdate(id));
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     try {
       const mod = await import("./api-effects-management.js");
       mod?.ApiEffectsManagement?.instance?.render?.(false);
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     try {
       this.close();
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
 
   static async updateParam(event, input) {
@@ -294,7 +311,9 @@ export class ApiEffectEditor extends FXMasterBaseFormV2 {
 
         const next = { ...cur, options };
         await scene.setFlag(packageId, flagKey, replacementUpdate(effectId, next));
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
     }, 500);
 
     this._debouncedApiEffectWrite({ effectId, options: foundry.utils.deepClone(options) });

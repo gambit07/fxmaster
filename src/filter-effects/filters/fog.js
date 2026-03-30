@@ -1,8 +1,9 @@
 import fragment from "./shaders/fog.frag";
-import customVertex2D from "./shaders/custom-vertex-2d.vert";
-import { FXMasterFilterEffectMixin } from "./mixins/filter.js";
 import { MAX_EDGES } from "../../constants.js";
+import customVertex2D from "./shaders/custom-vertex-2d.vert";
+import { FXMasterFilterEffectMixin, preprocessShader } from "./mixins/filter.js";
 import { asFloat3 } from "../../utils.js";
+import { logger } from "../../logger.js";
 
 /**
  * FogFilter
@@ -19,7 +20,7 @@ export class FogFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
    * @param {string} [id] - Stable id for filter instances.
    */
   constructor(options = {}, id) {
-    super(options, id, customVertex2D, fragment);
+    super(options, id, customVertex2D, preprocessShader(fragment));
 
     const u = (this.uniforms ??= {});
     this.initMaskUniforms(u, { withStrength: true, strengthDefault: 1.0 });
@@ -108,7 +109,9 @@ export class FogFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   /** @param {number} v */ set r(v) {
     try {
       (this.uniforms.color ??= new Float32Array([0, 0, 0]))[0] = Number(v) || 0;
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
   /** @returns {number} Green tint channel. */ get g() {
     try {
@@ -120,7 +123,9 @@ export class FogFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   /** @param {number} v */ set g(v) {
     try {
       (this.uniforms.color ??= new Float32Array([0, 0, 0]))[1] = Number(v) || 0;
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
   /** @returns {number} Blue tint channel. */ get b() {
     try {
@@ -132,7 +137,9 @@ export class FogFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   /** @param {number} v */ set b(v) {
     try {
       (this.uniforms.color ??= new Float32Array([0, 0, 0]))[2] = Number(v) || 0;
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
 
   /** @returns {number} Fog density in [0,1]. */ get density() {
@@ -146,7 +153,9 @@ export class FogFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
     try {
       const u = this.uniforms;
       if (u) u.density = Math.max(0, Math.min(1, Number(v) || 0));
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
 
   /** @returns {number} Fog scale (grid-relative). */ get dimensions() {
@@ -162,7 +171,9 @@ export class FogFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
       const scaled = ((Number(value) || 0) * 100) / grid;
       (this.uniforms.dimensions ??= new Float32Array(2))[0] = Math.max(0, scaled);
       this.uniforms.dimensions[1] = Math.max(0, scaled);
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
 
   /** @returns {number} Animation speed scalar. */ get speed() {
@@ -207,9 +218,7 @@ export class FogFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   }
 
   /**
-   * Apply resolved tint payload to uniforms — but only if the payload
-   * actually contains tint info. Region-layer rebases (bounds-only)
-   * must NOT clobber a previously chosen tint.
+   * Apply resolved tint payload to uniforms - but only if the payload actually contains tint info. Region-layer rebases (bounds-only) must NOT clobbering time a previously chosen tint.
    * @param {{rgb:Float32Array|null,hasRGB:boolean,enabled:boolean|undefined}} payload
    * @private
    */
@@ -251,7 +260,9 @@ export class FogFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
     if (options.belowTokens !== undefined) {
       try {
         this.options.belowTokens = !!options.belowTokens;
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
     }
 
     super.applyOptions(options);
@@ -284,7 +295,9 @@ export class FogFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
           if (!u) return;
           u.time = (typeof u.time === "number" ? u.time : 0) + dt * this.speed * 0.1;
           if (u.time > 1e9) u.time = 0;
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
       });
     }
     return this;
@@ -300,7 +313,7 @@ export class FogFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   }
 
   /**
-   * PIXI.Filter hook: sync matrices and apply with scene-rect locking.
+   * Sync matrices and apply with scene-rect locking.
    * @param {PIXI.FilterSystem} filterManager - Filter system.
    * @param {PIXI.RenderTexture} input - Input texture.
    * @param {PIXI.RenderTexture} output - Output texture.
@@ -310,7 +323,6 @@ export class FogFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
    */
   apply(filterManager, input, output, clear, currentState) {
     (this.uniforms.filterMatrix ??= new PIXI.Matrix()).copyFrom(currentState.target.worldTransform).invert();
-    this.lockAndSync(filterManager, currentState, { area: "sceneRect" });
-    return super.apply(filterManager, input, output, clear, currentState);
+    return this.applyWithLock(filterManager, input, output, clear, currentState, { area: "sceneRect" });
   }
 }

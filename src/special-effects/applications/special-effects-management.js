@@ -3,9 +3,17 @@ import { packageId } from "../../constants.js";
 import { registerAnimations } from "../../animation-files.js";
 
 export class SpecialEffectsManagement extends FXMasterBaseFormV2 {
+  /** @type {SpecialEffectsManagement|undefined} */
+  static #instance;
+
+  /** @returns {SpecialEffectsManagement|undefined} */
+  static get instance() {
+    return this.#instance;
+  }
+
   constructor(options = {}) {
     super(options);
-    SpecialEffectsManagement.instance = this;
+    SpecialEffectsManagement.#instance = this;
 
     this.searchFilter = new CONFIG.fxmaster.SearchFilterNS({
       inputSelector: "input[data-search]",

@@ -1,30 +1,5 @@
-import { FXMasterParticleEffect } from "./effect.js";
+import { FXMasterParticleEffect, fxmDeltaSeconds, fxmForEachEmitterParticle } from "./effect.js";
 import { DefaultRectangleSpawnMixin } from "./mixins/default-rectangle-spawn.js";
-
-/**
- * Convert the delta passed to PIXI-particles emitter.update into seconds.
- * PIXI provides deltaTime where 1.0 ~= one 60fps frame.
- */
-function fxmDeltaSeconds(delta) {
-  if (typeof delta !== "number" || !Number.isFinite(delta)) return 1 / 60;
-  return delta / 60;
-}
-
-function fxmNextParticle(p) {
-  return p?.next ?? p?._next ?? p?.nextParticle ?? p?._nextParticle ?? p?.__next ?? null;
-}
-
-function fxmForEachEmitterParticle(emitter, fn) {
-  let p = emitter?._activeParticlesFirst;
-  if (p) {
-    const max = Math.min(emitter?.particleCount ?? emitter?.maxParticles ?? 10000, 20000);
-    for (let i = 0; p && i < max; i++) {
-      fn(p);
-      p = fxmNextParticle(p);
-    }
-    return;
-  }
-}
 
 /**
  * A full-screen particle effect which renders gently falling autumn leaves.

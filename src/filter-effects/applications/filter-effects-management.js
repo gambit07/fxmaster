@@ -5,9 +5,17 @@ import { logger } from "../../logger.js";
 import { getHiddenEffectsCount, openEffectsVisibilityManager } from "../../common/effects-visibility-manager.js";
 
 export class FilterEffectsManagement extends FXMasterBaseFormV2 {
+  /** @type {FilterEffectsManagement|undefined} */
+  static #instance;
+
+  /** @returns {FilterEffectsManagement|undefined} */
+  static get instance() {
+    return this.#instance;
+  }
+
   constructor(scene, options = {}) {
     super(options);
-    FilterEffectsManagement.instance = this;
+    FilterEffectsManagement.#instance = this;
     this.scene = scene;
   }
 

@@ -28,13 +28,38 @@ import {
   computeRegionGatePass,
   coalesceNextFrame,
   getCssViewportMetrics,
+  getSnappedCameraCss,
 } from "../utils.js";
 import { BaseEffectsLayer } from "../common/base-effects-layer.js";
 import { SceneMaskManager } from "../common/base-effects-scene-manager.js";
 
 const FILTER_TYPE = `${packageId}.filterEffectsRegion`;
 
+/**
+ * Track global renderer.roundPixels mutations without attaching state to the PIXI renderer object.
+ * Keyed by the renderer instance.
+ * @type {WeakMap<object, {count:number, prev:boolean}>}
+ * @private
+ */
+const _rendererRoundPixelsState = new WeakMap();
+
+/**
+ * WeakMap cache for geometry keys. Keyed on the shapes array reference so the entry is automatically collected when the Foundry document updates its shapes (producing a new array object).
+ * @type {WeakMap<object, string>}
+ */
+const _geomKeyCache = new WeakMap();
+
+/**
+ * Build a stable string key representing the geometry of a set of region shapes. The key is used to detect when an SDF texture needs rebuilding.
+ * Results are cached on the shapes array reference via a {@link WeakMap} so repeated calls during the same frame (or subsequent frames with unchanged geometry) skip the full serialisation walk.
+ * @param {object[]} shapes - Array of shape descriptors from a region document.
+ * @returns {string} A comma-separated canonical representation of the shapes.
+ */
 function _geomKeyFromShapes(shapes) {
+  if (shapes && typeof shapes === "object" && _geomKeyCache.has(shapes)) {
+    return _geomKeyCache.get(shapes);
+  }
+
   const parts = [];
 
   const fmtNum = (n) => {
@@ -85,7 +110,15 @@ function _geomKeyFromShapes(shapes) {
     pushObjectPrimitives(data);
   }
 
-  return parts.join(",");
+  const key = parts.join(",");
+  if (shapes && typeof shapes === "object") {
+    _geomKeyCache.set(shapes, key);
+  }
+  return key;
+}
+
+function _regionHasHoleShapes(placeable) {
+  return (placeable?.document?.shapes ?? []).some((s) => !!s?.hole);
 }
 
 function _analyzeAnalyticShape(placeable) {
@@ -96,7 +129,7 @@ function _analyzeAnalyticShape(placeable) {
   const s = typeof raw?.toObject === "function" ? raw.toObject() : raw;
   const type = s?.type ?? raw?.type ?? "unknown";
 
-  // If a shape is represented by multiple polygons do not treat it as a simple analytic primitive.
+  /* If a shape is represented by multiple polygons do not treat it as a simple analytic primitive. */
   const polys = s?.polygons ?? raw?.polygons;
   if (Array.isArray(polys) && polys.length > 1) return null;
 
@@ -164,6 +197,17 @@ function _analyzeAnalyticShape(placeable) {
   if (type === "emanation") {
     const rot = degToRad(raw?.rotation ?? s?.rotation ?? 0);
 
+    const cRaw = raw?.center ?? s?.center ?? null;
+    const bRaw = raw?.bounds ?? s?.bounds ?? null;
+
+    const bw = Number(bRaw?.width);
+    const bh = Number(bRaw?.height);
+
+    /**
+     * Heuristic: does this emanation polygon approximate an ellipse?
+     * Checks edge uniformity and area-to-bounding-box ratio.
+     * bw/bh MUST be declared above this function to avoid TDZ issues.
+     */
     const emanationLooksEllipseLike = () => {
       const baseType = s?.base?.type ?? raw?.base?.type ?? null;
       if (baseType === "token") return false;
@@ -217,12 +261,6 @@ function _analyzeAnalyticShape(placeable) {
 
       return edgeUniform && ratioLooksEllipse;
     };
-
-    const cRaw = raw?.center ?? s?.center ?? null;
-    const bRaw = raw?.bounds ?? s?.bounds ?? null;
-
-    const bw = Number(bRaw?.width);
-    const bh = Number(bRaw?.height);
 
     const cx = Number(cRaw?.x);
     const cy = Number(cRaw?.y);
@@ -289,7 +327,7 @@ function _edtSignedFromBinary(binaryCanvas, { encK = 8.0 } = {}) {
   const INF = 1e20;
   const n = W * H;
 
-  // 1D exact EDT.
+  /* 1D exact EDT. */
   const edt1d = (f, n, d, v, z) => {
     let k = 0;
     v[0] = 0;
@@ -321,7 +359,7 @@ function _edtSignedFromBinary(binaryCanvas, { encK = 8.0 } = {}) {
     }
   };
 
-  // 2D exact EDT from a binary feature predicate.
+  /* 2D exact EDT from a binary feature predicate. */
   const maxN = Math.max(W, H);
   const f = new Float32Array(maxN);
   const d = new Float32Array(maxN);
@@ -331,7 +369,7 @@ function _edtSignedFromBinary(binaryCanvas, { encK = 8.0 } = {}) {
   const tmp = new Float32Array(n);
 
   const edt2dMask = (featureIsInside) => {
-    // Row pass
+    /* Row pass */
     for (let y = 0; y < H; y++) {
       const row = y * W;
       for (let x = 0; x < W; x++) {
@@ -342,7 +380,7 @@ function _edtSignedFromBinary(binaryCanvas, { encK = 8.0 } = {}) {
       for (let x = 0; x < W; x++) tmp[row + x] = d[x];
     }
 
-    // Column pass
+    /* Column pass */
     const out = new Float32Array(n);
     for (let x = 0; x < W; x++) {
       for (let y = 0; y < H; y++) f[y] = tmp[y * W + x];
@@ -352,7 +390,7 @@ function _edtSignedFromBinary(binaryCanvas, { encK = 8.0 } = {}) {
     return out;
   };
 
-  // dOut: distance to inside features. dIn: distance to outside features.
+  /* dOut: distance to inside features. dIn: distance to outside features. */
   const dOut = edt2dMask(true);
   const dIn = edt2dMask(false);
 
@@ -390,13 +428,13 @@ function _buildRegionSDF_FromBinary(placeable, worldBounds, { maxDistWorld = nul
   const gl = r.gl;
   const maxTex = gl?.getParameter?.(gl.MAX_TEXTURE_SIZE) || 8192;
 
-  // Base resolution: one SDF texel roughly corresponds to one renderer output pixel in world units.
+  /* Base resolution: one SDF texel roughly corresponds to one renderer output pixel in world units. */
   let wpt = Math.max(safeBounds.width / devW, safeBounds.height / devH);
   if (!Number.isFinite(wpt) || wpt <= 0) wpt = 1;
 
   const encK = 8.0;
   if (Number.isFinite(Number(maxDistWorld)) && Number(maxDistWorld) > 0) {
-    // Signed SDF uses half the 8-bit range for inside distances.
+    /* Signed SDF uses half the 8-bit range for inside distances. */
     const maxSdTex = 127.0 / encK; // ~15.875 texels
     const wantWpt = Number(maxDistWorld) / Math.max(maxSdTex, 1e-6);
     if (Number.isFinite(wantWpt) && wantWpt > 0) wpt = Math.max(wpt, wantWpt);
@@ -422,18 +460,18 @@ function _buildRegionSDF_FromBinary(placeable, worldBounds, { maxDistWorld = nul
   const innerW = Math.max(1, W - 2 * padPx);
   const innerH = Math.max(1, H - 2 * padPx);
 
-  // World-units per texel for SDF decode.
+  /* World-units per texel for SDF decode. */
   const wptX = safeBounds.width / innerW;
   const wptY = safeBounds.height / innerH;
   wpt = Math.max(wptX, wptY);
 
-  // Encoding scale is fixed at encK=8.0 for best precision.
+  /* Encoding scale is fixed at encK=8.0 for best precision. */
   const bin = document.createElement("canvas");
   bin.width = W;
   bin.height = H;
   const ctx = bin.getContext("2d", { willReadFrequently: true });
 
-  // Map safeBounds -> [padPx, padPx]..[W-padPx, H-padPx]
+  /* Map safeBounds -> [padPx, padPx]..[W-padPx, H-padPx] */
   const sx = innerW / safeBounds.width;
   const sy = innerH / safeBounds.height;
   const ox = padPx - safeBounds.x * sx;
@@ -476,7 +514,7 @@ function _buildRegionSDF_FromBinary(placeable, worldBounds, { maxDistWorld = nul
 
   const texture = new PIXI.Texture(base);
 
-  // World -> UV mapping for the inset-drawn binary/SDF texture.
+  /* World -> UV mapping for the inset-drawn binary/SDF texture. */
   const uSx = innerW / (W * safeBounds.width);
   const uSy = innerH / (H * safeBounds.height);
   const uTx = padPx / W - safeBounds.x * uSx;
@@ -498,6 +536,22 @@ function _buildRegionSDF_FromBinary(placeable, worldBounds, { maxDistWorld = nul
   return { texture, uUvFromWorld, uSdfScaleOff, uSdfScaleOff4, uSdfTexel, insideMax };
 }
 
+/**
+ * Normalize a region behavior collection or array into an array of behavior documents.
+ *
+ * @param {Iterable<foundry.documents.RegionBehavior>|foundry.documents.RegionBehavior[]|null|undefined} behaviorDocs
+ * @returns {foundry.documents.RegionBehavior[]}
+ * @private
+ */
+function normalizeRegionBehaviorDocs(behaviorDocs) {
+  if (!behaviorDocs) return [];
+  if (Array.isArray(behaviorDocs)) return behaviorDocs;
+  if (Array.isArray(behaviorDocs.contents)) return behaviorDocs.contents;
+  if (typeof behaviorDocs.toArray === "function") return behaviorDocs.toArray();
+  if (typeof behaviorDocs.values === "function") return Array.from(behaviorDocs.values());
+  return Array.from(behaviorDocs);
+}
+
 export class FilterEffectsLayer extends BaseEffectsLayer {
   constructor() {
     super();
@@ -507,13 +561,41 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
 
     this._tokensDirty = false;
 
+    /**
+     * Whether any region-scoped filters currently require below-tokens cutouts.
+     * Used to keep SceneMaskManager's shared token silhouettes alive without forcing the scene-level filter masking pipeline to stay active.
+     * @type {boolean}
+     * @private
+     */
+    this._regionBelowTokensNeeded = false;
+
     this._lastCutoutCamFrac = null;
 
     this._rebuiltThisTick = false;
 
+    /**
+     * I need `roundPixels = true` for consistent mask alignment, but the setting must not leak beyond the layer lifecycle.
+     *
+     * A small ref-counted state is kept on the renderer so multiple instances (or reload edge-cases) won't fight over the value.
+     * @type {boolean}
+     * @private
+     */
+    this._didPinRendererRoundPixels = false;
+
     try {
-      canvas.app.renderer.roundPixels = true;
-    } catch {}
+      const r = canvas?.app?.renderer;
+      if (r && typeof r.roundPixels === "boolean") {
+        const st = _rendererRoundPixelsState.get(r) ?? { count: 0, prev: !!r.roundPixels };
+        if ((st.count | 0) === 0) st.prev = !!r.roundPixels;
+        st.count = (st.count | 0) + 1;
+        _rendererRoundPixelsState.set(r, st);
+
+        r.roundPixels = true;
+        this._didPinRendererRoundPixels = true;
+      }
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
 
   /**
@@ -533,7 +615,9 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
     const fn = () => {
       try {
         ticker.remove(fn, this);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       this._recomposeScheduled = false;
 
       if (this._rebuiltThisTick) return;
@@ -553,6 +637,31 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
   }
 
   /**
+   * Keep SceneMaskManager informed about region-level belowTokens requirements.
+   * This prevents scene-level managers from accidentally disabling token silhouettes while region-level effects still need them.
+   * @private
+   */
+  _updateRegionBelowTokensNeeded() {
+    let any = false;
+    for (const entry of this.regionMasks.values()) {
+      const filters = entry?.filters ?? [];
+      if (filters.some((f) => !!f.__fxmBelowTokens)) {
+        any = true;
+        break;
+      }
+    }
+
+    if (this._regionBelowTokensNeeded === any) return;
+    this._regionBelowTokensNeeded = any;
+
+    try {
+      SceneMaskManager.instance.setBelowTokensNeeded?.("filters", any, "regions");
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+  }
+
+  /**
    * Recompose all region cutout masks that have belowTokens enabled (base - tokens silhouette).
    * Uses the shared tokens RenderTexture maintained by SceneMaskManager to avoid O(regions × tokens).
    * This is synchronous and safe to call during panning/zooming or token movement.
@@ -567,18 +676,26 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       }
     }
     if (!anyBelowTokens) {
+      try {
+        this._updateRegionBelowTokensNeeded();
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       this._tokensDirty = false;
       return;
     }
 
     try {
-      SceneMaskManager.instance.setKindActive?.("filters", true);
-      SceneMaskManager.instance.setBelowTokensNeeded?.("filters", true);
-    } catch {}
+      SceneMaskManager.instance.setBelowTokensNeeded?.("filters", true, "regions");
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     try {
       SceneMaskManager.instance.refreshTokensSync?.();
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     const { tokens } = SceneMaskManager.instance.getMasks?.("filters") ?? {};
     for (const entry of this.regionMasks.values()) {
@@ -628,14 +745,18 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
     if (this._ticker) {
       try {
         canvas.app.ticker.remove(this._animate, this);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       this._ticker = false;
     }
 
     if (this._stableRefresh && typeof this._stableRefresh.cancel === "function") {
       try {
         this._stableRefresh.cancel();
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       this._stableRefresh = null;
     }
 
@@ -649,7 +770,9 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       for (const e of this._sdfCache.values()) {
         try {
           e.texture?.destroy(true);
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
       }
     } finally {
       this._sdfCache.clear();
@@ -657,14 +780,43 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
 
     this._drainRtPool();
 
+    /** Restore renderer.roundPixels (global) when this layer pinned it. */
+    try {
+      const r = canvas?.app?.renderer;
+      const st = r ? _rendererRoundPixelsState.get(r) : null;
+      if (r && st && this._didPinRendererRoundPixels) {
+        st.count = Math.max(0, (st.count | 0) - 1);
+        if ((st.count | 0) === 0) {
+          r.roundPixels = !!st.prev;
+          _rendererRoundPixelsState.delete(r);
+        } else {
+          _rendererRoundPixelsState.set(r, st);
+        }
+      }
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    this._didPinRendererRoundPixels = false;
+
     return super._tearDown();
   }
 
-  async drawRegionFilterEffects(placeable, { soft = false } = {}) {
+  /**
+   * Draw region-scoped filter effects for a region placeable.
+   *
+   * An authoritative behavior snapshot may be supplied during behavior CRUD so effect selection does not depend on a stale placeable behavior collection.
+   *
+   * @param {PlaceableObject} placeable
+   * @param {{ soft?: boolean, behaviorDocs?: Iterable<foundry.documents.RegionBehavior>|foundry.documents.RegionBehavior[]|null }} [options]
+   * @returns {Promise<void>}
+   */
+  async drawRegionFilterEffects(placeable, { soft = false, behaviorDocs = null } = {}) {
     const regionId = placeable.id;
     this._destroyRegionMasks(regionId);
 
-    const behaviors = placeable.document.behaviors.filter((b) => b.type === FILTER_TYPE && !b.disabled);
+    const behaviors = normalizeRegionBehaviorDocs(behaviorDocs ?? placeable?.document?.behaviors).filter(
+      (behavior) => behavior.type === FILTER_TYPE && !behavior.disabled,
+    );
     if (!behaviors.length) return;
 
     const r = canvas.app.renderer;
@@ -674,7 +826,9 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
     try {
       maskRT.baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
       maskRT.baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     const gl = r.gl;
     const MAX_GL = gl?.getParameter?.(gl.MAX_TEXTURE_SIZE) || 8192;
@@ -691,7 +845,9 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
     const analytic = _analyzeAnalyticShape(placeable);
     const maxFadeFrac = _regionMaxFadeFrac(placeable, behaviors);
     const wantsEdgeFade = maxFadeFrac > 0;
+    const hasHoles = _regionHasHoleShapes(placeable);
     const forceMultiSdf = hasMultipleNonHoleShapes(placeable);
+    const forceComplexFade = forceMultiSdf || (wantsEdgeFade && hasHoles);
 
     let worldBoundsRect;
     try {
@@ -705,7 +861,7 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       throw e;
     }
 
-    // Polygon edge lists are only needed when doing polygon-based edge fading (uRegionShape=0). For the common single-shape analytic cases (rect/circle/ellipse) skip computing edges entirely for performance.
+    /* Polygon edge lists are only needed when doing polygon-based edge fading (uRegionShape=0). For the common single-shape analytic cases (rect/circle/ellipse) skip computing edges entirely for performance. */
     let edgeCount = 0;
     const uEdgesArray = new Float32Array(MAX_EDGES * 4);
 
@@ -720,10 +876,10 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       uSdfTexel = null,
       uSdfInsideMax = 0;
 
-    // For uRegionShape=0 (polygon) Edge Fade %, decide between edge-list (fastPoly) and SDF (% fade). Multi-shape regions always use the SDF path.
+    /* For uRegionShape=0 (polygon) Edge Fade %, decide between edge-list (fastPoly) and SDF (% fade). Multi-shape regions always use the SDF path. */
     let fastPoly = false;
 
-    if (analytic && !forceMultiSdf) {
+    if (analytic && !forceComplexFade) {
       fadeMode = analytic.mode;
       fadeCenter = new Float32Array([analytic.center.x, analytic.center.y]);
       fadeHalf = new Float32Array([Math.max(1e-6, analytic.half.x), Math.max(1e-6, analytic.half.y)]);
@@ -733,7 +889,7 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
 
       uSdfInsideMax = estimateRegionInradius(placeable);
 
-      fastPoly = !forceMultiSdf && !analytic;
+      fastPoly = !forceComplexFade && !analytic;
 
       if (fastPoly) {
         const builtEdges = buildPolygonEdges(placeable, { maxEdges: MAX_EDGES }) || [];
@@ -760,7 +916,9 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
         if (needsRebuild) {
           try {
             cacheEntry?.texture?.destroy(true);
-          } catch {}
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
           const built = _buildRegionSDF_FromBinary(
             placeable,
             {
@@ -814,10 +972,11 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
     if (anyWantsBelow) {
       const outRT = this._acquireRT(maskRT.width | 0, maskRT.height | 0, maskRT.resolution || 1);
       try {
-        SceneMaskManager.instance.setKindActive?.("filters", true);
-        SceneMaskManager.instance.setBelowTokensNeeded?.("filters", true);
+        SceneMaskManager.instance.setBelowTokensNeeded?.("filters", true, "regions");
         SceneMaskManager.instance.refreshTokensSync?.();
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       const { tokens } = SceneMaskManager.instance.getMasks?.("filters") ?? {};
       maskCutoutRT = tokens
         ? composeMaskMinusTokensRT(maskRT, tokens, { outRT })
@@ -825,7 +984,9 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       try {
         maskCutoutRT.baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
         maskCutoutRT.baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
     }
 
     const defaultSmoothK = Math.max(2.0 * worldPerCss, 1e-6);
@@ -858,6 +1019,7 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
               : new Float32Array([cssW, cssH]);
           u.deviceToCss = deviceToCss;
           u.maskReady = 1.0;
+          u.maskSoft = 0.0;
           u.uCssToWorld = cssToWorldMat3;
 
           const raw = Math.max(0, Number(options?.fadePercent) || 0);
@@ -919,7 +1081,9 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
           filter.autoFit = false;
           filter.padding = 0;
           filter.resolution = (r.resolution || 1) * capScale;
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
 
         if (rbAligned && typeof filter.configure === "function") {
           filter.configure({
@@ -935,13 +1099,17 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
         } catch {
           try {
             filter.enabled = true;
-          } catch {}
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
         }
 
         try {
           const u2 = filter.uniforms;
           if (u2 && typeof u2.strength === "number") filter.__fxmBaseStrength = u2.strength;
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
 
         appliedFilters.push(filter);
       }
@@ -952,9 +1120,11 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       this.regionMasks.set(regionId, { filters: appliedFilters, maskRT, maskCutoutRT });
       this._applyElevationGate(placeable);
       this._refreshEnvFilterArea();
+      this._updateRegionBelowTokensNeeded();
     } else {
       this._releaseRT(maskRT);
       if (maskCutoutRT) this._releaseRT(maskCutoutRT);
+      this._updateRegionBelowTokensNeeded();
     }
   }
 
@@ -971,15 +1141,23 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
     this._refreshEnvFilterArea();
   }
 
+  /**
+   * Schedule a mask refresh for one or more regions on the next animation frame.
+   * Multiple calls within the same frame are batched so that no region ID is lost.
+   * @param {string} regionId
+   */
   requestRegionMaskRefresh(regionId) {
+    this._pendingRegionRefreshIds ??= new Set();
+    this._pendingRegionRefreshIds.add(regionId);
     this._coalescedRegionRefresh ??= coalesceNextFrame(
-      function (rid) {
-        this.forceRegionMaskRefresh(rid);
+      () => {
+        const ids = this._pendingRegionRefreshIds;
+        this._pendingRegionRefreshIds = new Set();
+        for (const rid of ids) this.forceRegionMaskRefresh(rid);
       },
       { key: this },
     );
-
-    this._coalescedRegionRefresh(regionId);
+    this._coalescedRegionRefresh();
   }
 
   requestRegionMaskRefreshAll() {
@@ -995,6 +1173,7 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
 
   destroyRegionFilterEffects(regionId) {
     this._destroyRegionMasks(regionId);
+    this._updateRegionBelowTokensNeeded();
   }
 
   _refreshEnvFilterArea() {
@@ -1011,11 +1190,15 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       try {
         if (!(env.filterArea instanceof PIXI.Rectangle)) env.filterArea = new PIXI.Rectangle();
         env.filterArea.copyFrom(cssRect);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
     } else {
       try {
         delete env.filterArea;
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
     }
 
     for (const entry of this.regionMasks.values()) {
@@ -1025,7 +1208,9 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
           f.filterArea.copyFrom(deviceRect);
           f.autoFit = false;
           f.padding = 0;
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
       }
     }
   }
@@ -1050,13 +1235,17 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       if (sdf) {
         try {
           sdf.texture?.destroy(true);
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
         this._sdfCache.delete(regionId);
       }
 
       try {
         this._gatePassCache.delete(regionId);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
     } else {
       for (const entry of this.regionMasks.values()) {
         removeFromTarget(entry.filters);
@@ -1068,11 +1257,22 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       for (const e of this._sdfCache.values()) {
         try {
           e.texture?.destroy(true);
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
       }
       this._sdfCache.clear();
 
       this._gatePassCache.clear();
+    }
+
+    /**
+     * Region mask membership changed; update below-tokens requirements.
+     */
+    try {
+      this._updateRegionBelowTokensNeeded();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
     }
   }
 
@@ -1088,7 +1288,9 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
     const newRT = buildRegionMaskRT(placeable, { rtPool: this._rtPool });
     try {
       this._releaseRT(entry.maskRT);
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
     entry.maskRT = newRT;
 
     const anyWantsBelow = (entry.filters || []).some((f) => !!f.__fxmBelowTokens);
@@ -1102,10 +1304,11 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
 
       const outRT = reuse ? old : this._acquireRT(newRT.width | 0, newRT.height | 0, newRT.resolution || 1);
       try {
-        SceneMaskManager.instance.setKindActive?.("filters", true);
-        SceneMaskManager.instance.setBelowTokensNeeded?.("filters", true);
+        SceneMaskManager.instance.setBelowTokensNeeded?.("filters", true, "regions");
         SceneMaskManager.instance.refreshTokensSync?.();
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       const { tokens } = SceneMaskManager.instance.getMasks?.("filters") ?? {};
       entry.maskCutoutRT = tokens
         ? composeMaskMinusTokensRT(newRT, tokens, { outRT })
@@ -1114,13 +1317,17 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       if (old && !reuse && old !== entry.maskCutoutRT) {
         try {
           this._releaseRT(old);
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
       }
 
       try {
         entry.maskCutoutRT.baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
         entry.maskCutoutRT.baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
     } else {
       if (entry.maskCutoutRT) {
         this._releaseRT(entry.maskCutoutRT);
@@ -1141,13 +1348,17 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
     const cssToWorldMat3 = mat3FromPixi(cssToWorld);
 
     const analytic = _analyzeAnalyticShape(placeable);
-    const behaviors = placeable.document.behaviors.filter((b) => b.type === FILTER_TYPE && !b.disabled);
+    const behaviors = normalizeRegionBehaviorDocs(placeable?.document?.behaviors).filter(
+      (behavior) => behavior.type === FILTER_TYPE && !behavior.disabled,
+    );
     const maxFadeFrac = _regionMaxFadeFrac(placeable, behaviors);
     const wantsEdgeFade = maxFadeFrac > 0;
+    const hasHoles = _regionHasHoleShapes(placeable);
     const forceMultiSdf = hasMultipleNonHoleShapes(placeable);
-    const mode = wantsEdgeFade && (forceMultiSdf || !analytic) ? 0 : analytic ? analytic.mode : -1;
+    const forceComplexFade = forceMultiSdf || (wantsEdgeFade && hasHoles);
+    const mode = wantsEdgeFade && (forceComplexFade || !analytic) ? 0 : analytic ? analytic.mode : -1;
 
-    const fastPoly = mode === 0 && !forceMultiSdf && !analytic;
+    const fastPoly = mode === 0 && !forceComplexFade && !analytic;
 
     const worldPerCss = 0.5 * (Math.hypot(cssToWorld.a, cssToWorld.b) + Math.hypot(cssToWorld.c, cssToWorld.d));
 
@@ -1174,11 +1385,12 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
           : new Float32Array([cssW, cssH]);
       u.deviceToCss = deviceToCss;
       u.maskReady = 1.0;
+      u.maskSoft = 0.0;
 
       u.uCssToWorld = cssToWorldMat3;
       u.uRegionShape = mode;
 
-      // 1 => SDF-backed polygon fades; 0 => edge-list (fastPoly) fades.
+      /* 1 => SDF-backed polygon fades; 0 => edge-list (fastPoly) fades. */
       u.uUseSdf = mode === 0 && !fastPoly ? 1.0 : 0.0;
 
       if (mode === 0) {
@@ -1203,7 +1415,9 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
           if (!sdf || sdf.geomKey !== geomKey) {
             try {
               sdf?.texture?.destroy(true);
-            } catch {}
+            } catch (err) {
+              logger.debug("FXMaster:", err);
+            }
             const b = _buildRegionSDF_FromBinary(placeable, {
               x: worldBoundsRect.x,
               y: worldBoundsRect.y,
@@ -1274,7 +1488,9 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
         f.autoFit = false;
         f.padding = 0;
         f.resolution = (r.resolution || 1) * capScale;
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
 
       if (rbAligned && typeof f.configure === "function") {
         f.configure({
@@ -1297,7 +1513,9 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
     if (this._stableRefresh && typeof this._stableRefresh.cancel === "function") {
       try {
         this._stableRefresh.cancel();
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       this._stableRefresh = null;
     }
 
@@ -1330,25 +1548,33 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       if (tries >= 2) {
         try {
           this._stableRefresh?.cancel?.();
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
         this._stableRefresh = null;
 
         try {
           this.forceRegionMaskRefreshAll();
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
         return;
       }
 
       try {
         this._stableRefresh?.();
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
     };
 
     this._stableRefresh = coalesceNextFrame(step, { key: this });
 
     try {
       this._stableRefresh();
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
 
   _animate() {
@@ -1368,14 +1594,17 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
     if (anyBelowTokens) {
       const r = canvas?.app?.renderer;
       const res = r?.resolution || 1;
-      const wt = canvas?.stage?.worldTransform;
-      const tx = wt?.tx ?? 0;
-      const ty = wt?.ty ?? 0;
-      const fx = (((tx * res) % 1) + 1) % 1;
-      const fy = (((ty * res) % 1) + 1) % 1;
+      const { txCss, tyCss } = getSnappedCameraCss();
+      const fx = (((txCss * res) % 1) + 1) % 1;
+      const fy = (((tyCss * res) % 1) + 1) % 1;
 
       const prev = this._lastCutoutCamFrac;
-      const fracMoved = !prev || Math.abs(prev.x - fx) > 1e-6 || Math.abs(prev.y - fy) > 1e-6;
+      /**
+       * Sub-pixel threshold: skip token mask recomposition for camera movements smaller than ~1% of a device pixel to avoid expensive per-frame work.
+       */
+      const SUB_PIXEL_THRESHOLD = 0.01;
+      const fracMoved =
+        !prev || Math.abs(prev.x - fx) > SUB_PIXEL_THRESHOLD || Math.abs(prev.y - fy) > SUB_PIXEL_THRESHOLD;
 
       if (!this._rebuiltThisTick && (this._tokensDirty || fracMoved)) {
         try {
@@ -1407,7 +1636,9 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
           }
         }
       }
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
 
   _onCameraChange() {
@@ -1436,7 +1667,9 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       }
       try {
         if (f.enabled !== !!pass) f.enabled = !!pass;
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
     }
 
     this._gatePassCache.set(placeable.id, pass);

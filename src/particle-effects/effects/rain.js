@@ -1,4 +1,5 @@
 import { FXMasterParticleEffect } from "./effect.js";
+import { logger } from "../../logger.js";
 
 /**
  * Full-screen rain with optional splash particles (toggled via options.splash.value).
@@ -19,8 +20,7 @@ export class RainParticleEffect extends FXMasterParticleEffect {
   }
 
   /**
-   * Make rain a bit denser than the global default while still respecting
-   * performance mode scaling.
+   * Make rain a bit denser than the global default while still respecting performance mode scaling.
    */
   static get densityScalar() {
     return 0.14;
@@ -162,8 +162,7 @@ export class RainParticleEffect extends FXMasterParticleEffect {
 
   /**
    * Build one (rain) or two (rain + splash) emitters depending on options.splash.value.
-   * Particle counts are derived from view size (in grid cells),
-   * user density, and Foundry's Performance Mode via FXMasterParticleEffect helpers.
+   * Particle counts are derived from view size (in grid cells), user density, and Foundry's Performance Mode via FXMasterParticleEffect helpers.
    */
   getParticleEmitters(options = {}) {
     options = this.constructor.mergeWithDefaults(options);
@@ -271,7 +270,9 @@ export class RainParticleEffect extends FXMasterParticleEffect {
     const optsNoDir = foundry.utils.deepClone(options);
     try {
       delete optsNoDir.direction;
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     this.applyOptionsToConfig(optsNoDir, config);
 

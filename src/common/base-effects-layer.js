@@ -10,7 +10,8 @@
  * @abstract
  * @extends {CONFIG.fxmaster.FullCanvasObjectMixinNS}
  */
-import { RTPool, snappedStageMatrix } from "../utils.js";
+import { RTPool, snappedStageMatrix, cameraMatrixChanged } from "../utils.js";
+import { logger } from "../logger.js";
 
 export class BaseEffectsLayer extends CONFIG.fxmaster.FullCanvasObjectMixinNS(CONFIG.fxmaster.CanvasLayerNS) {
   constructor() {
@@ -23,8 +24,7 @@ export class BaseEffectsLayer extends CONFIG.fxmaster.FullCanvasObjectMixinNS(CO
     this._ticker = false;
 
     /**
-     * Whether the layer is currently tearing down.
-     * Used to short-circuit animation work during teardown.
+     * Whether the layer is currently tearing down. Used to short-circuit animation work.
      * @type {boolean}
      * @protected
      */
@@ -49,8 +49,7 @@ export class BaseEffectsLayer extends CONFIG.fxmaster.FullCanvasObjectMixinNS(CO
   }
 
   /**
-   * Draw the layer contents.
-   * Subclasses must implement this method.
+   * Draw the layer contents. Subclasses must implement this method.
    *
    * @abstract
    * @protected
@@ -75,7 +74,9 @@ export class BaseEffectsLayer extends CONFIG.fxmaster.FullCanvasObjectMixinNS(CO
     if (this._ticker) {
       try {
         canvas.app.ticker.remove(this._animate, this);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       this._ticker = false;
     }
 
@@ -94,8 +95,7 @@ export class BaseEffectsLayer extends CONFIG.fxmaster.FullCanvasObjectMixinNS(CO
    * - Invoke {@link BaseEffectsLayer#_onCameraChange}.
    * - Cache the new matrix for subsequent comparisons.
    *
-   * Subclasses overriding this method should call `super._animate()` to
-   * preserve camera-change detection.
+   * Subclasses overriding this method should call `super._animate()` to preserve camera-change detection.
    *
    * @protected
    * @returns {void}
@@ -105,18 +105,8 @@ export class BaseEffectsLayer extends CONFIG.fxmaster.FullCanvasObjectMixinNS(CO
 
     const M = snappedStageMatrix();
     this._currentCameraMatrix = M;
-    const L = this._lastRegionsMatrix;
-    const eps = 1e-4;
-    const changed =
-      !L ||
-      Math.abs(L.a - M.a) > eps ||
-      Math.abs(L.b - M.b) > eps ||
-      Math.abs(L.c - M.c) > eps ||
-      Math.abs(L.d - M.d) > eps ||
-      Math.abs(L.tx - M.tx) > eps ||
-      Math.abs(L.ty - M.ty) > eps;
 
-    if (changed) {
+    if (cameraMatrixChanged(M, this._lastRegionsMatrix)) {
       this._onCameraChange();
       this._lastRegionsMatrix = { a: M.a, b: M.b, c: M.c, d: M.d, tx: M.tx, ty: M.ty };
     }

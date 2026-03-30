@@ -2,6 +2,7 @@ import { FXMasterBaseFormV2 } from "../../base-form.js";
 import { packageId } from "../../constants.js";
 import { deletionUpdate } from "../../utils.js";
 import { ApiEffectEditor } from "./api-effect-editor.js";
+import { logger } from "../../logger.js";
 
 function safeJSONStringify(value) {
   try {
@@ -39,15 +40,21 @@ function isLegacyOperatorKey(id) {
 /**
  * ApiEffectsManagement
  * --------------------
- * Lists scene-wide particle/filter effects that were added via the API (i.e. not
- * created by the built-in managers). Provides quick removal per effect, an
- * expandable view of the stored API parameters, and an editor for a single
- * instance.
+ * Lists scene-wide particle/filter effects that were added via the API.
+ * Provides quick removal per effect, an expandable view of the stored API parameters, and an editor for a single instance.
  */
 export class ApiEffectsManagement extends FXMasterBaseFormV2 {
+  /** @type {ApiEffectsManagement|undefined} */
+  static #instance;
+
+  /** @returns {ApiEffectsManagement|undefined} */
+  static get instance() {
+    return this.#instance;
+  }
+
   constructor(options = {}) {
     super(options);
-    ApiEffectsManagement.instance = this;
+    ApiEffectsManagement.#instance = this;
     this.scene = null;
     this._expandedUids = new Set();
   }
@@ -172,7 +179,9 @@ export class ApiEffectsManagement extends FXMasterBaseFormV2 {
 
     try {
       this.setPosition(next);
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
 
   async _onClose(...args) {
@@ -207,16 +216,22 @@ export class ApiEffectsManagement extends FXMasterBaseFormV2 {
 
     try {
       this._expandedUids?.delete?.(uid);
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     try {
       if (kind === "particle") await scene.setFlag(packageId, "effects", deletionUpdate(id));
       else if (kind === "filter") await scene.setFlag(packageId, "filters", deletionUpdate(id));
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     try {
       this.render(false);
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
 
   static editApiEffect(event, button) {
@@ -231,6 +246,8 @@ export class ApiEffectsManagement extends FXMasterBaseFormV2 {
 
     try {
       ApiEffectEditor.open({ kind, id, scene: canvas?.scene ?? null });
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
 }

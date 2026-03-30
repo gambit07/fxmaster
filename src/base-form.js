@@ -1,4 +1,5 @@
 import { getDialogColors } from "./utils.js";
+import { logger } from "./logger.js";
 /**
  * An abstract FormApplication that handles functionality common to multiple FXMaster forms.
  * In particular, it provides the following functionality:
@@ -26,17 +27,8 @@ export class FXMasterBaseFormV2 extends Base {
   };
 
   /**
-   * Attach event listeners for color inputs and accompanying checkboxes.  Many of
-   * FXMaster's management forms contain identical boilerplate to attach change
-   * handlers to <code>.fxmaster-input-color</code> checkboxes and color
-   * inputs so that parameter updates propagate immediately.  This helper
-   * centralizes that logic in the base class.  It accepts an update
-   * function which will be invoked with the current event and input element.
-   *
    * @param {HTMLElement} element  The root element to search for color inputs. Defaults to the form element.
-   * @param {Function} updateFn    The function to call when a color input changes. The update function
-   *                                receives the event and the changed input as arguments. It will be bound
-   *                                to the current instance automatically.
+   * @param {Function} updateFn    The function to call when a color input changes. The update function receives the event and the changed input as arguments. It will be bound to the current instance automatically.
    */
   wireColorInputs(element = this.element, updateFn = this.constructor.actions?.updateParam) {
     if (!element || !updateFn) return;
@@ -49,7 +41,9 @@ export class FXMasterBaseFormV2 extends Base {
       ["input", "change", "colorchange"].forEach((evt) => {
         try {
           inp.addEventListener(evt, (e) => updateFn.call(this, e, inp));
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
       });
     };
 
@@ -61,11 +55,6 @@ export class FXMasterBaseFormV2 extends Base {
   /**
    * Wire multi-select widgets so selection changes reliably trigger updateParam.
    *
-   * Depending on Foundry version and interaction method, the <multi-select>
-   * component may dispatch events from internal elements. This helper listens
-   * at the form level and forwards the nearest named multi-select control to
-   * the provided update function.
-   *
    * @param {HTMLElement} element  The root element to listen on. Defaults to the form element.
    * @param {Function} updateFn    The update function to call.
    */
@@ -74,7 +63,9 @@ export class FXMasterBaseFormV2 extends Base {
 
     try {
       this._fxmMultiSelectAbort?.abort?.();
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     const ac = new AbortController();
     this._fxmMultiSelectAbort = ac;
@@ -82,7 +73,9 @@ export class FXMasterBaseFormV2 extends Base {
     const invoke = (e, control) => {
       try {
         updateFn.call(this, e, control);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
     };
 
     const findControl = (target) => {
@@ -126,10 +119,7 @@ export class FXMasterBaseFormV2 extends Base {
   }
 
   /**
-   * Update the textual output next to a range input.  Many parameter update
-   * handlers repeat the same code to update the <code>.range-value</code>
-   * element whenever a range slider is adjusted.  This static helper
-   * encapsulates that behavior so it can be reused by management classes.
+   * Update the textual output next to a range input.  Many parameter update handlers repeat the same code to update the <code>.range-value</code> element whenever a range slider is adjusted. This static helper encapsulates that behavior so it can be reused by management classes.
    *
    * @param {HTMLInputElement} input  The range input element that changed.
    */
@@ -141,11 +131,8 @@ export class FXMasterBaseFormV2 extends Base {
   }
 
   /**
-   * Set or remove the visual highlight on a tool button in the UI.  Both
-   * filter- and particle-effect managers share identical logic to update
-   * their corresponding toolbar buttons based on whether any effects are
-   * active.  This helper centralizes that styling so managers need only
-   * specify the tool name and whether highlighting should be applied.
+   * Set or remove the visual highlight on a tool button in the UI. Both filter- and particle-effect managers share identical logic to update their corresponding toolbar buttons based on whether any effects are active.
+   * This helper centralizes that styling so managers need only mspecify the tool name and whether highlighting should be applied.
    *
    * @param {string} toolName        The value of the data-tool attribute for the button.
    * @param {boolean} isHighlighted  Whether the button should be highlighted.
@@ -215,7 +202,9 @@ export class FXMasterBaseFormV2 extends Base {
                 values = s.split(",");
               }
             }
-          } catch {}
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
 
           if (!values.length) {
             try {
@@ -227,7 +216,9 @@ export class FXMasterBaseFormV2 extends Base {
               values = tags
                 .map((t) => t.dataset.key ?? t.dataset.value ?? t.dataset.id ?? t.dataset.tag ?? t.dataset.option)
                 .filter(Boolean);
-            } catch {}
+            } catch (err) {
+              logger.debug("FXMaster:", err);
+            }
           }
 
           if (!values.length) {
@@ -239,7 +230,9 @@ export class FXMasterBaseFormV2 extends Base {
                   .map((o) => o.value)
                   .filter(Boolean);
               }
-            } catch {}
+            } catch (err) {
+              logger.debug("FXMaster:", err);
+            }
           }
 
           if (!values.length) {
@@ -259,7 +252,9 @@ export class FXMasterBaseFormV2 extends Base {
                   values = s.split(",");
                 }
               }
-            } catch {}
+            } catch (err) {
+              logger.debug("FXMaster:", err);
+            }
           }
         }
 
@@ -305,22 +300,27 @@ export class FXMasterBaseFormV2 extends Base {
     this.animateTitleBar(this);
     try {
       this._fxmWireConditionalVisibility?.();
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
 
   _onClose(...args) {
     try {
       this._fxmUnwireConditionalVisibility?.();
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
     try {
       this._fxmMultiSelectAbort?.abort?.();
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
     return super._onClose?.(...args);
   }
 
   /**
-   * Prevent mousewheel changing unfocused sliders, but allow mousewheel stepping
-   * for the focused slider (without scrolling the container).
+   * Prevent mousewheel changing unfocused sliders, but allow mousewheel stepping for the focused slider (without scrolling the container).
    */
   _wireRangeWheelBehavior({ getScrollWrapper, onInput } = {}) {
     const root = this.element;
@@ -386,28 +386,27 @@ export class FXMasterBaseFormV2 extends Base {
     });
   }
 
-  /* -------------------------------------------- */
-  /* Conditional parameter visibility (shared UI) */
-  /* -------------------------------------------- */
-
   /**
    * Remove any previously-attached conditional visibility listeners.
    */
   _fxmUnwireConditionalVisibility() {
     try {
       this._fxmConditionalVisibilityAbort?.abort();
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
     this._fxmConditionalVisibilityAbort = null;
     this._fxmConditionalVisibilityRules = null;
   }
 
   /**
-   * Wire a lightweight, extendable system for hiding/showing parameters based
-   * on other parameter values.
+   * Wire a lightweight, extendable system for hiding/showing parameters based on other parameter values.
    *
    * To opt-in, a parameter config can declare:
    *   - showWhen: { otherParamName: expectedValue, ... }
    *   - hideWhen: { otherParamName: expectedValue, ... }
+   *   - regionOnly: true
+   *   - sceneOnly: true
    */
   _fxmWireConditionalVisibility() {
     this._fxmUnwireConditionalVisibility();
@@ -420,7 +419,9 @@ export class FXMasterBaseFormV2 extends Base {
       const cfg = CONFIG?.fxmaster;
       if (cfg?.particleEffects) sources.push(cfg.particleEffects);
       if (cfg?.filterEffects) sources.push(cfg.filterEffects);
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     if (!sources.length) return;
 
@@ -438,7 +439,9 @@ export class FXMasterBaseFormV2 extends Base {
         for (const [paramName, paramCfg] of Object.entries(params)) {
           const showWhen = paramCfg?.showWhen;
           const hideWhen = paramCfg?.hideWhen;
-          if (!showWhen && !hideWhen) continue;
+          const regionOnly = !!paramCfg?.regionOnly;
+          const sceneOnly = !!paramCfg?.sceneOnly;
+          if (!showWhen && !hideWhen && !regionOnly && !sceneOnly) continue;
 
           const inputName = `${label}_${paramName}`;
           const input =
@@ -448,7 +451,7 @@ export class FXMasterBaseFormV2 extends Base {
           const row = this.constructor._fxmFindFieldRow(input, root);
           if (!row) continue;
 
-          rules.push({ label, paramName, showWhen, hideWhen, row });
+          rules.push({ label, paramName, showWhen, hideWhen, regionOnly, sceneOnly, row });
         }
       }
     }
@@ -482,10 +485,13 @@ export class FXMasterBaseFormV2 extends Base {
     };
 
     const applyAll = () => {
+      const isRegionContext = false;
       for (const r of rules) {
         const showOk = evalCond(r.showWhen, r.label);
         const hideOk = r.hideWhen ? evalCond(r.hideWhen, r.label) : false;
-        const visible = showOk && !hideOk;
+        const regionOk = !r.regionOnly || isRegionContext;
+        const sceneOk = !r.sceneOnly || !isRegionContext;
+        const visible = showOk && !hideOk && regionOk && sceneOk;
         r.row.style.display = visible ? "" : "none";
       }
     };
@@ -543,7 +549,9 @@ export class FXMasterBaseFormV2 extends Base {
         try {
           const parsed = JSON.parse(mv);
           if (Array.isArray(parsed)) return parsed;
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
       }
 
       return [];
@@ -595,8 +603,7 @@ export class FXMasterBaseFormV2 extends Base {
   }
 
   /**
-   * Attempt to find the container element that represents a single "row" for
-   * a given parameter control.
+   * Attempt to find the container element that represents a single "row" for a given parameter control.
    */
   static _fxmFindFieldRow(el, root) {
     if (!el) return null;

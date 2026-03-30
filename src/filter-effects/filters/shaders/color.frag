@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2025 Gambit
-// Region/scene gating + color controls + hybrid fade to edge.
+/* Region/scene gating + color controls + hybrid fade to edge.
 // Rect/ellipse: analytic percent/absolute fades.
 // Polygon: percent = smooth-min over edges; absolute = SDF with tiny Gaussian smoothing.
 
@@ -29,6 +29,7 @@ uniform vec2  camFrac;      // (stage unsnapped) - (stage snapped)
 uniform float hasMask;
 uniform float maskReady;
 uniform float invertMask;
+uniform float maskSoft;
 uniform float strength;
 
 // Color controls
@@ -73,142 +74,12 @@ uniform float uSmoothKWorld;   // world-px smoothing radius for edge combiner
 
 varying vec2 vTextureCoord;
 
-/* ---------- Helpers ---------- */
 float luma(vec3 c){ return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
 vec3  softClip(vec3 c){ float m = max(c.r, max(c.g, c.b)); return (m > 1.0) ? (c / m) : c; }
 
-vec2 applyCssToWorld(vec2 css) { return (uCssToWorld * vec3(css, 1.0)).xy; }
-float worldPerCss() {
-  vec2 col0 = vec2(uCssToWorld[0][0], uCssToWorld[1][0]);
-  vec2 col1 = vec2(uCssToWorld[0][1], uCssToWorld[1][1]);
-  return max(1e-6, 0.5 * (length(col0) + length(col1)));
-}
-vec2 rotateVec(vec2 p, float ang) {
-  float c = cos(ang), s = sin(ang);
-  return vec2(c*p.x - s*p.y, s*p.x + c*p.y);
-}
 
-/* Smooth-min (polynomial) for rect channels */
-float smin(float a, float b, float k) {
-  float h = clamp(0.5 + 0.5*(b - a)/max(k, 1e-6), 0.0, 1.0);
-  return mix(b, a, h) - k*h*(1.0 - h);
-}
-
-/* Signed distances (world px) */
-float sdRect(vec2 pW, vec2 center, vec2 halfSize, float rot) {
-  vec2 p = rotateVec(pW - center, -rot);
-  vec2 q = abs(p) - halfSize;
-  float outside = length(max(q, 0.0));
-  float inside  = min(max(q.x, q.y), 0.0);
-  return outside + inside; // <0 inside
-}
-float sdEllipse(vec2 pW, vec2 center, vec2 halfSize, float rot) {
-  vec2 p = rotateVec(pW - center, -rot);
-  float R = max(halfSize.x, halfSize.y);
-  float r = length(p / max(halfSize, vec2(1e-6)));
-  return (r - 1.0) * R; // <0 inside (approx)
-}
-
-/* Distance to segment (world px) */
-float distToSegment(vec2 p, vec2 a, vec2 b){
-  vec2 ab = b - a;
-  float t = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
-  vec2 c = a + t * ab;
-  return length(p - c);
-}
-
-/* ---------- SDF helpers (polygon absolute-width) ---------- */
-vec2 worldToSdfUV(vec2 pW) {
-  vec3 c0 = uUvFromWorld[0], c1 = uUvFromWorld[1];
-  return vec2(c0.x*pW.x + c0.y*pW.y + c0.z,
-              c1.x*pW.x + c1.y*pW.y + c1.z);
-}
-float sdfDecode(float t) { return t * uSdfScaleOff.x + uSdfScaleOff.y; }
-float insideDistAt(vec2 uv) {
-  uv = clamp(uv, 0.0, 1.0);
-  float s = sdfDecode(texture2D(uSdf, uv).r);
-  return max(-s, 0.0); // inside distance only
-}
-/* 3×3 Gaussian smoothing of inside distance (derivative-free) */
-float sdPolySmooth(vec2 pW) {
-  vec2 uv = worldToSdfUV(pW);
-  vec2 t  = (uSdfTexel.x > 0.0 && uSdfTexel.y > 0.0) ? uSdfTexel : vec2(1.0/1024.0);
-
-  float di =
-      1.0 * insideDistAt(uv + vec2(-t.x, -t.y)) +
-      2.0 * insideDistAt(uv + vec2( 0.0, -t.y)) +
-      1.0 * insideDistAt(uv + vec2( t.x, -t.y)) +
-      2.0 * insideDistAt(uv + vec2(-t.x,  0.0)) +
-      4.0 * insideDistAt(uv + vec2( 0.0,  0.0)) +
-      2.0 * insideDistAt(uv + vec2( t.x,  0.0)) +
-      1.0 * insideDistAt(uv + vec2(-t.x,  t.y)) +
-      2.0 * insideDistAt(uv + vec2( 0.0,  t.y)) +
-      1.0 * insideDistAt(uv + vec2( t.x,  t.y));
-
-  di *= 1.0 / 16.0;
-  return -di; // signed again (<0 inside)
-}
-
-/* ---------- Percent fades (edge-anchored) ---------- */
-float fadePctRect(vec2 pW, float pct) {
-  vec2 p = rotateVec(pW - uCenter, -uRotation);
-  vec2 halfSize = max(uHalfSize, vec2(1e-6));
-  float dx = halfSize.x - abs(p.x);
-  float dy = halfSize.y - abs(p.y);
-  float inrad = min(halfSize.x, halfSize.y);
-  float band  = max(pct * inrad, 1e-6);
-  float d = smin(dx, dy, band);
-  return clamp(d / band, 0.0, 1.0);
-}
-float fadePctEllipse(vec2 pW, float pct) {
-  vec2 p = rotateVec(pW - uCenter, -uRotation);
-  vec2 n = p / max(uHalfSize, vec2(1e-6));
-  float r = length(n);
-  float band = max(pct, 1e-6);
-  return clamp((1.0 - r) / band, 0.0, 1.0);
-}
-
-/* Stable log-sum-exp smooth-min across N edges */
-float lseSmoothMin(float dMin, float sumExp, float tau) {
-  return dMin - tau * log(max(sumExp, 1e-9));
-}
-float fadePctPoly_edges(vec2 pW, float pct) {
-  float inradFallback = 0.5 * max(uSdfScaleOff.x, 1e-6);
-  float inrad  = (uSdfInsideMax > 0.0) ? uSdfInsideMax : inradFallback;
-  float band   = max(pct * inrad, 1e-6);
-
-  // Use the true minimum distance to any segment.
-  float dMin = 1e20;
-  for (int i = 0; i < MAX_EDGES; ++i) {
-    if (float(i) >= uEdgeCount) break;
-    vec4 AB = uEdges[i];
-    float di = distToSegment(pW, AB.xy, AB.zw);
-    dMin = min(dMin, di);
-  }
-
-  return clamp(dMin / band, 0.0, 1.0);
-}
-
-float fadePctPoly_sdf(vec2 pW, float pct) {
-  float inradFallback = 0.5 * max(uSdfScaleOff.x, 1e-6);
-  float inrad = (uSdfInsideMax > 0.0) ? uSdfInsideMax : inradFallback;
-  float band  = max(pct * inrad, 1e-6);
-  float insideD = max(-sdPolySmooth(pW), 0.0);
-  return clamp(insideD / band, 0.0, 1.0);
-}
-
-
-/* ---------- Absolute-width fades (world px) ---------- */
-float maskPolySdf_abs(vec2 pW, float fadeWorld) {
-  float d = sdPolySmooth(pW); // signed (<0 inside)
-  return 1.0 - smoothstep(0.0, fadeWorld, d + fadeWorld);
-}
-float maskAnalytic_abs(vec2 pW, float fadeWorld, int shape) {
-  float sd = (shape == 1)
-    ? sdRect(pW, uCenter, uHalfSize, uRotation)
-    : sdEllipse(pW, uCenter, uHalfSize, uRotation);
-  return 1.0 - smoothstep(0.0, fadeWorld, sd + fadeWorld);
-}
+/* Shared region fade infrastructure */
+#include <region-fade-common>
 
 /* ---------- Main ---------- */
 void main(void) {
@@ -235,7 +106,7 @@ void main(void) {
       float a = clamp(texture2D(maskSampler, maskUV).r, 0.0, 1.0);
 
       // For the scene allow-mask, a hard step avoids 1px seams; for region masks keep a soft edge.
-      float m = (uRegionShape < 0) ? step(0.5, a) : smoothstep(0.48, 0.52, a);
+      float m = (maskSoft > 0.5) ? a : ((uRegionShape < 0) ? step(0.5, a) : smoothstep(0.48, 0.52, a));
       if (invertMask > 0.5) m = 1.0 - m;
       inMask *= m;
     }

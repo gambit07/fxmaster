@@ -6,27 +6,38 @@
  * - Maps user options (scale, speed, direction, lifetime, tint, alpha) onto
  *   PIXI emitter configs.
  * - Provides helpers for pre-warming (play) and graceful teardown (fadeOut).
- * - Includes V1→V2 option converters for scene-dimension-aware values.
+ * - Includes V1-V2 option converters for scene-dimension-aware values.
  */
 
 import { roundToDecimals } from "../../utils.js";
+import { logger } from "../../logger.js";
 
 /* ------------------------------------------------------------------------- */
 /* Lateral Movement Helpers                                                  */
 /* ------------------------------------------------------------------------- */
 
 /**
- * Convert a PIXI.Ticker delta or seconds to seconds.
- * PIXI-particles expects seconds.
- * Foundry/PIXI commonly provide deltaTime where 1.0 ~= one 60fps frame.
- * @param {number} delta
- * @returns {number}
+ * Convert a PIXI.Ticker delta to seconds using `PIXI.Ticker.shared.deltaMS` for reliable detection.
+ *
+ * PIXI-particles expects seconds. Foundry/PIXI commonly provide deltaTime
+ * where 1.0 ≈ one 60 fps frame (regardless of actual refresh rate), but some
+ * callers may pass raw seconds. We use the ticker's own millisecond timestamp
+ * as the authoritative source when available, falling back to heuristics only
+ * if the ticker is inaccessible.
+ *
+ * @param {number} delta - Raw ticker delta value.
+ * @returns {number} Elapsed time in seconds, falling back to 1/60 s for invalid or non-positive inputs.
  */
-function fxmDeltaSeconds(delta) {
+export function fxmDeltaSeconds(delta) {
   if (typeof delta !== "number" || !Number.isFinite(delta) || delta <= 0) return 1 / 60;
 
-  if (delta < 0.1) return delta; // already seconds
-  if (delta < 5) return delta / 60; // ticker units
+  const ms = PIXI?.Ticker?.shared?.deltaMS;
+  if (typeof ms === "number" && Number.isFinite(ms) && ms > 0) {
+    return ms / 1000;
+  }
+
+  if (delta < 0.034) return delta;
+  if (delta < 5) return delta / 60;
   return delta;
 }
 
@@ -35,7 +46,7 @@ function fxmDeltaSeconds(delta) {
  * @param {any} p
  * @returns {number|undefined}
  */
-function fxmGetParticleAge(p) {
+export function fxmGetParticleAge(p) {
   return typeof p?.age === "number"
     ? p.age
     : typeof p?._age === "number"
@@ -53,7 +64,12 @@ function fxmGetParticleAge(p) {
     : undefined;
 }
 
-function fxmNextParticle(p) {
+/**
+ * Follow the linked-list `next` pointer across PIXI-particles versions.
+ * @param {any} p
+ * @returns {any|null}
+ */
+export function fxmNextParticle(p) {
   return p?.next ?? p?._next ?? p?.nextParticle ?? p?._nextParticle ?? p?.__next ?? null;
 }
 
@@ -62,7 +78,7 @@ function fxmNextParticle(p) {
  * @param {PIXI.particles.Emitter} emitter
  * @param {(p:any)=>void} fn
  */
-function fxmForEachEmitterParticle(emitter, fn) {
+export function fxmForEachEmitterParticle(emitter, fn) {
   let p = emitter?._activeParticlesFirst;
   if (p) {
     const max = Math.min(emitter?.particleCount ?? emitter?.maxParticles ?? 10000, 20000);
@@ -98,23 +114,16 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
 
   /**
    * Hide this effect from the management UI.
-   * Useful for backwards-compatibility aliases (e.g. legacy "rain-top")
-   * that should still load from scene flags.
+   * Useful for backwards-compatibility aliases that should still load from scene flags.
    */
   static hidden = false;
 
   /**
-   * Whether this effect should keep its emitters' ownerPos synced to the current
-   * canvas pan.
+   * Whether this effect should keep its emitters' ownerPos synced to the current canvas pan.
    *
-   * IMPORTANT: Do not define this as a class field. The upstream ParticleEffect
-   * base class builds emitters during its constructor, and many FXMaster effects
-   * toggle this flag inside getParticleEmitters(). Class fields are initialized
-   * after super(), which would overwrite whatever getParticleEmitters() set and
-   * break pan re-centering.
+   * Do not define this as a class field. The upstream ParticleEffect base class builds emitters during its constructor, and many FXMaster effects toggle this flag inside getParticleEmitters(). Class fields are initialized after super(), which would overwrite whatever getParticleEmitters() set and  break pan re-centering.
    *
-   * Subclasses should set `this._fxmCanvasPanOwnerPosEnabled = true/false` while
-   * building emitters.
+   * Subclasses should set `this._fxmCanvasPanOwnerPosEnabled = true/false` while building emitters.
    *
    * @type {boolean|undefined}
    * @protected
@@ -139,8 +148,7 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
   /**
    * Lateral Movement period range (seconds) used for per-particle sine drift.
    *
-   * Subclasses can override these getters to tune how long each
-   * side-to-side glide takes (longer period = longer, more drawn-out arcs).
+   * Subclasses can override these getters to tune how long each side-to-side glide takes.
    */
   static get lateralMovementPeriodMin() {
     return 10;
@@ -153,8 +161,7 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
   /**
    * Lateral Movement amplitude multiplier.
    *
-   * Small sprite-based effects (rats/spiders) can override this to make the
-   * lateral drift more noticeable without needing extreme strength values.
+   * Small sprite-based effects (rats/spiders) can override this to make the lateral drift more noticeable without needing extreme strength values.
    */
   static get lateralMovementAmplitudeFactor() {
     return 1;
@@ -163,8 +170,7 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
   /**
    * Minimum lateral movement amplitude in pixels (at strength=1).
    *
-   * This prevents sub-pixel drift for very small sprites where size-based
-   * scaling would otherwise be imperceptible.
+   * This prevents sub-pixel drift for very small sprites where size-based scaling would otherwise be imperceptible.
    */
   static get lateralMovementAmplitudeMinPx() {
     return 0;
@@ -224,8 +230,7 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
   }
 
   /**
-   * Default PIXI emitter configuration for the effect.
-   * Subclasses must override.
+   * Default PIXI emitter configuration for the effect. Subclasses must override.
    * @returns {PIXI.particles.EmitterConfigV3}
    */
   static get defaultConfig() {
@@ -303,8 +308,7 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
   }
 
   /**
-   * Convenience helper: take a base density (e.g. from options.density.value)
-   * and apply both performance-mode scaling and the class's densityScalar.
+   * Convenience helper: take a base density (e.g. from options.density.value) and apply both performance-mode scaling and the class's densityScalar.
    * @param {number} baseDensity
    * @returns {number}
    */
@@ -314,7 +318,7 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
   }
 
   /**
-   * Default deadzone scaling for top-down effects (to avoid a vortex-like convergence).
+   * Default deadzone scaling for top-down effects.
    * Subclasses may override these getters to tweak the size of the empty center area.
    *
    * The returned values are relative to the current view size and grid size.
@@ -336,8 +340,7 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
   }
 
   /**
-   * Compute the radius (in pixels) of the "dead zone" at the view center for
-   * top-down effects. Particles should not fully converge into this region.
+   * Compute the radius (in pixels) of the "dead zone" at the view center for top-down effects. Particles should not fully converge into this region.
    *
    * Effects should add this radius to their computed travel distance when
    * setting a torus spawnShape's innerRadius.
@@ -417,11 +420,9 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
   }
 
   /**
-   * If Directional Movement is enabled, collapse direction variance so that
-   * applying the direction parameter results in coherent travel direction.
+   * If Directional Movement is enabled, collapse direction variance so that applying the direction parameter results in coherent travel direction.
    *
-   * This is primarily intended for animal effects, which otherwise pick a
-   * random rotation per particle.
+   * This is primarily intended for animal effects, which otherwise pick a random rotation per particle.
    */
   _applyDirectionalMovementToConfig(options, config) {
     const enabled = !!options?.directionalMovement?.value;
@@ -470,7 +471,7 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
 
     const spreadRaw = options?.spread?.value;
     const spread =
-      directionalEnabled && Number.isFinite(Number(spreadRaw)) ? Math.min(180, Math.max(0, Number(spreadRaw))) : null;
+      directionalEnabled && Number.isFinite(Number(spreadRaw)) ? Math.min(20, Math.max(0, Number(spreadRaw))) : null;
 
     config.behaviors
       .filter((b) => b.type === "rotation")
@@ -525,9 +526,7 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
   /* ----------------------------------------------------------------------- */
 
   /**
-   * Create an emitter using the upstream ParticleEffectNS implementation and
-   * then attach FXMaster wrappers (e.g. Lateral Movement) before autoUpdate is
-   * bound to the ticker.
+   * Create an emitter using the upstream ParticleEffectNS implementation and then attach FXMaster wrappers (e.g. Lateral Movement) before autoUpdate is bound to the ticker.
    *
    * @param {PIXI.particles.EmitterConfigV3} config
    * @returns {PIXI.particles.Emitter}
@@ -539,7 +538,9 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
     try {
       const opts = this._fxmLastOptions ?? this.options ?? {};
       this._fxmInstallLateralMovement(emitter, opts, { wrap: true });
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     return emitter;
   }
@@ -548,10 +549,8 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
    * Install a smooth side-to-side drift ("Lateral Movement") onto an emitter.
    *
    * This works by:
-   * - restoring a stable travel heading (base rotation) before the emitter's
-   *   native update runs so movement doesn't drift over time
-   * - applying a lateral sine offset after update, then setting the visual
-   *   rotation to match the curved path's tangent
+   * - restoring a stable travel heading (base rotation) before the emitter's native update runs so movement doesn't drift over time
+   * - applying a lateral sine offset after update, then setting the visual rotation to match the curved path's tangent
    *
    * @param {PIXI.particles.Emitter} emitter
    * @param {object} options
@@ -679,7 +678,7 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
 
         const targetRot = Math.atan2(tdy, tdx);
         const curRot = typeof p._fxmLM_visRot === "number" ? p._fxmLM_visRot : baseRot;
-        const turnSpeed = 2.2 + 3.2 * strength; // 1/sec
+        const turnSpeed = 2.2 + 3.2 * strength;
         const steerT = 1 - Math.exp(-turnSpeed * dt);
         const nextRot = fxmAngleLerp(curRot, targetRot, steerT);
 
@@ -712,11 +711,15 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
     emitter.update = (delta) => {
       try {
         emitter._fxmLateralMovementPreUpdate?.();
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       origUpdate(delta);
       try {
         emitter._fxmLateralMovementUpdate?.(delta);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
     };
 
     emitter._fxmLateralMovementWrapped = true;
@@ -725,12 +728,9 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
   }
 
   /**
-   * Register a canvasPan hook that keeps emitter owner positions aligned to the
-   * current view center.
+   * Register a canvasPan hook that keeps emitter owner positions aligned to the current view center.
    *
-   * This mirrors the behavior previously implemented by the legacy rain-top
-   * effect, and is used by any effect that spawns relative to the view center
-   * via emitter ownerPos offsets.
+   * Used by any effect that spawns relative to the view center via emitter ownerPos offsets.
    * @protected
    */
   _fxmRegisterCanvasPanOwnerPosHook() {
@@ -748,7 +748,9 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
       for (const e of this.emitters ?? []) {
         try {
           e.updateOwnerPos(px - d.sceneX - d.sceneWidth / 2, py - d.sceneY - d.sceneHeight / 2);
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
       }
     });
   }
@@ -795,18 +797,24 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
     for (const emitter of this.emitters) {
       try {
         emitter.emit = false;
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
     }
 
     if (this._fadeTicker && (canvas?.app?.ticker || PIXI.Ticker.shared)) {
       const t = canvas?.app?.ticker ?? PIXI.Ticker.shared;
       try {
         t.remove(this._fadeTicker);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       this._fadeTicker = null;
       try {
         this._fadeResolve?.();
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       this._fadeResolve = null;
     }
 
@@ -828,7 +836,9 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
           this._fadeResolve = null;
           try {
             r?.();
-          } catch {}
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
           return;
         }
         const now = ticker.lastTime ?? performance.now();
@@ -841,7 +851,9 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
           this._fadeResolve = null;
           try {
             r?.();
-          } catch {}
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
         }
       };
       ticker.add(this._fadeTicker);
@@ -861,11 +873,15 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
       const t = canvas?.app?.ticker ?? PIXI.Ticker.shared;
       try {
         t.remove(this._fadeTicker);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       this._fadeTicker = null;
       try {
         this._fadeResolve?.();
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       this._fadeResolve = null;
     }
 
@@ -880,7 +896,9 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
           this._fadeResolve = null;
           try {
             r?.();
-          } catch {}
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
           return;
         }
         const now = ticker.lastTime ?? performance.now();
@@ -893,7 +911,9 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
           this._fadeResolve = null;
           try {
             r?.();
-          } catch {}
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
         }
       };
       ticker.add(this._fadeTicker);
@@ -927,13 +947,13 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
     );
   }
 
-  /** Scale → normalized UI value based on grid size. */
+  /** Scale - normalized UI value based on grid size. */
   static _convertScaleToV2(scale, scene) {
     const decimals = this.parameters.scale?.decimals ?? 1;
     return roundToDecimals(scale * (100 / scene.dimensions.size), decimals);
   }
 
-  /** Speed → normalized UI value relative to max default moveSpeed and grid size. */
+  /** Speed - normalized UI value relative to max default moveSpeed and grid size. */
   static _convertSpeedToV2(speed, scene) {
     const speeds = this.defaultConfig.behaviors
       .filter(({ type }) => type === "moveSpeed")
@@ -944,7 +964,7 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
     return roundToDecimals((speed / maximumSpeed) * (100 / scene.dimensions.size), decimals);
   }
 
-  /** Density → normalized per-grid-unit value. */
+  /** Density - normalized per-grid-unit value. */
   static _convertDensityToV2(density, scene) {
     const d = scene.dimensions;
     const gridUnits = (d.width / d.size) * (d.height / d.size);

@@ -39,6 +39,23 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
       localize: true,
     });
 
+    /**
+     * Region-only: edge fade for particle effects near the region boundary.
+     *
+     * The fade is applied per particle (alpha modulation) rather than by generating a soft region mask, which avoids visible banding on 8-bit render textures.
+     */
+    schema._edgeFadePercent = new foundry.data.fields.NumberField({
+      required: false,
+      nullable: true,
+      initial: 0.0,
+      min: 0.0,
+      max: 1.0,
+      step: 0.01,
+      label: "FXMASTER.Params.FadePercent",
+      hint: "FXMASTER.ParamTooltips.FadePercent",
+      localize: true,
+    });
+
     for (const [type, cls] of Object.entries(CONFIG.fxmaster.particleEffects).sort(([, a], [, b]) => {
       const labelA = game.i18n.localize(a.label);
       const labelB = game.i18n.localize(b.label);
@@ -144,7 +161,7 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
 
   /**
    * Collect enabled particle effects + options, persist flags, and sync elevation gate flags.
-   * Mirrors FilterRegionBehaviorType._applyFilters(). (No teardown here.)
+   * Mirrors FilterRegionBehaviorType._applyFilters().
    * @returns {Promise<boolean>} true if any region flag changed
    */
   async _applyParticles() {
@@ -181,6 +198,15 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
     if (!foundry.utils.isEmpty(diff1) || !foundry.utils.isEmpty(diff2)) {
       if (Object.keys(nextFX).length) await resetFlag(this.parent, "particleEffects", nextFX);
       else await this.parent.unsetFlag(packageId, "particleEffects");
+      changedAny = true;
+    }
+
+    /** Persist region edge fade percent (0..1). Store only when > 0. */
+    const nextFade = Math.min(Math.max(Number(system._edgeFadePercent) || 0, 0), 1);
+    const prevFade = Math.min(Math.max(Number(this.parent.getFlag(packageId, "edgeFadePercent")) || 0, 0), 1);
+    if (nextFade !== prevFade) {
+      if (nextFade > 0) await resetFlag(this.parent, "edgeFadePercent", nextFade);
+      else await this.parent.unsetFlag(packageId, "edgeFadePercent");
       changedAny = true;
     }
 
@@ -221,7 +247,7 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
   }
 
   /**
-   * Region token enter/exit events → update only the event gate (no flag churn for particles).
+   * Region token enter/exit events - update only the event gate (no flag churn for particles).
    */
   async _handleRegionEvent(event) {
     if (!this.events?.size) return;
@@ -296,10 +322,15 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
    * On delete, request a rebuild of region particle effects.
    */
   async _onDelete(options, userId) {
+    const regionDoc = options?.parent ?? this.parent?.parent ?? null;
     await super._onDelete(options, userId);
-    const placeable = options.parent?.object;
+    const placeable = regionDoc?.object ?? canvas.regions.get(regionDoc?.id);
+    const behaviorDocs = Array.from(regionDoc?.behaviors ?? []).filter((behavior) => behavior?.id !== this.id);
     if (placeable) {
-      canvas.particleeffects.drawRegionParticleEffects(placeable, { soft: false });
+      canvas.particleeffects.drawRegionParticleEffects(placeable, {
+        soft: false,
+        behaviorDocs,
+      });
     }
   }
 }

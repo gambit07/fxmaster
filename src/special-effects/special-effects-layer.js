@@ -1,4 +1,5 @@
 import { packageId } from "../constants.js";
+import { logger } from "../logger.js";
 import { SpecialEffectMesh } from "./mesh.js";
 
 export class SpecialEffectsLayer extends CONFIG.fxmaster.InteractionLayerNS {
@@ -8,10 +9,10 @@ export class SpecialEffectsLayer extends CONFIG.fxmaster.InteractionLayerNS {
     this._dragging = false;
     this.ruler = null;
     this.windowVisible = false;
-    // Listen to the socket
-    game.socket.on(`module.${packageId}`, (data) => {
-      this.playVideo(data);
-    });
+
+    /** Bind socket handler so it can be removed during teardown. */
+    this._socketHandler = (data) => this.playVideo(data);
+    game.socket.on(`module.${packageId}`, this._socketHandler);
   }
 
   static get layerOptions() {
@@ -34,9 +35,26 @@ export class SpecialEffectsLayer extends CONFIG.fxmaster.InteractionLayerNS {
       video.remove();
     }
     this.videos = [];
+
+    /** Remove socket listener to prevent duplicate playback after canvas re-init. */
+    if (this._socketHandler) {
+      try {
+        game.socket.off(`module.${packageId}`, this._socketHandler);
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+      this._socketHandler = null;
+    }
+
     return super._tearDown();
   }
 
+  /**
+   * Apply position, rotation, scale, and sizing to a special-effect mesh.
+   *
+   * @param {SpriteMesh} mesh - The mesh to configure.
+   * @param {object} data - Effect placement data.
+   */
   #configureSpecialEffectMesh(mesh, data) {
     mesh.anchor.set(data.anchor.x, data.anchor.y);
     mesh.rotation = Math.normalizeRadians(data.rotation - Math.toRadians(data.angle));
@@ -51,13 +69,10 @@ export class SpecialEffectsLayer extends CONFIG.fxmaster.InteractionLayerNS {
       }
       mesh.width = data.width;
     }
-
-    return () => {};
   }
 
   playVideo(data) {
     return new Promise((resolve) => {
-      // Set default values
       data = foundry.utils.mergeObject(
         {
           anchor: { x: 0.5, y: 0.5 },
@@ -69,8 +84,6 @@ export class SpecialEffectsLayer extends CONFIG.fxmaster.InteractionLayerNS {
         },
         data,
       );
-
-      // Create video
       const video = document.createElement("video");
       video.preload = "auto";
       video.crossOrigin = "anonymous";
@@ -80,26 +93,34 @@ export class SpecialEffectsLayer extends CONFIG.fxmaster.InteractionLayerNS {
 
       /** @type {SpriteMesh | undefined} */
       let mesh;
-      /** @type {(() => void) | undefined} */
-      let terminateAnimation;
 
       const onCanPlay = () => {
         mesh = new SpecialEffectMesh(PIXI.Texture.from(video));
 
         data.dimensions = { w: video.videoWidth, h: video.videoHeight };
         data.duration = video.duration;
-        terminateAnimation = this.#configureSpecialEffectMesh(mesh, data);
+        this.#configureSpecialEffectMesh(mesh, data);
 
         canvas.primary.addChild(mesh);
         canvas.primary.videoMeshes.add(mesh);
       };
 
       const onEnd = () => {
-        terminateAnimation?.();
-        canvas.primary.removeChild(mesh);
-        canvas.primary.videoMeshes.delete(mesh);
-        resolve();
-        if (!mesh?._destroyed) mesh?.destroy({ children: true, texture: true, baseTexture: true });
+        try {
+          if (mesh) {
+            try {
+              canvas.primary?.removeChild?.(mesh);
+            } catch {}
+            try {
+              canvas.primary?.videoMeshes?.delete?.(mesh);
+            } catch {}
+            try {
+              if (!mesh?._destroyed) mesh?.destroy?.({ children: true, texture: true, baseTexture: true });
+            } catch {}
+          }
+        } finally {
+          resolve();
+        }
       };
 
       video.oncanplay = onCanPlay;
@@ -108,31 +129,40 @@ export class SpecialEffectsLayer extends CONFIG.fxmaster.InteractionLayerNS {
     });
   }
 
+  /**
+   * Create a macro command for a dropped special effect.
+   *
+   * Special-effect macro generation is not supported; return a command which warns when executed.
+   *
+   * @param {object} _effectData - Dropped effect data (unused).
+   * @returns {string} Macro command.
+   * @protected
+   */
   static _createMacro(_effectData) {
-    return ui.notifications.warn(
-      "FXMaster no longer supports custom animations macros. For an alternative, use the Sequencer module.",
-    );
+    const msg = "FXMaster no longer supports custom animations macros. For an alternative, use the Sequencer module.";
+    try {
+      ui.notifications.warn(msg);
+    } catch {}
+    return `ui.notifications.warn(${JSON.stringify(msg)});`;
   }
 
   /**
-   * Draw a special effect.
-   * @param {PIXI.InteractionEvent} event         The event that triggered the drawing of the special effect
-   * @param {PIXI.Point}            [savedOrigin] The point that was originally clicked on
-   * @returns {Promise<void>}
-   * @remarks
-   * The savedOrigin parameter is required for regular click events because for some reason, the origin has been removed
-   * from the event's data by the time the event is handled.
-   * TODO: investigate further.
+   * Draw the currently-selected special effect.
+   *
+   * @param {PIXI.InteractionEvent} event
+   * @param {PIXI.Point} [savedOrigin] Origin captured at mousedown time. Used for click events where
+   *                                  Foundry/PIXI may no longer provide the origin by the time the event is handled.
+   * @returns {Promise<void>|undefined}
    */
   _drawSpecial(event, savedOrigin) {
     event.stopPropagation();
 
     const windows = Object.values(ui.windows);
-    const effectConfig = windows.find((w) => w.id == "specials-config");
+    const effectConfig = windows.find((w) => w.id === "specials-config");
     if (!effectConfig) return;
 
     const active = effectConfig.element.find(".special-effects.active");
-    if (active.length == 0) return;
+    if (active.length === 0) return;
 
     const id = active[0].dataset.effectId;
     const folder = active[0].closest(".folder").dataset.folderId;
@@ -146,11 +176,6 @@ export class SpecialEffectsLayer extends CONFIG.fxmaster.InteractionLayerNS {
       rotation: event.interactionData.rotation,
       elevation: this.#elevation,
     };
-
-    if (!event.interactionData.destination) {
-      game.socket.emit(`module.${packageId}`, data);
-      return this.playVideo(data);
-    }
 
     game.socket.emit(`module.${packageId}`, data);
     return this.playVideo(data);
@@ -190,27 +215,29 @@ export class SpecialEffectsLayer extends CONFIG.fxmaster.InteractionLayerNS {
 
   _isWindowVisible() {
     const windows = Object.values(ui.windows);
-    const effectConfig = windows.find((w) => w.id == "specials-config");
+    const effectConfig = windows.find((w) => w.id === "specials-config");
     if (!effectConfig) return false;
     return true;
   }
 
-  /** @override */
+  /**
+   * Handle a left-click. If a drag has not started, fire the special effect immediately.
+   * @override
+   * @param {PIXI.InteractionEvent} event
+   */
   _onClickLeft(event) {
-    this._dragging = false;
-    const origin = event.interactionData.origin;
-    setTimeout(() => {
-      if (!this._dragging) {
-        event.interactionData.rotation = 0;
-        event.interactionData.destination = undefined;
-        this._drawSpecial(event, origin);
-      }
+    if (this._dragging) {
       this._dragging = false;
-    }, 400);
+      return;
+    }
+    const origin = event.interactionData.origin;
+    event.interactionData.rotation = 0;
+    event.interactionData.destination = undefined;
+    this._drawSpecial(event, origin);
   }
 
   get #elevation() {
-    const effectConfig = Object.values(ui.windows).find((w) => w.id == "specials-config");
+    const effectConfig = Object.values(ui.windows).find((w) => w.id === "specials-config");
     const elevationString = effectConfig?.element.find("input[name='elevation']").val();
     const elevation = Number.parseFloat(elevationString);
     if (Number.isNaN(elevation) || !Number.isFinite(elevation)) return 1;

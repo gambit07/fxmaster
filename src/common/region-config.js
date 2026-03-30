@@ -1,3 +1,4 @@
+import { logger } from "../logger.js";
 export class CommonRegionBehaviorConfig extends foundry.applications.sheets.RegionBehaviorConfig {
   static PARTS = foundry.utils.mergeObject(super.PARTS, { form: { scrollable: [""] } }, { inplace: false });
 
@@ -86,7 +87,9 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
 
     try {
       this._fxmConditionalVisibilityAbort?.abort();
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
     const ac = new AbortController();
     this._fxmConditionalVisibilityAbort = ac;
 
@@ -95,7 +98,9 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
       const cfg = CONFIG?.fxmaster;
       if (cfg?.particleEffects) sources.push(cfg.particleEffects);
       if (cfg?.filterEffects) sources.push(cfg.filterEffects);
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     const rules = [];
 
@@ -141,7 +146,9 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
         try {
           const parsed = JSON.parse(mv);
           if (Array.isArray(parsed)) return parsed;
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
       }
 
       return [];
@@ -213,12 +220,14 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
         for (const [paramName, paramCfg] of Object.entries(params)) {
           const showWhen = paramCfg?.showWhen;
           const hideWhen = paramCfg?.hideWhen;
-          if (!showWhen && !hideWhen) continue;
+          const regionOnly = !!paramCfg?.regionOnly;
+          const sceneOnly = !!paramCfg?.sceneOnly;
+          if (!showWhen && !hideWhen && !regionOnly && !sceneOnly) continue;
 
           const group = findGroupByName(`${type}_${paramName}`);
           if (!group) continue;
 
-          rules.push({ type, paramName, showWhen, hideWhen, group });
+          rules.push({ type, paramName, showWhen, hideWhen, regionOnly, sceneOnly, group });
         }
       }
     }
@@ -226,10 +235,13 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
     if (!rules.length) return;
 
     const applyAll = () => {
+      const isRegionContext = true;
       for (const r of rules) {
         const showOk = evalCond(r.showWhen, r.type);
         const hideOk = r.hideWhen ? evalCond(r.hideWhen, r.type) : false;
-        const visible = showOk && !hideOk;
+        const regionOk = !r.regionOnly || isRegionContext;
+        const sceneOk = !r.sceneOnly || !isRegionContext;
+        const visible = showOk && !hideOk && regionOk && sceneOk;
         r.group.style.display = visible ? "" : "none";
       }
     };
@@ -237,7 +249,9 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
     applyAll();
     try {
       requestAnimationFrame(() => applyAll());
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     let raf = null;
     const schedule = () => {

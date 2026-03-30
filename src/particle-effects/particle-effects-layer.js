@@ -1,6 +1,5 @@
 /**
- * FXMaster: Particle Effects Layer
- * Manages scene-level and region-level particle effects.
+ * FXMaster: Particle Effects Layer - manages scene-level and region-level particle effects.
  */
 
 import { packageId } from "../constants.js";
@@ -13,14 +12,71 @@ import {
   coalesceNextFrame,
   getCssViewportMetrics,
   snappedStageMatrix,
+  cameraMatrixChanged,
+  composeMaskMinusTokens,
   composeMaskMinusTokensRT,
+  estimateRegionInradius,
+  regionWorldBounds,
 } from "../utils.js";
 import { refreshSceneParticlesSuppressionMasks } from "./particle-effects-scene-manager.js";
 import { BaseEffectsLayer } from "../common/base-effects-layer.js";
 import { logger } from "../logger.js";
 import { SceneMaskManager } from "../common/base-effects-scene-manager.js";
+import { fxmForEachEmitterParticle } from "./effects/effect.js";
 
 const TYPE = `${packageId}.particleEffectsRegion`;
+
+/**
+ * Build a region-scoped particle context so region effects use region bounds rather than scene bounds.
+ *
+ * @param {PlaceableObject} placeable
+ * @returns {{dimensions: object, renderer: PIXI.Renderer|null, ticker: PIXI.Ticker|null}|null}
+ */
+function buildRegionParticleContext(placeable) {
+  const bounds = regionWorldBounds(placeable);
+  if (!bounds) return null;
+
+  const minX = Number(bounds.minX);
+  const minY = Number(bounds.minY);
+  const maxX = Number(bounds.maxX);
+  const maxY = Number(bounds.maxY);
+  if (![minX, minY, maxX, maxY].every(Number.isFinite)) return null;
+
+  const width = Math.max(1, maxX - minX);
+  const height = Math.max(1, maxY - minY);
+  const size = Number(canvas?.dimensions?.size) || 100;
+
+  return {
+    dimensions: {
+      width,
+      height,
+      size,
+      sceneX: minX,
+      sceneY: minY,
+      sceneWidth: width,
+      sceneHeight: height,
+      sceneRect: new PIXI.Rectangle(minX, minY, width, height),
+    },
+    renderer: canvas?.app?.renderer ?? null,
+    ticker: canvas?.app?.ticker ?? PIXI?.Ticker?.shared ?? null,
+  };
+}
+
+/**
+ * Normalize a region behavior collection or array into an array of behavior documents.
+ *
+ * @param {Iterable<foundry.documents.RegionBehavior>|foundry.documents.RegionBehavior[]|null|undefined} behaviorDocs
+ * @returns {foundry.documents.RegionBehavior[]}
+ * @private
+ */
+function normalizeRegionBehaviorDocs(behaviorDocs) {
+  if (!behaviorDocs) return [];
+  if (Array.isArray(behaviorDocs)) return behaviorDocs;
+  if (Array.isArray(behaviorDocs.contents)) return behaviorDocs.contents;
+  if (typeof behaviorDocs.toArray === "function") return behaviorDocs.toArray();
+  if (typeof behaviorDocs.values === "function") return Array.from(behaviorDocs.values());
+  return Array.from(behaviorDocs);
+}
 
 export class ParticleEffectsLayer extends BaseEffectsLayer {
   static get layerOptions() {
@@ -80,7 +136,9 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       if (this.occlusionFilter) this.occlusionFilter.elevation = value;
       if (this._belowOccl) this._belowOccl.elevation = value;
       if (this._aboveOccl) this._aboveOccl.elevation = value;
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
     if (this.parent) this.parent.sortDirty = true;
   }
   #elevation = Infinity;
@@ -108,22 +166,30 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
 
     try {
       this._scratchGfx?.destroy(true);
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
     this._scratchGfx = null;
 
     /** Cleanup of above-band scene container and mask bindings. */
     try {
       if (this._aboveContent?.mask) this._aboveContent.mask = null;
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
     try {
       this._aboveContent?.destroy({ children: true });
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
     this._aboveContent = null;
 
     /** Cleanup of below-band scene container. */
     try {
       this._belowContainer?.destroy({ children: true });
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
     this._belowContainer = null;
 
     /** Clear strong references to scene buckets and their mask sprites. */
@@ -138,12 +204,16 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
 
     try {
       this._aboveMaskGfx?.destroy(true);
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
     this._aboveMaskGfx = null;
 
     try {
       this.filters = [];
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
     this._belowOccl = null;
     this._aboveOccl = null;
 
@@ -160,20 +230,28 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     for (const fx of this.particleEffects.values()) {
       try {
         fx.stop?.();
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       try {
         fx.destroy?.();
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
     }
     this.particleEffects.clear();
 
     for (const fx of this._dyingSceneEffects) {
       try {
         fx.stop?.();
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       try {
         fx.destroy?.();
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
     }
     this._dyingSceneEffects.clear();
 
@@ -186,24 +264,36 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
 
         try {
           fx?.stop?.();
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
         try {
           fx?.destroy?.();
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
 
         try {
           if (container && maskSprite && container.mask === maskSprite) container.mask = null;
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
         try {
           if (maskSprite && !maskSprite.destroyed) maskSprite.texture = safeMaskTexture(null);
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
 
         try {
           container?.destroy?.({ children: true });
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
         try {
           maskSprite?.destroy?.({ texture: false, baseTexture: false });
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
       }
     }
     this.regionEffects.clear();
@@ -212,12 +302,18 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       for (const rtPair of this._regionMaskRTs.values()) {
         try {
           this._releaseRT(rtPair.base);
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
         try {
           this._releaseRT(rtPair.cutout);
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
       }
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
     this._regionMaskRTs.clear?.();
   }
 
@@ -231,8 +327,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
   }
 
   /**
-   * Recompute whether any REGION particle effects require below-tokens cutouts,
-   * and inform the shared {@link SceneMaskManager} so it can maintain the tokens RT.
+   * Recompute whether any REGION particle effects require below-tokens cutouts, and inform the shared {@link SceneMaskManager} so it can maintain the tokens RT.
    * @private
    */
   _updateRegionBelowTokensNeeded() {
@@ -244,14 +339,18 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
           break;
         }
       }
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     if (this._regionBelowTokensNeeded === any) return;
     this._regionBelowTokensNeeded = any;
 
     try {
       SceneMaskManager.instance.setBelowTokensNeeded?.("particles", any, "regions");
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
   /**
    * Scene manager calls this after it refreshes SceneMaskManager RTs for particles.
@@ -274,18 +373,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
   }
 
   #updateSceneParticlesSuppressionForCamera(M = this._currentCameraMatrix ?? snappedStageMatrix()) {
-    const L = this._lastSceneMaskMatrix;
-    const eps = 1e-4;
-    const changed =
-      !L ||
-      Math.abs(L.a - M.a) > eps ||
-      Math.abs(L.b - M.b) > eps ||
-      Math.abs(L.c - M.c) > eps ||
-      Math.abs(L.d - M.d) > eps ||
-      Math.abs(L.tx - M.tx) > eps ||
-      Math.abs(L.ty - M.ty) > eps;
-
-    if (!changed) return;
+    if (!cameraMatrixChanged(M, this._lastSceneMaskMatrix)) return;
 
     this._lastSceneMaskMatrix = { a: M.a, b: M.b, c: M.c, d: M.d, tx: M.tx, ty: M.ty };
 
@@ -321,13 +409,19 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
             try {
               if (soft && fx.fadeOut) await fx.fadeOut({ timeout: 5000 });
               else fx.stop?.();
-            } catch {}
+            } catch (err) {
+              logger.debug("FXMaster:", err);
+            }
             try {
               fx.parent?.removeChild?.(fx);
-            } catch {}
+            } catch (err) {
+              logger.debug("FXMaster:", err);
+            }
             try {
               fx.destroy?.();
-            } catch {}
+            } catch (err) {
+              logger.debug("FXMaster:", err);
+            }
             this._dyingSceneEffects.delete(fx);
           })(),
         );
@@ -367,10 +461,14 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         const XFADE_MS = 2500;
         try {
           existing.zIndex = zIndex++;
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
         try {
           existing.blendMode = PIXI.BLEND_MODES.NORMAL;
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
 
         const prev = existing._fxmOptsCache ?? {};
         const diff = foundry.utils.diffObject(prev, options);
@@ -379,7 +477,9 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         if (!changed) {
           try {
             existing.play?.({ skipFading: soft });
-          } catch {}
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
           continue;
         }
 
@@ -399,13 +499,19 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
             (async () => {
               try {
                 await Promise.all([existing?.fadeOut?.({ timeout: XFADE_MS }), ec?.fadeIn?.({ timeout: XFADE_MS })]);
-              } catch {}
+              } catch (err) {
+                logger.debug("FXMaster:", err);
+              }
               try {
                 existing.parent?.removeChild?.(existing);
-              } catch {}
+              } catch (err) {
+                logger.debug("FXMaster:", err);
+              }
               try {
                 existing.destroy?.();
-              } catch {}
+              } catch (err) {
+                logger.debug("FXMaster:", err);
+              }
               this._dyingSceneEffects.delete(existing);
             })(),
           );
@@ -414,13 +520,19 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
 
         try {
           existing.stop?.();
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
         try {
           existing.parent?.removeChild?.(existing);
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
         try {
           existing.destroy?.();
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
         cur.delete(id);
 
         const ec = new EffectClass(options);
@@ -437,7 +549,9 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       ec.zIndex = zIndex++;
       try {
         ec.blendMode = defaultBlend;
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       ec._fxmOptsCache = foundry.utils.deepClone(options);
       addToLayer(ec);
       cur.set(id, ec);
@@ -450,11 +564,22 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     if (removalPromises.length) {
       try {
         await Promise.all(removalPromises);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
     }
   }
 
-  async drawRegionParticleEffects(placeable, { soft = false } = {}) {
+  /**
+   * Draw region-scoped particle effects for a region placeable.
+   *
+   * An authoritative behavior snapshot may be supplied during behavior CRUD so effect selection does not depend on a stale placeable behavior collection.
+   *
+   * @param {PlaceableObject} placeable
+   * @param {{ soft?: boolean, behaviorDocs?: Iterable<foundry.documents.RegionBehavior>|foundry.documents.RegionBehavior[]|null }} [options]
+   * @returns {Promise<void>}
+   */
+  async drawRegionParticleEffects(placeable, { soft = false, behaviorDocs = null } = {}) {
     const regionId = placeable.id;
     this._ensureSceneContainers();
 
@@ -464,28 +589,66 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         const fx = entry?.fx ?? entry;
         try {
           fx?.stop?.();
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
         try {
           fx?.destroy?.();
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
         try {
           entry?.container?.destroy?.({ children: true });
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
         try {
           entry?.maskSprite?.destroy?.({ texture: false, baseTexture: false });
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
       }),
     );
     this.regionEffects.set(regionId, []);
 
+    const behaviors = normalizeRegionBehaviorDocs(behaviorDocs ?? placeable?.document?.behaviors).filter(
+      (behavior) => behavior.type === TYPE && !behavior.disabled,
+    );
+    if (!behaviors.length) {
+      this.destroyRegionParticleEffects(regionId);
+      return;
+    }
+
+    const edgeFadePercent = this._getRegionEdgeFadePercent(placeable, behaviors);
+    const edgeFadeCtx = this._buildPerParticleEdgeFadeContext(placeable, edgeFadePercent);
+    const regionParticleContext = buildRegionParticleContext(placeable);
+
     let shared = this._regionMaskRTs.get(regionId);
     if (!shared) {
-      shared = { base: buildRegionMaskRT(placeable, { rtPool: this._rtPool }), cutout: null };
+      shared = { base: null, cutout: null };
       this._regionMaskRTs.set(regionId, shared);
     }
 
-    const behaviors = (placeable?.document?.behaviors || []).filter((b) => b.type === TYPE && !b.disabled);
-    if (!behaviors.length) return;
+    const oldBase = shared.base;
+    const oldCutout = shared.cutout;
+
+    shared.base = buildRegionMaskRT(placeable, { rtPool: this._rtPool });
+    shared.cutout = null;
+
+    if (oldBase && oldBase !== shared.base) {
+      try {
+        this._releaseRT(oldBase);
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    }
+    if (oldCutout) {
+      try {
+        this._releaseRT(oldCutout);
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    }
 
     const { cssW, cssH } = getCssViewportMetrics();
     const VW = cssW | 0;
@@ -503,6 +666,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         const effectOptions = Object.fromEntries(
           Object.entries(params?.options ?? {}).map(([k, v]) => [k, { value: v }]),
         );
+        if (regionParticleContext) effectOptions.__fxmParticleContext = regionParticleContext;
         const belowTokens = !!params?.belowTokens;
 
         const container = new PIXI.Container();
@@ -516,10 +680,15 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         container.addChild(spr);
 
         const fx = new EffectClass(effectOptions);
+        if (regionParticleContext) fx.__fxmParticleContext = regionParticleContext;
         try {
           fx.blendMode = defaultBM;
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
         container.addChild(fx);
+
+        if (edgeFadeCtx) this._applyPerParticleEdgeFadeToEffect(fx, edgeFadeCtx);
 
         if (layerLevel === "aboveDarkness") this._aboveContent.addChild(container);
         else this.addChild(container);
@@ -529,15 +698,19 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         if (belowTokens && !shared.cutout) {
           try {
             SceneMaskManager.instance.setBelowTokensNeeded?.("particles", true, "regions");
-          } catch {}
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
           try {
             SceneMaskManager.instance.refreshTokensSync?.();
-          } catch {}
-          const tokensRT = SceneMaskManager.instance.getMasks?.("particles")?.tokens ?? null;
-          if (tokensRT) {
-            const outRT = this._acquireRT(shared.base.width | 0, shared.base.height | 0, shared.base.resolution || 1);
-            shared.cutout = composeMaskMinusTokensRT(shared.base, tokensRT, { outRT });
+          } catch (err) {
+            logger.debug("FXMaster:", err);
           }
+          const tokensRT = SceneMaskManager.instance.getMasks?.("particles")?.tokens ?? null;
+          const outRT = this._acquireRT(shared.base.width | 0, shared.base.height | 0, shared.base.resolution || 1);
+          shared.cutout = tokensRT
+            ? composeMaskMinusTokensRT(shared.base, tokensRT, { outRT })
+            : composeMaskMinusTokens(shared.base, { outRT });
         }
 
         const maskTex = belowTokens && shared.cutout ? shared.cutout : shared.base;
@@ -572,9 +745,23 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     this._rebuildRegionMaskFor(placeable);
   }
 
+  /**
+   * Schedule a mask refresh for one or more regions on the next animation frame.
+   * Multiple calls within the same frame are batched so that no region ID is lost.
+   * @param {string} regionId
+   */
   requestRegionMaskRefresh(regionId) {
-    this._coalescedRegionRefresh ??= coalesceNextFrame((rid) => this.forceRegionMaskRefresh(rid), { key: this });
-    this._coalescedRegionRefresh(regionId);
+    this._pendingRegionRefreshIds ??= new Set();
+    this._pendingRegionRefreshIds.add(regionId);
+    this._coalescedRegionRefresh ??= coalesceNextFrame(
+      () => {
+        const ids = this._pendingRegionRefreshIds;
+        this._pendingRegionRefreshIds = new Set();
+        for (const rid of ids) this.forceRegionMaskRefresh(rid);
+      },
+      { key: this },
+    );
+    this._coalescedRegionRefresh();
   }
 
   requestRegionMaskRefreshAll() {
@@ -591,25 +778,39 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
 
       try {
         fx?.stop?.();
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       try {
         fx?.destroy?.();
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       try {
         if (container && container.mask === maskSprite) container.mask = null;
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       try {
         if (maskSprite && !maskSprite.destroyed) maskSprite.texture = safeMaskTexture(null);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       try {
         if (container?.parent) container.parent.removeChild(container);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       try {
         container?.destroy?.({ children: true });
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       try {
         maskSprite?.destroy?.({ texture: false, baseTexture: false });
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
     }
     this.regionEffects.delete(regionId);
     this._updateRegionBelowTokensNeeded();
@@ -618,10 +819,14 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     if (rt) {
       try {
         this._releaseRT(rt.base);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       try {
         this._releaseRT(rt.cutout);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       this._regionMaskRTs.delete(regionId);
     }
   }
@@ -642,11 +847,15 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     const sceneMask = canvas?.masks?.scene || null;
     try {
       this._aboveContent.mask = sceneMask;
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
     if (this._aboveMaskGfx && !this._aboveMaskGfx.destroyed) {
       try {
         this._aboveMaskGfx.destroy(true);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
     }
     this._aboveMaskGfx = null;
   }
@@ -678,7 +887,9 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     } else if (this._sceneBelowCutout.parent !== this._belowContainer) {
       try {
         this._sceneBelowCutout.parent?.removeChild?.(this._sceneBelowCutout);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       this._belowContainer.addChild(this._sceneBelowCutout);
     }
 
@@ -691,7 +902,9 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     } else if (this._sceneBelowBase.parent !== this._belowContainer) {
       try {
         this._sceneBelowBase.parent?.removeChild?.(this._sceneBelowBase);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       this._belowContainer.addChild(this._sceneBelowBase);
     }
 
@@ -715,7 +928,9 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     } else if (this._aboveContent.parent !== expectParent) {
       try {
         this._aboveContent.parent?.removeChild?.(this._aboveContent);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       expectParent.addChild(this._aboveContent);
     }
 
@@ -728,7 +943,9 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     } else if (this._sceneAboveCutout.parent !== this._aboveContent) {
       try {
         this._sceneAboveCutout.parent?.removeChild?.(this._sceneAboveCutout);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       this._aboveContent.addChild(this._sceneAboveCutout);
     }
 
@@ -741,7 +958,9 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     } else if (this._sceneAboveBase.parent !== this._aboveContent) {
       try {
         this._sceneAboveBase.parent?.removeChild?.(this._sceneAboveBase);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       this._aboveContent.addChild(this._sceneAboveBase);
     }
 
@@ -759,14 +978,20 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         this[prop] = spr;
         try {
           bucket.addChild(spr);
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
       } else if (spr.parent !== bucket) {
         try {
           spr.parent?.removeChild?.(spr);
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
         try {
           bucket.addChild(spr);
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
       }
 
       /** Guard against transient invalid textures during scene transitions. */
@@ -775,7 +1000,9 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
           spr.width = cssW;
           spr.height = cssH;
         }
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
 
       return spr;
     };
@@ -805,6 +1032,11 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
 
     const anyBelow = entries.some((e) => !!e?.fx?.__fxmBelowTokens);
     if (anyBelow) {
+      try {
+        SceneMaskManager.instance.setBelowTokensNeeded?.("particles", true, "regions");
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       const reuse =
         !!shared.cutout &&
         shared.cutout.width === newBase.width &&
@@ -812,20 +1044,18 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         (shared.cutout.resolution || 1) === (newBase.resolution || 1);
       try {
         SceneMaskManager.instance.refreshTokensSync?.();
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       const tokensRT = SceneMaskManager.instance.getMasks?.("particles")?.tokens ?? null;
 
-      if (tokensRT) {
-        const outRT = reuse
-          ? shared.cutout
-          : this._acquireRT(newBase.width | 0, newBase.height | 0, newBase.resolution || 1);
-        shared.cutout = composeMaskMinusTokensRT(newBase, tokensRT, { outRT });
-      } else if (shared.cutout && !reuse) {
-        try {
-          this._releaseRT(shared.cutout);
-        } catch {}
-        shared.cutout = null;
-      }
+      const outRT = reuse
+        ? shared.cutout
+        : this._acquireRT(newBase.width | 0, newBase.height | 0, newBase.resolution || 1);
+
+      shared.cutout = tokensRT
+        ? composeMaskMinusTokensRT(newBase, tokensRT, { outRT })
+        : composeMaskMinusTokens(newBase, { outRT });
     } else {
       if (shared.cutout) {
         this._releaseRT(shared.cutout);
@@ -846,18 +1076,484 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       try {
         spr.width = VW;
         spr.height = VH;
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       try {
         applyMaskSpriteTransform(cont, spr);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       if (cont.mask !== spr) {
         try {
           cont.mask = spr;
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
       }
     }
 
     if (oldBase && oldBase !== newBase) this._releaseRT(oldBase);
+  }
+
+  /**
+   * Compute the region-edge fade percent for particle effects (0..1).
+   * If multiple particle behaviors exist on the region, the maximum is used.
+   *
+   * @param {PlaceableObject} placeable
+   * @param {foundry.documents.RegionBehavior[]} [behaviors]
+   * @returns {number}
+   * @private
+   */
+  _getRegionEdgeFadePercent(placeable, behaviors = null) {
+    const list = behaviors ?? (placeable?.document?.behaviors || []).filter((b) => b?.type === TYPE && !b?.disabled);
+
+    let max = 0;
+    for (const b of list) {
+      const raw = b?.getFlag?.(packageId, "edgeFadePercent");
+      const n = Number(raw);
+      if (Number.isFinite(n)) max = Math.max(max, n);
+    }
+    return Math.min(Math.max(max, 0), 1);
+  }
+
+  /**
+   * Build a per-particle edge fade context for a region.
+   *
+   * This returns a context which keeps the region mask binary and applies an additional per-particle alpha multiplier derived from world-space distance to the nearest region boundary. This avoids visible banding artifacts that can occur when generating a soft region mask on 8-bit render targets.
+   *
+   * @param {PlaceableObject} placeable
+   * @param {number} edgeFadePercent - [0..1]
+   * @returns {{bandWorld:number, computeFade:(x:number,y:number)=>number}|null}
+   * @private
+   */
+  _buildPerParticleEdgeFadeContext(placeable, edgeFadePercent) {
+    const pct = Math.min(Math.max(Number(edgeFadePercent) || 0, 0), 1);
+    if (!(pct > 0)) return null;
+
+    const inrad = estimateRegionInradius(placeable);
+    const bandWorld = Math.max(1e-6, pct * (Number.isFinite(inrad) && inrad > 0 ? inrad : 0));
+    if (!(bandWorld > 0)) return null;
+
+    const shapes = placeable?.document?.shapes ?? [];
+    if (!Array.isArray(shapes) || shapes.length === 0) return null;
+
+    /** @type {Array<any>} */
+    const solids = [];
+    /** @type {Array<any>} */
+    const holes = [];
+
+    const toFlat = (pts) => {
+      if (!pts) return null;
+      if (Array.isArray(pts) && typeof pts[0] === "number") return pts.slice();
+      if (Array.isArray(pts) && typeof pts[0] === "object") {
+        const out = [];
+        for (const p of pts) {
+          if (!p) continue;
+          out.push(Number(p.x) || 0, Number(p.y) || 0);
+        }
+        return out;
+      }
+      return null;
+    };
+
+    const normalizeFlat = (flat) => {
+      if (!Array.isArray(flat) || flat.length < 6) return null;
+      const n = (flat.length / 2) | 0;
+      if (n < 3) return null;
+      const lx = flat[2 * (n - 1)];
+      const ly = flat[2 * (n - 1) + 1];
+      const closed = lx === flat[0] && ly === flat[1];
+      const m = closed ? n - 1 : n;
+      if (m < 3) return null;
+      return flat.slice(0, m * 2);
+    };
+
+    const centroidFlat = (flat) => {
+      const n = (flat.length / 2) | 0;
+      let sx = 0;
+      let sy = 0;
+      for (let i = 0; i < n; i++) {
+        sx += flat[2 * i];
+        sy += flat[2 * i + 1];
+      }
+      return { x: sx / n, y: sy / n };
+    };
+
+    const rotateFlat = (flat, cx, cy, rotRad) => {
+      if (!rotRad) return flat;
+      const c = Math.cos(rotRad);
+      const s = Math.sin(rotRad);
+      const out = flat.slice();
+      const n = (flat.length / 2) | 0;
+      for (let i = 0; i < n; i++) {
+        const x = out[2 * i] - cx;
+        const y = out[2 * i + 1] - cy;
+        out[2 * i] = cx + x * c - y * s;
+        out[2 * i + 1] = cy + x * s + y * c;
+      }
+      return out;
+    };
+
+    const buildPoly = (flat) => {
+      const pts = new Float32Array(flat);
+      const n = (pts.length / 2) | 0;
+      if (n < 3) return null;
+
+      /* Tight AABB for fast rejection and hole-distance lower bounds. */
+      let minX = Infinity,
+        minY = Infinity,
+        maxX = -Infinity,
+        maxY = -Infinity;
+      for (let i = 0; i < n; i++) {
+        const x = pts[2 * i];
+        const y = pts[2 * i + 1];
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+
+      /*
+       * Precompute per-edge data for fast point-to-segment distance.
+       * Layout per edge: [ax, ay, bx, by, abx, aby, invDenom]
+       */
+      const edges = new Float32Array(n * 7);
+      for (let i = 0; i < n; i++) {
+        const j = (i + n - 1) % n;
+        const ax = pts[2 * j];
+        const ay = pts[2 * j + 1];
+        const bx = pts[2 * i];
+        const by = pts[2 * i + 1];
+        const abx = bx - ax;
+        const aby = by - ay;
+        const denom = abx * abx + aby * aby;
+        const inv = denom > 1e-6 ? 1 / denom : 0;
+
+        const o = i * 7;
+        edges[o] = ax;
+        edges[o + 1] = ay;
+        edges[o + 2] = bx;
+        edges[o + 3] = by;
+        edges[o + 4] = abx;
+        edges[o + 5] = aby;
+        edges[o + 6] = inv;
+      }
+
+      return { kind: "poly", pts, edges, minX, minY, maxX, maxY };
+    };
+
+    const addPoly = (pts, hole, rotRad = 0) => {
+      let flat = normalizeFlat(toFlat(pts));
+      if (!flat) return;
+      if (rotRad) {
+        const c = centroidFlat(flat);
+        flat = rotateFlat(flat, c.x, c.y, rotRad);
+      }
+      const poly = buildPoly(flat);
+      if (!poly) return;
+      (hole ? holes : solids).push(poly);
+    };
+
+    const isEmptyShape = (s) => {
+      try {
+        if (typeof s?.isEmpty === "function") return !!s.isEmpty();
+        return !!s?.isEmpty;
+      } catch {
+        return false;
+      }
+    };
+
+    for (const s of shapes) {
+      if (!s) continue;
+      if (isEmptyShape(s)) continue;
+      const hole = !!s.hole;
+
+      if (Array.isArray(s?.polygons) && s.polygons.length) {
+        for (const poly of s.polygons) {
+          if (!poly) continue;
+          addPoly(poly?.points ?? poly, hole, 0);
+        }
+        continue;
+      }
+
+      const type = s?.type;
+      const rotRad = ((Number(s?.rotation) || 0) * Math.PI) / 180;
+
+      if (type === "rectangle") {
+        const x = Number(s.x) || 0;
+        const y = Number(s.y) || 0;
+        const w = Math.max(0, Number(s.width) || 0);
+        const h = Math.max(0, Number(s.height) || 0);
+        const cx = x + w / 2;
+        const cy = y + h / 2;
+        const c = Math.cos(rotRad);
+        const sn = Math.sin(rotRad);
+
+        /* Tight AABB for a rotated rectangle. */
+        const ex = Math.abs(c) * (w / 2) + Math.abs(sn) * (h / 2);
+        const ey = Math.abs(sn) * (w / 2) + Math.abs(c) * (h / 2);
+
+        (hole ? holes : solids).push({
+          kind: "rect",
+          cx,
+          cy,
+          hx: w / 2,
+          hy: h / 2,
+          c,
+          s: sn,
+          minX: cx - ex,
+          minY: cy - ey,
+          maxX: cx + ex,
+          maxY: cy + ey,
+        });
+        continue;
+      }
+
+      if (type === "ellipse" || type === "circle") {
+        const cx = Number(s.x) || 0;
+        const cy = Number(s.y) || 0;
+        const rx = Math.max(0, type === "circle" ? Number(s.radius) || 0 : Number(s.radiusX) || 0);
+        const ry = Math.max(0, type === "circle" ? Number(s.radius) || 0 : Number(s.radiusY) || 0);
+        const c = Math.cos(rotRad);
+        const sn = Math.sin(rotRad);
+
+        /* Tight AABB for a rotated ellipse. */
+        const ex = Math.sqrt(rx * c * (rx * c) + ry * sn * (ry * sn));
+        const ey = Math.sqrt(rx * sn * (rx * sn) + ry * c * (ry * c));
+
+        (hole ? holes : solids).push({
+          kind: "ellipse",
+          cx,
+          cy,
+          hx: rx,
+          hy: ry,
+          c,
+          s: sn,
+          minX: cx - ex,
+          minY: cy - ey,
+          maxX: cx + ex,
+          maxY: cy + ey,
+        });
+        continue;
+      }
+
+      if (type === "polygon") {
+        addPoly(s.points ?? [], hole, rotRad);
+        continue;
+      }
+
+      /* Fallback for unusual shapes: if it has a points array, treat it as a polygon. */
+      if (Array.isArray(s?.points) && s.points.length) {
+        addPoly(s.points, hole, rotRad);
+      }
+    }
+
+    if (!solids.length) return null;
+
+    const sdRect = (px, py, r) => {
+      /* Rotate by -rot using c=cos(rot), s=sin(rot). */
+      const dx = px - r.cx;
+      const dy = py - r.cy;
+      const x = r.c * dx + r.s * dy;
+      const y = -r.s * dx + r.c * dy;
+      const qx = Math.abs(x) - r.hx;
+      const qy = Math.abs(y) - r.hy;
+      const ox = Math.max(qx, 0);
+      const oy = Math.max(qy, 0);
+      const outside = Math.hypot(ox, oy);
+      const inside = Math.min(Math.max(qx, qy), 0);
+      return outside + inside;
+    };
+
+    const sdEllipse = (px, py, e) => {
+      const dx = px - e.cx;
+      const dy = py - e.cy;
+      const x = e.c * dx + e.s * dy;
+      const y = -e.s * dx + e.c * dy;
+      const hx = Math.max(1e-6, e.hx);
+      const hy = Math.max(1e-6, e.hy);
+      const nx = x / hx;
+      const ny = y / hy;
+      const r = Math.hypot(nx, ny);
+      const R = Math.max(hx, hy);
+      return (r - 1) * R;
+    };
+
+    const sdPoly = (px, py, poly) => {
+      const edges = poly.edges;
+      const n = (edges.length / 7) | 0;
+      if (n < 3) return 1e20;
+
+      let inside = false;
+      let dMin2 = 1e40;
+
+      for (let i = 0; i < n; i++) {
+        const o = i * 7;
+        const ax = edges[o];
+        const ay = edges[o + 1];
+        //const bx = edges[o + 2];
+        const by = edges[o + 3];
+        const abx = edges[o + 4];
+        const aby = edges[o + 5];
+        const inv = edges[o + 6];
+
+        /* Even-odd rule (ray cast on +X). */
+        const intersect = ay > py !== by > py && px < (abx * (py - ay)) / (by - ay + 1e-12) + ax;
+        if (intersect) inside = !inside;
+
+        /* Point-to-segment distance squared (one sqrt at the end). */
+        const dx = px - ax;
+        const dy = py - ay;
+        let t = inv > 0 ? (dx * abx + dy * aby) * inv : 0;
+        if (t < 0) t = 0;
+        else if (t > 1) t = 1;
+        const cx = dx - abx * t;
+        const cy = dy - aby * t;
+        const d2 = cx * cx + cy * cy;
+        if (d2 < dMin2) dMin2 = d2;
+      }
+
+      const d = Math.sqrt(dMin2);
+      return inside ? -d : d;
+    };
+
+    const shapeSd = (px, py, sh) => {
+      if (!sh) return 1e20;
+      if (sh.kind === "rect") return sdRect(px, py, sh);
+      if (sh.kind === "ellipse") return sdEllipse(px, py, sh);
+      if (sh.kind === "poly") return sdPoly(px, py, sh);
+      return 1e20;
+    };
+
+    const smooth01 = (t) => {
+      t = Math.min(1, Math.max(0, t));
+      return t * t * (3 - 2 * t);
+    };
+
+    const computeFade = (x, y) => {
+      /* Union of solids: inside-distance is max of per-shape inside distances. */
+      let insideSolid = 0;
+
+      for (const sh of solids) {
+        /* Fast AABB reject: if point is outside, it cannot be inside the shape. */
+        if (x < sh.minX || x > sh.maxX || y < sh.minY || y > sh.maxY) continue;
+
+        const sd = shapeSd(x, y, sh);
+        if (sd < 0) {
+          const d = -sd;
+          if (d > insideSolid) insideSolid = d;
+
+          /* Once at or beyond the fade band, additional precision is unnecessary. */
+          if (insideSolid >= bandWorld) {
+            insideSolid = bandWorld;
+            break;
+          }
+        }
+      }
+
+      if (!(insideSolid > 0)) return 0;
+
+      /* No holes: return directly (including early-out at full opacity). */
+      if (!holes.length) return insideSolid >= bandWorld ? 1 : smooth01(insideSolid / bandWorld);
+
+      /* Holes: nearest boundary can also be a hole boundary. */
+      let holeMin = Infinity;
+      let holeMin2 = Infinity;
+
+      for (const sh of holes) {
+        /*
+         * Lower-bound prune using AABB distance: if the AABB is already farther than the current best known hole distance, this hole cannot affect the result.
+         */
+        if (holeMin2 !== Infinity) {
+          let dx = 0;
+          if (x < sh.minX) dx = sh.minX - x;
+          else if (x > sh.maxX) dx = x - sh.maxX;
+
+          let dy = 0;
+          if (y < sh.minY) dy = sh.minY - y;
+          else if (y > sh.maxY) dy = y - sh.maxY;
+
+          const d2 = dx * dx + dy * dy;
+          if (d2 >= holeMin2) continue;
+        }
+
+        const sd = shapeSd(x, y, sh);
+        if (sd < 0) return 0;
+        if (sd < holeMin) {
+          holeMin = sd;
+          holeMin2 = sd * sd;
+
+          /* Cannot do better than zero; allow a small epsilon to stop scanning. */
+          if (holeMin <= 1e-6) break;
+        }
+      }
+
+      if (Number.isFinite(holeMin)) insideSolid = Math.min(insideSolid, holeMin);
+
+      /* Early-out: fully inside the fade band even after accounting for holes. */
+      if (insideSolid >= bandWorld) return 1;
+
+      return smooth01(insideSolid / bandWorld);
+    };
+
+    return { bandWorld, computeFade };
+  }
+
+  /**
+   * Wrap emitter updates to apply per-particle edge fade.
+   * @param {any} fx
+   * @param {{computeFade:(x:number,y:number)=>number}} ctx
+   * @private
+   */
+  _applyPerParticleEdgeFadeToEffect(fx, ctx) {
+    if (!fx || !ctx?.computeFade) return;
+
+    const emitters = fx.emitters ?? [];
+    for (const emitter of emitters) {
+      if (!emitter || emitter._fxmEdgeFadeWrapped) continue;
+
+      const origUpdate = emitter.update?.bind(emitter);
+      if (typeof origUpdate !== "function") continue;
+
+      emitter.update = (delta) => {
+        /* Restore unfaded alpha from the previous frame to prevent compounding. */
+        try {
+          fxmForEachEmitterParticle(emitter, (p) => {
+            const last = Number(p?._fxmEdgeFadeMul);
+            if (!Number.isFinite(last) || last === 1) return;
+
+            const base = p?._fxmEdgeFadeBaseAlpha;
+            if (typeof base === "number" && Number.isFinite(base)) {
+              p.alpha = base;
+            }
+          });
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+
+        origUpdate(delta);
+
+        try {
+          fxmForEachEmitterParticle(emitter, (p) => {
+            const a = Number(p?.alpha) || 0;
+            p._fxmEdgeFadeBaseAlpha = a;
+
+            /* PIXI particles expose numeric x/y values in world space. */
+            const x = typeof p?.x === "number" ? p.x : Number(p?.x) || 0;
+            const y = typeof p?.y === "number" ? p.y : Number(p?.y) || 0;
+
+            const f = ctx.computeFade(x, y);
+            p._fxmEdgeFadeMul = f;
+            p.alpha = a * f;
+          });
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+      };
+
+      emitter._fxmEdgeFadeWrapped = true;
+    }
   }
 
   _animate() {
@@ -865,7 +1561,9 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
 
     try {
       this._sanitizeSceneMasks();
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     if (this.regionEffects.size === 0) return;
 
@@ -886,17 +1584,19 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         if (this._regionBelowTokensNeeded) {
           try {
             SceneMaskManager.instance.refreshTokensSync?.();
-          } catch {}
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
           const tokensRT = SceneMaskManager.instance.getMasks?.("particles")?.tokens ?? null;
 
-          if (tokensRT) {
-            for (const [regionId, shared] of this._regionMaskRTs.entries()) {
-              if (!shared?.base || !shared?.cutout) continue;
-              const entries = this.regionEffects.get(regionId) ?? [];
-              const anyBelow = entries.some((e) => !!e?.fx?.__fxmBelowTokens);
-              if (!anyBelow) continue;
-              composeMaskMinusTokensRT(shared.base, tokensRT, { outRT: shared.cutout });
-            }
+          for (const [regionId, shared] of this._regionMaskRTs.entries()) {
+            if (!shared?.base || !shared?.cutout) continue;
+            const entries = this.regionEffects.get(regionId) ?? [];
+            const anyBelow = entries.some((e) => !!e?.fx?.__fxmBelowTokens);
+            if (!anyBelow) continue;
+
+            if (tokensRT) composeMaskMinusTokensRT(shared.base, tokensRT, { outRT: shared.cutout });
+            else composeMaskMinusTokens(shared.base, { outRT: shared.cutout });
           }
         }
       } catch (err) {
@@ -910,7 +1610,9 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         const reg = canvas.regions?.get(regionId);
         if (reg) this._applyElevationGate(reg);
       }
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
 
   applyElevationGateForAll() {
@@ -919,7 +1621,9 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         const reg = canvas.regions?.get(regionId);
         if (reg) this._applyElevationGate(reg);
       }
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
 
   _applyElevationGate(placeable, { force = false } = {}) {
@@ -945,10 +1649,14 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     for (const entry of entries) {
       try {
         if (entry?.container && entry.container.visible !== !!pass) entry.container.visible = !!pass;
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
       try {
         if (entry?.fx && "enabled" in entry.fx && entry.fx.enabled !== !!pass) entry.fx.enabled = !!pass;
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
     }
 
     this._gatePassCache.set(placeable.id, pass);
@@ -1015,20 +1723,28 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         if (!spr._texture || !spr._texture.orig) {
           try {
             spr.texture = safeMaskTexture(null);
-          } catch {}
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
         }
         if (!spr._texture || !spr._texture.orig) continue;
         try {
           spr.width = cssW;
           spr.height = cssH;
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
         try {
           applyMaskSpriteTransform(cont, spr);
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
         if (cont.mask !== spr) {
           try {
             cont.mask = spr;
-          } catch {}
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
         }
       }
     }
@@ -1055,7 +1771,9 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         if (bucket.mask === spr) {
           try {
             bucket.mask = null;
-          } catch {}
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
         }
         return;
       }
@@ -1068,7 +1786,9 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         if (bucket.mask === spr) {
           try {
             bucket.mask = null;
-          } catch {}
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
         }
         return;
       }
@@ -1080,19 +1800,25 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         if (bucket.mask === spr) {
           try {
             bucket.mask = null;
-          } catch {}
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
         }
         return;
       }
 
       try {
         applyMaskSpriteTransform(bucket, spr);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
 
       if (bucket.mask !== spr) {
         try {
           bucket.mask = spr;
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
       }
     };
 
@@ -1110,18 +1836,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
 
     if (!this.regionEffects?.size) return;
 
-    const L = this._lastRegionMaskMatrix;
-    const eps = 1e-4;
-    const changed =
-      !L ||
-      Math.abs(L.a - M.a) > eps ||
-      Math.abs(L.b - M.b) > eps ||
-      Math.abs(L.c - M.c) > eps ||
-      Math.abs(L.d - M.d) > eps ||
-      Math.abs(L.tx - M.tx) > eps ||
-      Math.abs(L.ty - M.ty) > eps;
-
-    if (!changed) return;
+    if (!cameraMatrixChanged(M, this._lastRegionMaskMatrix)) return;
 
     this._lastRegionMaskMatrix = { a: M.a, b: M.b, c: M.c, d: M.d, tx: M.tx, ty: M.ty };
 

@@ -184,14 +184,20 @@ export class FilterRegionBehaviorType extends foundry.data.regionBehaviors.Regio
    * @param {string} userId - The user performing the deletion.
    */
   async _onDelete(options, userId) {
+    const regionDoc = options?.parent ?? this.parent?.parent ?? null;
     await super._onDelete(options, userId);
-    const placeable = canvas.regions.get(this.parent?.parent?.id);
-    if (placeable) canvas.filtereffects?.drawRegionFilterEffects(placeable, { soft: false });
+    const placeable = regionDoc?.object ?? canvas.regions.get(regionDoc?.id);
+    const behaviorDocs = Array.from(regionDoc?.behaviors ?? []).filter((behavior) => behavior?.id !== this.id);
+    if (placeable) {
+      canvas.filtereffects?.drawRegionFilterEffects(placeable, {
+        soft: false,
+        behaviorDocs,
+      });
+    }
   }
 
   /**
-   * Collect enabled filters for this region, merge base filter parameters with
-   * region-only options, persist flags, and request redraw.
+   * Collect enabled filters for this region, merge base filter parameters with region-only options, persist flags, and request redraw.
    */
   async _applyFilters() {
     const system = this.toObject();

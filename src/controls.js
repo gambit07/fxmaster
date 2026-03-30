@@ -13,7 +13,7 @@ export function registerGetSceneControlButtonsHook() {
 function getSceneControlButtons(t) {
   if (!canvas) return;
 
-  const onEvent = foundry.utils.isNewerVersion(game.version, "13.0.0") ? "onChange" : "onClick";
+  const onEvent = game.release.generation >= 13 ? "onChange" : "onClick";
 
   let tools = {
     activation: {
@@ -22,7 +22,7 @@ function getSceneControlButtons(t) {
       icon: "fas fa-circle-info",
       toggle: true,
       [onEvent]: (_event, active) => {
-        if (!active && foundry.utils.isNewerVersion(game.version, "13.0.0")) return;
+        if (!active && game.release.generation >= 13) return;
         canvas.layers.find((l) => l.options.name === "specials")?.activate();
       },
       visible: true,
@@ -62,7 +62,7 @@ function getSceneControlButtons(t) {
       order: 10,
       button: true,
       [onEvent]: (_event, active) => {
-        if (!active && foundry.utils.isNewerVersion(game.version, "13.0.0")) return;
+        if (!active && game.release.generation >= 13) return;
         new SpecialEffectsManagement().render(true);
       },
       visible: true,
@@ -145,8 +145,7 @@ function getSceneControlButtons(t) {
     },
   };
 
-  if (!foundry.utils.isNewerVersion(game.version, "13.0.0"))
-    tools = Object.values(tools).sort((a, b) => a.order - b.order);
+  if (game.release.generation < 13) tools = Object.values(tools).sort((a, b) => a.order - b.order);
 
   const fxControl = {
     name: "effects",
@@ -160,7 +159,7 @@ function getSceneControlButtons(t) {
     layer: "specials",
   };
 
-  if (foundry.utils.isNewerVersion(game.version, "13.0.0")) {
+  if (game.release.generation >= 13) {
     t.effects = fxControl;
   } else {
     t.push(fxControl);

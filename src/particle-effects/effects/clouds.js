@@ -1,4 +1,5 @@
 import { FXMasterParticleEffect } from "./effect.js";
+import { logger } from "../../logger.js";
 
 /**
  * A full-screen particle effect which renders drifting clouds.
@@ -259,7 +260,9 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
         try {
           shadow.enabled = false;
           shadow.alpha = 0;
-        } catch {}
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
       }
     };
 
@@ -318,7 +321,9 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
       PIXI.Ticker.shared.remove(tick);
       try {
         r.off("resize", onResize);
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
 
       try {
         if (wrapper.filters) {
@@ -326,7 +331,9 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
           wrapper.filters = arr.length ? arr : null;
         }
         shadow.destroy?.();
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
 
       return origDestroy ? origDestroy(...args) : undefined;
     };

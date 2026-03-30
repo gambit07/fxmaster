@@ -1,6 +1,7 @@
-import { FXMasterFilterEffectMixin } from "./mixins/filter.js";
+import { FXMasterFilterEffectMixin, preprocessShader } from "./mixins/filter.js";
 import fragment from "./shaders/underwater.frag";
 import { MAX_EDGES } from "../../constants.js";
+import { logger } from "../../logger.js";
 
 /** Displacement map used to simulate moving water ripples. */
 const MAP_URL = "modules/fxmaster/assets/filter-effects/effects/underwater/displacement-map.webp";
@@ -23,24 +24,24 @@ export class UnderwaterFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
    * @param {string} [id] - Stable id for filter instances.
    */
   constructor(options = {}, id) {
-    super({}, id, PIXI.Filter.defaultVertex, fragment);
+    super({}, id, PIXI.Filter.defaultVertex, preprocessShader(fragment));
 
     const u = (this.uniforms ||= {});
     this.initMaskUniforms(u, { withStrength: true, strengthDefault: 1.0 });
     this.initFadeUniforms(u);
     this.initRegionFadeUniforms(u, { maxEdges: MAX_EDGES });
 
-    // CSS mapping
     this.ensureVec4Uniform("srcFrame", [0, 0, 1, 1]);
     this.ensureVec2Uniform("camFrac", [0, 0]);
     this.ensureVec4Uniform("outputFrame", [0, 0, 1, 1]);
 
-    // Displacement map & sampling controls
     const tex = PIXI.Texture.from(MAP_URL);
     try {
       tex.baseTexture.wrapMode = PIXI.WRAP_MODES.REPEAT;
       if (typeof PIXI.MIPMAP_MODES !== "undefined") tex.baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
     u.mapSampler = tex;
     u.mapScale = u.mapScale || new Float32Array([6.0, 6.0]);
     u.mapRepeat = u.mapRepeat || new Float32Array([1.0, 1.0]);
@@ -62,13 +63,15 @@ export class UnderwaterFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
           u.mapTexel = new Float32Array([1 / w, 1 / h]);
           this.#syncOffsetFromPhase();
         }
-      } catch {}
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
     };
     try {
       tex.baseTexture.valid ? setTexel() : tex.baseTexture.once?.("loaded", setTexel);
-    } catch {}
-
-    // Animation speed (CSS px per second mapped to uv step)
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
     this._speed = typeof this._speed === "number" ? this._speed : 30.0;
 
     super.configure(options);
@@ -164,7 +167,7 @@ export class UnderwaterFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   }
 
   /**
-   * PIXI.Filter hook: run the filter with FXMaster's lock and scene-rect area.
+   * Run the filter with FXMaster's lock and scene-rect area.
    * @param {PIXI.FilterSystem} filterSystem - Filter system.
    * @param {PIXI.RenderTexture} input - Input texture.
    * @param {PIXI.RenderTexture} output - Output texture.
@@ -180,8 +183,7 @@ export class UnderwaterFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   }
 
   /**
-   * Sync the displacement texture offset from the current phase,
-   * accounting for half-texel padding and wrap-safe ranges.
+   * Sync the displacement texture offset from the current phase, accounting for half-texel padding and wrap-safe ranges.
    * @private
    */
   #syncOffsetFromPhase() {

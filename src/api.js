@@ -27,14 +27,14 @@ const KEY_PREFIX = "apiPreset_";
 const ACTIVE_KEY_RE = /^apiPreset_(.+)_(?:p|f)\d+$/;
 
 /**
- * Resolve a Scene from a Scene or a Scene UUID.
+ * Resolve a Scene from a Scene document instance or a UUID string.
  *
- * Supported:
- * - Scene Instance
- * - UUID string (e.g. "Scene.abc123")
+ * Supported inputs:
+ * - A Scene document instance.
+ * - A UUID string (e.g. `"Scene.abc123"`).
  *
- * @param {any} sceneRef
- * @returns {any|null}
+ * @param {any} sceneRef - A Scene document or UUID string.
+ * @returns {any|null} The resolved Scene document, or `null`.
  */
 function resolveScene(sceneRef) {
   if (!sceneRef) return null;
@@ -920,8 +920,7 @@ export async function switchPreset(name, opts = {}) {
 }
 
 /**
- * Register this API onto the fxmaster module and global FXMASTER object.
- * Call during init.
+ * Register this API onto the fxmaster module and global FXMASTER object. Call during init.
  */
 export function registerPresetApi() {
   try {
@@ -947,7 +946,9 @@ export function registerPresetApi() {
       globalThis.FXMASTER ||= {};
       globalThis.FXMASTER.api ||= {};
       globalThis.FXMASTER.api.presets = mod.api.presets;
-    } catch {}
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   } catch (err) {
     logger.error("Failed to register preset API", err);
   }
