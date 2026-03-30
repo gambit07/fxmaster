@@ -1,5 +1,8 @@
 # Changelog
 
+## [v7.5.1] - 2026-03-30
+- Resolved a few missing localizations
+
 ## [v7.5.0] - 2026-03-30
 Welcome to FXMaster's 7.5 release! This release brings some updates to the masking pipeline to continue my V7+ efforts of allowing more naturalistic effects
 - Added new Edge Fade % parameter for Particle Region Behaviors! This is a region level option instead of Filters region per-effect level option, so any particle on a given region will receive the Edge Fade % parameter when set. This should allow for more realistic particles within a region shape, especially larger particles like clouds and fog (although smaller particles benefit as well).
