@@ -1,5 +1,11 @@
 # Changelog
 
+## [v7.5.2] - 2026-04-01
+- Official compatability with V14! (It was already compatible, but now with extra compatability)
+- Resolved Hail, Rain, and Snow Particle Effects not generating in regions correctly due to the wrong origin spawn
+- Updated pt-br localizations, thanks Kharmans!
+- Updated pl localizations, thanks Lioheart!
+
 ## [v7.5.1] - 2026-03-30
 - Resolved a few missing localizations
 
