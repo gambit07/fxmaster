@@ -1,1 +1,4 @@
-- Resolved a few missing localizations
+- Official compatability with V14! (It was already compatible, but now with extra compatability)
+- Resolved Hail, Rain, and Snow Particle Effects not generating in regions correctly due to the wrong origin spawn
+- Updated pt-br localizations, thanks Kharmans!
+- Updated pl localizations, thanks Lioheart!

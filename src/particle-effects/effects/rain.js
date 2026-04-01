@@ -186,13 +186,17 @@ export class RainParticleEffect extends FXMasterParticleEffect {
 
     rainConfig.frequency = 1 / maxParticles;
 
+    const ctx = options?.__fxmParticleContext ?? this.__fxmParticleContext;
+    const spawnX = (ctx ? d.sceneRect.x : 0) - 0.05 * d.width;
+    const spawnY = (ctx ? d.sceneRect.y : 0) - 0.1 * d.height;
+
     rainConfig.behaviors.push({
       type: "spawnShape",
       config: {
         type: "rect",
         data: {
-          x: -0.05 * d.width,
-          y: -0.1 * d.height,
+          x: spawnX,
+          y: spawnY,
           w: d.width,
           h: 0.8 * d.height,
         },
@@ -216,8 +220,8 @@ export class RainParticleEffect extends FXMasterParticleEffect {
         config: {
           type: "rect",
           data: {
-            x: 0,
-            y: 0.25 * d.height,
+            x: ctx ? d.sceneRect.x : 0,
+            y: (ctx ? d.sceneRect.y : 0) + 0.25 * d.height,
             w: d.width,
             h: 0.75 * d.height,
           },

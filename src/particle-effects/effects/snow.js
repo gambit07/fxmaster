@@ -129,11 +129,16 @@ export class SnowParticleEffect extends FXMasterParticleEffect {
 
     if (!topDown) {
       this._fxmCanvasPanOwnerPosEnabled = false;
+
+      const ctx = options?.__fxmParticleContext ?? this.__fxmParticleContext;
+      const spawnX = ctx ? d.sceneRect.x : 0;
+      const spawnY = (ctx ? d.sceneRect.y : 0) - 0.1 * d.height;
+
       config.behaviors.push({
         type: "spawnShape",
         config: {
           type: "rect",
-          data: { x: 0, y: -0.1 * d.height, w: d.width, h: d.height },
+          data: { x: spawnX, y: spawnY, w: d.width, h: d.height },
         },
       });
 
