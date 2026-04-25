@@ -5,7 +5,6 @@
   },
   "CONTROLS": {
     "Effects": "Sterowanie FXMaster",
-    "SpecialFX": "Efekty animacji",
     "ParticleEffects": "Efekty cząsteczkowe",
     "InvertMask": "Odwróć maskę efektu cząsteczkowego",
     "Filters": "Efekty filtrów",
@@ -19,7 +18,6 @@
       "FilterEffect": "Efekt filtru",
       "ParticleEffectsManagementTitle": "Zarządzanie efektami cząsteczkowymi",
       "FilterEffectsManagementTitle": "Zarządzanie efektami filtrów",
-      "SpecialEffectsManagementTitle": "Zarządzanie efektami animacji",
       "SaveChanges": "Zapisz zmiany",
       "EnableEffects": "Włącz efekty",
       "DisableAll": "Wyłącz efekty dla wszystkich",
@@ -31,14 +29,8 @@
       "ResetPassiveSuccess": "Parametry cząstek i filtra zostały pomyślnie zresetowane",
       "Yes": "Tak",
       "No": "Nie",
-      "Author": "Autor",
-      "Favorites": "Ulubione",
-      "Favorite": "Ulubiony",
       "Enable": "Włącz",
       "ErrorCannotFindEffect": "FXMaster | Nie znaleziono danych efektu.",
-      "TileCreated": "Nowy kafelek został utworzony dla efektu {effect}",
-      "PermissionCreate": "Użyj efektów specjalnych FXMaster",
-      "PermissionCreateHint": "Zezwól użytkownikom z wybraną rolą lub wyższą na korzystanie z efektów specjalnych FXMaster za pomocą elementów sterujących sceną.",
       "Environment": "Środowisko",
       "Interface": "Interfejs",
       "Music": "Muzyka",
@@ -50,8 +42,8 @@
       "HiddenEffectsHint": "Przełącz efekty, aby ukryć je z tej listy zarządzania (dla każdego użytkownika). Ukryte efekty nadal można włączyć za pośrednictwem API.",
       "ActiveEffectTooltip": "Obecnie aktywny",
       "HideEffectsTooltip": "Ukryte efekty: {count}",
-      "ApiEffects": "Efekty API",
-      "ApiEffectsManagementTitle": "Efekty API",
+      "ApiEffects": "Manage API Effects",
+      "ApiEffectsManagementTitle": "Manage API Effects",
       "ApiEffectsKind": "Rodzaj",
       "ApiEffectsName": "Nazwa",
       "ApiEffectsType": "Typ",
@@ -64,7 +56,8 @@
       "ApiEffectsEdit": "Edytuj",
       "ApiEffectsEditUnavailable": "Edytuj (niedostępne)",
       "ApiEffectEditorTitle": "Edytuj efekt API",
-      "ApiEffectMissing": "Ten efekt API nie istnieje już w tej scenie."
+      "ApiEffectMissing": "Ten efekt API nie istnieje już w tej scenie.",
+      "Unknown": "Unknown"
     },
     "Params": {
       "Saturation": "Saturacja",
@@ -234,7 +227,18 @@
       "VortexSpeed": "Szybkość wiru",
       "VortexDirection": "Kierunek wiru",
       "VortexStrength": "Siła wiru",
-      "VortexClockwise": "Obrót w prawo"
+      "VortexClockwise": "Obrót w prawo",
+      "BelowTiles": "Below Tiles",
+      "DarknessActivationRange": "Darkness Activation Range",
+      "DarknessActivationMinimum": "Darkness Minimum",
+      "DarknessActivationMaximum": "Darkness Maximum",
+      "BelowForeground": "Below Foreground",
+      "DarknessActivationMin": "Darkness Activation Min",
+      "DarknessActivationMax": "Darkness Activation Max",
+      "BlendMode": "Blend Mode",
+      "Levels": "Levels",
+      "AllLevels": "All Levels",
+      "DarknessActivationEnabled": "Darkness Activation"
     },
     "ParamTooltips": {
       "Saturation": "Intensywność koloru. 0 = skala szarości; 1 = oryginał; >1 = przesycone.",
@@ -383,7 +387,15 @@
       "VortexSpeed": "Prędkość ruchu wody w wirze. Im wyższa wartość, tym szybsze wirowanie.",
       "VortexDirection": "Kąt w stopniach służący do określenia kierunku przepływu wirowego.",
       "VortexStrength": "Siła odkształcenia wiru i zawirowania. Im wyższa wartość, tym silniejsze działanie siły obrotowej.",
-      "VortexClockwise": "Ustawia kierunek obrotu wiru. Włączone = zgodnie z ruchem wskazówek zegara; wyłączone = przeciwnie do ruchu wskazówek zegara."
+      "VortexClockwise": "Ustawia kierunek obrotu wiru. Włączone = zgodnie z ruchem wskazówek zegara; wyłączone = przeciwnie do ruchu wskazówek zegara.",
+      "BelowTiles": "Renders effects underneath tiles visually.",
+      "DarknessActivationRange": "Only render this effect when the current scene darkness level falls within the selected range.",
+      "BelowForeground": "Renders effects underneath the active foreground image visually.",
+      "DarknessActivationMin": "Minimum scene darkness level required for this effect to render.",
+      "DarknessActivationMax": "Maximum scene darkness level allowed for this effect to render.",
+      "BlendMode": "How the adjusted color result blends with the sampled scene color.",
+      "Levels": "Limit this scene effect to the selected scene levels. Leave it on All Levels to render everywhere.",
+      "DarknessActivationEnabled": "Enable scene darkness gating for this effect. When disabled, the effect renders at all darkness levels."
     },
     "Particles": {
       "Groups": {
@@ -526,48 +538,6 @@
         "AlwaysVisibleForGM": "Zawsze widoczne dla MG"
       }
     },
-    "AnimationEffect": {
-      "AllAnimations": "Wszystkie animacje",
-      "FilterHint": "Filtruj animacje według tagów. Jeśli są dostępne, zawierają nazwy dostawców modułów, tag niestandardowy dla folderu animacji dodanego przez użytkownika oraz tag Ulubione dla animacji dodanych do ulubionych.",
-      "Copied": "Skopiowano: {value}",
-      "CopyElement": "Kopiuj tekst do schowka",
-      "CustomDirectoryHint": "Ścieżka, w której znajdują się pliki .webm. Wymaga to odświeżenia bazy danych animacji.",
-      "CustomDirectoryName": "Folder animacji niestandardowych",
-      "FileName": "Nazwa pliku",
-      "FilePath": "Ścieżka pliku",
-      "ModuleLabel": {
-        "JB2APatreon": "JB2A Patreon",
-        "JB2AFree": "JB2A Free",
-        "JB2AExtras": "JB2A Extras",
-        "JinkersAnimatedArt": "Jinker's Animated Art",
-        "AnimatedSpellEffects": "Efekty animacji zaklęć",
-        "AnimatedSpellEffectsCartoon": "Efekty animacji zaklęć: Kreskówkowe",
-        "BossLootAssetsPremium": "Boss Loot Animated Assets Premium",
-        "BossLootAdventuresPremium": "Boss Loot Adventures Premium",
-        "BossLootAssetsFree": "Boss Loot Animated Assets Free",
-        "Custom": "Niestandardowe",
-        "WildMagicSurge": "Dzika fala magii",
-        "EskieEffectsFree": "Eskie Effects Free",
-        "EskieEffects": "Eskie Effects"
-      },
-      "RefreshDbHint": "Odbuduj bazę danych animacji, aby uwzględnić wszelkie nowo dodane lub usunięte animacje. Opcjonalne skanowanie miniatur.",
-      "RefreshDbName": "Odśwież animacje",
-      "RightClickForDetails": "Kliknij prawym przyciskiem myszy, aby wyświetlić szczegóły:",
-      "ScanComplete": "FXMaster | Skanowanie animacji zakończone!",
-      "ScanModules": "FXMaster | Skanowanie modułów animacji {current}/{total}...",
-      "ScanningThumbnails": "FXMaster | Skanowanie miniatur animacji...",
-      "ScanningThumbnailsProgress": "FXMaster | Skanowanie miniatur animacji {current}/{total}",
-      "ScanStart": "FXMaster | Rozpoczęcie skanowania animacji...",
-      "SearchAnimations": "Wyszukiwanie animacji",
-      "SearchQueries": "Obsługiwane zapytania zaawansowane, np.: (eldritch OR arrow) AND NOT blast",
-      "SequencerPath": "Ścieżka BD sekwencera",
-      "Update": "Aktualizuj efekt animacji",
-      "RefreshDbError": "FXMaster | Nie znaleziono efektów animacji w bazie FXMaster. Poczekaj na koniec bieżącego skanowania lub przejdź do „Ustawienia modułu → FXMaster → Odśwież bazę danych animacji”.",
-      "RefreshDbEmpty": "FXMaster | Brak efektów animacji w bazie. FXMaster pobiera je z Twojego folderu animacji lub od dostawców (JB2A, Boss Loot itd.). Jeśli je dodałeś, odśwież bazę w „Ustawienia modułu → FXMaster → Odśwież bazę danych animacji”.",
-      "ScanCompleteEmpty": "FXMaster | Skanowanie zakończone — nie znaleziono efektów animacji. Dodaj animacje i ponów odświeżenie.",
-      "Thumbnails": "Miniatury",
-      "ThumbnailsHint": "Umożliwia wyszukiwanie miniatur animacji podczas skanowania odświeżania animacji. Dostawcami animacji obsługującymi wyszukiwanie miniatur są JB2A i Eskie Effects."
-    },
     "SoundFX": {
       "ControlTitle": "Zarządzanie efektami dźwiękowymi",
       "ManagerTitle": "Menedżer efektów dźwiękowych",
@@ -634,6 +604,45 @@
       "Disabled": "Wyłączony",
       "UnnamedRule": "Nieznana reguła",
       "CurrentMode": "Tryb bieżący: {mode}"
+    },
+    "Layers": {
+      "Title": "Manage Layers",
+      "Order": "Order",
+      "Effect": "Effect",
+      "Source": "Source",
+      "Owner": "Owner",
+      "Actions": "Actions",
+      "Action": "Action",
+      "MoveUp": "Move up",
+      "MoveDown": "Move down",
+      "ResetOrder": "Reset order",
+      "Empty": "No enabled particle or filter effects were found.",
+      "KindParticle": "Particle",
+      "KindFilter": "Filter",
+      "SourceScene": "Scene",
+      "SourceApi": "API",
+      "SourceApiPreset": "API - Preset",
+      "SourceApiMacro": "API - Macro",
+      "SourceRegion": "Region",
+      "ScopeRegion": "Region",
+      "Level": "Level"
+    },
+    "RenderOrder": {
+      "BelowTiles": "Below Tiles"
+    },
+    "BlendModes": {
+      "Normal": "Normal",
+      "Multiply": "Multiply",
+      "Screen": "Screen",
+      "Overlay": "Overlay",
+      "SoftLight": "Soft Light",
+      "HardLight": "Hard Light",
+      "ColorDodge": "Color Dodge",
+      "ColorBurn": "Color Burn",
+      "Darken": "Darken",
+      "Lighten": "Lighten",
+      "Difference": "Difference",
+      "Exclusion": "Exclusion"
     }
   }
 }

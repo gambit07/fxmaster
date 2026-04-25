@@ -2,7 +2,7 @@ import fragment from "./shaders/fog.frag";
 import { MAX_EDGES } from "../../constants.js";
 import customVertex2D from "./shaders/custom-vertex-2d.vert";
 import { FXMasterFilterEffectMixin, preprocessShader } from "./mixins/filter.js";
-import { asFloat3 } from "../../utils.js";
+import { _belowTilesEnabled, _belowTokensEnabled, asFloat3 } from "../../utils.js";
 import { logger } from "../../logger.js";
 
 /**
@@ -54,6 +54,7 @@ export class FogFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   static get parameters() {
     return {
       belowTokens: { label: "FXMASTER.Params.BelowTokens", type: "checkbox", value: false },
+      belowTiles: { label: "FXMASTER.Params.BelowTiles", type: "checkbox", value: false },
       soundFxEnabled: { label: "FXMASTER.Params.SoundFxEnabled", type: "checkbox", value: false },
       color: {
         label: "FXMASTER.Params.Tint",
@@ -67,7 +68,7 @@ export class FogFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
         max: 5,
         min: 0,
         step: 0.1,
-        value: 0.1,
+        value: 0.2,
         skipInitialAnimation: true,
       },
       speed: {
@@ -184,8 +185,7 @@ export class FogFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   }
 
   /**
-   * Resolve tint color and enabled-flag from options.
-   * Accepts { value, apply } objects or raw hex strings.
+   * Resolve tint color and enabled-flag from options. Accepts { value, apply } objects or raw hex strings.
    * @param {object} [options={}] - Options payload.
    * @returns {{rgb:Float32Array|null,hasRGB:boolean,enabled:boolean|undefined}}
    * @private
@@ -241,8 +241,7 @@ export class FogFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   }
 
   /**
-   * Apply options to uniforms and state (mask, tint, scalars, fade).
-   * Preserves existing fade when not supplied.
+   * Apply options to uniforms and state (mask, tint, scalars, fade). Preserves existing fade when not supplied.
    * @param {object} [options=this.options] - Options payload.
    */
   applyOptions(options = this.options) {
@@ -259,7 +258,14 @@ export class FogFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
 
     if (options.belowTokens !== undefined) {
       try {
-        this.options.belowTokens = !!options.belowTokens;
+        this.options.belowTokens = _belowTokensEnabled(options.belowTokens);
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    }
+    if (options.belowTiles !== undefined) {
+      try {
+        this.options.belowTiles = _belowTilesEnabled(options.belowTiles);
       } catch (err) {
         logger.debug("FXMaster:", err);
       }
@@ -269,8 +275,7 @@ export class FogFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   }
 
   /**
-   * Configure the filter from options (tint, density/scale/speed, fades).
-   * Accepts hex, or { value, apply } for tint.
+   * Configure the filter from options (tint, density/scale/speed, fades). Accepts hex, or { value, apply } for tint.
    * @param {object} [options={}] - Options payload.
    */
   configure(options = {}) {
@@ -322,7 +327,8 @@ export class FogFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
    * @returns {void}
    */
   apply(filterManager, input, output, clear, currentState) {
-    (this.uniforms.filterMatrix ??= new PIXI.Matrix()).copyFrom(currentState.target.worldTransform).invert();
+    const targetMatrix = this.__fxmTargetWorldTransform ?? currentState?.target?.worldTransform ?? PIXI.Matrix.IDENTITY;
+    (this.uniforms.filterMatrix ??= new PIXI.Matrix()).copyFrom(targetMatrix).invert();
     return this.applyWithLock(filterManager, input, output, clear, currentState, { area: "sceneRect" });
   }
 }

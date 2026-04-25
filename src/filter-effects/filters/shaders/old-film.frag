@@ -1,4 +1,3 @@
-// SPDX-FileCopyrightText: 2025 Gambit
 
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
@@ -8,72 +7,60 @@ precision mediump float;
 precision mediump int;
 #endif
 
-uniform sampler2D uSampler;     // scene color
-uniform sampler2D maskSampler;  // region/suppression mask
+uniform sampler2D uSampler;     /** scene color */
+uniform sampler2D maskSampler;  /** region/suppression mask */
 
-// Mask RT size in CSS px
 uniform vec2  viewSize;
 
-// Pixi pipeline
-uniform vec4  inputSize;   // xy: input size in CSS px; zw: 1/size
-uniform vec4  outputFrame; // CSS px: (x,y,w,h) spanned by vTextureCoord
+uniform vec4  inputSize;   /** xy: input size in CSS px; zw: 1/size */
+uniform vec4  outputFrame; /** CSS px: (x,y,w,h) spanned by vTextureCoord */
 
-// CSS px: (stage unsnapped) - (stage snapped). Used to align with snapped-mask RTs.
 uniform vec2  camFrac;
 
-// Region-mask flags
 uniform float hasMask;
 uniform float maskReady;
-uniform float invertMask;  // 0/1
+uniform float invertMask;  /** 0/1 */
 uniform float maskSoft;
-uniform float strength;    // 0..1
+uniform float strength;    /** 0..1 */
 
-// Effect params
 uniform float time;
-uniform float noiseStrength; // 0..1
-uniform float sepiaAmount;   // 0..1
+uniform float noiseStrength; /** 0..1 */
+uniform float sepiaAmount;   /** 0..1 */
 
-// Newly exposed params
-uniform float noiseSize;      // ≥0, grain scale (1 == original)
-uniform float scratch;        // 0..1, line visibility
-uniform float scratchDensity; // 0..1, line frequency
+uniform float noiseSize;      /** ≥0, grain scale (1 == original) */
+uniform float scratch;        /** 0..1, line visibility */
+uniform float scratchDensity; /** 0..1, line frequency */
 
-// 0=polygon, 1=rect, 2=ellipse, -1=none
 uniform int   uRegionShape;
 uniform mat3  uCssToWorld;
 
-// Rect/Ellipse analytics
 uniform vec2  uCenter;
 uniform vec2  uHalfSize;
 uniform float uRotation;
 
-// Polygon SDF (absolute-width & inradius only)
 uniform sampler2D uSdf;
 uniform mat3  uUvFromWorld;
 uniform vec2  uSdfScaleOff;
 uniform float uSdfInsideMax;
 uniform vec2  uSdfTexel;
 
-// Absolute width (compat)
-uniform float uFadeWorld;   // world px
-uniform float uFadePx;      // CSS px
+uniform float uFadeWorld;   /** world px */
+uniform float uFadePx;      /** CSS px */
 
-// Percent mode
-uniform float uUsePct;      // 1 => use uFadePct
-uniform float uFadePct;     // 0..1
+uniform float uUsePct;      /** 1 => use uFadePct */
+uniform float uFadePct;     /** 0..1 */
 
-/* SDF-backed polygon % fades (used for multi-shape regions) */
-uniform float uUseSdf;        // 1 => use SDF for polygon % fades
+/** SDF-backed polygon % fades (used for multi-shape regions) */
+uniform float uUseSdf;        /** 1 => use SDF for polygon % fades */
 
-// Polygon edges (percent mode)
 #define MAX_EDGES 64
 uniform float uEdgeCount;
-uniform vec4  uEdges[MAX_EDGES]; // (Ax,Ay,Bx,By) world units
-uniform float uSmoothKWorld;     // world-px smoothing radius
+uniform vec4  uEdges[MAX_EDGES]; /** (Ax,Ay,Bx,By) world units */
+uniform float uSmoothKWorld;     /** world-px smoothing radius */
 
 varying vec2 vTextureCoord;
 
-/* -------- noise -------- */
+/** -------- noise -------- */
 float h2(vec2 p){ p=fract(p*vec2(0.1031,0.11369)); p+=dot(p,p+19.19); return fract(p.x*p.y); }
 vec2 rot(vec2 p){ const float c=0.956304756, s=0.292371705; return mat2(c,-s,s,c)*p; }
 vec3 Overlay(vec3 src, vec3 dst){
@@ -85,42 +72,35 @@ vec3 Overlay(vec3 src, vec3 dst){
 }
 const vec3 SEPIA_RGB = vec3(112.0/255.0, 66.0/255.0, 20.0/255.0);
 
-/* ---------------- main ---------------- */
+/** ---------------- main ---------------- */
 
-/* Shared region fade infrastructure */
+/** Shared region fade infrastructure */
 #include <region-fade-common>
 
 void main(){
   vec4 src = texture2D(uSampler, vTextureCoord);
 
-  // CSS px of the sampled screen point
   vec2 screenPx = outputFrame.xy + vTextureCoord * inputSize.xy;
   vec2 snapPx   = screenPx - camFrac;
 
-  // Region/suppression mask in screen pixels
   float inMask = src.a;
   if (hasMask > 0.5) {
     bool maskUsable = (maskReady > 0.5) &&
                       (viewSize.x >= 1.0) &&
                       (viewSize.y >= 1.0);
     if (maskUsable) {
-      // Scene masks are binary and should be stable across pan/zoom.
-      // Use screen-space sampling for scene (uRegionShape < 0), and snapped sampling for region masks.
       vec2 samplePx = (uRegionShape < 0) ? screenPx : snapPx;
 
-      // Sample at texel centers to reduce boundary jitter.
       vec2 maskPx = floor(samplePx) + 0.5;
       vec2 maskUV = clamp(maskPx / max(viewSize, vec2(1.0)), 0.0, 1.0);
       float a     = clamp(texture2D(maskSampler, maskUV).r, 0.0, 1.0);
 
-      // Hard step for scene allow-mask to avoid 1px seams; soft edge for region masks.
       float m     = (maskSoft > 0.5) ? a : ((uRegionShape < 0) ? step(0.5, a) : smoothstep(0.48, 0.52, a));
       if (invertMask > 0.5) m = 1.0 - m;
       inMask *= m;
     }
   }
 
-  // Per-pixel region fade (percent or absolute)
   float fadeEdge = 1.0;
   vec2  pW       = applyCssToWorld((uRegionShape < 0) ? screenPx : snapPx);
 
@@ -149,7 +129,6 @@ void main(){
     }
   }
 
-  // Grain basis (stable integer pixels) - scale by noiseSize
   float ns = max(noiseSize, 0.0001);
   vec2 pix = floor(screenPx / ns);
   vec2 q   = rot(pix);
@@ -167,7 +146,6 @@ void main(){
   float gate=step(0.40, gateRand);
   float n=(s1+s2+s3)/3.0; n*=gate; n = sign(n)*pow(abs(n), 0.35);
 
-  // Weight gated by region mask * fade
   float weight = clamp(inMask * (strength > 0.0 ? strength : 1.0) * fadeEdge, 0.0, 1.0);
 
   float baseStrength = mix(0.10, 0.18, h2(q + 211.0));

@@ -1,10 +1,12 @@
 import { packageId } from "./constants.js";
 import { FilterEffectsSceneManager } from "./filter-effects/filter-effects-scene-manager.js";
 import { ParticleEffectsManagement } from "./particle-effects/applications/particle-effects-management.js";
-import { SpecialEffectsManagement } from "./special-effects/applications/special-effects-management.js";
 import { FilterEffectsManagement } from "./filter-effects/applications/filter-effects-management.js";
 import { ApiEffectsManagement } from "./api-effects/applications/api-effects-management.js";
 import { saveParticleAndFilterEffectsAsMacro } from "./macro.js";
+import { FxLayersManagement } from "./stack/fx-layers-management.js";
+import { clearStoredEffectStack } from "./common/effect-stack.js";
+import { updateSceneControlHighlights } from "./utils.js";
 
 export function registerGetSceneControlButtonsHook() {
   Hooks.on("getSceneControlButtons", getSceneControlButtons);
@@ -13,18 +15,15 @@ export function registerGetSceneControlButtonsHook() {
 function getSceneControlButtons(t) {
   if (!canvas) return;
 
-  const onEvent = game.release.generation >= 13 ? "onChange" : "onClick";
+  const onEvent = "onChange";
 
-  let tools = {
+  const tools = {
     activation: {
       name: "activation",
       title: "CONTROLS.ToolsActive",
       icon: "fas fa-circle-info",
       toggle: true,
-      [onEvent]: (_event, active) => {
-        if (!active && game.release.generation >= 13) return;
-        canvas.layers.find((l) => l.options.name === "specials")?.activate();
-      },
+      [onEvent]: (_event, _active) => {},
       visible: true,
       order: 1,
     },
@@ -41,9 +40,18 @@ function getSceneControlButtons(t) {
       name: "api-effects",
       title: "FXMASTER.Common.ApiEffects",
       icon: "fas fa-plug",
-      order: 47,
+      order: 48,
       button: true,
       [onEvent]: () => new ApiEffectsManagement().render(true),
+      visible: game.user.isGM,
+    },
+    layers: {
+      name: "layers",
+      title: "FXMASTER.Layers.Title",
+      icon: "fas fa-layer-group",
+      order: 47,
+      button: true,
+      [onEvent]: () => new FxLayersManagement().render(true),
       visible: game.user.isGM,
     },
     "particle-effects": {
@@ -55,23 +63,11 @@ function getSceneControlButtons(t) {
       [onEvent]: (_event, _active) => new ParticleEffectsManagement().render(true),
       visible: game.user.isGM,
     },
-    specials: {
-      name: "specials",
-      title: "CONTROLS.SpecialFX",
-      icon: "fas fa-hat-wizard",
-      order: 10,
-      button: true,
-      [onEvent]: (_event, active) => {
-        if (!active && game.release.generation >= 13) return;
-        new SpecialEffectsManagement().render(true);
-      },
-      visible: true,
-    },
     save: {
       name: "save",
       title: "CONTROLS.SaveMacro",
       icon: "fas fa-floppy-disk",
-      order: 50,
+      order: 51,
       button: true,
       [onEvent]: () => saveParticleAndFilterEffectsAsMacro(),
       visible: game.user.isGM,
@@ -95,34 +91,13 @@ function getSceneControlButtons(t) {
               action: "yes",
               label: game.i18n.localize("FXMASTER.Common.Yes"),
               icon: "fas fa-check",
-              callback: () => {
-                if (canvas.scene) {
-                  FilterEffectsSceneManager.instance.removeAll();
-                  canvas.scene.unsetFlag(packageId, "effects");
+              callback: async () => {
+                if (!canvas.scene) return;
 
-                  const btnParticles = document.querySelector(`[data-tool="particle-effects"]`);
-                  btnParticles?.style?.removeProperty("background-color");
-                  btnParticles?.style?.removeProperty("border-color");
-                  const btnFilters = document.querySelector(`[data-tool="filters"]`);
-                  btnFilters?.style?.removeProperty("background-color");
-                  btnFilters?.style?.removeProperty("border-color");
-                  const btnApi = document.querySelector(`[data-tool="api-effects"]`);
-                  btnApi?.style?.removeProperty("background-color");
-                  btnApi?.style?.removeProperty("border-color");
-                  const btnControl =
-                    document.querySelector(`#scene-controls-layers button.control[data-control="effects"]`) ||
-                    document.querySelector(
-                      `#scene-controls-layers button[data-action="control"][data-control="effects"]`,
-                    ) ||
-                    document.querySelector(`button[data-action="control"][data-control="effects"]`) ||
-                    document.querySelector(`li.scene-control[data-control="effects"] button`) ||
-                    document.querySelector(`li.scene-control[data-control="effects"]`);
-                  const btnControlEl = btnControl?.matches?.("li")
-                    ? btnControl.querySelector?.("button") ?? btnControl
-                    : btnControl;
-                  btnControlEl?.style?.removeProperty("background-color");
-                  btnControlEl?.style?.removeProperty("border-color");
-                }
+                await FilterEffectsSceneManager.instance.removeAll();
+                await canvas.scene.unsetFlag(packageId, "effects");
+                await clearStoredEffectStack(canvas.scene);
+                updateSceneControlHighlights();
               },
               default: true,
             },
@@ -145,23 +120,17 @@ function getSceneControlButtons(t) {
     },
   };
 
-  if (game.release.generation < 13) tools = Object.values(tools).sort((a, b) => a.order - b.order);
-
   const fxControl = {
     name: "effects",
     title: "CONTROLS.Effects",
     icon: "fas fa-wand-magic-sparkles",
     [onEvent]: (_event, _active) => {},
-    visible: game.user.role >= game.settings.get(packageId, "permission-create"),
+    visible: game.user.isGM,
     order: 100,
-    tools: tools,
+    tools,
     activeTool: "activation",
-    layer: "specials",
+    layer: "particleeffects",
   };
 
-  if (game.release.generation >= 13) {
-    t.effects = fxControl;
-  } else {
-    t.push(fxControl);
-  }
+  t.effects = fxControl;
 }

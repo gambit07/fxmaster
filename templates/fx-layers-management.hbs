@@ -1,0 +1,65 @@
+<section class="fxmaster-layers-container{{#if showLevelsColumn}} fxmaster-layers-container--with-levels{{/if}}">
+  <div class="fxmaster-layers-header">
+    <div class="fxmaster-layers-col order">{{localize "FXMASTER.Layers.Order"}}</div>
+    <div class="fxmaster-layers-col effect">{{localize "FXMASTER.Layers.Effect"}}</div>
+    <div class="fxmaster-layers-col source">{{localize "FXMASTER.Layers.Source"}}</div>
+    <div class="fxmaster-layers-col owner">{{localize "FXMASTER.Layers.Owner"}}</div>
+    {{#if showLevelsColumn}}
+      <div class="fxmaster-layers-col level">{{localize "FXMASTER.Layers.Level"}}</div>
+    {{/if}}
+    <div class="fxmaster-layers-col actions">{{localize "FXMASTER.Layers.Actions"}}</div>
+  </div>
+
+  {{#if hasRows}}
+    {{#each rows as |row|}}
+      <div class="fxmaster-layers-row" data-uid="{{row.uid}}">
+        <div class="fxmaster-layers-order">{{row.position}}</div>
+
+        <div class="fxmaster-layers-effect" title="{{row.effectTypeLabel}}">
+          <span class="fxmaster-layers-effect-icon"><i class="{{row.icon}}"></i></span>
+          <div class="fxmaster-layers-effect-text">
+            <div class="fxmaster-layers-effect-name">{{row.label}}</div>
+            <div class="fxmaster-layers-effect-meta">{{row.kindLabel}} · {{row.effectType}}</div>
+          </div>
+        </div>
+
+        <div class="fxmaster-layers-source">{{row.scopeLabel}}</div>
+        <div class="fxmaster-layers-owner">{{row.ownerLabel}}</div>
+
+        {{#if ../showLevelsColumn}}
+          <div class="fxmaster-layers-level" title="{{row.levelTitle}}">
+            <span class="fxmaster-layers-level-primary">{{row.levelPrimary}}</span>
+            {{#if row.levelHasAdditional}}
+              <span class="fxmaster-layers-level-more" title="{{row.levelAdditionalTitle}}">...</span>
+            {{/if}}
+          </div>
+        {{/if}}
+
+        <div class="fxmaster-layers-actions">
+          <button
+            type="button"
+            class="fxmaster-layers-btn"
+            data-action="moveLayerUp"
+            data-uid="{{row.uid}}"
+            data-tooltip="{{localize 'FXMASTER.Layers.MoveUp'}}"
+            {{#unless row.canMoveUp}}disabled{{/unless}}
+          >
+            <i class="fas fa-arrow-up"></i>
+          </button>
+          <button
+            type="button"
+            class="fxmaster-layers-btn"
+            data-action="moveLayerDown"
+            data-uid="{{row.uid}}"
+            data-tooltip="{{localize 'FXMASTER.Layers.MoveDown'}}"
+            {{#unless row.canMoveDown}}disabled{{/unless}}
+          >
+            <i class="fas fa-arrow-down"></i>
+          </button>
+        </div>
+      </div>
+    {{/each}}
+  {{else}}
+    <div class="fxmaster-layers-empty">{{localize "FXMASTER.Layers.Empty"}}</div>
+  {{/if}}
+</section>

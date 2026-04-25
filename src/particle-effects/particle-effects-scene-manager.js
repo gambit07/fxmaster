@@ -1,6 +1,5 @@
 /**
- * FXMaster: Particle Scene Suppression Manager
- * Builds and applies a CSS-space allow-mask to scene-level particle containers.
+ * FXMaster: Particle Scene Suppression Manager Builds and applies a CSS-space allow-mask to scene-level particle containers.
  *
  * Container Masks Approach:
  * - SceneMaskManager produces two RTs for particles: { base, cutout }.
@@ -9,11 +8,11 @@
 
 import { logger } from "../logger.js";
 import { SceneMaskManager } from "../common/base-effects-scene-manager.js";
-import { coalesceNextFrame } from "../utils.js";
+import { _belowTilesEnabled, _belowTokensEnabled, coalesceNextFrame } from "../utils.js";
 
-/* ------------------------------------------------------------------ */
-/*  Shared helpers                                                     */
-/* ------------------------------------------------------------------ */
+/** ------------------------------------------------------------------ */
+/**  Shared helpers                                                     */
+/** ------------------------------------------------------------------ */
 
 /**
  * Gather all live and dying scene-level particle effects from a layer.
@@ -49,21 +48,32 @@ function _collectEffects(layer) {
  * @private
  */
 function _anyBelowTokens(allFx) {
-  return allFx.some((fx) => {
-    const bt = fx?._fxmOptsCache?.belowTokens ?? fx?.options?.belowTokens ?? fx?.__fxmBelowTokens;
-    if (bt && typeof bt === "object" && "value" in bt) return bt.value === true;
-    return bt === true;
-  });
+  return allFx.some((fx) =>
+    _belowTokensEnabled(fx?.__fxmBelowTokens ?? fx?._fxmOptsCache?.belowTokens ?? fx?.options?.belowTokens),
+  );
 }
 
 /**
- * Core determine needs - configure SceneMaskManager - apply textures pipeline shared by both the synchronous and coalesced code paths.
+ * Determine whether any effect in a combined list has the `belowTiles` option enabled.
+ *
+ * @param {object[]} allFx - Combined live + dying effects.
+ * @returns {boolean}
+ * @private
+ */
+function _anyBelowTiles(allFx) {
+  return allFx.some((fx) =>
+    _belowTilesEnabled(fx?.__fxmBelowTiles ?? fx?._fxmOptsCache?.belowTiles ?? fx?.options?.belowTiles),
+  );
+}
+
+/**
+ * Compute scene particle mask requirements, configure {@link SceneMaskManager}, and bind the resulting textures.
+ *
+ * The base scene-allow mask remains active whenever any scene particle runtime exists so the global compositor preserves the same scene clipping that the live canvas layer previously inherited from its parent mask.
  *
  * @param {object} layer - The ParticleEffectsLayer instance.
  * @param {{syncRefresh?: boolean}} [opts]
- * @returns {{needsMasking: boolean, anyBelow: boolean}} The computed state,
- *   so callers that need to perform additional work (e.g. async refresh) can
- *   branch on it.
+ * @returns {{needsMasking: boolean, anyBelow: boolean}} The computed state, so callers that need to perform additional work (e.g. async refresh) can branch on it.
  * @private
  */
 function _applySuppressionMasks(layer, { syncRefresh = true } = {}) {
@@ -73,12 +83,18 @@ function _applySuppressionMasks(layer, { syncRefresh = true } = {}) {
   if (!hasAny) {
     try {
       SceneMaskManager.instance.setBelowTokensNeeded?.("particles", false);
+      SceneMaskManager.instance.setBelowTilesNeeded?.("particles", false);
       SceneMaskManager.instance.setKindActive?.("particles", false);
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
     try {
-      layer.setSceneMaskTextures?.({ base: null, cutout: null });
+      layer.setSceneMaskTextures?.({
+        base: null,
+        cutoutTokens: null,
+        cutoutTiles: null,
+        cutoutCombined: null,
+      });
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
@@ -87,35 +103,50 @@ function _applySuppressionMasks(layer, { syncRefresh = true } = {}) {
 
   const allFx = [...liveFx, ...dyingFx];
   const anyBelow = _anyBelowTokens(allFx);
+  const anyBelowTiles = _anyBelowTiles(allFx);
   const hasSuppression = !!SceneMaskManager.instance.hasSuppressionRegions?.("particles");
-  const needsMasking = anyBelow || hasSuppression;
+
+  /**
+   * Plain scene particles no longer need a compositor-owned scene allow-mask just to remain scene-bounded. The final compositor output is already clipped to the visible scene area, so keeping a second, snapped scene mask active for simple scene particles only introduces camera-edge drift while panning.
+   *
+   * Keep the scene mask pipeline active only when it is actually needed for suppression or below-object cutouts.
+   */
+  const needsMasking = hasSuppression || anyBelow || anyBelowTiles;
+
+  if (!needsMasking) {
+    try {
+      SceneMaskManager.instance.setBelowTokensNeeded?.("particles", false);
+      SceneMaskManager.instance.setBelowTilesNeeded?.("particles", false);
+      SceneMaskManager.instance.setKindActive?.("particles", false);
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    try {
+      layer.setSceneMaskTextures?.({
+        base: null,
+        cutoutTokens: null,
+        cutoutTiles: null,
+        cutoutCombined: null,
+      });
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    return { needsMasking: false, anyBelow: false, anyBelowTiles: false };
+  }
 
   try {
-    SceneMaskManager.instance.setKindActive?.("particles", needsMasking);
+    SceneMaskManager.instance.setKindActive?.("particles", true);
     SceneMaskManager.instance.setBelowTokensNeeded?.("particles", anyBelow);
+    SceneMaskManager.instance.setBelowTilesNeeded?.("particles", anyBelowTiles);
   } catch (err) {
     logger.debug("FXMaster:", err);
   }
 
-  if (!needsMasking) {
-    try {
-      layer.setSceneMaskTextures?.({ base: null, cutout: null });
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
-    try {
-      layer._sanitizeSceneMasks?.();
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
-    return { needsMasking: false, anyBelow };
-  }
-
   if (syncRefresh) {
-    _refreshAndBind(layer, anyBelow);
+    _refreshAndBind(layer, anyBelow, anyBelowTiles);
   }
 
-  return { needsMasking, anyBelow };
+  return { needsMasking, anyBelow, anyBelowTiles };
 }
 
 /**
@@ -123,10 +154,11 @@ function _applySuppressionMasks(layer, { syncRefresh = true } = {}) {
  *
  * @param {object} layer - The ParticleEffectsLayer instance.
  * @param {boolean} anyBelow - Whether any effect needs belowTokens masking.
+ * @param {boolean} anyBelowTiles - Whether any effect needs belowTiles masking.
  * @private
  */
-function _refreshAndBind(layer, anyBelow) {
-  let { base, cutout } = SceneMaskManager.instance.getMasks("particles");
+function _refreshAndBind(layer, anyBelow, anyBelowTiles) {
+  let { base, cutoutTokens, cutoutTiles, cutoutCombined } = SceneMaskManager.instance.getMasks("particles");
 
   if (!base || base.destroyed) {
     try {
@@ -134,12 +166,17 @@ function _refreshAndBind(layer, anyBelow) {
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
-    ({ base, cutout } = SceneMaskManager.instance.getMasks("particles"));
+    ({ base, cutoutTokens, cutoutTiles, cutoutCombined } = SceneMaskManager.instance.getMasks("particles"));
   }
 
   if (!base || base.destroyed) {
     try {
-      layer.setSceneMaskTextures?.({ base: null, cutout: null });
+      layer.setSceneMaskTextures?.({
+        base: null,
+        cutoutTokens: null,
+        cutoutTiles: null,
+        cutoutCombined: null,
+      });
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
@@ -153,7 +190,12 @@ function _refreshAndBind(layer, anyBelow) {
   }
 
   try {
-    layer.setSceneMaskTextures?.({ base, cutout: anyBelow ? cutout : null });
+    layer.setSceneMaskTextures?.({
+      base,
+      cutoutTokens: anyBelow ? cutoutTokens : null,
+      cutoutTiles: anyBelowTiles ? cutoutTiles : null,
+      cutoutCombined: anyBelow && anyBelowTiles ? cutoutCombined : null,
+    });
   } catch (err) {
     logger.debug("FXMaster:", err);
   }
@@ -165,9 +207,9 @@ function _refreshAndBind(layer, anyBelow) {
   }
 }
 
-/* ------------------------------------------------------------------ */
-/*  Coalesced (deferred) path                                          */
-/* ------------------------------------------------------------------ */
+/** ------------------------------------------------------------------ */
+/**  Coalesced (deferred) path                                          */
+/** ------------------------------------------------------------------ */
 
 /**
  * Apply particle scene suppression masks on the next animation frame.
@@ -191,8 +233,7 @@ const applySceneParticleMasksNextFrame = coalesceNextFrame(
 /**
  * Recompute and attach suppression masks for scene-level particles.
  *
- * When `sync` is `false` and the situation does not require an immediate refresh, the heavy work is deferred to the next animation frame via {@link applySceneParticleMasksNextFrame}.
- * Suppression-active scenes use the synchronous path so the scene allow-mask and region masks stay in lockstep while the camera moves.
+ * When `sync` is `false` and the situation does not require an immediate refresh, the heavy work is deferred to the next animation frame via {@link applySceneParticleMasksNextFrame}. Suppression-active scenes use the synchronous path so the scene allow-mask and region masks stay in lockstep while the camera moves.
  *
  * @param {{sync?: boolean}} [opts]
  */
@@ -203,13 +244,13 @@ export function refreshSceneParticlesSuppressionMasks({ sync = false } = {}) {
 
     layer._dyingSceneEffects ??= new Set();
 
-    const { needsMasking, anyBelow } = _applySuppressionMasks(layer, { syncRefresh: false });
+    const { needsMasking, anyBelow, anyBelowTiles } = _applySuppressionMasks(layer, { syncRefresh: false });
     if (!needsMasking) return;
 
     const r = canvas?.app?.renderer;
     const hiDpi = (r?.resolution ?? window.devicePixelRatio ?? 1) !== 1;
     const hasSuppression = !!SceneMaskManager.instance.hasSuppressionRegions?.("particles");
-    const wantSync = sync || hasSuppression || (anyBelow && hiDpi);
+    const wantSync = sync || hasSuppression || ((anyBelow || anyBelowTiles) && hiDpi);
 
     if (wantSync) {
       try {
@@ -217,7 +258,7 @@ export function refreshSceneParticlesSuppressionMasks({ sync = false } = {}) {
       } catch (err) {
         logger.debug("FXMaster:", err);
       }
-      _refreshAndBind(layer, anyBelow);
+      _refreshAndBind(layer, anyBelow, anyBelowTiles);
     } else {
       try {
         SceneMaskManager.instance.refresh("particles");

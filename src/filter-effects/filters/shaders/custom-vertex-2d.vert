@@ -1,6 +1,3 @@
-// SPDX-FileCopyrightText: 2022 Johannes Loher
-// SPDX-FileCopyrightText: 2025 Gambit
-// SPDX-License-Identifier: BSD-3-Clause
 
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
@@ -30,15 +27,11 @@ varying vec2 vFilterCoord;
  * - Projects to clip space using `projectionMatrix`.
  */
 void main(void) {
-  // vTextureCoord in the input (scene) texture UV space
   vTextureCoord = aVertexPosition * (outputFrame.zw * inputSize.zw);
 
-  // Position in screen space for this pass (device px in Pixi’s filter pipeline)
   vec2 position = aVertexPosition * max(outputFrame.zw, vec2(0.0)) + outputFrame.xy;
 
-  // World-anchored coord used by some effects (e.g., fog), via filterMatrix
   vFilterCoord = (filterMatrix * vec3(position, 1.0)).xy;
 
-  // Final clip-space position
   gl_Position = vec4((projectionMatrix * vec3(position, 1.0)).xy, 0.0, 1.0);
 }

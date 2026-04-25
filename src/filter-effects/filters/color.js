@@ -1,8 +1,49 @@
 import { FXMasterFilterEffectMixin, preprocessShader } from "./mixins/filter.js";
 import fragment from "./shaders/color.frag";
 import { MAX_EDGES } from "../../constants.js";
-import { clampMin, clampNonNeg, asFloat3 } from "../../utils.js";
+import { _belowTilesEnabled, _belowTokensEnabled, clampMin, clampNonNeg, asFloat3 } from "../../utils.js";
 import { logger } from "../../logger.js";
+
+const COLOR_BLEND_MODE_VALUES = Object.freeze({
+  normal: 0,
+  multiply: 1,
+  screen: 2,
+  overlay: 3,
+  softLight: 4,
+  hardLight: 5,
+  colorDodge: 6,
+  colorBurn: 7,
+  darken: 8,
+  lighten: 9,
+  difference: 10,
+  exclusion: 11,
+});
+
+const COLOR_BLEND_MODE_OPTIONS = Object.freeze({
+  normal: "FXMASTER.BlendModes.Normal",
+  multiply: "FXMASTER.BlendModes.Multiply",
+  screen: "FXMASTER.BlendModes.Screen",
+  overlay: "FXMASTER.BlendModes.Overlay",
+  softLight: "FXMASTER.BlendModes.SoftLight",
+  hardLight: "FXMASTER.BlendModes.HardLight",
+  colorDodge: "FXMASTER.BlendModes.ColorDodge",
+  colorBurn: "FXMASTER.BlendModes.ColorBurn",
+  darken: "FXMASTER.BlendModes.Darken",
+  lighten: "FXMASTER.BlendModes.Lighten",
+  difference: "FXMASTER.BlendModes.Difference",
+  exclusion: "FXMASTER.BlendModes.Exclusion",
+});
+
+/**
+ * Normalize a configured Color filter blend-mode key.
+ *
+ * @param {string|null|undefined} value
+ * @returns {keyof typeof COLOR_BLEND_MODE_VALUES}
+ */
+function normalizeColorBlendMode(value) {
+  const key = String(value ?? "normal").trim();
+  return Object.prototype.hasOwnProperty.call(COLOR_BLEND_MODE_VALUES, key) ? key : "normal";
+}
 
 /**
  * ColorFilter
@@ -45,6 +86,7 @@ export class ColorFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
     u.contrast = typeof u.contrast === "number" ? u.contrast : 1.0;
     u.saturation = typeof u.saturation === "number" ? u.saturation : 1.0;
     u.gamma = typeof u.gamma === "number" ? u.gamma : 1.0;
+    u.blendMode = typeof u.blendMode === "number" ? u.blendMode | 0 : COLOR_BLEND_MODE_VALUES.normal;
 
     this._tintRGB = asFloat3([1, 1, 1]);
     this._tintEnabled = false;
@@ -65,12 +107,20 @@ export class ColorFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   static get parameters() {
     return {
       belowTokens: { label: "FXMASTER.Params.BelowTokens", type: "checkbox", value: false },
+      belowTiles: { label: "FXMASTER.Params.BelowTiles", type: "checkbox", value: false },
       soundFxEnabled: { label: "FXMASTER.Params.SoundFxEnabled", type: "checkbox", value: false },
       color: {
         label: "FXMASTER.Params.Tint",
         type: "color",
         value: { value: "#ffffff", apply: false },
         skipInitialAnimation: true,
+      },
+      blendMode: {
+        label: "FXMASTER.Params.BlendMode",
+        type: "select",
+        value: "normal",
+        options: COLOR_BLEND_MODE_OPTIONS,
+        tooltip: "FXMASTER.ParamTooltips.BlendMode",
       },
       saturation: { label: "FXMASTER.Params.Saturation", type: "range", max: 2.0, min: 0.0, step: 0.1, value: 1.0 },
       contrast: { label: "FXMASTER.Params.Contrast", type: "range", max: 2.0, min: 0.0, step: 0.1, value: 1.0 },
@@ -84,7 +134,7 @@ export class ColorFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
    * @returns {{saturation:number,contrast:number,brightness:number,gamma:number,fadePercent:number}}
    */
   static get neutral() {
-    return { saturation: 1, contrast: 1, brightness: 1, gamma: 1, fadePercent: 0 };
+    return { saturation: 1, contrast: 1, brightness: 1, gamma: 1, fadePercent: 0, blendMode: "normal" };
   }
 
   /**
@@ -181,9 +231,24 @@ export class ColorFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
     this._setUniform("gamma", clampMin(Number(v), 0.0001));
   }
 
+  /** @returns {string} Color blend mode key. */ get blendMode() {
+    try {
+      const current = Number(this.uniforms.blendMode) | 0;
+      for (const [key, value] of Object.entries(COLOR_BLEND_MODE_VALUES)) {
+        if (value === current) return key;
+      }
+    } catch {
+      return "normal";
+    }
+    return "normal";
+  }
+  /** @param {string} v */ set blendMode(v) {
+    const key = normalizeColorBlendMode(v);
+    this._setUniform("blendMode", COLOR_BLEND_MODE_VALUES[key]);
+  }
+
   /**
-   * Resolve tint color and enabled-flag from options.
-   * Accepts { value, apply } objects or raw hex strings.
+   * Resolve tint color and enabled-flag from options. Accepts { value, apply } objects or raw hex strings.
    * @param {object} [options={}] - Options payload.
    * @returns {{rgb:Float32Array|null,hasRGB:boolean,enabled:boolean|undefined}}
    * @private
@@ -236,8 +301,7 @@ export class ColorFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   }
 
   /**
-   * Apply options to uniforms and state (mask, tint, scalars, fade).
-   * Preserves existing fade when not supplied.
+   * Apply options to uniforms and state (mask, tint, scalars, fade). Preserves existing fade when not supplied.
    * @param {object} [options=this.options] - Options payload.
    */
   applyOptions(options = this.options) {
@@ -255,7 +319,14 @@ export class ColorFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
 
     if (options.belowTokens !== undefined) {
       try {
-        this.options.belowTokens = !!options.belowTokens;
+        this.options.belowTokens = _belowTokensEnabled(options.belowTokens);
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    }
+    if (options.belowTiles !== undefined) {
+      try {
+        this.options.belowTiles = _belowTilesEnabled(options.belowTiles);
       } catch (err) {
         logger.debug("FXMaster:", err);
       }

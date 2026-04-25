@@ -1,8 +1,7 @@
 /**
  * FXMaster: Region & Behavior Hooks
  *
- * Registers Foundry hooks for region and region-behavior CRUD events.
- * Handles particle and filter effect drawing, suppression mask updates, and the FXMaster-specific switchParticleEffect and updateParticleEffects hooks.
+ * Registers Foundry hooks for region and region-behavior CRUD events. Handles particle and filter effect drawing, suppression mask updates, and the FXMaster-specific switchParticleEffect and updateParticleEffects hooks.
  *
  * @module hooks/region-hooks
  */
@@ -96,8 +95,7 @@ function refreshRegionEffects(placeable) {
 /**
  * Rebuild or destroy region-scoped effects using the region document supplied by the current behavior hook payload.
  *
- * Behavior CRUD hooks can observe a newer region document than the Region placeable.
- * Passing the hook document's behavior set into the draw routines keeps redraw decisions aligned with the update that triggered the hook.
+ * Behavior CRUD hooks can observe a newer region document than the Region placeable. Passing the hook document's behavior set into the draw routines keeps redraw decisions aligned with the update that triggered the hook.
  *
  * @param {foundry.documents.RegionDocument|object|null} regionDoc
  * @returns {void}
@@ -161,8 +159,7 @@ function isFxmasterBehaviorDrivenRegionUpdate(changed = {}) {
 /**
  * Refresh scene-suppression masks for a behavior type.
  *
- * RegionBehavior CRUD can observe a newer region document than the live Region placeable tree.
- * Deferring the suppression refresh allows the placeable-backed suppression scan to see the completed add, update, or delete.
+ * RegionBehavior CRUD can observe a newer region document than the live Region placeable tree. Deferring the suppression refresh allows the placeable-backed suppression scan to see the completed add, update, or delete.
  *
  * @param {string|null|undefined} type
  * @param {object} ctx
@@ -234,6 +231,7 @@ export function registerRegionHooks(ctx) {
     syncRegionScopedEffects(regionDoc);
     ctx.requestSceneParticlesSuppressionRefresh();
     ctx.requestFilterSuppressionRefresh();
+    ctx.scheduleOpenWindowsRefresh();
   });
 
   Hooks.on("deleteRegion", (regionDoc) => {
@@ -252,6 +250,7 @@ export function registerRegionHooks(ctx) {
 
     ctx.requestSceneParticlesSuppressionRefresh();
     ctx.requestFilterSuppressionRefresh();
+    ctx.scheduleOpenWindowsRefresh();
   });
 
   Hooks.on("updateRegion", (regionDoc, changed) => {
@@ -275,6 +274,7 @@ export function registerRegionHooks(ctx) {
 
     ctx.requestSceneParticlesSuppressionRefresh();
     ctx.requestFilterSuppressionRefresh();
+    ctx.scheduleOpenWindowsRefresh();
   });
 
   Hooks.on("refreshRegion", (placeable) => {
@@ -293,6 +293,7 @@ export function registerRegionHooks(ctx) {
       const behaviorDocs = buildBehaviorHookSnapshot(regionDoc, behaviorDoc);
       syncRegionScopedEffects(regionDoc, { behaviorDocs });
       requestDeferredRegionScopedEffectsSync(regionDoc.id);
+      ctx.scheduleOpenWindowsRefresh();
     }
   });
 
@@ -307,6 +308,7 @@ export function registerRegionHooks(ctx) {
       const behaviorDocs = buildBehaviorHookSnapshot(regionDoc, behaviorDoc);
       syncRegionScopedEffects(regionDoc, { behaviorDocs });
       requestDeferredRegionScopedEffectsSync(regionDoc.id);
+      ctx.scheduleOpenWindowsRefresh();
     }
   });
 
@@ -321,6 +323,7 @@ export function registerRegionHooks(ctx) {
       const behaviorDocs = buildBehaviorHookSnapshot(regionDoc, behaviorDoc, { deleted: true });
       syncRegionScopedEffects(regionDoc, { behaviorDocs });
       requestDeferredRegionScopedEffectsSync(regionDoc.id);
+      ctx.scheduleOpenWindowsRefresh();
     }
   });
 }

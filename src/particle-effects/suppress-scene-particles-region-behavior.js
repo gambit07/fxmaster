@@ -3,7 +3,6 @@ import { packageId } from "../constants.js";
 
 /**
  * Region behavior that suppresses scene-level Particle Effects within its area.
- *
  */
 export class SuppressSceneParticlesBehaviorType extends foundry.data.regionBehaviors.RegionBehaviorType {
   static LOCALIZATION_PREFIXES = ["FXMASTER.Regions.SuppressSceneParticles"];
@@ -83,7 +82,7 @@ export class SuppressSceneParticlesBehaviorType extends foundry.data.regionBehav
 
       const gmAlwaysVisible = !!system._elev_gmAlwaysVisible;
       const prevGM = !!this.parent.getFlag(packageId, "gmAlwaysVisible");
-      if (gmAlwaysVisible !== prevGM) {
+      if (gmAlwaysVisible !== prevGM && game.user.isGM) {
         if (gmAlwaysVisible) await this.parent.setFlag(packageId, "gmAlwaysVisible", true);
         else await this.parent.unsetFlag(packageId, "gmAlwaysVisible");
         changedAny = true;
@@ -91,7 +90,7 @@ export class SuppressSceneParticlesBehaviorType extends foundry.data.regionBehav
 
       const gateMode = system._elev_gateMode ?? "none";
       const prevGate = this.parent.getFlag(packageId, "gateMode") ?? "none";
-      if (gateMode !== prevGate) {
+      if (gateMode !== prevGate && game.user.isGM) {
         if (gateMode && gateMode !== "none") await this.parent.setFlag(packageId, "gateMode", gateMode);
         else await this.parent.unsetFlag(packageId, "gateMode");
         changedAny = true;
@@ -104,11 +103,11 @@ export class SuppressSceneParticlesBehaviorType extends foundry.data.regionBehav
         const prevArr = Array.isArray(prevTargets) ? prevTargets : prevTargets ? [prevTargets] : [];
         const eq = prevArr.length === nextTargets.length && nextTargets.every((t) => prevArr.includes(t));
 
-        if (!eq) {
+        if (!eq && game.user.isGM) {
           await resetFlag(this.parent, "tokenTargets", nextTargets);
           changedAny = true;
         }
-      } else {
+      } else if (game.user.isGM) {
         if (this.parent.getFlag(packageId, "tokenTargets") != null) {
           await this.parent.unsetFlag(packageId, "tokenTargets");
           changedAny = true;
@@ -117,7 +116,7 @@ export class SuppressSceneParticlesBehaviorType extends foundry.data.regionBehav
 
       const nextFade = Math.min(Math.max(Number(system._edgeFadePercent) || 0, 0), 1);
       const prevFade = Math.min(Math.max(Number(this.parent.getFlag(packageId, "edgeFadePercent")) || 0, 0), 1);
-      if (nextFade !== prevFade) {
+      if (nextFade !== prevFade && game.user.isGM) {
         if (nextFade > 0) await resetFlag(this.parent, "edgeFadePercent", nextFade);
         else await this.parent.unsetFlag(packageId, "edgeFadePercent");
         changedAny = true;
@@ -131,8 +130,10 @@ export class SuppressSceneParticlesBehaviorType extends foundry.data.regionBehav
         if (prevEG?.mode === mode) latched = !!prevEG.latched;
       }
       if (prevEG.mode !== mode || !!prevEG.latched !== !!latched) {
-        await this.parent.setFlag(packageId, "eventGate", { mode, latched });
-        changedAny = true;
+        if (game.user.isGM) {
+          await this.parent.setFlag(packageId, "eventGate", { mode, latched });
+          changedAny = true;
+        }
       }
 
       return changedAny;
@@ -156,8 +157,7 @@ export class SuppressSceneParticlesBehaviorType extends foundry.data.regionBehav
   }
 
   /**
-   * Handle region token enter/exit events and update visibility gating.
-   * This updates the per-behavior eventGate flag that computeRegionGatePass uses.
+   * Handle region token enter/exit events and update visibility gating. This updates the per-behavior eventGate flag that computeRegionGatePass uses.
    * @param {object} event - Foundry region event payload.
    */
   async _handleRegionEvent(event) {
@@ -192,6 +192,7 @@ export class SuppressSceneParticlesBehaviorType extends foundry.data.regionBehav
     }
 
     if (prev.mode !== mode || !!prev.latched !== !!latched) {
+      if (!game.user.isGM) return;
       await this.parent.setFlag(packageId, "eventGate", { mode, latched });
     }
   }

@@ -44,6 +44,7 @@ export class HailParticleEffect extends FXMasterParticleEffect {
     const p = super.parameters;
     return {
       belowTokens: p.belowTokens,
+      belowTiles: p.belowTiles,
       soundFxEnabled: p.soundFxEnabled,
       tint: p.tint,
       topDown: { label: "FXMASTER.Params.TopDown", type: "checkbox", value: false },
@@ -56,9 +57,9 @@ export class HailParticleEffect extends FXMasterParticleEffect {
     };
   }
 
-  /* ----------------------------------------------------------------------- */
-  /* Texture / Spritesheet                                                    */
-  /* ----------------------------------------------------------------------- */
+  /** ----------------------------------------------------------------------- */
+  /** Texture / Spritesheet                                                    */
+  /** ----------------------------------------------------------------------- */
 
   static get SPRITESHEET_URL() {
     return "modules/fxmaster/assets/particle-effects/effects/hail/hail.webp";
@@ -98,9 +99,9 @@ export class HailParticleEffect extends FXMasterParticleEffect {
     return this.constructor._textureCache;
   }
 
-  /* ----------------------------------------------------------------------- */
-  /* Emitter Config                                                           */
-  /* ----------------------------------------------------------------------- */
+  /** ----------------------------------------------------------------------- */
+  /** Emitter Config                                                           */
+  /** ----------------------------------------------------------------------- */
 
   /**
    * Configuration for the particle emitter for hail
@@ -125,7 +126,7 @@ export class HailParticleEffect extends FXMasterParticleEffect {
         config: {
           speed: {
             list: [
-              // Accelerate over lifetime to give some gravity in side-view mode.
+              /** Accelerate over lifetime to reinforce gravity in side-view mode. */
               { time: 0, value: 600 },
               { time: 0.4, value: 1200 },
               { time: 1, value: 1800 },

@@ -120,6 +120,11 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
     });
 
     const offsetFactor = 2 / 3;
+    const grid = Math.max(1, Number(d?.size) || 100);
+    const spawnPadding = Math.max(
+      grid * 6,
+      Math.min(Number(d?.sceneRect?.width) || 1, Number(d?.sceneRect?.height) || 1) * 0.12,
+    );
     const config = foundry.utils.deepClone(this.constructor.CLOUDS_CONFIG);
     const speed = config.behaviors.find(({ type }) => type === "moveSpeedStatic")?.config;
     if (speed === undefined) {
@@ -138,18 +143,26 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
       y: Math.sin(angle),
     };
 
-    config.maxParticles = maxParticles;
-    config.frequency = (minLifetime + maxLifetime) / 2 / maxParticles;
+    const spawnX = d.sceneRect.x - directionVector.x * d.sceneRect.width * offsetFactor - spawnPadding;
+    const spawnY = d.sceneRect.y - directionVector.y * d.sceneRect.height * offsetFactor - spawnPadding;
+    const spawnW = Math.max(1, d.sceneRect.width + spawnPadding * 2);
+    const spawnH = Math.max(1, d.sceneRect.height + spawnPadding * 2);
+    const sceneArea = Math.max(1, d.sceneRect.width * d.sceneRect.height);
+    const spawnArea = Math.max(1, spawnW * spawnH);
+    const areaRatio = spawnArea / sceneArea;
+
+    config.maxParticles = Math.max(maxParticles, Math.round(maxParticles * areaRatio));
+    config.frequency = (minLifetime + maxLifetime) / 2 / config.maxParticles;
     config.lifetime = { min: minLifetime, max: maxLifetime };
     config.behaviors.push({
       type: "spawnShape",
       config: {
         type: "rect",
         data: {
-          x: d.sceneRect.x - directionVector.x * d.sceneRect.width * offsetFactor,
-          y: d.sceneRect.y - directionVector.y * d.sceneRect.height * offsetFactor,
-          w: d.sceneRect.width,
-          h: d.sceneRect.height,
+          x: spawnX,
+          y: spawnY,
+          w: spawnW,
+          h: spawnH,
         },
       },
     });
@@ -170,14 +183,7 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
 
   /**
    * Create the particle emitter and (optionally) a single, wrapper-level DropShadowFilter.
-   * @param {PIXI.particles.EmitterConfigV3 & {
-   *   _dropShadowEnabled?: boolean,
-   *   _dropShadowOnly?: boolean,
-   *   _dropshadowRotation?: number,
-   *   _dropshadowDistance?: number,
-   *   _dropshadowBlur?: number,
-   *   _dropshadowOpacity?: number
-   * }} config
+   * @param {PIXI.particles.EmitterConfigV3 & { _dropShadowEnabled?: boolean, _dropShadowOnly?: boolean, _dropshadowRotation?: number, _dropshadowDistance?: number, _dropshadowBlur?: number, _dropshadowOpacity?: number }} config
    * @returns {PIXI.particles.Emitter}
    */
   createEmitter(config) {

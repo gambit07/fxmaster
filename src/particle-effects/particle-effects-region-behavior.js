@@ -1,5 +1,6 @@
-import { resetFlag } from "../utils.js";
+import { resetFlag, normalizeDarknessActivationRange } from "../utils.js";
 import { packageId } from "../constants.js";
+import { buildRegionEffectUid, promoteEffectStackUids } from "../common/effect-stack.js";
 
 export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.RegionBehaviorType {
   static LOCALIZATION_PREFIXES = ["FXMASTER.Regions.Particle"];
@@ -67,14 +68,8 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
         label: `${game.i18n.localize("FXMASTER.Common.Enable")} ${game.i18n.localize(cls.label)}`,
       });
 
-      schema[`${type}_belowTokens`] = new foundry.data.fields.BooleanField({
-        required: false,
-        initial: false,
-        label: "FXMASTER.RenderOrder.BelowTokens",
-        localize: true,
-      });
-
       for (const [param, cfg] of Object.entries(cls.parameters)) {
+        if (cfg?.sceneOnly) continue;
         let FieldClass = foundry.data.fields.StringField;
         const opts = {
           required: false,
@@ -88,6 +83,22 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
           if (cfg.min !== undefined) opts.min = cfg.min;
           if (cfg.max !== undefined) opts.max = cfg.max;
           if (cfg.step !== undefined) opts.step = cfg.step;
+        } else if (cfg.type === "range-dual") {
+          schema[`${type}_${param}_min`] = new foundry.data.fields.StringField({
+            required: false,
+            nullable: true,
+            initial: String(cfg.value?.min ?? cfg.min ?? 0),
+            label: cfg.minLabel ?? cfg.label,
+            localize: true,
+          });
+          schema[`${type}_${param}_max`] = new foundry.data.fields.StringField({
+            required: false,
+            nullable: true,
+            initial: String(cfg.value?.max ?? cfg.max ?? 1),
+            label: cfg.maxLabel ?? cfg.label,
+            localize: true,
+          });
+          continue;
         } else if (cfg.type === "color") {
           FieldClass = foundry.data.fields.ColorField;
           Object.assign(opts, { initial: cfg.value.value });
@@ -127,6 +138,16 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
             localize: true,
           });
           continue;
+        } else if (cfg.type === "select") {
+          schema[`${type}_${param}`] = new foundry.data.fields.StringField({
+            required: false,
+            nullable: true,
+            initial: cfg.value,
+            choices: cfg.options ?? {},
+            label: cfg.label,
+            localize: true,
+          });
+          continue;
         }
 
         schema[`${type}_${param}`] = new FieldClass(opts);
@@ -156,12 +177,12 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
    * Persist event gate state.
    */
   async _writeEventGate(mode, latched) {
+    if (!game.user.isGM) return;
     await this.parent.setFlag(packageId, "eventGate", { mode, latched: !!latched });
   }
 
   /**
-   * Collect enabled particle effects + options, persist flags, and sync elevation gate flags.
-   * Mirrors FilterRegionBehaviorType._applyFilters().
+   * Collect enabled particle effects + options, persist flags, and sync elevation gate flags. Mirrors FilterRegionBehaviorType._applyFilters().
    * @returns {Promise<boolean>} true if any region flag changed
    */
   async _applyParticles() {
@@ -173,6 +194,7 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
         const opts = {};
         for (const param of Object.keys(cls.parameters)) {
           const cfg = cls.parameters[param];
+          if (cfg?.sceneOnly) continue;
           if (cfg.type === "color") {
             opts[param] = {
               apply: system[`${type}_${param}_apply`],
@@ -181,12 +203,19 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
           } else if (cfg.type === "multi-select") {
             const raw = system[`${type}_${param}`];
             opts[param] = raw ? Array.from(raw) : [];
+          } else if (cfg.type === "range-dual") {
+            opts[param] = normalizeDarknessActivationRange({
+              min: system[`${type}_${param}_min`],
+              max: system[`${type}_${param}_max`],
+            });
           } else {
             opts[param] = system[`${type}_${param}`];
           }
         }
-        const belowTokens = !!system[`${type}_belowTokens`];
-        map[type] = { options: opts, belowTokens };
+        for (const [key, value] of Object.entries(opts)) {
+          if (value === undefined || value === null) delete opts[key];
+        }
+        map[type] = { options: opts };
         return map;
       }, {});
 
@@ -196,15 +225,30 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
     const diff1 = foundry.utils.diffObject(prevFX, nextFX);
     const diff2 = foundry.utils.diffObject(nextFX, prevFX);
     if (!foundry.utils.isEmpty(diff1) || !foundry.utils.isEmpty(diff2)) {
-      if (Object.keys(nextFX).length) await resetFlag(this.parent, "particleEffects", nextFX);
-      else await this.parent.unsetFlag(packageId, "particleEffects");
-      changedAny = true;
+      if (game.user.isGM) {
+        if (Object.keys(nextFX).length) await resetFlag(this.parent, "particleEffects", nextFX);
+        else await this.parent.unsetFlag(packageId, "particleEffects");
+
+        const regionId = this.parent?.parent?.id ?? this.parent?.region?.id ?? null;
+        const behaviorId = this.parent?.id ?? null;
+        if (regionId && behaviorId) {
+          const addedTypes = Object.keys(nextFX).filter((type) => !(type in prevFX));
+          const addedUids = addedTypes.map((type) => buildRegionEffectUid("particle", regionId, behaviorId, type));
+          await promoteEffectStackUids(addedUids, canvas.scene);
+        }
+
+        changedAny = true;
+      }
     }
 
-    /** Persist region edge fade percent (0..1). Store only when > 0. */
+    /**
+     * Persist the region edge-fade fraction.
+     *
+     * Values are stored only when the normalized fraction is greater than zero.
+     */
     const nextFade = Math.min(Math.max(Number(system._edgeFadePercent) || 0, 0), 1);
     const prevFade = Math.min(Math.max(Number(this.parent.getFlag(packageId, "edgeFadePercent")) || 0, 0), 1);
-    if (nextFade !== prevFade) {
+    if (nextFade !== prevFade && game.user.isGM) {
       if (nextFade > 0) await resetFlag(this.parent, "edgeFadePercent", nextFade);
       else await this.parent.unsetFlag(packageId, "edgeFadePercent");
       changedAny = true;
@@ -212,7 +256,7 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
 
     const gmAlwaysVisible = !!system._elev_gmAlwaysVisible;
     const prevGM = !!this.parent.getFlag(packageId, "gmAlwaysVisible");
-    if (gmAlwaysVisible !== prevGM) {
+    if (gmAlwaysVisible !== prevGM && game.user.isGM) {
       if (gmAlwaysVisible) await this.parent.setFlag(packageId, "gmAlwaysVisible", true);
       else await this.parent.unsetFlag(packageId, "gmAlwaysVisible");
       changedAny = true;
@@ -220,7 +264,7 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
 
     const gateMode = system._elev_gateMode ?? "none";
     const prevGate = this.parent.getFlag(packageId, "gateMode") ?? "none";
-    if (gateMode !== prevGate) {
+    if (gateMode !== prevGate && game.user.isGM) {
       if (gateMode && gateMode !== "none") await this.parent.setFlag(packageId, "gateMode", gateMode);
       else await this.parent.unsetFlag(packageId, "gateMode");
       changedAny = true;
@@ -232,11 +276,11 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
       const prevTargets = this.parent.getFlag(packageId, "tokenTargets");
       const prevArr = Array.isArray(prevTargets) ? prevTargets : prevTargets ? [prevTargets] : [];
       const eq = prevArr.length === nextTargets.length && nextTargets.every((t) => prevArr.includes(t));
-      if (!eq) {
+      if (!eq && game.user.isGM) {
         await resetFlag(this.parent, "tokenTargets", nextTargets);
         changedAny = true;
       }
-    } else {
+    } else if (game.user.isGM) {
       if (this.parent.getFlag(packageId, "tokenTargets") != null) {
         await this.parent.unsetFlag(packageId, "tokenTargets");
         changedAny = true;
@@ -288,6 +332,7 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
     }
 
     if (prev.mode !== mode || !!prev.latched !== !!latched) {
+      if (!game.user.isGM) return;
       await this.parent.setFlag(packageId, "eventGate", { mode, latched });
     }
   }
@@ -311,6 +356,7 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
         if (prevEG?.mode === mode) latched = !!prevEG.latched;
       }
       if (prevEG.mode !== mode || !!prevEG.latched !== !!latched) {
+        if (!game.user.isGM) return;
         await this.parent.setFlag(packageId, "eventGate", { mode, latched });
       }
     } finally {

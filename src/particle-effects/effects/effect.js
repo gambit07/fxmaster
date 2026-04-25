@@ -4,7 +4,7 @@
  * Base class for particle effects in FXMaster.
  * - Defines common UI parameters and sensible defaults.
  * - Maps user options (scale, speed, direction, lifetime, tint, alpha) onto
- *   PIXI emitter configs.
+ * PIXI emitter configs.
  * - Provides helpers for pre-warming (play) and graceful teardown (fadeOut).
  * - Includes V1-V2 option converters for scene-dimension-aware values.
  */
@@ -12,21 +12,17 @@
 import { roundToDecimals } from "../../utils.js";
 import { logger } from "../../logger.js";
 
-/* ------------------------------------------------------------------------- */
-/* Lateral Movement Helpers                                                  */
-/* ------------------------------------------------------------------------- */
+/** ------------------------------------------------------------------------- */
+/** Lateral Movement Helpers                                                  */
+/** ------------------------------------------------------------------------- */
 
 /**
  * Convert a PIXI.Ticker delta to seconds using `PIXI.Ticker.shared.deltaMS` for reliable detection.
  *
- * PIXI-particles expects seconds. Foundry/PIXI commonly provide deltaTime
- * where 1.0 ≈ one 60 fps frame (regardless of actual refresh rate), but some
- * callers may pass raw seconds. We use the ticker's own millisecond timestamp
- * as the authoritative source when available, falling back to heuristics only
- * if the ticker is inaccessible.
+ * PIXI-particles expects seconds. Foundry and PIXI commonly provide `deltaTime` where `1.0` approximates one 60 fps frame regardless of the actual refresh rate, but some callers may pass raw seconds. The ticker millisecond timestamp is treated as authoritative when available, with heuristic fallback only when the ticker cannot be reached.
  *
  * @param {number} delta - Raw ticker delta value.
- * @returns {number} Elapsed time in seconds, falling back to 1/60 s for invalid or non-positive inputs.
+ * @returns {number} Elapsed time in seconds, falling back to `1 / 60` for invalid or non-positive inputs.
  */
 export function fxmDeltaSeconds(delta) {
   if (typeof delta !== "number" || !Number.isFinite(delta) || delta <= 0) return 1 / 60;
@@ -105,23 +101,21 @@ function fxmAngleLerp(a, b, t) {
 }
 
 /**
- * Abstract particle effect with parameter plumbing and utilities.
- * Subclasses must provide a PIXI EmitterConfig via `defaultConfig`.
+ * Abstract particle effect with parameter plumbing and utilities. Subclasses must provide a PIXI EmitterConfig via `defaultConfig`.
  */
 export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
   /** Human-readable label, typically a localization key. */
   static label = "FXMASTER.Common.ParticleEffect";
 
   /**
-   * Hide this effect from the management UI.
-   * Useful for backwards-compatibility aliases that should still load from scene flags.
+   * Hide this effect from the management UI. Useful for backwards-compatibility aliases that should still load from scene flags.
    */
   static hidden = false;
 
   /**
    * Whether this effect should keep its emitters' ownerPos synced to the current canvas pan.
    *
-   * Do not define this as a class field. The upstream ParticleEffect base class builds emitters during its constructor, and many FXMaster effects toggle this flag inside getParticleEmitters(). Class fields are initialized after super(), which would overwrite whatever getParticleEmitters() set and  break pan re-centering.
+   * Do not define this as a class field. The FXMaster particle emitter container builds emitters during its constructor, and many FXMaster effects toggle this flag inside getParticleEmitters(). Class fields are initialized after super(), which would overwrite whatever getParticleEmitters() set and break pan re-centering.
    *
    * Subclasses should set `this._fxmCanvasPanOwnerPosEnabled = true/false` while building emitters.
    *
@@ -180,6 +174,7 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
   static get parameters() {
     return {
       belowTokens: { label: "FXMASTER.Params.BelowTokens", type: "checkbox", value: false },
+      belowTiles: { label: "FXMASTER.Params.BelowTiles", type: "checkbox", value: false },
       soundFxEnabled: { label: "FXMASTER.Params.SoundFxEnabled", type: "checkbox", value: false },
       tint: { label: "FXMASTER.Params.Tint", type: "color", value: { value: "#FFFFFF", apply: false } },
       scale: { label: "FXMASTER.Params.Scale", type: "range", min: 0.1, value: 1, max: 5, step: 0.1, decimals: 1 },
@@ -262,17 +257,14 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
   }
 
   /**
-   * Global density scalar applied on top of user density and performance mode.
-   * Subclasses may override to make their effect globally denser or sparser.
+   * Global density scalar applied on top of user density and performance mode. Subclasses may override to make their effect globally denser or sparser.
    */
   static get densityScalar() {
     return 0.25;
   }
 
   /**
-   * Compute a density scale factor from Foundry's canvas Performance Mode.
-   * MAX = 1.0, HIGH = 0.75, MED = 0.5, LOW = 0.25
-   * Falls back to 1.0 if the setting or CONST are unavailable.
+   * Compute a density scale factor from Foundry's canvas Performance Mode. MAX = 1.0, HIGH = 0.75, MED = 0.5, LOW = 0.25 Falls back to 1.0 if the setting or CONST are unavailable.
    */
   static getPerformanceDensityScale() {
     let scale = 1.0;
@@ -318,8 +310,7 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
   }
 
   /**
-   * Default deadzone scaling for top-down effects.
-   * Subclasses may override these getters to tweak the size of the empty center area.
+   * Default deadzone scaling for top-down effects. Subclasses may override these getters to tweak the size of the empty center area.
    *
    * The returned values are relative to the current view size and grid size.
    *
@@ -342,8 +333,7 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
   /**
    * Compute the radius (in pixels) of the "dead zone" at the view center for top-down effects. Particles should not fully converge into this region.
    *
-   * Effects should add this radius to their computed travel distance when
-   * setting a torus spawnShape's innerRadius.
+   * Effects should add this radius to their computed travel distance when setting a torus spawnShape's innerRadius.
    *
    * @param {object} d Particle dimension object from CONFIG.fxmaster.getParticleDimensions(...)
    * @returns {number}
@@ -521,12 +511,12 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
       });
   }
 
-  /* ----------------------------------------------------------------------- */
-  /* Lateral Movement                                                         */
-  /* ----------------------------------------------------------------------- */
+  /** ----------------------------------------------------------------------- */
+  /** Lateral Movement                                                         */
+  /** ----------------------------------------------------------------------- */
 
   /**
-   * Create an emitter using the upstream ParticleEffectNS implementation and then attach FXMaster wrappers (e.g. Lateral Movement) before autoUpdate is bound to the ticker.
+   * Create an emitter using the configured FXMaster particle emitter container and then attach FXMaster wrappers before autoUpdate is bound to the ticker.
    *
    * @param {PIXI.particles.EmitterConfigV3} config
    * @returns {PIXI.particles.Emitter}
@@ -793,7 +783,7 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
    * @param {{timeout?: number}} [options]
    * @returns {Promise<void>}
    */
-  async fadeOut({ timeout = 2000 } = {}) {
+  async fadeOut({ timeout = 3000 } = {}) {
     for (const emitter of this.emitters) {
       try {
         emitter.emit = false;
@@ -861,7 +851,7 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
   }
 
   /** Fade alpha from current value to a target over a timeout. */
-  async fadeToAlpha({ to = 1, timeout = 2000 } = {}) {
+  async fadeToAlpha({ to = 1, timeout = 3000 } = {}) {
     const ticker = PIXI.Ticker.shared;
     const from = Number(this.alpha ?? 1);
     if (!timeout || timeout <= 0) {
@@ -921,7 +911,7 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
   }
 
   /** Symmetric fade-in helper. */
-  async fadeIn({ timeout = 2000 } = {}) {
+  async fadeIn({ timeout = 3000 } = {}) {
     return this.fadeToAlpha({ to: 1, timeout });
   }
 

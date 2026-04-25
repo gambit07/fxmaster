@@ -51,6 +51,7 @@ export class OldFilmFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   static get parameters() {
     return {
       belowTokens: { label: "FXMASTER.Params.BelowTokens", type: "checkbox", value: false },
+      belowTiles: { label: "FXMASTER.Params.BelowTiles", type: "checkbox", value: false },
       soundFxEnabled: { label: "FXMASTER.Params.SoundFxEnabled", type: "checkbox", value: false },
       sepia: {
         label: "FXMASTER.Params.Sepia",
@@ -109,8 +110,7 @@ export class OldFilmFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   }
 
   /**
-   * Apply uniforms from options with clamping and fade handling.
-   * Accepts direct values or { value } wrappers.
+   * Apply uniforms from options with clamping and fade handling. Accepts direct values or { value } wrappers.
    * @param {object} [opts={}] - Options payload.
    * @private
    */
@@ -156,8 +156,7 @@ export class OldFilmFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   }
 
   /**
-   * Begin playing the effect; advances time each frame via an internal ticker.
-   * Ensures strength is enabled for visible effect.
+   * Begin playing the effect; advances time each frame via an internal ticker. Ensures strength is enabled for visible effect.
    * @param {{skipFading?:boolean}} [opts] - Options and play flags.
    * @returns {this} The filter instance.
    */

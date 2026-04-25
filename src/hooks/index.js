@@ -1,8 +1,7 @@
 /**
  * FXMaster: Hook Registration - Barrel
  *
- * Orchestrates hook registration by creating the shared context and
- * delegating to domain-specific registrar functions.
+ * Orchestrates hook registration by creating the shared context and delegating to domain-specific registrar functions.
  *
  * Domain groups:
  * - **Token hooks** - Token/tile CRUD → mask refresh

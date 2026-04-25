@@ -5,7 +5,6 @@
   },
   "CONTROLS": {
     "Effects": "效果控制元件",
-    "SpecialFX": "特殊效果",
     "ParticleEffects": "粒子效果",
     "InvertMask": "反轉天氣遮罩",
     "Filters": "濾鏡效果",
@@ -18,7 +17,6 @@
       "FilterEffect": "濾鏡效果",
       "ParticleEffectsManagementTitle": "粒子效果管理",
       "FilterEffectsManagementTitle": "濾鏡效果管理",
-      "SpecialEffectsManagementTitle": "特效管理",
       "SaveChanges": "儲存變更",
       "EnableEffects": "啟用效果",
       "DisableAll": "對所有人禁用效果",
@@ -27,18 +25,15 @@
       "ClearParticleAndFilterEffectsContent": "<p>要從此場景中永久刪除所有<em>粒子效果</em>和<em>濾鏡效果</em>嗎？</p>",
       "Yes": "是",
       "No": "否",
-      "Author": "作者",
-      "Favorites": "最愛",
-      "Favorite": "最愛",
       "Enable": "啟用",
       "ErrorCannotFindEffect": "FXMaster | 找不到效果資料。",
-      "TileCreated": "已為效果 {effect} 建立新的圖磚",
-      "PermissionCreate": "使用FXMaster特效",
-      "PermissionCreateHint": "允許特定身份組以上的使用者透過場景控制元件使用 FXMaster 特效。",
       "Environment": "環境",
       "Interface": "介面",
       "Music": "音樂",
-      "Splash": "飛濺"
+      "Splash": "飛濺",
+      "Unknown": "Unknown",
+      "ApiEffects": "Manage API Effects",
+      "ApiEffectsManagementTitle": "Manage API Effects"
     },
     "Params": {
       "Saturation": "飽和度",
@@ -91,7 +86,18 @@
       "ShadowBlur": "陰影模糊",
       "ShadowOpacity": "陰影不透明度",
       "BelowTokens": "顯示於代幣下方",
-      "SoundFxEnabled": "Sound FX"
+      "SoundFxEnabled": "Sound FX",
+      "BelowTiles": "Below Tiles",
+      "DarknessActivationRange": "Darkness Activation Range",
+      "DarknessActivationMinimum": "Darkness Minimum",
+      "DarknessActivationMaximum": "Darkness Maximum",
+      "BelowForeground": "Below Foreground",
+      "DarknessActivationMin": "Darkness Activation Min",
+      "DarknessActivationMax": "Darkness Activation Max",
+      "BlendMode": "Blend Mode",
+      "Levels": "Levels",
+      "AllLevels": "All Levels",
+      "DarknessActivationEnabled": "Darkness Activation"
     },
     "Particles": {
       "Groups": {
@@ -186,43 +192,6 @@
         "AlwaysVisibleForGM": "對 GM 總是可見"
       }
     },
-    "AnimationEffect": {
-      "AllAnimations": "全部動畫",
-      "Copied": "已複製：{value}",
-      "CopyElement": "複製文字到剪貼簿",
-      "CustomDirectoryHint": "放置自訂 .webm 檔案的路徑。需要重新整理動畫資料庫。",
-      "CustomDirectoryName": "自訂動畫資料夾",
-      "FileName": "檔案名稱",
-      "FilePath": "檔案路徑",
-      "ModuleLabel": {
-        "JB2APatreon": "JB2A Patreon",
-        "JB2AFree": "JB2A Free",
-        "JB2AExtras": "JB2A Extras",
-        "JinkersAnimatedArt": "Jinker's Animated Art",
-        "AnimatedSpellEffects": "Animated Spell Effects",
-        "AnimatedSpellEffectsCartoon": "Animated Spell Effects: Cartoon",
-        "BossLootAssetsPremium": "Boss Loot Animated Assets Premium",
-        "BossLootAdventuresPremium": "Boss Loot Adventures Premium",
-        "BossLootAssetsFree": "Boss Loot Animated Assets Free",
-        "Custom": "自訂",
-        "WildMagicSurge": "Wild Magic Surge"
-      },
-      "RefreshDbHint": "重建資料庫以納入新增/移除的動畫並解析縮圖。於雲端代管（如 The Forge）可能較耗時。",
-      "RefreshDbName": "更新動畫資料庫",
-      "RightClickForDetails": "按右鍵顯示詳細資訊：",
-      "ScanComplete": "FXMaster | 動畫掃描完成！",
-      "ScanModules": "FXMaster | 正在掃描動畫模組 {current}/{total}…",
-      "ScanningThumbnails": "FXMaster | 正在掃描動畫縮圖…",
-      "ScanningThumbnailsProgress": "FXMaster | 縮圖進度：{current}/{total}",
-      "ScanStart": "FXMaster | 開始掃描動畫…",
-      "SearchAnimations": "搜尋動畫",
-      "SearchQueries": "支援進階查詢，例如：（eldritch OR arrow）AND NOT blast",
-      "SequencerPath": "Sequencer 資料庫路徑",
-      "Update": "更新動畫效果",
-      "RefreshDbError": "FXMaster | 動畫效果尚未在資料庫中找到。請等待目前掃描完成，或前往「模組設定 → FXMaster → 更新動畫資料庫」重新執行。",
-      "RefreshDbEmpty": "FXMaster | 資料庫中沒有動畫效果。FXMaster 會從你的自訂資料夾或 JB2A、Boss Loot 等供應者載入。新增後請到「模組設定 → FXMaster → 更新動畫資料庫」。",
-      "ScanCompleteEmpty": "FXMaster | 掃描完成——未找到動畫效果。請新增後再重新更新。"
-    },
     "Migration": {
       "WorldStart": "正在為 FXMaster 執行世界遷移。請耐心等待，不要關閉你的遊戲或伺服器。",
       "WorldCompletedWithErrors": "FXMaster 世界遷移出現錯誤。詳情請見開發者主控台（F12）。為避免場景崩潰，已啟用「對所有人禁用效果」。僅在確認安全時再啟用；建議先移除受影響場景的天氣與濾鏡效果。",
@@ -260,6 +229,55 @@
       "FadeTimeHint": "Fade in/out time in milliseconds.",
       "EffectsHint": "Select one effect for a single-effect sound rule, or select multiple effects to create a combo rule with higher priority.",
       "NoEffectsSelected": "No effects selected."
+    },
+    "Layers": {
+      "Title": "Manage Layers",
+      "Order": "Order",
+      "Effect": "Effect",
+      "Source": "Source",
+      "Owner": "Owner",
+      "Actions": "Actions",
+      "Action": "Action",
+      "MoveUp": "Move up",
+      "MoveDown": "Move down",
+      "ResetOrder": "Reset order",
+      "Empty": "No enabled particle or filter effects were found.",
+      "KindParticle": "Particle",
+      "KindFilter": "Filter",
+      "SourceScene": "Scene",
+      "SourceApi": "API",
+      "SourceApiPreset": "API - Preset",
+      "SourceApiMacro": "API - Macro",
+      "SourceRegion": "Region",
+      "ScopeRegion": "Region",
+      "Level": "Level"
+    },
+    "ParamTooltips": {
+      "BelowTiles": "Renders effects underneath tiles visually.",
+      "DarknessActivationRange": "Only render this effect when the current scene darkness level falls within the selected range.",
+      "BelowForeground": "Renders effects underneath the active foreground image visually.",
+      "DarknessActivationMin": "Minimum scene darkness level required for this effect to render.",
+      "DarknessActivationMax": "Maximum scene darkness level allowed for this effect to render.",
+      "BlendMode": "How the adjusted color result blends with the sampled scene color.",
+      "Levels": "Limit this scene effect to the selected scene levels. Leave it on All Levels to render everywhere.",
+      "DarknessActivationEnabled": "Enable scene darkness gating for this effect. When disabled, the effect renders at all darkness levels."
+    },
+    "RenderOrder": {
+      "BelowTiles": "Below Tiles"
+    },
+    "BlendModes": {
+      "Normal": "Normal",
+      "Multiply": "Multiply",
+      "Screen": "Screen",
+      "Overlay": "Overlay",
+      "SoftLight": "Soft Light",
+      "HardLight": "Hard Light",
+      "ColorDodge": "Color Dodge",
+      "ColorBurn": "Color Burn",
+      "Darken": "Darken",
+      "Lighten": "Lighten",
+      "Difference": "Difference",
+      "Exclusion": "Exclusion"
     }
   }
 }

@@ -9,9 +9,7 @@ export class SnowstormParticleEffect extends FXMasterParticleEffect {
   static label = "FXMASTER.Particles.Effects.Snowstorm";
 
   /**
-   * Snowstorm's top-down presentation reads more naturally with a smaller deadzone
-   * than other effects. This reduces the size of the empty center "hole" while
-   * still avoiding a full vortex-like convergence.
+   * Snowstorm's top-down presentation reads more naturally with a smaller deadzone than other effects. This reduces the size of the empty center "hole" while still avoiding a full vortex-like convergence.
    */
   static get topDownDeadzoneFactor() {
     return 0.035;
@@ -44,6 +42,7 @@ export class SnowstormParticleEffect extends FXMasterParticleEffect {
     const p = super.parameters;
     return {
       belowTokens: p.belowTokens,
+      belowTiles: p.belowTiles,
       soundFxEnabled: p.soundFxEnabled,
       tint: p.tint,
       topDown: { label: "FXMASTER.Params.TopDown", type: "checkbox", value: false },
@@ -268,19 +267,19 @@ export class SnowstormParticleEffect extends FXMasterParticleEffect {
       const smoothstep = (x) => x * x * (3 - 2 * x);
       const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
-      // Re-target vortex every 10–30 seconds. Blend over 2–6 seconds.
+      /** Re-target the vortex every 10–30 seconds and blend over 2–6 seconds. */
       const MIN_HOLD = 10.0;
       const MAX_HOLD = 30.0;
       const MIN_BLEND = 2.0;
       const MAX_BLEND = 6.0;
 
-      // Tangential drift magnitude as a ratio of inward speed.
+      /** Tangential drift magnitude expressed as a ratio of inward speed. */
       const BASE_RATIO = 0.85;
       const DELTA_RATIO = 0.12;
       const MIN_RATIO = 0.6;
       const MAX_RATIO = 1.05;
 
-      // Overall multiplier for the top-down rotational drift.
+      /** Overall multiplier for top-down rotational drift. */
       const rawRotationStrength = Number(options?.rotationStrength?.value);
       const ROTATION_STRENGTH = clamp(
         Math.round((Number.isFinite(rawRotationStrength) ? rawRotationStrength : 3) * 2) / 2,
@@ -325,7 +324,7 @@ export class SnowstormParticleEffect extends FXMasterParticleEffect {
       emitter.update = function (delta) {
         originalUpdate(delta);
 
-        // Convert PIXI ticker deltaTime (~1 at 60fps) into seconds.
+        /** Convert PIXI ticker delta time to seconds. */
         let dt = 0;
         if (typeof delta === "number") {
           dt = delta > 0 && delta < 5 ? delta / 60 : delta > 5 ? delta / 1000 : delta;

@@ -16,13 +16,14 @@ import { FilterRegionBehaviorType } from "./filter-effects/filter-effects-region
 import { FXMasterFilterEffectMixin } from "./filter-effects/filters/mixins/filter.js";
 import { SuppressSceneFiltersBehaviorType } from "./filter-effects/suppress-scene-filters-region-behavior.js";
 import customVertex2D from "./filter-effects/filters/shaders/custom-vertex-2d.vert";
-import { SpecialEffectsLayer } from "./special-effects/special-effects-layer.js";
+import { GlobalEffectsStackLayer } from "./stack/global-effects-stack-layer.js";
 import { regionWorldBoundsAligned, regionWorldBounds, rectFromAligned } from "./utils.js";
 import { FXMasterBaseFormV2 } from "./base-form.js";
+import { normalizeRegisteredEffectParameters } from "./common/effect-parameter-normalization.js";
 import "../css/filters-config.css";
 import "../css/particle-effects-config.css";
-import "../css/specials-config.css";
 import "../css/common.css";
+import "../css/fx-layers.css";
 
 CONFIG.fxmaster = CONFIG.fxmaster || {};
 CONFIG.fxmaster.FXMasterParticleEffect = FXMasterParticleEffect;
@@ -35,12 +36,10 @@ CONFIG.fxmaster.regionWorldBounds = regionWorldBounds;
 CONFIG.fxmaster.rectFromAligned = rectFromAligned;
 
 /**
- * Helpers to allow particle effects to run in other renderers ie not Canvas
- * Provides an override context on either:
- *  - the effect instance: effect.__fxmParticleContext
- *  - the options object passed to the effect: options.__fxmParticleContext
- * The override shape is:
- *   { dimensions: {width,height,size,sceneRect}, renderer, ticker }
+ * Helpers to allow particle effects to run in other renderers ie not Canvas Provides an override context on either:
+ * - the effect instance: effect.__fxmParticleContext
+ * - the options object passed to the effect: options.__fxmParticleContext
+ * The override shape is: { dimensions: {width,height,size,sceneRect}, renderer, ticker }
  */
 CONFIG.fxmaster.getParticleContext = function (source) {
   return source?.__fxmParticleContext ?? null;
@@ -61,8 +60,8 @@ window.FXMASTER = {
 
 function registerLayers() {
   CONFIG.Canvas.layers.particleeffects = { layerClass: ParticleEffectsLayer, group: "primary" };
-  CONFIG.Canvas.layers.specials = { layerClass: SpecialEffectsLayer, group: "interface" };
   CONFIG.Canvas.layers.filtereffects = { layerClass: FilterEffectsLayer, group: "primary" };
+  CONFIG.Canvas.layers.fxstack = { layerClass: GlobalEffectsStackLayer, group: "rendered" };
 }
 
 Hooks.once("init", function () {
@@ -84,6 +83,7 @@ Hooks.once("init", function () {
 
   Hooks.callAll(`${packageId}.preRegisterParticleEffects`, CONFIG.fxmaster);
   Hooks.callAll(`${packageId}.preRegisterFilterEffects`, CONFIG.fxmaster);
+  normalizeRegisteredEffectParameters(CONFIG.fxmaster);
 
   const weatherEffects = Object.fromEntries(
     Object.entries(CONFIG.fxmaster.particleEffects).map(([id, effectClass]) => [

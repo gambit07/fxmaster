@@ -1,4 +1,3 @@
-// SPDX-FileCopyrightText: 2025 Gambit
 
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
@@ -15,75 +14,66 @@ precision mediump int;
 uniform sampler2D uSampler;
 uniform sampler2D maskSampler;
 
-/* ---- Pixi pipeline frames (match Color) ---- */
-uniform vec2  viewSize;     // CSS px of mask RT (usually screen size)
-uniform vec4  inputSize;    // xy: input size in CSS px; zw: 1/size
-uniform vec4  outputFrame;  // xy: offset in CSS px;    zw: size
+/** ---- Pixi pipeline frames (match Color) ---- */
+uniform vec2  viewSize;     /** CSS px of mask RT (usually screen size) */
+uniform vec4  inputSize;    /** xy: input size in CSS px; zw: 1/size */
+uniform vec4  outputFrame;  /** xy: offset in CSS px;    zw: size */
 
-/* Kept for ABI/back-compat; not used for mask sample */
-uniform vec4  srcFrame;     // CSS px: (x,y,w,h)
-uniform vec2  camFrac;      // CSS px: fractional camera translation
+/** Kept for ABI/back-compat; not used for mask sample */
+uniform vec4  srcFrame;     /** CSS px: (x,y,w,h) */
+uniform vec2  camFrac;      /** CSS px: fractional camera translation */
 
 uniform float hasMask;
 uniform float maskReady;
-uniform float invertMask; // 0/1
+uniform float invertMask; /** 0/1 */
 uniform float maskSoft;
 
-// Effect params
-uniform float time;        // seconds
-uniform float speedPx;     // px/s (negative => down)
-uniform float lineWidthPx; // stripe thickness in px
-uniform float noiseAmt;    // 0..1
-uniform float contrast;    // ~1.5
-uniform float aaPx;        // AA width in px (fallback / minimum)
+uniform float time;        /** seconds */
+uniform float speedPx;     /** px/s (negative => down) */
+uniform float lineWidthPx; /** stripe thickness in px */
+uniform float noiseAmt;    /** 0..1 */
+uniform float contrast;    /** ~1.5 */
+uniform float aaPx;        /** AA width in px (fallback / minimum) */
 
-/* -------- Region fade (same schema as other filters) -------- */
-// 0=polygon, 1=rect, 2=ellipse, -1=none
+/** -------- Region fade (same schema as other filters) -------- */
 uniform int   uRegionShape;
 uniform mat3  uCssToWorld;
 
-// Rect/Ellipse analytics
 uniform vec2  uCenter;
 uniform vec2  uHalfSize;
 uniform float uRotation;
 
-// Polygon SDF (absolute-width & inradius only)
 uniform sampler2D uSdf;
 uniform mat3  uUvFromWorld;
 uniform vec2  uSdfScaleOff;
 uniform float uSdfInsideMax;
 uniform vec2  uSdfTexel;
 
-// Absolute width (compatibility)
-uniform float uFadeWorld;   // world px
-uniform float uFadePx;      // CSS px
+uniform float uFadeWorld;   /** world px */
+uniform float uFadePx;      /** CSS px */
 
-// Percent mode
-uniform float uUsePct;      // 1 => use uFadePct
-uniform float uFadePct;     // 0..1
+uniform float uUsePct;      /** 1 => use uFadePct */
+uniform float uFadePct;     /** 0..1 */
 
-/* SDF-backed polygon % fades (used for multi-shape regions) */
-uniform float uUseSdf;        // 1 => use SDF for polygon % fades
+/** SDF-backed polygon % fades (used for multi-shape regions) */
+uniform float uUseSdf;        /** 1 => use SDF for polygon % fades */
 
-// Polygon edges (percent mode)
 #define MAX_EDGES 64
 uniform float uEdgeCount;
-uniform vec4  uEdges[MAX_EDGES]; // (Ax,Ay,Bx,By) world units
-uniform float uSmoothKWorld;     // world-px smoothing radius
+uniform vec4  uEdges[MAX_EDGES]; /** (Ax,Ay,Bx,By) world units */
+uniform float uSmoothKWorld;     /** world-px smoothing radius */
 
 varying vec2 vTextureCoord;
 
 
-/* Shared region fade infrastructure */
+/** Shared region fade infrastructure */
 #include <region-fade-common>
 
 void main() {
   vec4 src = texture2D(uSampler, vTextureCoord);
 
-  // SCREEN position in CSS px (match Color)
   vec2 screenPx = outputFrame.xy + vTextureCoord * inputSize.xy;
 
-  // --- Region/suppression gating ---
   float inMask = src.a;
   if (hasMask > 0.5) {
     bool maskUsable = (maskReady > 0.5) &&
@@ -99,7 +89,6 @@ void main() {
     }
   }
 
-  // --- Per-pixel region edge fade (percent or absolute) ---
   float fadeEdge = 1.0;
   vec2  pW       = applyCssToWorld(screenPx);
 
@@ -128,7 +117,6 @@ void main() {
     }
   }
 
-  // --- Stripe model in screen pixels ---
   float halfW = max(0.5, lineWidthPx * 0.5);
   float pitch = max(2.0, halfW * 4.0);
 
@@ -136,7 +124,6 @@ void main() {
   float t  = fract(phasePx / pitch);
   float d  = abs(t - 0.5) * pitch;
 
-  // Derivative-aware AA
   float aaDyn = aaPx;
   #ifdef GL_OES_standard_derivatives
     float fwPhase = fwidth(phasePx);
@@ -147,7 +134,6 @@ void main() {
   float stripeMask = 1.0 - smoothstep(halfW, halfW + aaDyn, d);
   stripeMask = pow(stripeMask, max(contrast, 0.5));
 
-  // Light grain for texture
   vec2  hp = screenPx + vec2(37.0, 73.0);
   float g  = fract(sin(dot(hp, vec2(127.1,311.7))) * 43758.5453123) - 0.5;
   float grain = g * 0.25 * clamp(noiseAmt, 0.0, 1.0);
@@ -155,7 +141,6 @@ void main() {
   float modulator = clamp(0.85 + 0.30 * stripeMask + grain, 0.0, 1.25);
   vec3 pred = src.rgb * modulator;
 
-  // Gate stripes by mask * fade
   float mixAmt = clamp(inMask * fadeEdge, 0.0, 1.0);
   vec3 outRGB = mix(src.rgb, pred, mixAmt);
   gl_FragColor = vec4(outRGB, src.a);

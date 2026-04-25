@@ -9,7 +9,6 @@
   --fxm-switch-thumb-border: rgba(0, 0, 0, 0.65);
 }
 
-/* Base styles for headers & rows */
 .fxmaster-filters-header,
 .fxmaster-filters-row,
 .fxmaster-api-effects-header,
@@ -26,7 +25,6 @@
   position: relative;
 }
 
-/* Header variations */
 .fxmaster-filters-header,
 .fxmaster-api-effects-header,
 .fxmaster-particles-group {
@@ -35,7 +33,6 @@
   background: rgba(255, 255, 255, 0.05);
 }
 
-/* Hover for rows */
 .fxmaster-filters-row:hover,
 .fxmaster-api-effects-row:hover,
 .fxmaster-particles-row:hover {
@@ -43,7 +40,6 @@
   cursor: pointer;
 }
 
-/* Name flex */
 .fxmaster-filter-name,
 .fxmaster-particle-name,
 .fxmaster-particles-group-name {
@@ -54,10 +50,8 @@
   white-space: nowrap;
 }
 
-/* Toggle buttons */
 .fxmaster-particle-toggle,
-.fxmaster-filter-toggle,
-.fxmaster-special-copy {
+.fxmaster-filter-toggle {
   contain: layout paint;
   will-change: transform;
   transform: translateZ(0);
@@ -67,9 +61,9 @@
   padding: 0;
   box-sizing: border-box;
 }
+
 .fxmaster-particle-toggle span,
-.fxmaster-filter-toggle span,
-.fxmaster-special-copy span {
+.fxmaster-filter-toggle span {
   position: absolute;
   inset: 0;
   display: grid;
@@ -77,29 +71,61 @@
   font-size: 1.125rem;
   transform: translateY(1px);
 }
+
 .fxmaster-filter-toggle.enabled,
 .fxmaster-particle-toggle.enabled {
   background-color: var(--color-warm-2);
   border-color: var(--color-warm-3);
 }
+
 .fxmaster-filter-toggle:hover,
-.fxmaster-particle-toggle:hover,
-.fxmaster-special-copy:hover {
+.fxmaster-particle-toggle:hover {
   background-color: var(--color-warm-2);
 }
+
 .fxmaster-filter-toggle:focus,
-.fxmaster-particle-toggle:focus,
-.fxmaster-special-copy:focus {
+.fxmaster-particle-toggle:focus {
   outline: 2px solid var(--color-warm-3);
   outline-offset: 2px;
 }
+
 .fxmaster-filter-toggle:active,
-.fxmaster-particle-toggle:active,
-.fxmaster-special-copy:active {
+.fxmaster-particle-toggle:active {
   outline: var(--color-warm-3);
 }
 
-/* Expand-panel basics */
+.fxmaster-particle-toggle,
+.fxmaster-filter-toggle,
+.fxmaster-api-effects-delete,
+.fxmaster-api-effects-edit,
+.fxmaster-api-effect-delete {
+  display: inline-grid;
+  place-items: center;
+  align-content: center;
+  justify-content: center;
+  line-height: 1;
+  text-align: center;
+}
+
+.fxmaster-particle-toggle > span,
+.fxmaster-filter-toggle > span,
+.fxmaster-api-effects-delete > span,
+.fxmaster-api-effects-edit > span,
+.fxmaster-api-effect-delete > span,
+.fxmaster-particle-toggle > i,
+.fxmaster-filter-toggle > i,
+.fxmaster-api-effects-delete > i,
+.fxmaster-api-effects-edit > i,
+.fxmaster-api-effect-delete > i {
+  position: static;
+  inset: auto;
+  display: block;
+  line-height: 1;
+  transform: none;
+  margin: 0;
+  pointer-events: none;
+}
+
 .fxmaster-filter-expand,
 .fxmaster-api-effects-expand,
 .fxmaster-particles-group-expand,
@@ -121,7 +147,264 @@
   display: flex;
 }
 
-/* Collapse-arrow base & rotation */
+.fxmaster-filter-params,
+.fxmaster-particle-params {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+  width: 100%;
+  align-items: start;
+}
+
+.fxmaster-param-field {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.fxmaster-placement-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+  width: 100%;
+  align-items: start;
+  container-type: inline-size;
+}
+
+.fxmaster-param-title {
+  display: block;
+  min-width: 0;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.fxmaster-param-title[data-tooltip],
+.fxmaster-param-label[data-tooltip],
+.fxmaster-api-effect-editor label[data-tooltip] {
+  cursor: help;
+}
+
+.fxmaster-param-field > input,
+.fxmaster-param-field > select,
+.fxmaster-param-field > textarea,
+.fxmaster-param-field > multi-select,
+.fxmaster-param-field > .fxmaster-input-range,
+.fxmaster-param-field > .fxmaster-input-checkbox,
+.fxmaster-param-field > .fxmaster-input-color,
+.fxmaster-param-field > .fxmaster-input-multi,
+.fxmaster-param-field > .fxmaster-input-select {
+  min-width: 0;
+  width: 100%;
+}
+
+.fxmaster-input-select select {
+  width: 100%;
+}
+
+.fxmaster-param-field--placement-toggle {
+  grid-column: auto;
+  gap: 0;
+}
+
+.fxmaster-input-checkbox--placement {
+  width: 100%;
+}
+
+.fxmaster-placement-toggle {
+  position: relative;
+  display: block;
+  width: 100%;
+  cursor: pointer;
+}
+
+.fxmaster-placement-toggle input[type="checkbox"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+}
+
+.fxmaster-placement-toggle-slider {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
+  min-height: 2.1rem;
+  padding: 0.05rem 0.65rem 0 1.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-bg) 92%, var(--color-border) 8%);
+  color: var(--color-text);
+  overflow: hidden;
+  transition: background 120ms ease-out, border-color 120ms ease-out, box-shadow 120ms ease-out, transform 80ms ease-out;
+}
+
+.fxmaster-placement-toggle-slider::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0.18rem;
+  width: 1.05rem;
+  height: 1.05rem;
+  border-radius: 999px;
+  transform: translateY(-50%);
+  background: var(--color-bg);
+  border: 1px solid color-mix(in srgb, var(--color-text-light-0) 80%, transparent 20%);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-border) 60%, transparent 40%), 0 1px 2px rgba(0, 0, 0, 0.4);
+  transition: left 150ms ease-out, background 120ms ease-out, border-color 120ms ease-out, box-shadow 120ms ease-out;
+}
+
+.fxmaster-placement-toggle:hover .fxmaster-placement-toggle-slider {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-warm-2) 40%, transparent 60%);
+}
+
+.fxmaster-placement-toggle input[type="checkbox"]:checked + .fxmaster-placement-toggle-slider {
+  justify-content: flex-start;
+  padding: 0.05rem 1.55rem 0 0.65rem;
+  background: var(--color-warm-2);
+  border-color: var(--color-warm-3);
+  color: var(--color-text-light-0);
+}
+
+.fxmaster-placement-toggle input[type="checkbox"]:checked + .fxmaster-placement-toggle-slider::before {
+  left: calc(100% - 1.23rem);
+}
+
+.fxmaster-placement-toggle input[type="checkbox"]:focus-visible + .fxmaster-placement-toggle-slider {
+  outline: 2px solid var(--color-warm-3);
+  outline-offset: 2px;
+}
+
+.fxmaster-placement-toggle-content {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.32rem;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  text-align: right;
+  pointer-events: none;
+  transform: translateX(0.12rem);
+  transition: transform 120ms ease-out;
+}
+
+.fxmaster-placement-toggle
+  input[type="checkbox"]:checked
+  + .fxmaster-placement-toggle-slider
+  .fxmaster-placement-toggle-content {
+  justify-content: flex-start;
+  text-align: left;
+  transform: translateX(-0.12rem);
+}
+
+.fxmaster-placement-toggle-label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.fxmaster-placement-toggle-label--short,
+.fxmaster-placement-toggle-compact {
+  display: none;
+}
+
+.fxmaster-placement-toggle-arrow {
+  display: inline-block;
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1;
+  transform: translateY(-0.02em);
+}
+
+.fxmaster-placement-toggle-short-text {
+  display: inline-block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fxmaster-placement-toggle-compact {
+  align-items: center;
+  gap: 0.16rem;
+}
+
+.fxmaster-placement-toggle-icon {
+  flex: 0 0 auto;
+  line-height: 1;
+}
+
+.fxmaster-placement-toggle-icon--compact {
+  font-size: 0.9rem;
+}
+
+.fxmaster-placement-toggle-arrow--compact {
+  font-size: 0.9rem;
+}
+
+@container (max-width: 27rem) {
+  .fxmaster-placement-toggle-slider {
+    padding: 0.05rem 0.48rem 0 1.45rem;
+  }
+
+  .fxmaster-placement-toggle input[type="checkbox"]:checked + .fxmaster-placement-toggle-slider {
+    padding: 0.05rem 1.45rem 0 0.48rem;
+  }
+
+  .fxmaster-placement-toggle-label--full {
+    display: none;
+  }
+
+  .fxmaster-placement-toggle-label--short {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.18rem;
+    font-size: 0.76rem;
+  }
+
+  .fxmaster-placement-toggle-label--short .fxmaster-placement-toggle-arrow {
+    font-size: 0.95rem;
+  }
+}
+
+@container (max-width: 24rem) {
+  .fxmaster-placement-toggle-slider {
+    justify-content: flex-end;
+    padding: 0.05rem 0.48rem 0 1.55rem;
+  }
+
+  .fxmaster-placement-toggle input[type="checkbox"]:checked + .fxmaster-placement-toggle-slider {
+    justify-content: flex-start;
+    padding: 0.05rem 1.55rem 0 0.48rem;
+  }
+
+  .fxmaster-placement-toggle-label--short {
+    display: none;
+  }
+
+  .fxmaster-placement-toggle-compact {
+    display: inline-flex;
+  }
+
+  .fxmaster-placement-toggle-content {
+    gap: 0;
+  }
+}
+
 .fxmaster-collapse-arrow {
   position: absolute;
   pointer-events: none;
@@ -134,7 +417,6 @@
   transform: rotate(180deg);
 }
 
-/* Range inputs */
 .fxmaster-input-range {
   display: flex;
   align-items: center;
@@ -151,7 +433,137 @@
   color: var(--color-text-light-1);
 }
 
-/* Region-behavior config */
+.fxmaster-input-range-dual {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+  min-width: 0;
+  --range-start-pct: 0;
+  --range-end-pct: 100;
+}
+
+.fxmaster-input-range-dual-track {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 1.75rem;
+  align-items: center;
+}
+
+.fxmaster-input-range-dual-track::before,
+.fxmaster-input-range-dual-track::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 0.25rem;
+  border-radius: 999px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.fxmaster-input-range-dual-track::before {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.fxmaster-input-range-dual-track::after {
+  left: calc(var(--range-start-pct) * 1%);
+  right: calc(100% - (var(--range-end-pct) * 1%));
+  background: var(--color-warm-2);
+}
+
+.fxmaster-input-range-dual-track input[type="range"] {
+  grid-area: 1 / 1;
+  margin: 0;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.fxmaster-input-range-dual-track input[type="range"][data-range-role="min"] {
+  z-index: 2;
+}
+
+.fxmaster-input-range-dual-track input[type="range"][data-range-role="max"] {
+  z-index: 3;
+}
+
+.fxmaster-input-range-dual-track input[type="range"]::-webkit-slider-runnable-track {
+  height: 0.25rem;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.fxmaster-input-range-dual-track input[type="range"]::-moz-range-track {
+  height: 0.25rem;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.fxmaster-input-range-dual-track input[type="range"]::-moz-range-progress {
+  background: transparent;
+}
+
+.fxmaster-input-range-dual-track input[type="range"]::-ms-track {
+  height: 0.25rem;
+  border-color: transparent;
+  color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.fxmaster-input-range-dual-track input[type="range"]::-webkit-slider-thumb {
+  width: 0.9rem;
+  height: 0.9rem;
+  margin-top: calc((0.25rem - 0.9rem) / 2);
+  border: 1px solid var(--color-warm-3);
+  border-radius: 999px;
+  background: var(--color-warm-2);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.fxmaster-input-range-dual-track input[type="range"]::-moz-range-thumb {
+  width: 0.9rem;
+  height: 0.9rem;
+  border: 1px solid var(--color-warm-3);
+  border-radius: 999px;
+  background: var(--color-warm-2);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.fxmaster-input-range-dual-values {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.fxmaster-input-range-dual-values .range-value {
+  min-width: 3.25ch;
+  text-align: right;
+  color: var(--color-text-light-1);
+}
+
+.fxmaster-input-range-dual-values .range-value-separator {
+  color: var(--color-text-light-6);
+}
+
 .region-behavior-config .behavior-settings {
   display: none;
   margin-left: 1.5em;
@@ -167,7 +579,52 @@
   display: flex;
 }
 
-/* Make the whole switch clearly clickable */
+@media (max-width: 640px) {
+  .region-behavior-config .behavior-settings {
+    margin-left: 0.75em;
+  }
+}
+
+.region-behavior-config .fxmaster-darkness-activation-group {
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 0.35rem;
+}
+
+.region-behavior-config .fxmaster-darkness-activation-group > label {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.region-behavior-config .form-group:has(input[name$="_darknessActivationEnabled"]) {
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+.region-behavior-config .form-group:has(input[name$="_darknessActivationEnabled"]) > label {
+  flex: 1 1 auto;
+  width: auto;
+  max-width: none;
+  min-width: max-content;
+  white-space: nowrap;
+}
+
+.region-behavior-config .form-group:has(input[name$="_darknessActivationEnabled"]) .form-fields {
+  flex: 0 0 auto;
+  width: auto;
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+.region-behavior-config .fxmaster-darkness-activation-input {
+  flex: 0 0 3.1rem;
+  width: 3.1rem;
+  max-width: 3.1rem;
+  min-width: 0;
+  text-align: right;
+}
+
 .fxm-switch {
   display: flex;
   align-items: center;
@@ -180,7 +637,6 @@
   position: relative;
 }
 
-/* Visually hide the native checkbox but keep it accessible */
 .fxm-switch input[type="checkbox"] {
   position: absolute;
   opacity: 0;
@@ -191,7 +647,6 @@
   margin: 0;
 }
 
-/* Track – slightly taller */
 .fxm-switch .fxm-slider {
   all: unset;
   position: relative;
@@ -207,7 +662,6 @@
   transition: background 150ms ease, border-color 150ms ease, filter 150ms ease;
 }
 
-/* Thumb – scaled up and centered vertically */
 .fxm-switch .fxm-slider::before {
   content: "";
   position: absolute;
@@ -224,24 +678,20 @@
   z-index: 1;
 }
 
-/* Checked state – adjust travel distance for new sizes */
 .fxm-switch input[type="checkbox"]:checked + .fxm-slider::before {
   transform: translateX(16px);
 }
 
-/* Checked state */
 .fxm-switch input[type="checkbox"]:checked + .fxm-slider {
   background: var(--color-warm-2) !important;
   border-color: var(--color-warm-3) !important;
 }
 
-/* Focus ring for keyboard users */
 .fxm-switch input[type="checkbox"]:focus-visible + .fxm-slider {
   outline: 2px solid var(--color-warm-3);
   outline-offset: 2px;
 }
 
-/* Optional hover polish */
 .fxm-switch .fxm-slider:hover::before {
   box-shadow: 0 0 6px rgba(255, 255, 255, 0.25), 0 1px 2px rgba(0, 0, 0, 0.35);
 }
@@ -313,7 +763,6 @@
   border-radius: 4px;
 }
 
-/* API Effects (scene flags added via API) */
 .fxmaster-api-effects-container {
   display: flex;
   flex-direction: column;
@@ -356,11 +805,21 @@
 }
 
 .fxmaster-api-effects-type {
-  flex: 1;
-  min-width: 0;
+  flex: 0 1 14rem;
+  min-width: 8rem;
+  max-width: 18rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.fxmaster-api-effects-source {
+  flex: 0 0 8rem;
+  min-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
 }
 
 .fxmaster-api-effects-delete {
@@ -401,10 +860,6 @@
   opacity: 0.85;
 }
 
-/* -------------------------------------------- */
-/* API Effects management window                */
-/* -------------------------------------------- */
-
 .fxmaster-api-effects-container {
   max-height: var(--fxmaster-max-height);
   overflow: auto;
@@ -442,16 +897,28 @@
 
 .fxmaster-api-effects-col.type,
 .fxmaster-api-effects-type {
-  flex: 1;
+  flex: 0 1 14rem;
   min-width: 8rem;
+  max-width: 18rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.fxmaster-api-effects-col.source,
+.fxmaster-api-effects-source {
+  flex: 0 0 8rem;
+  min-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
 .fxmaster-api-effects-col.actions {
   flex: 0 0 3rem;
   text-align: right;
+  margin-left: auto;
 }
 
 .fxmaster-api-effects-delete {
@@ -508,7 +975,6 @@
   opacity: 0.6;
 }
 
-/* Open-state boxing */
 #api-effects-config .fxmaster-api-effects-row.open {
   border: 1px solid var(--color-warm-2);
   border-bottom: none;
@@ -522,17 +988,13 @@
   margin-bottom: 0.25rem;
 }
 
-/* -------------------------------------------- */
-/* API Effects: Edit button + per-instance editor */
-/* -------------------------------------------- */
-
-/* Widen the Actions column */
 .fxmaster-api-effects-col.actions {
   flex: 0 0 5.5rem;
+  margin-left: auto;
 }
 
-/* Style the new Edit button to match Delete */
 .fxmaster-api-effects-edit {
+  margin-left: auto;
   contain: layout paint;
   will-change: transform;
   transform: translateZ(0);
@@ -556,12 +1018,47 @@
   cursor: not-allowed;
 }
 
-/* Shift the collapse arrow left to account for two action buttons */
+.fxmaster-api-effects-col.effect,
+.fxmaster-api-effects-effect {
+  flex: 1 1 0;
+  min-width: 14rem;
+}
+
+.fxmaster-api-effects-effect {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.fxmaster-api-effects-effect .fxmaster-layers-effect,
+.fxmaster-api-effects-effect .fxmaster-layers-effect-text {
+  min-width: 0;
+}
+
+.fxmaster-api-effects-effect .fxmaster-layers-effect-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fxmaster-api-effects-col.source,
+.fxmaster-api-effects-source {
+  flex: 0 0 8rem;
+  min-width: 8rem;
+}
+
+.fxmaster-api-effects-col.name,
+.fxmaster-api-effects-name {
+  flex: 0 1 12rem;
+  min-width: 0;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .fxmaster-api-effects-row .fxmaster-collapse-arrow {
   right: 5.6rem;
 }
-
-/* ---- Single-instance API Effect Editor ---- */
 
 .window-app.api-effect-editor,
 .ui-dialog.api-effect-editor {
@@ -586,13 +1083,11 @@
   max-height: var(--fxmaster-max-height);
 }
 
-/* Ensure the filter editor's collapse arrow is positioned (NOT using .fxmaster-filters-container here) */
 .fxmaster-api-effect-editor .fxmaster-filters-row .fxmaster-collapse-arrow {
   right: 3.2rem;
   opacity: 0.6;
 }
 
-/* Open-state boxing (mirror filters/particles managers) */
 .fxmaster-api-effect-editor .fxmaster-filters-row.open {
   border: 1px solid var(--color-warm-2);
   border-bottom: none;
@@ -673,4 +1168,151 @@
 .fxmaster-api-effect-delete {
   display: grid;
   place-items: center;
+}
+
+.fxmaster-param-title--icon {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 1.5rem;
+  min-inline-size: 1.5rem;
+  block-size: 1.5rem;
+  font-size: 1rem;
+}
+
+.fxmaster-param-field--placement-toggle {
+  white-space: nowrap;
+}
+
+.fxmaster-save-macro-app .window-content {
+  padding: 0.75rem;
+}
+
+.fxmaster-save-macro-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.fxmaster-save-macro-dialog .form-group {
+  margin: 0;
+}
+
+.fxmaster-save-macro-dialog label[data-tooltip] {
+  cursor: help;
+}
+
+.fxmaster-save-macro-option {
+  display: grid;
+  grid-template-columns: clamp(8.5rem, 34%, 10rem) minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.6rem 0.65rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--fxmaster-radius);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.fxmaster-save-macro-option--name .form-fields {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.fxmaster-save-macro-name-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 2rem;
+  padding: 0.4rem 0.65rem;
+  border: 1px solid var(--color-border-dark-3);
+  border-radius: calc(var(--fxmaster-radius) - 2px);
+  background: color-mix(in srgb, var(--color-bg) 94%, var(--color-border) 6%);
+}
+
+.fxmaster-save-macro-name-input:focus {
+  border-color: var(--color-warm-2);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-warm-2) 40%, transparent);
+}
+
+.fxmaster-save-macro-option > label {
+  min-width: 0;
+  margin: 0;
+}
+
+.fxmaster-save-macro-option .form-fields {
+  margin: 0;
+  justify-content: flex-end;
+}
+
+.fxmaster-save-macro-action-control {
+  flex: 0 0 auto;
+  width: 6.75rem;
+}
+
+.fxmaster-save-macro-action-toggle {
+  width: 100%;
+}
+
+.fxmaster-save-macro-action-slider {
+  min-height: 2rem;
+  padding: 0.05rem 0.5rem 0 1.45rem;
+}
+
+.fxmaster-save-macro-action-toggle input[type="checkbox"]:checked + .fxmaster-save-macro-action-slider {
+  padding: 0.05rem 1.45rem 0 0.5rem;
+}
+
+.fxmaster-save-macro-action-label {
+  font-size: 0.76rem;
+  letter-spacing: 0.01em;
+}
+
+.fxmaster-save-macro-action-label--toggle {
+  display: none;
+}
+
+.fxmaster-save-macro-action-toggle
+  input[type="checkbox"]:checked
+  + .fxmaster-save-macro-action-slider
+  .fxmaster-save-macro-action-label--play {
+  display: none;
+}
+
+.fxmaster-save-macro-action-toggle
+  input[type="checkbox"]:checked
+  + .fxmaster-save-macro-action-slider
+  .fxmaster-save-macro-action-label--toggle {
+  display: block;
+}
+
+.fxmaster-save-macro-skip-fading-toggle,
+.fxmaster-save-macro-switch-field {
+  flex: 0 0 auto;
+}
+
+.fxmaster-save-macro-app .form-footer {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0;
+  padding-top: 0.5rem;
+}
+
+.fxmaster-save-macro-app .form-footer > button {
+  flex: 1 1 0;
+  width: 50%;
+  margin: 0;
+}
+
+@media (max-width: 420px) {
+  .fxmaster-save-macro-option {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .fxmaster-save-macro-action-control {
+    width: 100%;
+  }
+
+  .fxmaster-save-macro-option .form-fields {
+    justify-content: flex-start;
+  }
 }

@@ -10,8 +10,7 @@ import { MAX_EDGES } from "../../../constants.js";
 /**
  * FXMasterFilterEffectMixin
  * -------------------------
- * Provides option plumbing, viewport locking, mask helpers, and lifecycle.
- * Automatically injects `uCssToWorld` uniform to lock patterns to the stage.
+ * Provides option plumbing, viewport locking, mask helpers, and lifecycle. Automatically injects `uCssToWorld` uniform to lock patterns to the stage.
  */
 
 export const normalize = (opts) => {
@@ -135,9 +134,7 @@ export function FXMasterFilterEffectMixin(Base) {
     async step() {}
 
     /**
-     * Lock viewport logic.
-     * Projects the SceneRect (World) into Screen Space and intersects with the Viewport.
-     * Uses strict clamping to prevent invalid Framebuffer sizes on extreme zoom.
+     * Lock viewport logic. Projects the SceneRect (World) into Screen Space and intersects with the Viewport. Uses strict clamping to prevent invalid Framebuffer sizes on extreme zoom.
      */
     lockViewport(opts = {}) {
       const { setCamFrac = true, setDeviceToCss = true } = opts;
@@ -421,6 +418,43 @@ export function FXMasterFilterEffectMixin(Base) {
         logger.debug("FXMaster:", err);
       }
       this._fadeCancel = null;
+    }
+
+    /**
+     * Animate a numeric uniform to a target value.
+     *
+     * @param {string} uniformKey
+     * @param {number} to
+     * @param {{ durationMs?: number, from?: number|undefined, easing?: Function|undefined, onDone?: Function|undefined }} [options]
+     * @returns {void}
+     */
+    fadeUniformTo(uniformKey, to, { durationMs = 3000, from, easing, onDone } = {}) {
+      if (!this.uniforms) return;
+
+      if (from !== undefined) {
+        try {
+          this.uniforms[uniformKey] = from;
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+      }
+
+      if (!(durationMs > 0)) {
+        try {
+          this.uniforms[uniformKey] = to;
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+        try {
+          onDone?.();
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+        return;
+      }
+
+      this.cancelUniformFade?.();
+      this._startUniformFade(uniformKey, { to, durationMs, easing, onDone });
     }
 
     _startUniformFade(uniformKey, { to, durationMs, easing, onDone }) {

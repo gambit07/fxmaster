@@ -28,8 +28,7 @@ export function rotatePoint(px, py, cx, cy, angleRad) {
 }
 
 /**
- * Compute the centroid of a point set.
- * Accepts either an array of `{x, y}` points or a flat number array.
+ * Compute the centroid of a point set. Accepts either an array of `{x, y}` points or a flat number array.
  * @param {Array<{x:number,y:number}>|number[]} points
  * @returns {{x:number,y:number}}
  */
@@ -147,8 +146,7 @@ export function traceRegionShapePIXI(g, s, opts = {}) {
     }
     const c = centroid(pts);
     /**
-     * Region polygons may represent points as either an array of {x, y} objects or as a flat
-     * number array [x0, y0, x1, y1, ...].
+     * Region polygons may represent points as either an array of {x, y} objects or as a flat number array [x0, y0, x1, y1, ...].
      */
     if (typeof pts[0] === "number") {
       const rotFlat = [];
@@ -253,8 +251,7 @@ export function traceRegionShapePath2D(ctx, s) {
     }
     ctx.beginPath();
     /**
-     * Region polygons may represent points as either an array of {x, y} objects or as a flat
-     * number array [x0, y0, x1, y1, ...].
+     * Region polygons may represent points as either an array of {x, y} objects or as a flat number array [x0, y0, x1, y1, ...].
      */
     if (typeof pts[0] === "number") {
       if (pts.length < 4) {

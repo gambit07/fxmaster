@@ -1,9 +1,5 @@
-// SPDX-FileCopyrightText: 2025 Gambit
-/* Region/scene gating + color controls + hybrid fade to edge.
-// Rect/ellipse: analytic percent/absolute fades.
-// Polygon: percent = smooth-min over edges; absolute = SDF with tiny Gaussian smoothing.
-
-/* ---------- Precision ---------- */
+/** Region/scene gating, color controls, and hybrid fade to edge. */
+/** ---------- Precision ---------- */
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
 precision highp int;
@@ -12,107 +8,167 @@ precision mediump float;
 precision mediump int;
 #endif
 
-/* ---------- Inputs ---------- */
-uniform sampler2D uSampler;     // scene color
-uniform sampler2D maskSampler;  // region/suppression mask
+/** ---------- Inputs ---------- */
+uniform sampler2D uSampler;     /** scene color */
+uniform sampler2D maskSampler;  /** region/suppression mask */
 
-// Mask RT size in CSS px
 uniform vec2  viewSize;
 
-// Pixi filter pipeline
-uniform vec4  inputSize;    // xy: input size in CSS px; zw: 1/size
-uniform vec4  outputFrame;  // xy: offset in CSS px; zw: size
+uniform vec4  inputSize;    /** xy: input size in CSS px; zw: 1/size */
+uniform vec4  outputFrame;  /** xy: offset in CSS px; zw: size */
 
-uniform vec2  camFrac;      // (stage unsnapped) - (stage snapped)
+uniform vec2  camFrac;      /** (stage unsnapped) - (stage snapped) */
 
-// Region-mask flags
 uniform float hasMask;
 uniform float maskReady;
 uniform float invertMask;
 uniform float maskSoft;
 uniform float strength;
 
-// Color controls
 uniform float red, green, blue;
 uniform float brightness, contrast, saturation, gamma;
+uniform int blendMode;
 
-/* ---------- Fade uniforms ---------- */
-// 0=polygon, 1=rect, 2=ellipse, -1=none
+/** ---------- Fade uniforms ---------- */
 uniform int   uRegionShape;
 
-// CSS -> World affine (column-major)
 uniform mat3  uCssToWorld;
 
-// Rect/Ellipse analytics
 uniform vec2  uCenter;
 uniform vec2  uHalfSize;
 uniform float uRotation;
 
-/* Polygon SDF (absolute-width & inradius only) */
+/** Polygon SDF (absolute-width & inradius only) */
 uniform sampler2D uSdf;
-uniform mat3  uUvFromWorld;    // world -> SDF UV
-uniform vec2  uSdfScaleOff;    // [scale, offset] for decode
-uniform float uSdfInsideMax;   // inradius (world px)
-uniform vec2  uSdfTexel;       // 1/texture size (UV texel)
+uniform mat3  uUvFromWorld;    /** world -> SDF UV */
+uniform vec2  uSdfScaleOff;    /** [scale, offset] for decode */
+uniform float uSdfInsideMax;   /** inradius (world px) */
+uniform vec2  uSdfTexel;       /** 1/texture size (UV texel) */
 
-/* Absolute width mode (kept for compatibility) */
-uniform float uFadeWorld;      // world px
-uniform float uFadePx;         // CSS px
+/** Absolute width mode (kept for compatibility) */
+uniform float uFadeWorld;      /** world px */
+uniform float uFadePx;         /** CSS px */
 
-/* Percent mode */
-uniform float uUsePct;         // 1 => use uFadePct
-uniform float uFadePct;        // 0..1
+/** Percent mode */
+uniform float uUsePct;         /** 1 => use uFadePct */
+uniform float uFadePct;        /** 0..1 */
 
-/* SDF-backed polygon % fades (used for multi-shape regions) */
-uniform float uUseSdf;        // 1 => use SDF for polygon % fades
+/** SDF-backed polygon % fades (used for multi-shape regions) */
+uniform float uUseSdf;        /** 1 => use SDF for polygon % fades */
 
-/* Polygon edges (analytic percent fade) */
+/** Polygon edges (analytic percent fade) */
 #define MAX_EDGES 64
-uniform float uEdgeCount;      // <= MAX_EDGES
-uniform vec4  uEdges[MAX_EDGES]; // (Ax,Ay,Bx,By) in world units
-uniform float uSmoothKWorld;   // world-px smoothing radius for edge combiner
+uniform float uEdgeCount;      /** <= MAX_EDGES */
+uniform vec4  uEdges[MAX_EDGES]; /** (Ax,Ay,Bx,By) in world units */
+uniform float uSmoothKWorld;   /** world-px smoothing radius for edge combiner */
 
 varying vec2 vTextureCoord;
 
 float luma(vec3 c){ return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
 vec3  softClip(vec3 c){ float m = max(c.r, max(c.g, c.b)); return (m > 1.0) ? (c / m) : c; }
 
+float blendOverlayChannel(float base, float blend) {
+  return (base < 0.5) ? (2.0 * base * blend) : (1.0 - 2.0 * (1.0 - base) * (1.0 - blend));
+}
 
-/* Shared region fade infrastructure */
+float blendSoftLightChannel(float base, float blend) {
+  return (blend < 0.5)
+    ? (base - (1.0 - 2.0 * blend) * base * (1.0 - base))
+    : (base + (2.0 * blend - 1.0) * (sqrt(max(base, 0.0)) - base));
+}
+
+float blendHardLightChannel(float base, float blend) {
+  return (blend < 0.5) ? (2.0 * base * blend) : (1.0 - 2.0 * (1.0 - base) * (1.0 - blend));
+}
+
+float blendColorDodgeChannel(float base, float blend) {
+  if (blend >= 1.0) return 1.0;
+  return min(base / max(1.0 - blend, 1e-4), 1.0);
+}
+
+float blendColorBurnChannel(float base, float blend) {
+  if (blend <= 0.0) return 0.0;
+  return 1.0 - min((1.0 - base) / max(blend, 1e-4), 1.0);
+}
+
+vec3 applyBlendMode(vec3 base, vec3 blend, int mode) {
+  base = clamp(base, 0.0, 1.0);
+  blend = clamp(blend, 0.0, 1.0);
+
+  if (mode == 1) return base * blend;
+  if (mode == 2) return 1.0 - (1.0 - base) * (1.0 - blend);
+  if (mode == 3) {
+    return vec3(
+      blendOverlayChannel(base.r, blend.r),
+      blendOverlayChannel(base.g, blend.g),
+      blendOverlayChannel(base.b, blend.b)
+    );
+  }
+  if (mode == 4) {
+    return vec3(
+      blendSoftLightChannel(base.r, blend.r),
+      blendSoftLightChannel(base.g, blend.g),
+      blendSoftLightChannel(base.b, blend.b)
+    );
+  }
+  if (mode == 5) {
+    return vec3(
+      blendHardLightChannel(base.r, blend.r),
+      blendHardLightChannel(base.g, blend.g),
+      blendHardLightChannel(base.b, blend.b)
+    );
+  }
+  if (mode == 6) {
+    return vec3(
+      blendColorDodgeChannel(base.r, blend.r),
+      blendColorDodgeChannel(base.g, blend.g),
+      blendColorDodgeChannel(base.b, blend.b)
+    );
+  }
+  if (mode == 7) {
+    return vec3(
+      blendColorBurnChannel(base.r, blend.r),
+      blendColorBurnChannel(base.g, blend.g),
+      blendColorBurnChannel(base.b, blend.b)
+    );
+  }
+  if (mode == 8) return min(base, blend);
+  if (mode == 9) return max(base, blend);
+  if (mode == 10) return abs(base - blend);
+  if (mode == 11) return base + blend - (2.0 * base * blend);
+  return blend;
+}
+
+/** Shared region fade infrastructure */
 #include <region-fade-common>
 
-/* ---------- Main ---------- */
+/** ---------- Main ---------- */
 void main(void) {
   vec4 src = texture2D(uSampler, vTextureCoord);
 
-  // pixel position in CSS px that sampled src
   vec2 screenPx = outputFrame.xy + vTextureCoord * inputSize.xy;
   vec2 snapPx   = screenPx - camFrac;
 
-  /* Region/suppression gating */
+  /** Region/suppression gating */
   float inMask = src.a;
   if (hasMask > 0.5) {
     bool maskUsable = (maskReady > 0.5) &&
                       (viewSize.x >= 1.0) &&
                       (viewSize.y >= 1.0);
     if (maskUsable) {
-      // Scene masks are binary and should be stable across pan/zoom.
-      // Use screen-space sampling for scene (uRegionShape < 0), and snapped sampling for region masks.
       vec2 samplePx = (uRegionShape < 0) ? screenPx : snapPx;
 
-      // Sample at texel centers to reduce boundary jitter.
       vec2 maskPx = floor(samplePx) + 0.5;
       vec2 maskUV = clamp(maskPx / max(viewSize, vec2(1.0)), 0.0, 1.0);
       float a = clamp(texture2D(maskSampler, maskUV).r, 0.0, 1.0);
 
-      // For the scene allow-mask, a hard step avoids 1px seams; for region masks keep a soft edge.
       float m = (maskSoft > 0.5) ? a : ((uRegionShape < 0) ? step(0.5, a) : smoothstep(0.48, 0.52, a));
       if (invertMask > 0.5) m = 1.0 - m;
       inMask *= m;
     }
   }
 
-  /* Fade factor */
+  /** Fade factor */
   float fade = 1.0;
   vec2 pW = applyCssToWorld(snapPx);
 
@@ -134,7 +190,7 @@ void main(void) {
     }
   }
 
-  /* Color pipeline */
+  /** Color pipeline */
   vec3 color = src.rgb;
   color *= vec3(red, green, blue);
   color *= max(brightness, 0.0);
@@ -151,8 +207,9 @@ void main(void) {
   float g = max(gamma, 0.0001);
   color = pow(clamp(color, 0.0, 1.0), vec3(1.0 / g));
 
-  /* Compose */
+  /** Compose */
   float w = clamp(inMask * fade * strength, 0.0, 1.0);
-  vec3 finalRGB = mix(src.rgb, color, w);
+  vec3 blended = applyBlendMode(src.rgb, color, blendMode);
+  vec3 finalRGB = mix(src.rgb, blended, w);
   gl_FragColor  = vec4(finalRGB, src.a);
 }

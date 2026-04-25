@@ -1,8 +1,9 @@
 <section class="fxmaster-api-effects-container">
   <div class="fxmaster-api-effects-header">
-    <div class="fxmaster-api-effects-col kind">{{localize "FXMASTER.Common.ApiEffectsType"}}</div>
-    <div class="fxmaster-api-effects-col type">{{localize "FXMASTER.Common.ApiEffectsName"}}</div>
-    <div class="fxmaster-api-effects-col actions">{{localize "FXMASTER.Common.ApiEffectsActions"}}</div>
+    <div class="fxmaster-api-effects-col effect">{{localize "FXMASTER.Layers.Effect"}}</div>
+    <div class="fxmaster-api-effects-col source">{{localize "FXMASTER.Layers.Source"}}</div>
+    <div class="fxmaster-api-effects-col name">{{localize "FXMASTER.Common.ApiEffectsName"}}</div>
+    <div class="fxmaster-api-effects-col actions">{{localize "FXMASTER.Layers.Actions"}}</div>
   </div>
 
   {{#if apiEffects.length}}
@@ -12,12 +13,19 @@
         data-uid="{{ef.uid}}"
         data-action="toggleApiCollapse"
       >
-        <div class="fxmaster-api-effects-kind">
-          <i class="{{ef.icon}}"></i>
-          <span class="fxmaster-api-effects-kind-label">{{ef.kindLabel}}</span>
+        <div class="fxmaster-api-effects-effect" title="{{ef.label}}">
+          <div class="fxmaster-layers-effect">
+            <span class="fxmaster-layers-effect-icon"><i class="{{ef.icon}}"></i></span>
+            <div class="fxmaster-layers-effect-text">
+              <div class="fxmaster-layers-effect-name">{{ef.label}}</div>
+              <div class="fxmaster-layers-effect-meta">{{ef.kindLabel}} · {{ef.effectType}}</div>
+            </div>
+          </div>
         </div>
 
-        <div class="fxmaster-api-effects-type" title="{{ef.name}}">{{ef.name}}</div>
+        <div class="fxmaster-api-effects-source" title="{{ef.sourceLabel}}">{{ef.sourceLabel}}</div>
+
+        <div class="fxmaster-api-effects-name" title="{{ef.sourceName}}">{{ef.sourceName}}</div>
 
         <button
           type="button"

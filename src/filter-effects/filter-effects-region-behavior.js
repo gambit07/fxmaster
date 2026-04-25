@@ -1,7 +1,10 @@
-import { resetFlag } from "../utils.js";
+import { resetFlag, normalizeDarknessActivationRange } from "../utils.js";
 import { packageId } from "../constants.js";
+import { buildRegionEffectUid, promoteEffectStackUids } from "../common/effect-stack.js";
 
-/** Region-only parameters applied to filter options */
+/**
+ * Region-only parameters applied to filter options.
+ */
 const REGION_ONLY = {
   fadePercent: {
     label: "FXMASTER.Params.FadePercent",
@@ -75,6 +78,7 @@ export class FilterRegionBehaviorType extends foundry.data.regionBehaviors.Regio
       });
 
       for (const [param, cfg] of Object.entries(cls.parameters)) {
+        if (cfg?.sceneOnly) continue;
         let FieldClass = foundry.data.fields.StringField;
         const opts = {
           required: false,
@@ -88,6 +92,22 @@ export class FilterRegionBehaviorType extends foundry.data.regionBehaviors.Regio
           if (cfg.min !== undefined) opts.min = cfg.min;
           if (cfg.max !== undefined) opts.max = cfg.max;
           if (cfg.step !== undefined) opts.step = cfg.step;
+        } else if (cfg.type === "range-dual") {
+          schema[`${type}_${param}_min`] = new foundry.data.fields.StringField({
+            required: false,
+            nullable: true,
+            initial: String(cfg.value?.min ?? cfg.min ?? 0),
+            label: cfg.minLabel ?? cfg.label,
+            localize: true,
+          });
+          schema[`${type}_${param}_max`] = new foundry.data.fields.StringField({
+            required: false,
+            nullable: true,
+            initial: String(cfg.value?.max ?? cfg.max ?? 1),
+            label: cfg.maxLabel ?? cfg.label,
+            localize: true,
+          });
+          continue;
         } else if (cfg.type === "color") {
           FieldClass = foundry.data.fields.ColorField;
           Object.assign(opts, { initial: cfg.value.value });
@@ -123,6 +143,16 @@ export class FilterRegionBehaviorType extends foundry.data.regionBehaviors.Regio
             required: false,
             nullable: true,
             initial: cfg.value,
+            label: cfg.label,
+            localize: true,
+          });
+          continue;
+        } else if (cfg.type === "select") {
+          schema[`${type}_${param}`] = new foundry.data.fields.StringField({
+            required: false,
+            nullable: true,
+            initial: cfg.value,
+            choices: cfg.options ?? {},
             label: cfg.label,
             localize: true,
           });
@@ -206,9 +236,11 @@ export class FilterRegionBehaviorType extends foundry.data.regionBehaviors.Regio
       .filter(([type]) => system[`${type}_enabled`])
       .reduce((map, [type, cls]) => {
         const opts = {};
-        const paramKeys = [...Object.keys(cls.parameters), ...Object.keys(REGION_ONLY)];
-        for (const param of paramKeys) {
-          const cfg = cls.parameters[param];
+        const paramEntries = [
+          ...Object.entries(cls.parameters).filter(([, cfg]) => !cfg?.sceneOnly),
+          ...Object.entries(REGION_ONLY),
+        ];
+        for (const [param, cfg] of paramEntries) {
           if (cfg?.type === "color") {
             opts[param] = {
               apply: system[`${type}_${param}_apply`],
@@ -217,6 +249,11 @@ export class FilterRegionBehaviorType extends foundry.data.regionBehaviors.Regio
           } else if (cfg?.type === "multi-select") {
             const val = system[`${type}_${param}`];
             opts[param] = val ? Array.from(val) : [];
+          } else if (cfg?.type === "range-dual") {
+            opts[param] = normalizeDarknessActivationRange({
+              min: system[`${type}_${param}_min`],
+              max: system[`${type}_${param}_max`],
+            });
           } else {
             opts[param] = system[`${type}_${param}`];
           }
@@ -236,6 +273,15 @@ export class FilterRegionBehaviorType extends foundry.data.regionBehaviors.Regio
     if ((!foundry.utils.isEmpty(diff1) || !foundry.utils.isEmpty(diff2)) && game.user.isGM) {
       if (Object.keys(nextFilters).length) await resetFlag(this.parent, "filters", nextFilters);
       else await this.parent.unsetFlag(packageId, "filters");
+
+      const regionId = this.parent?.parent?.id ?? this.parent?.region?.id ?? null;
+      const behaviorId = this.parent?.id ?? null;
+      if (regionId && behaviorId) {
+        const addedTypes = Object.keys(nextFilters).filter((type) => !(type in prevFilters));
+        const addedUids = addedTypes.map((type) => buildRegionEffectUid("filter", regionId, behaviorId, type));
+        await promoteEffectStackUids(addedUids, canvas.scene);
+      }
+
       changedAny = true;
     }
 

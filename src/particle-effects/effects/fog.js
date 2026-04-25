@@ -107,6 +107,69 @@ export class FogParticleEffect extends DefaultRectangleSpawnMixin(FXMasterPartic
     ],
   };
 
+  /**
+   * Extra spawn padding in scene pixels for fog-style soft sprites.
+   *
+   * Fog uses large cloud textures that are clipped back to the scene bounds by the stack pass. Without overscan, the particle field can visibly thin out at scene edges while panning, which reads like the overlay drifting off the map even though the transform is correct.
+   *
+   * @param {object} d
+   * @returns {number}
+   */
+  static getSceneSpawnPadding(d) {
+    const grid = Math.max(1, Number(d?.size) || 100);
+    const sceneW = Math.max(1, Number(d?.sceneRect?.width ?? d?.sceneWidth ?? d?.width) || 1);
+    const sceneH = Math.max(1, Number(d?.sceneRect?.height ?? d?.sceneHeight ?? d?.height) || 1);
+    return Math.max(grid * 6, Math.min(sceneW, sceneH) * 0.12);
+  }
+
+  /** @override */
+  getParticleEmitters(options = {}) {
+    options = this.constructor.mergeWithDefaults(options);
+
+    const { maxParticles } = this.constructor.computeMaxParticlesFromView(options, {
+      minViewCells: this.constructor.MIN_VIEW_CELLS ?? 3000,
+    });
+
+    const d = CONFIG.fxmaster.getParticleDimensions(options);
+    const config = foundry.utils.deepClone(this.constructor.defaultConfig);
+
+    const rect =
+      d?.sceneRect ?? new PIXI.Rectangle(0, 0, d?.sceneWidth ?? d?.width ?? 1, d?.sceneHeight ?? d?.height ?? 1);
+    const padding = this.constructor.getSceneSpawnPadding(d);
+    const spawnX = (Number(rect.x) || 0) - padding;
+    const spawnY = (Number(rect.y) || 0) - padding;
+    const spawnW = Math.max(1, (Number(rect.width) || 1) + padding * 2);
+    const spawnH = Math.max(1, (Number(rect.height) || 1) + padding * 2);
+
+    const sceneArea = Math.max(1, (Number(rect.width) || 1) * (Number(rect.height) || 1));
+    const spawnArea = Math.max(1, spawnW * spawnH);
+    const areaRatio = spawnArea / sceneArea;
+
+    config.maxParticles = Math.max(maxParticles, Math.round(maxParticles * areaRatio));
+
+    const lifetime = config.lifetime ?? 1;
+    const lifetimeMin = typeof lifetime === "number" ? lifetime : lifetime.min ?? 1;
+    config.frequency = lifetimeMin / config.maxParticles;
+
+    config.behaviors ??= [];
+    config.behaviors.push({
+      type: "spawnShape",
+      config: {
+        type: "rect",
+        data: {
+          x: spawnX,
+          y: spawnY,
+          w: spawnW,
+          h: spawnH,
+        },
+      },
+    });
+
+    this.applyOptionsToConfig(options, config);
+
+    return [this.createEmitter(config)];
+  }
+
   /** @override */
   static get defaultConfig() {
     return this.FOG_CONFIG;

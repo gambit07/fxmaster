@@ -91,6 +91,7 @@ export class UnderwaterFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   static get parameters() {
     return {
       belowTokens: { label: "FXMASTER.Params.BelowTokens", type: "checkbox", value: false },
+      belowTiles: { label: "FXMASTER.Params.BelowTiles", type: "checkbox", value: false },
       soundFxEnabled: { label: "FXMASTER.Params.SoundFxEnabled", type: "checkbox", value: false },
       speed: { label: "FXMASTER.Params.Speed", type: "range", min: 0.0, max: 200.0, step: 1.0, value: 30.0 },
       scale: { label: "FXMASTER.Params.Scale", type: "range", min: 0.0, max: 32.0, step: 0.5, value: 6.0 },
@@ -106,8 +107,7 @@ export class UnderwaterFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   }
 
   /**
-   * Apply options to uniforms and state.
-   * Accepts direct values or { value } wrappers; updates speed, scale, and fade.
+   * Apply options to uniforms and state. Accepts direct values or { value } wrappers; updates speed, scale, and fade.
    * @param {object} [opts={}] - Options payload.
    */
   applyOptions(opts = {}) {

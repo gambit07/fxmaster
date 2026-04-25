@@ -25,7 +25,7 @@
  *   uniform float uSmoothKWorld;
  */
 
-/* ---- Coordinate helpers ---- */
+/** ---- Coordinate helpers ---- */
 
 vec2 applyCssToWorld(vec2 css) {
   return (uCssToWorld * vec3(css, 1.0)).xy;
@@ -42,14 +42,14 @@ vec2 rotateVec(vec2 p, float ang) {
   return vec2(c*p.x - s*p.y, s*p.x + c*p.y);
 }
 
-/* ---- Smooth-min (polynomial) for rect channel blending ---- */
+/** ---- Smooth-min (polynomial) for rect channel blending ---- */
 
 float smin(float a, float b, float k) {
   float h = clamp(0.5 + 0.5*(b - a)/max(k, 1e-6), 0.0, 1.0);
   return mix(b, a, h) - k*h*(1.0 - h);
 }
 
-/* ---- Segment distance (world px) ---- */
+/** ---- Segment distance (world px) ---- */
 
 float distToSegment(vec2 p, vec2 a, vec2 b) {
   vec2 ab = b - a;
@@ -58,7 +58,7 @@ float distToSegment(vec2 p, vec2 a, vec2 b) {
   return length(p - c);
 }
 
-/* ---- Signed distances for rect / ellipse (world px) ---- */
+/** ---- Signed distances for rect / ellipse (world px) ---- */
 
 float sdRect(vec2 pW, vec2 center, vec2 halfSize, float rot) {
   vec2 p = rotateVec(pW - center, -rot);
@@ -86,7 +86,7 @@ float sdEllipse(vec2 pW, vec2 center, vec2 halfSize, float rot) {
   return (r - 1.0) * R;
 }
 
-/* ---- Polygon SDF helpers ---- */
+/** ---- Polygon SDF helpers ---- */
 
 vec2 worldToSdfUV(vec2 pW) {
   vec3 c0 = uUvFromWorld[0], c1 = uUvFromWorld[1];
@@ -122,7 +122,7 @@ float sdPolySmooth(vec2 pW) {
 }
 
 
-/* ---- Absolute-width fades (world px) ----
+/** ---- Absolute-width fades (world px) ----
  * Legacy helper names referenced by some FXMaster shaders.
  * Returns a fade factor in [0,1]:
  *   1.0 = fully visible deep inside the region
@@ -145,7 +145,7 @@ float maskPolySdf_abs(vec2 pW, float fadeWorld) {
   return smoothstep(0.0, fw, insideD);
 }
 
-/* ---- Percent fades (edge-anchored) ---- */
+/** ---- Percent fades (edge-anchored) ---- */
 
 float fadePctRect(vec2 pW, float pct) {
   vec2 p = rotateVec(pW - uCenter, -uRotation);

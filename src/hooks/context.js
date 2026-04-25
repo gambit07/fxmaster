@@ -8,7 +8,7 @@
 
 import { packageId } from "../constants.js";
 import { logger } from "../logger.js";
-import { coalesceNextFrame, getCssViewportMetrics } from "../utils.js";
+import { _belowTilesEnabled, _belowTokensEnabled, coalesceNextFrame, getCssViewportMetrics } from "../utils.js";
 import { isEnabled } from "../settings.js";
 import { refreshSceneParticlesSuppressionMasks } from "../particle-effects/particle-effects-scene-manager.js";
 import { FilterEffectsSceneManager } from "../filter-effects/filter-effects-scene-manager.js";
@@ -27,6 +27,8 @@ export function createHookContext() {
   const openFFx = new Set();
   /** @type {Set<Application>} Open API Effects Management windows. */
   const openAFx = new Set();
+  /** @type {Set<Application>} Open FX Layers Management windows. */
+  const openLFx = new Set();
 
   /** Resize handler references for cleanup. */
   const resizeHandlers = { _fmResizeHandler: null, _flResizeHandler: null, _fxResizeHandler: null };
@@ -50,24 +52,25 @@ export function createHookContext() {
   };
 
   /**
-   * Cache for scene-level below-tokens queries derived from scene flags.
+   * Cache for scene-level below-object queries derived from scene flags.
    *
-   * Region-level below-tokens requirements are computed from live layer state and are intentionally not cached.
-   * Region behavior state can change without a scene flag update (for example: region effects created during canvasReady, soft redraws, or module toggles).
+   * Region-level below-object requirements are computed from live layer state and are intentionally not cached. Region behavior state can change without a scene flag update (for example: region effects created during canvasReady, soft redraws, or module toggles).
    *
-   * @type {{sceneFilters: boolean|null, sceneParticles: boolean|null}}
+   * @type {{sceneFilters: {tokens:boolean|null, tiles:boolean|null}, sceneParticles: {tokens:boolean|null, tiles:boolean|null}}}
    */
   const belowTokensCache = {
-    sceneFilters: null,
-    sceneParticles: null,
+    sceneFilters: { tokens: null, tiles: null },
+    sceneParticles: { tokens: null, tiles: null },
   };
 
   /**
-   * Invalidate cached scene-level below-tokens query results.
+   * Invalidate cached scene-level below-object query results.
    */
   const invalidateBelowTokensCache = () => {
-    belowTokensCache.sceneFilters = null;
-    belowTokensCache.sceneParticles = null;
+    belowTokensCache.sceneFilters.tokens = null;
+    belowTokensCache.sceneFilters.tiles = null;
+    belowTokensCache.sceneParticles.tokens = null;
+    belowTokensCache.sceneParticles.tiles = null;
   };
 
   /**
@@ -76,21 +79,40 @@ export function createHookContext() {
    * @returns {boolean}
    */
   const sceneWantsBelowTokensFilters = () => {
-    if (belowTokensCache.sceneFilters !== null) return belowTokensCache.sceneFilters;
+    if (belowTokensCache.sceneFilters.tokens !== null) return belowTokensCache.sceneFilters.tokens;
     try {
       const infos = canvas?.scene?.getFlag?.(packageId, "filters") ?? {};
       for (const v of Object.values(infos)) {
         const bt = v?.options?.belowTokens;
-        if (bt === true) {
-          belowTokensCache.sceneFilters = true;
-          return true;
-        }
-        if (bt && typeof bt === "object" && "value" in bt && bt.value === true) {
-          belowTokensCache.sceneFilters = true;
+        if (_belowTokensEnabled(bt)) {
+          belowTokensCache.sceneFilters.tokens = true;
           return true;
         }
       }
-      belowTokensCache.sceneFilters = false;
+      belowTokensCache.sceneFilters.tokens = false;
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
+  /**
+   * Determine whether any scene-level filter effects require below-tiles cutouts.
+   *
+   * @returns {boolean}
+   */
+  const sceneWantsBelowTilesFilters = () => {
+    if (belowTokensCache.sceneFilters.tiles !== null) return belowTokensCache.sceneFilters.tiles;
+    try {
+      const infos = canvas?.scene?.getFlag?.(packageId, "filters") ?? {};
+      for (const v of Object.values(infos)) {
+        const bt = v?.options?.belowTiles;
+        if (_belowTilesEnabled(bt)) {
+          belowTokensCache.sceneFilters.tiles = true;
+          return true;
+        }
+      }
+      belowTokensCache.sceneFilters.tiles = false;
       return false;
     } catch {
       return false;
@@ -103,21 +125,40 @@ export function createHookContext() {
    * @returns {boolean}
    */
   const sceneWantsBelowTokensParticles = () => {
-    if (belowTokensCache.sceneParticles !== null) return belowTokensCache.sceneParticles;
+    if (belowTokensCache.sceneParticles.tokens !== null) return belowTokensCache.sceneParticles.tokens;
     try {
       const infos = canvas?.scene?.getFlag?.(packageId, "effects") ?? {};
       for (const v of Object.values(infos)) {
         const bt = v?.options?.belowTokens;
-        if (bt === true) {
-          belowTokensCache.sceneParticles = true;
-          return true;
-        }
-        if (bt && typeof bt === "object" && "value" in bt && bt.value === true) {
-          belowTokensCache.sceneParticles = true;
+        if (_belowTokensEnabled(bt)) {
+          belowTokensCache.sceneParticles.tokens = true;
           return true;
         }
       }
-      belowTokensCache.sceneParticles = false;
+      belowTokensCache.sceneParticles.tokens = false;
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
+  /**
+   * Determine whether any scene-level particle effects require below-tiles cutouts.
+   *
+   * @returns {boolean}
+   */
+  const sceneWantsBelowTilesParticles = () => {
+    if (belowTokensCache.sceneParticles.tiles !== null) return belowTokensCache.sceneParticles.tiles;
+    try {
+      const infos = canvas?.scene?.getFlag?.(packageId, "effects") ?? {};
+      for (const v of Object.values(infos)) {
+        const bt = v?.options?.belowTiles;
+        if (_belowTilesEnabled(bt)) {
+          belowTokensCache.sceneParticles.tiles = true;
+          return true;
+        }
+      }
+      belowTokensCache.sceneParticles.tiles = false;
       return false;
     } catch {
       return false;
@@ -138,6 +179,26 @@ export function createHookContext() {
       for (const entry of rm.values()) {
         for (const f of entry?.filters ?? []) {
           if (f?.__fxmBelowTokens) return true;
+        }
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
+  /**
+   * Determine whether any region filter effects require below-tiles cutouts.
+   *
+   * @returns {boolean}
+   */
+  const regionWantsBelowTilesFilters = () => {
+    try {
+      const rm = canvas?.filtereffects?.regionMasks;
+      if (!rm || !rm.size) return false;
+      for (const entry of rm.values()) {
+        for (const f of entry?.filters ?? []) {
+          if (f?.__fxmBelowTiles) return true;
         }
       }
       return false;
@@ -169,7 +230,28 @@ export function createHookContext() {
     }
   };
 
-  /* ---- Coalesced refresh helpers ---- */
+  /**
+   * Determine whether any region particle effects require below-tiles cutouts.
+   *
+   * @returns {boolean}
+   */
+  const regionWantsBelowTilesParticles = () => {
+    try {
+      const re = canvas?.particleeffects?.regionEffects;
+      if (!re || !re.size) return false;
+      for (const entries of re.values()) {
+        for (const e of entries ?? []) {
+          const fx = e?.fx ?? e;
+          if (fx?.__fxmBelowTiles) return true;
+        }
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
+  /** ---- Coalesced refresh helpers ---- */
 
   const requestFilterSuppressionRefresh = () => {
     invalidateBelowTokensCache();
@@ -177,8 +259,7 @@ export function createHookContext() {
   };
 
   /**
-   * Request a deferred scene-filter suppression refresh on the next animation frame.
-   * RegionBehavior CRUD can observe a newer region document than the live Region placeable tree.
+   * Request a deferred scene-filter suppression refresh on the next animation frame. RegionBehavior CRUD can observe a newer region document than the live Region placeable tree.
    */
   const requestDeferredFilterSuppressionRefresh = coalesceNextFrame(
     function requestDeferredFilterSuppressionRefresh() {
@@ -206,8 +287,7 @@ export function createHookContext() {
   };
 
   /**
-   * Request a deferred scene-particle suppression refresh on the next animation frame.
-   * RegionBehavior CRUD can observe a newer region document than the live Region placeable tree.
+   * Request a deferred scene-particle suppression refresh on the next animation frame. RegionBehavior CRUD can observe a newer region document than the live Region placeable tree.
    */
   const requestDeferredSceneParticlesSuppressionRefresh = coalesceNextFrame(
     function requestDeferredSceneParticlesSuppressionRefresh() {
@@ -220,10 +300,18 @@ export function createHookContext() {
     function requestTokenMaskRefresh() {
       if (!isEnabled()) return;
 
-      const needFilterTokens = sceneWantsBelowTokensFilters() || regionWantsBelowTokensFilters();
-      const needParticleTokens = sceneWantsBelowTokensParticles() || regionWantsBelowTokensParticles();
+      const needFilterCoverage =
+        sceneWantsBelowTokensFilters() ||
+        sceneWantsBelowTilesFilters() ||
+        regionWantsBelowTokensFilters() ||
+        regionWantsBelowTilesFilters();
+      const needParticleCoverage =
+        sceneWantsBelowTokensParticles() ||
+        sceneWantsBelowTilesParticles() ||
+        regionWantsBelowTokensParticles() ||
+        regionWantsBelowTilesParticles();
 
-      if (needFilterTokens) {
+      if (needFilterCoverage) {
         try {
           FilterEffectsSceneManager.instance.refreshSceneFilterSuppressionMasks();
         } catch (err) {
@@ -237,7 +325,7 @@ export function createHookContext() {
         }
       }
 
-      if (needParticleTokens) {
+      if (needParticleCoverage) {
         try {
           refreshSceneParticlesSuppressionMasks?.();
         } catch (err) {
@@ -254,7 +342,7 @@ export function createHookContext() {
     { key: "fxm:token:maskRefresh" },
   );
 
-  /* ---- Filter-area pinning ---- */
+  /** ---- Filter-area pinning ---- */
 
   const pinEnvFilterArea = () => {
     const env = canvas?.environment;
@@ -299,10 +387,20 @@ export function createHookContext() {
     _resize = null;
   };
 
-  /* ---- Management window tracking ---- */
+  /** ---- Management window tracking ---- */
 
   const refreshOpenFxMasterWindows = ({ hard = false } = {}) => {
-    for (const app of [...openPFx, ...openFFx, ...openAFx]) {
+    for (const app of [...openPFx, ...openFFx, ...openAFx, ...openLFx]) {
+      try {
+        app.render(!hard);
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    }
+  };
+
+  const refreshOpenLayersWindow = ({ hard = false } = {}) => {
+    for (const app of [...openLFx]) {
       try {
         app.render(!hard);
       } catch (err) {
@@ -316,6 +414,13 @@ export function createHookContext() {
       refreshOpenFxMasterWindows({ hard: true });
     },
     { key: "fxm:openWindowsRefresh" },
+  );
+
+  const scheduleLayersWindowRefresh = coalesceNextFrame(
+    function scheduleLayersWindowRefresh() {
+      refreshOpenLayersWindow({ hard: true });
+    },
+    { key: "fxm:layersWindowRefresh" },
   );
 
   const requestRedrawAllRegionParticles = coalesceNextFrame(
@@ -336,14 +441,19 @@ export function createHookContext() {
     openPFx,
     openFFx,
     openAFx,
+    openLFx,
     resizeHandlers,
     sceneHasAnySceneFilters,
     sceneHasAnySceneParticles,
     invalidateBelowTokensCache,
     sceneWantsBelowTokensFilters,
+    sceneWantsBelowTilesFilters,
     sceneWantsBelowTokensParticles,
+    sceneWantsBelowTilesParticles,
     regionWantsBelowTokensFilters,
+    regionWantsBelowTilesFilters,
     regionWantsBelowTokensParticles,
+    regionWantsBelowTilesParticles,
     requestFilterSuppressionRefresh,
     requestDeferredFilterSuppressionRefresh,
     requestRegionMaskRefreshAll,
@@ -354,6 +464,7 @@ export function createHookContext() {
     unbind,
     ensurePinned,
     scheduleOpenWindowsRefresh,
+    scheduleLayersWindowRefresh,
     requestRedrawAllRegionParticles,
   };
 }

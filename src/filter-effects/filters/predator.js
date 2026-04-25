@@ -65,6 +65,7 @@ export class PredatorFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   static get parameters() {
     return {
       belowTokens: { label: "FXMASTER.Params.BelowTokens", type: "checkbox", value: false },
+      belowTiles: { label: "FXMASTER.Params.BelowTiles", type: "checkbox", value: false },
       soundFxEnabled: { label: "FXMASTER.Params.SoundFxEnabled", type: "checkbox", value: false },
       noise: { label: "FXMASTER.Params.Noise", type: "range", max: 1.0, min: 0.0, step: 0.1, value: 0.1 },
       period: { label: "FXMASTER.Params.Speed", type: "range", max: 0.1, min: 0.0, step: 0.001, value: 0.001 },
@@ -112,8 +113,7 @@ export class PredatorFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   }
 
   /**
-   * Configure filter uniforms and state from options.
-   * Accepts direct values or { value } wrappers; updates mask options and fades.
+   * Configure filter uniforms and state from options. Accepts direct values or { value } wrappers; updates mask options and fades.
    * @param {object} [options={}] - Options payload.
    */
   configure(options = {}) {

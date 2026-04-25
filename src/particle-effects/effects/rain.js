@@ -2,8 +2,7 @@ import { FXMasterParticleEffect } from "./effect.js";
 import { logger } from "../../logger.js";
 
 /**
- * Full-screen rain with optional splash particles (toggled via options.splash.value).
- * Uses a standard PIXI.Container for the emitter parent.
+ * Full-screen rain with optional splash particles (toggled via options.splash.value). Uses a standard PIXI.Container for the emitter parent.
  */
 export class RainParticleEffect extends FXMasterParticleEffect {
   /** @override */
@@ -31,6 +30,7 @@ export class RainParticleEffect extends FXMasterParticleEffect {
     const p = super.parameters;
     return {
       belowTokens: p.belowTokens,
+      belowTiles: p.belowTiles,
       soundFxEnabled: p.soundFxEnabled,
       tint: p.tint,
       topDown: { label: "FXMASTER.Params.TopDown", type: "checkbox", value: false },
@@ -161,8 +161,7 @@ export class RainParticleEffect extends FXMasterParticleEffect {
   }
 
   /**
-   * Build one (rain) or two (rain + splash) emitters depending on options.splash.value.
-   * Particle counts are derived from view size (in grid cells), user density, and Foundry's Performance Mode via FXMasterParticleEffect helpers.
+   * Build one (rain) or two (rain + splash) emitters depending on options.splash.value. Particle counts are derived from view size (in grid cells), user density, and Foundry's Performance Mode via FXMasterParticleEffect helpers.
    */
   getParticleEmitters(options = {}) {
     options = this.constructor.mergeWithDefaults(options);
@@ -270,7 +269,7 @@ export class RainParticleEffect extends FXMasterParticleEffect {
       },
     });
 
-    // Overrides any user-selected direction in top-down mode cause bad
+    /** Ignore user-selected direction in top-down mode to preserve the expected fall orientation. */
     const optsNoDir = foundry.utils.deepClone(options);
     try {
       delete optsNoDir.direction;

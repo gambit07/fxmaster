@@ -1,3 +1,13 @@
+import { logger } from "../logger.js";
+
+const loggedTransformUpdateFailures = new WeakSet();
+
+function debugTransformUpdateFailure(transform, err) {
+  if (!transform || loggedTransformUpdateFailures.has(transform)) return;
+  loggedTransformUpdateFailures.add(transform);
+  logger.debug("FXMaster: failed to update PIXI local transform", err);
+}
+
 /**
  * FXMaster: Viewport & Camera Utilities
  *
@@ -7,8 +17,7 @@
 /**
  * Read the current stage transform from live local-transform state.
  *
- * PIXI can leave {@link PIXI.DisplayObject#worldTransform} one render behind during batched pan or zoom updates.
- * The stage is a root container, so its current screen-space transform can be read directly from its local transform after forcing a local update.
+ * PIXI can leave {@link PIXI.DisplayObject#worldTransform} one render behind during batched pan or zoom updates. The stage is a root container, so its current screen-space transform can be read directly from its local transform after forcing a local update.
  *
  * @param {PIXI.Container} [stage=canvas.stage]
  * @returns {PIXI.Matrix}
@@ -18,7 +27,9 @@ function currentStageMatrix(stage = canvas.stage) {
   const tr = stage?.transform ?? null;
   try {
     if (tr && typeof tr.updateLocalTransform === "function") tr.updateLocalTransform();
-  } catch {}
+  } catch (err) {
+    debugTransformUpdateFailure(tr, err);
+  }
 
   const src = tr?.localTransform ?? stage?.localTransform ?? stage?.worldTransform ?? PIXI.Matrix.IDENTITY;
   if (src?.clone) return src.clone();
@@ -93,6 +104,65 @@ function stageMatrixSnapshot(stage = canvas.stage) {
   }
 
   return { raw, snapped };
+}
+
+/**
+ * Read a display object's current local transform matrix.
+ *
+ * @param {PIXI.DisplayObject|null|undefined} displayObject
+ * @returns {PIXI.Matrix}
+ */
+function currentLocalMatrix(displayObject) {
+  const tr = displayObject?.transform ?? null;
+  try {
+    if (tr && typeof tr.updateLocalTransform === "function") tr.updateLocalTransform();
+  } catch (err) {
+    debugTransformUpdateFailure(tr, err);
+  }
+
+  const src =
+    tr?.localTransform ?? displayObject?.localTransform ?? displayObject?.worldTransform ?? PIXI.Matrix.IDENTITY;
+  if (src?.clone) return src.clone();
+  return new PIXI.Matrix(src?.a ?? 1, src?.b ?? 0, src?.c ?? 0, src?.d ?? 1, src?.tx ?? 0, src?.ty ?? 0);
+}
+
+/**
+ * Compose the current transform chain for a display object.
+ *
+ * The returned matrix is derived from live local-transform state so camera changes can be sampled before the next renderer pass. When the main stage is part of the chain, its translation can optionally be snapped to the current renderer resolution.
+ *
+ * @param {PIXI.DisplayObject|null|undefined} displayObject
+ * @param {{ snapStage?: boolean }} [options]
+ * @returns {PIXI.Matrix}
+ */
+export function currentWorldMatrix(displayObject, { snapStage = true } = {}) {
+  if (!displayObject) return new PIXI.Matrix();
+
+  const chain = [];
+  let obj = displayObject;
+  while (obj) {
+    chain.push(obj);
+    obj = obj.parent ?? null;
+  }
+
+  const matrix = new PIXI.Matrix();
+  for (let i = chain.length - 1; i >= 0; i--) {
+    const node = chain[i];
+    matrix.append(node === canvas?.stage && snapStage ? snappedStageMatrix(node) : currentLocalMatrix(node));
+  }
+
+  return matrix;
+}
+
+/**
+ * Return the current parent transform that should be supplied when rendering a display object directly.
+ *
+ * @param {PIXI.DisplayObject|null|undefined} displayObject
+ * @param {{ snapStage?: boolean }} [options]
+ * @returns {PIXI.Matrix}
+ */
+export function currentRenderParentMatrix(displayObject, { snapStage = true } = {}) {
+  return currentWorldMatrix(displayObject?.parent ?? null, { snapStage });
 }
 
 /**
@@ -211,8 +281,7 @@ export function safeResolutionForCssArea(cssW, cssH) {
 }
 
 /**
- * Compute a safe resolution for alpha/binary mask render textures.
- * This function delegates to {@link safeResolutionForCssArea} and additionally caps the returned resolution to a maximum (default 1.0).
+ * Compute a safe resolution for alpha/binary mask render textures. This function delegates to {@link safeResolutionForCssArea} and additionally caps the returned resolution to a maximum (default 1.0).
  *
  * @param {number} cssW - Viewport width in CSS pixels.
  * @param {number} cssH - Viewport height in CSS pixels.

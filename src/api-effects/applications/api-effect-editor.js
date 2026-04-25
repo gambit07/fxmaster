@@ -1,7 +1,8 @@
 import { FXMasterBaseFormV2 } from "../../base-form.js";
 import { packageId } from "../../constants.js";
-import { deletionUpdate, replacementUpdate } from "../../utils.js";
+import { ensureSingleSceneLevelSelection, resetFlag } from "../../utils.js";
 import { logger } from "../../logger.js";
+import { FilterEffectsSceneManager } from "../../filter-effects/filter-effects-scene-manager.js";
 
 function sanitizeIdPart(value) {
   return String(value ?? "")
@@ -10,6 +11,32 @@ function sanitizeIdPart(value) {
     .replace(/[^a-z0-9_-]+/gi, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
+}
+
+function getUpdatedParamKeys(effectDef, controlName) {
+  const label = String(effectDef?.label ?? "");
+  if (!label || !controlName) return null;
+
+  const name = String(controlName);
+  const keys = [];
+
+  for (const key of Object.keys(effectDef?.parameters ?? {})) {
+    const base = `${label}_${key}`;
+    if (name === base || name === `${base}_apply` || name === `${base}_min` || name === `${base}_max`) keys.push(key);
+  }
+
+  return keys.length ? keys : null;
+}
+
+function pickOptions(options, keys) {
+  if (!Array.isArray(keys) || !keys.length) return options;
+
+  const picked = {};
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(options, key)) picked[key] = options[key];
+  }
+
+  return Object.keys(picked).length ? picked : options;
 }
 
 function getKindLabel(kind) {
@@ -30,6 +57,15 @@ function getKindLabel(kind) {
  * - Parameter changes write back only to that instance's flag key.
  */
 export class ApiEffectEditor extends FXMasterBaseFormV2 {
+  /**
+   * Return the user flag key for the current API effect editor kind.
+   *
+   * @returns {string}
+   */
+  _getPositionFlagKey() {
+    return `dialog-position-apieffect-${this.kind ?? "unknown"}`;
+  }
+
   /** @type {Map<string, ApiEffectEditor>} */
   static instances = new Map();
 
@@ -166,17 +202,29 @@ export class ApiEffectEditor extends FXMasterBaseFormV2 {
     };
   }
 
+  _storeCurrentPosition() {
+    this._persistPositionFlag(this.position);
+  }
+
   async _onRender(...args) {
     await super._onRender(...args);
 
-    const posKey = `dialog-position-apieffect-${this.kind ?? "unknown"}`;
-    const pos = game.user.getFlag(packageId, posKey);
+    const pos = game.user.getFlag(packageId, this._getPositionFlagKey());
     if (pos) {
       await new Promise((r) => requestAnimationFrame(r));
-      const next = { top: pos.top, left: pos.left };
+
+      const element = this.element?.[0] ?? this.element ?? null;
+      if (!element || element.isConnected === false) return;
+
+      const next = {};
+      if (Number.isFinite(pos.top)) next.top = pos.top;
+      if (Number.isFinite(pos.left)) next.left = pos.left;
       if (Number.isFinite(pos.width)) next.width = pos.width;
+
       try {
-        this.setPosition(next);
+        const liveElement = this.element?.[0] ?? this.element ?? null;
+        if (!liveElement || liveElement.isConnected === false) return;
+        if (Object.keys(next).length) await this.setPosition(next);
       } catch (err) {
         logger.debug("FXMaster:", err);
       }
@@ -191,18 +239,13 @@ export class ApiEffectEditor extends FXMasterBaseFormV2 {
 
     this.wireColorInputs(this.element, ApiEffectEditor.updateParam);
     this.wireMultiSelectInputs?.(this.element, ApiEffectEditor.updateParam);
+    this.wireSelectInputs?.(this.element, ApiEffectEditor.updateParam);
   }
 
   async _onClose(...args) {
     super._onClose(...args);
 
-    const posKey = `dialog-position-apieffect-${this.kind ?? "unknown"}`;
-    const { top, left, width } = this.position;
-    try {
-      game.user.setFlag(packageId, posKey, { top, left, width });
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
+    this._storeCurrentPosition();
 
     try {
       ApiEffectEditor.instances.delete(`${this.kind}:${this.effectId}`);
@@ -224,7 +267,9 @@ export class ApiEffectEditor extends FXMasterBaseFormV2 {
     const flagKey = kind === "particle" ? "effects" : "filters";
 
     try {
-      await scene.setFlag(packageId, flagKey, deletionUpdate(id));
+      const current = foundry.utils.duplicate(scene.getFlag(packageId, flagKey) ?? {});
+      delete current[id];
+      await resetFlag(scene, flagKey, current);
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
@@ -252,6 +297,7 @@ export class ApiEffectEditor extends FXMasterBaseFormV2 {
 
     const scene = this.scene ?? canvas?.scene;
     if (!scene) return;
+    const sceneId = scene.id ?? null;
 
     const kind = this.kind;
     const effectId = this.effectId;
@@ -281,22 +327,23 @@ export class ApiEffectEditor extends FXMasterBaseFormV2 {
     }
 
     const gathered = FXMasterBaseFormV2.gatherFilterOptions(effectDef, this.element);
+    const changedKeys = getUpdatedParamKeys(effectDef, control.name);
+    const changedOptions = pickOptions(gathered, changedKeys);
     const prevOptions = info?.options && typeof info.options === "object" ? info.options : {};
 
-    const options = foundry.utils.mergeObject(foundry.utils.deepClone(prevOptions), gathered, {
-      inplace: false,
-      insertKeys: true,
-      insertValues: true,
-      overwrite: true,
-    });
+    const options = ensureSingleSceneLevelSelection(
+      foundry.utils.mergeObject(foundry.utils.deepClone(prevOptions), changedOptions, {
+        inplace: false,
+        insertKeys: true,
+        insertValues: true,
+        overwrite: true,
+      }),
+      scene,
+    );
 
-    const d1 = foundry.utils.diffObject(prevOptions, options);
-    const d2 = foundry.utils.diffObject(options, prevOptions);
-    if (foundry.utils.isEmpty(d1) && foundry.utils.isEmpty(d2)) return;
-
-    this._debouncedApiEffectWrite ||= foundry.utils.debounce(async ({ effectId, options }) => {
+    const writeOptions = async ({ sceneId, effectId, options, refresh = false }) => {
       try {
-        const scene = this.scene ?? canvas?.scene;
+        const scene = sceneId ? game.scenes?.get?.(sceneId) ?? null : this.scene ?? canvas?.scene ?? null;
         if (!scene) return;
 
         const flagKey = this.kind === "particle" ? "effects" : "filters";
@@ -307,15 +354,35 @@ export class ApiEffectEditor extends FXMasterBaseFormV2 {
         const prev = cur?.options && typeof cur.options === "object" ? cur.options : {};
         const a = foundry.utils.diffObject(prev, options);
         const b = foundry.utils.diffObject(options, prev);
-        if (foundry.utils.isEmpty(a) && foundry.utils.isEmpty(b)) return;
+        const shouldRefresh = refresh && canvas?.scene?.id === scene.id;
+        if (foundry.utils.isEmpty(a) && foundry.utils.isEmpty(b)) {
+          if (shouldRefresh && this.kind === "particle")
+            await canvas?.particleeffects?.drawParticleEffects?.({ soft: true });
+          if (shouldRefresh && this.kind === "filter")
+            await FilterEffectsSceneManager.instance.update({ skipFading: true });
+          return;
+        }
 
         const next = { ...cur, options };
-        await scene.setFlag(packageId, flagKey, replacementUpdate(effectId, next));
+        const updated = foundry.utils.duplicate(infos);
+        updated[effectId] = next;
+        await resetFlag(scene, flagKey, updated);
+        if (shouldRefresh && this.kind === "particle")
+          await canvas?.particleeffects?.drawParticleEffects?.({ soft: true });
+        if (shouldRefresh && this.kind === "filter")
+          await FilterEffectsSceneManager.instance.update({ skipFading: true });
       } catch (err) {
         logger.debug("FXMaster:", err);
       }
-    }, 500);
+    };
 
-    this._debouncedApiEffectWrite({ effectId, options: foundry.utils.deepClone(options) });
+    if (String(control.name).endsWith("_levels")) {
+      await writeOptions({ sceneId, effectId, options: foundry.utils.deepClone(options), refresh: true });
+      return;
+    }
+
+    this._debouncedApiEffectWrite ||= foundry.utils.debounce(writeOptions, 500);
+
+    this._debouncedApiEffectWrite({ sceneId, effectId, options: foundry.utils.deepClone(options) });
   }
 }

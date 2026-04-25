@@ -13,7 +13,7 @@
 <hr/>
 <p>Welcome to the official release of FXMaster V7.5! This release brings some new functionality for Particle regions, as well as Particle and Filter Suppression regions. All of these behavior types now have an optional Edge Fade % parameter that should allow for more naturalistic looking region areas. Hope everyone enjoys!</p>
 
-**<p>Any support via the <a href="https://www.patreon.com/GambitsLounge" target="_blank" rel="nofollow noopener">Patreon</a> or <a href="https://ko-fi.com/gambit07" target="_blank" rel="nofollow noopener">Ko-fi</a> is greatly appreciated! If you are a Patreon subscriber you will receive access to the FXMaster+ module. FXMaster+ can be accessed from Patreon, and it's where I will be adding new particle effects and filters moving forward. For the month of March, it will get you access to the 🔵Water, 🟡Lightning Bolts, 🔵Fish, 🟢Glitch, 🔵Ice, 🟤Duststorm, 🟤Sandstorm, 🟢Ghosts, 🟡Sunlight, 🟢Magic Crystals, 🟡Fireflies, 🌸Sakura Bloom, and 🌸Sakura Blossoms Effects - Effects are previewed below:</p>**
+**<p>Any support via the <a href="https://www.patreon.com/GambitsLounge" target="_blank" rel="nofollow noopener">Patreon</a> or <a href="https://ko-fi.com/gambit07" target="_blank" rel="nofollow noopener">Ko-fi</a> is greatly appreciated! If you are a Patreon subscriber you will receive access to the FXMaster+ module. FXMaster+ can be accessed from Patreon, and it's where I will be adding new particle effects and filters moving forward. For the month of April, it will get you access to the ⚪Wind, ⚪Wind Wisp, 🔵Water, 🟡Lightning Bolts, 🔵Fish, 🟢Glitch, 🔵Ice, 🟤Duststorm, 🟤Sandstorm, 🟢Ghosts, 🟡Sunlight, 🟢Magic Crystals, 🟡Fireflies, 🌸Sakura Bloom, and 🌸Sakura Blossoms Effects - Effects are previewed below:</p>**
 
 <video
   autoplay
@@ -154,7 +154,6 @@ FXMaster is a module for [Foundry Virtual Tabletop] that provides various types 
 - _Particle Effects_, including weather (rain, clouds, fog, snow, etc.), animals (crows, bats, spiders, etc.), and a few
   others.
 - _Filter Effects_, including color overlays, underwater, lightning, and more.
-- _Animation Effects_, using video files provided by external sources.
 
 This module also provides ways to easily configure these effects.
 
@@ -165,9 +164,6 @@ This module also provides ways to easily configure these effects.
   - [Installation Instructions](#installation-instructions)
   - [FAQ](#faq)
   - [Usage](#usage)
-    - [Animation Effects](#animation-effects)&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/hat-wizard-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/hat-wizard-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/hat-wizard-dark.svg" alt="Animation Effects Icon" height="20" width="20" style="vertical-align:middle;"></picture>
-      - [Placing Animation Effects](#placing-animation-effects)
-      - [Managing Animation Effects](#managing-animation-effects)
     - [Particle Effects](#particle-effects)&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/cloud-rain-light.svg" media="(prefers-color-scheme: dark)"><source srcset="./media/font-awesome/cloud-rain-dark.svg" media="(prefers-color-scheme: light)"><img src="./media/font-awesome/cloud-rain-dark.svg" alt="Particle Effects Icon" height="20" width="20" style="display:inline-block; vertical-align:bottom;"></picture>
       - [Particle Effects via Region Behavior](#particle-effects-via-region-behavior)
       - [Masking Particle Effects](#masking-particle-effects)
@@ -178,13 +174,20 @@ This module also provides ways to easily configure these effects.
     - [API Effects UI Manager](#api-effects-ui-manager)
     - [Save Particle and Filter Effects as a Macro](#save-particle-and-filter-effects-as-a-macro)&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/floppy-disk-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/floppy-disk-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/floppy-disk-dark.svg" alt="Save Particle and Filter Effects as a Macro Icon" height="20" width="20" style="vertical-align:middle;"></picture>
     - [Clear Particle and Filter Effects](#clear-particle-and-filter-effects)&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/trash-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/trash-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/trash-dark.svg" alt="Clear Particle and Filter Effects Icon" height="20" width="20" style="vertical-align:middle;"></picture>
+  - [Levels](#levels)
+    - [Using Levels with Scene Effects](#using-levels-with-scene-effects)
+  - [Layers](#layers)
+    - [Manage Layers Window](#manage-layers-window)
   - [Developer API](#developer-api)
     - [Presets API](#presets-api)
-    - [Filter Effects](#filter-effects)
-      - [Available Filter Effects With Supported Options](#available-filter-effects-with-supported-options)
-    - [Particle Effects](#particle-effects)
-      - [Available Particle Effects With Supported Options](#available-particle-effects-with-supported-options)
-      - [Particle Effect Options](#some-particle-effect-options)
+    - [Effects API](#effects-api)
+      - [Effect Entry Shape](#effect-entry-shape)
+      - [Effects API Arguments](#effects-api-arguments)
+      - [Play, Stop, and Toggle](#play-stop-and-toggle)
+      - [Scoped Helpers](#scoped-helpers)
+      - [Built-in Filter Effect Types](#built-in-filter-effect-types)
+      - [Built-in Particle Effect Types](#built-in-particle-effect-types)
+      - [Common Particle Effect Options](#common-particle-effect-options)
   - [Contributing](#contributing)
   - [Acknowledgement](#acknowledgement)
   - [Licensing](#licensing)
@@ -200,61 +203,21 @@ https://github.com/gambit07/fxmaster/releases/latest/download/module.json
 
 ## FAQ
 
-- Q: I have put a animation effect onto a scene, and now I can't get rid of it. How do I remove it?
-
-  A: Most likely, you created a permanently playing animation effect by dragging an animation effect onto the canvas, which
-  is just a regular [Tile](https://foundryvtt.com/article/tiles/) and not managed by FXMaster. To remove it, go to the
-  Tile Controls and remove the Tile there.
-
-- Q: What is the difference between Particle Effects, Filter Effects, and Animation Effects?
+- Q: What is the difference between Particle Effects and Filter Effects?
 
   A: Particle Effects are global effects that display particles on the whole scene. Mostly they are weather effects, but
   they also include animals and some other effects.<br>
   Filter Effects are filters that adjust the whole scene in some way, e.g. by adjusting the color or distorting the
-  scene to look like it's underwater.<br>
-  Animation Effects are animations (video files) that can be played on your chosen location on the canvas.
+  scene to look like it's underwater.
 
 - Q: Can I provide my own effects?
 
-  A: You can provide your own Animation Effects via the Custom folder in the module's settings.
-  You can provide your own Particle Effects when using FXMaster+ in the Manage User Particle Effects menu.
+  A: You can provide your own Particle Effects when using FXMaster+ in the Manage User Particle Effects menu.
   It's not possible to provide your own Filter Effects.
 
 ## Usage
 
 The functionality of FXMaster can be accessed via _FXMaster Controls_ <picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/wand-magic-sparkles-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/wand-magic-sparkles-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/wand-magic-sparkles-dark.svg" alt="FXMaster Controls Icon" height="20" width="20" style="vertical-align:middle;"></picture> in scene controls. Each FXMaster app has its own tool inside scene controls.
-
-### Animation Effects&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/hat-wizard-light.svg" media="(prefers-color-scheme: dark)"><source srcset="./media/font-awesome/hat-wizard-dark.svg" media="(prefers-color-scheme: light)"><img src="./media/font-awesome/hat-wizard-dark.svg" alt="" aria-hidden="true" role="presentation" height="20" width="20" style="vertical-align:middle;"></picture>
-> ⚠️ **Notice**
->
-> This window (Animation Effects) will be removed in FXMaster's Foundry V14 release. Sequencer's Database Viewer has been the standard for viewing animation assets for some time and can continue to be used in place of this application. I've created a new premium module called
-> [Gambit's Asset Previewer](https://foundryvtt.com/packages/gambitsAssetPreviewer)
-> to better handle functionality like this moving forward as well.
->
-> Asset Previewer uses a grid-based viewer similar to this application, along with much broader support for general Assets (Tokens, Sounds, Scenes, etc), Tagging, Custom Sources, and more. View a preview
-> [here](https://www.youtube.com/watch?v=lm5fNiaXbGU&t)!
-
-_Animation Effects_ are video files that can be previewed and/or placed on the canvas via clicking and dragging. FXMaster aggregates animations from popular animation module providers including: [JB2A], [Jinker's Animated Art], [Jack Kerouac's Animated Spell Effects], [Jack Kerouac's Animated Spell Effects Cartoon], [Boss Loot Animated Assets], and [Wild Magic Surge]. Along side the built in module support, you can also add your own Custom folder of animations from the modules settings.
-
-On first world load after updating or installing FXMaster, the animation effects database will be built. You will see an active UI notification window while this process runs. It can take up to 10 minutes depending on how many animations exist in your world. Once the process completes, you are ready to use the Animation Effects window. If you ever add or remove animations, either from a Custom folder or an Animation module, you can re-build the animations database at any time via the Animation Effects window option "Refresh Animations".
-
-Clicking on this tool opens the _Animation Effects Management_ app:
-
-![Animation Effects Management](./media/screenshots/animation-effects-management.webp)
-
-In this app, you can filter based on specific animation providers and search for specific animations. Searching supports advanced queries using AND, OR, and NOT, e.g.: (eldritch OR arrow) AND NOT blast
-
-You can preview each effect by hovering over the black box with your mouse.
-
-#### Placing Animation Effects
-
-In order to place an _Animation Effect_, simply drag it from the window to the canvas which will create a [Tile](https://foundryvtt.com/article/tiles/) on the canvas that includes your animation.
-
-#### Managing Animation Effects
-
-_Animation Effects_ details can be viewed by right clicking an animation icon in the window. Details included are the Author, File Name, File Path, and Sequencer Path. Additionally, you can adjust the Scale and Anchor of a placed tile within this menu. Finally, you can Favorite an animation within this window, which will create a Favorites tag in the main window dropdown. If you make a change, hit the "Save Changes" button to save the _Animation Effect_ and close the app.
-
-![Animation Effect Update](./media/screenshots/update-animation-effect.webp)
 
 ### Particle Effects&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/cloud-rain-light.svg" media="(prefers-color-scheme: dark)"><source srcset="./media/font-awesome/cloud-rain-dark.svg" media="(prefers-color-scheme: light)"><img src="./media/font-awesome/cloud-rain-dark.svg" alt="" aria-hidden="true" role="presentation" height="20" width="20" style="display:inline-block; vertical-align:bottom;"></picture>
 
@@ -440,8 +403,8 @@ Notes:
 ### Save Particle and Filter Effects as a Macro&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/floppy-disk-light.svg" media="(prefers-color-scheme: dark)"><source srcset="./media/font-awesome/floppy-disk-dark.svg" media="(prefers-color-scheme: light)"><img src="./media/font-awesome/floppy-disk-dark.svg" alt="" aria-hidden="true" role="presentation" height="20" width="20" style="vertical-align:middle;"></picture>
 
 This tool allows you to create a macro from the currently active _Particle Effects_ and _Filter Effects_. When clicking
-this tool, a macro is created in the macro directory. It's not put onto the hotbar, so you need to drag it there
-yourself if you want to.
+this tool, a dialog allows you to name the macro, and toggle optionals for a Play or Toggle macro as well as Skip Fading true/false parameter. A macro is created in the macro directory after saving. It's not put onto the hotbar, so you need to drag it there
+yourself if you'd like to.
 
 When executed, the macro sets the _Particle Effects_ and _Filter Effects_ of the current scene to the state they were in
 when the macro was created.
@@ -451,194 +414,406 @@ when the macro was created.
 When clicked, this tool shows a confirmation dialog to delete all _Particle Effects_ and _Filter Effects_ from the
 current scene.
 
+## Levels
+
+When using native Scene Levels in Foundry V14+, scene-wide _Particle Effects_ and _Filter Effects_ can be limited to specific Levels instead of rendering across the whole scene. This makes it possible to keep an effect on only the selected floor or floors while other Levels remain unaffected.
+
+### Using Levels with Scene Effects
+
+In the _Particle Effects Management_ and _Filter Effects Management_ apps, scene-wide effects include a **Levels** selector.
+
+- **All Levels** - The effect renders everywhere it normally would on the current scene.
+- **One or more specific Levels** - The effect is restricted to the selected Scene Levels.
+
+This Level restriction can be combined with other FXMaster routing options such as **Below Tokens**, **Below Tiles**, and **Below Foreground**. Native tile, foreground, and supported suppression behavior are still respected after the Level restriction is applied.
+
+**Notes**
+
+- The **Levels** selector is intended for scene-wide effects added through the FXMaster management apps.
+- Region-based FXMaster effects follow the Region's own placement, assigned levels, and elevation visibility handling.
+- On scenes that do not use multiple native Scene Levels, scene-wide effects behave as normal global effects.
+
+## Layers
+
+The _Manage Layers_ window is used to control the render order of enabled FXMaster effects. It allows scene-wide, region-based, and API-created effects to be mixed together in a single stack so you can decide which effects render above or below the others.
+
+### Manage Layers Window
+
+To open: **Scene Controls → FXMaster Controls → Manage Layers** (layer-group icon).
+
+The window lists every currently enabled _Particle Effect_ and _Filter Effect_ that participates in FXMaster's scene compositor.
+
+What it shows:
+
+- **Order** - The current top-to-bottom render order. Higher entries in the list render above lower entries.
+- **Effect** - The effect name and whether it is a _Particle_ or _Filter_ effect.
+- **Source** - Where the effect came from.
+  - **Scene** - Added directly through the main FXMaster management apps.
+  - **Region** - Added by an FXMaster Region behavior.
+  - **API** - Added programmatically by an API call.
+  - **API - Preset** - Added by the Presets API.
+  - **API - Macro** - Added by a saved FXMaster macro or other macro-style API playback.
+- **Owner** - The Scene or Region that owns the effect.
+- **Level** - On scenes using multiple native Levels, this column shows which Scene Level or Levels the effect is currently limited to if relevant.
+
+Actions:
+
+- **Move Up / Move Down** - Reorder an effect in the stack.
+- **Reset Order** - Restore the default FXMaster stack order for the current scene.
+
+**Notes**
+
+- Layer order is separate from **Below Tokens**, **Below Tiles**, and **Below Foreground**. Those options still control whether an effect appears underneath those scene elements, while the Layers window controls the order between FXMaster effects themselves.
+- Effects added later will appear in the list automatically with highest priority and can be reordered at any time.
+- The **Level** column is informational. To change which Level an effect uses, edit the effect in its manager or Region behavior.
+
 ## Developer API
 
-FXMaster provides functionality to interact with _Filter Effects_ and _Particle Effects_ from other packages and macros.
+FXMaster exposes two supported global APIs for macros and third-party packages:
+
+```js
+FXMASTER.api.presets
+FXMASTER.api.effects
+```
+
+> **Tip:** Call these after the world is ready (for example inside `Hooks.once("ready", ...)`) so `FXMASTER` and `CONFIG.fxmaster` are initialized.
 
 ### Presets API
 
-FXMaster’s _Preset API_ lets other modules and macros apply curated, scene-wide environment effects by name. Each preset can include multiple _Particle Effects_ and/or _Filter Effects_, FXMaster will apply them as a single unit.
-
-Presets are resolved dynamically:
+FXMaster’s _Presets API_ applies curated, scene-wide environment effects by name. A preset can include multiple _Particle Effects_ and _Filter Effects_, and FXMaster resolves the best available preset variant automatically:
 
 - If **FXMaster+** is active and a preset has an FXMaster+ variant, that tier is preferred.
 - Otherwise, the core FXMaster variant is used when available.
 
-#### Accessing the API
-
-The Presets API is exposed via:
+#### Accessing the Presets API
 
 ```js
-// Global
 FXMASTER.api.presets
 ```
 
-> **Tip:** Call these from a macro after the world is ready (e.g. `Hooks.once("ready", ...)`) so `FXMASTER` and `CONFIG.fxmaster` are initialized.
-
-#### Common operations
+#### Common preset operations
 
 ```js
 // Play or update a preset on the current scene
-await FXMASTER.api.presets.play("sunshower", { direction: "north", silent: true });
+await FXMASTER.api.presets.play("sunshower", {
+  direction: "north",
+  density: "high",
+  belowForeground: false,
+});
 
-// Toggle a preset on/off
-await FXMASTER.api.presets.toggle("blizzard", { topDown: true, soundFx: true });
+// Toggle a preset on or off
+await FXMASTER.api.presets.toggle("blizzard", {
+  topDown: true,
+  soundFx: true,
+});
 
 // Stop a preset
 await FXMASTER.api.presets.stop("blizzard");
 
-// Stop any active presets created by this API, then play
+// Stop any active API preset, then play the requested preset
 await FXMASTER.api.presets.switch("acid-rain");
 
 // Introspection helpers
-console.log(FXMASTER.api.presets.list());                                // all known preset names
-console.log(FXMASTER.api.presets.listValid());                           // presets valid for this world
-console.log(FXMASTER.api.presets.listActive());                          // active presets on the current scene
-console.log(FXMASTER.api.presets.listActive({ scene: "<sceneUuid>" }))   // active presets on a given scene uuid
+console.log(FXMASTER.api.presets.list());
+console.log(FXMASTER.api.presets.listValid());
+console.log(FXMASTER.api.presets.listActive());
+console.log(FXMASTER.api.presets.listActive({ scene: "Scene.abc123" }));
 ```
 
-#### Options
+#### Preset options
 
 All preset methods accept an optional `opts` object.
 
-| Option         | Type                | Default | Description |
-| -------------- | ------------------- | ------- | ----------- |
-| `topDown`      | `boolean`           | `false` | Prefer the preset's top-down variant (if defined). |
-| `direction`    | `string`            | -       | Overrides the direction used by the preset. Strings support `north/south/east/west/northeast/northwest/southeast/southwest`. |
-| `belowTokens`  | `boolean`           | -       | Overrides whether the effect renders below tokens. |
-| `speed`        | `string`            | "medium"| Overrides particle or filter speed. One of very-low (-100%), low (-50%), medium, high (+50%), very-high (+100%) - Default medium. |
-| `density`      | `string`            | "medium"| Overrides particle or filter density. One of very-low (-100%), low (-50%), medium, high (+50%), very-high (+100%) - Default medium. |
-| `color`        | `string`            | -       | Hex color code, will override and activate a filter or particles given tint/color parameter when present |
-| `soundFx`      | `boolean`           | -       | Enables/disables `soundFxEnabled` for preset effects **when FXMaster+ is active**. If FXMaster+ isn’t active, sound FX are forced off. |
-| `silent`       | `boolean`           | `false` | Suppress UI warning notifications (e.g. if a preset name can’t be resolved). |
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `topDown` | `boolean` | `false` | Prefer the preset’s top-down variant when one exists. |
+| `direction` | `string \| number` | - | Override the preset direction. Supports compass strings such as `"n"`, `"ne"`, `"north"`, `"southwest"`, plus `"up"`, `"down"`, `"left"`, `"right"`, or a numeric degree value. |
+| `color` | `string` | - | Hex color override such as `#88ccff` or `#8cf`. FXMaster only applies it when the preset effect supports a tint/color parameter. |
+| `speed` | `"very-low" \| "low" \| "medium" \| "high" \| "very-high" \| number` | - | Relative speed override or explicit numeric multiplier. |
+| `density` | `"very-low" \| "low" \| "medium" \| "high" \| "very-high" \| number` | - | Relative density override or explicit numeric multiplier. |
+| `belowTokens` | `boolean` | - | Override whether the preset renders below tokens. |
+| `belowTiles` | `boolean` | `false` | Override whether the preset renders below tiles. |
+| `belowForeground` | `boolean` | `false` | Override whether the preset renders below foreground coverage. |
+| `darknessActivationEnabled` | `boolean` | - | Explicitly enable or disable darkness activation. |
+| `darknessActivationMin` | `number` | - | Minimum scene darkness level for the preset’s activation range. |
+| `darknessActivationMax` | `number` | - | Maximum scene darkness level for the preset’s activation range. |
+| `soundFx` | `boolean` | - | Enable or disable preset-linked Sound FX when **FXMaster+** is active. |
+| `levels` | `string \| number \| Array<string \| number>` | - | Restrict the preset to one or more native Scene Levels by id or name. Invalid selections fall back to all levels. |
+| `scene` | `Scene \| string` | current scene | Target Scene document or Scene UUID. |
+| `silent` | `boolean` | `true` | Suppress UI warning notifications for missing presets or invalid override values. |
 
 #### Notes
 
-- Presets created by this API are stored on the Scene using keys that start with `apiPreset_...`. They do **not** modify FXMaster’s `core_*` entries or any effects created by other modules.
-- You can inspect and clean up any API-created effects (including presets) using the **API Effects UI Manager** above.
+- Presets created by this API are stored on the Scene using keys that start with `apiPreset_...`. They do **not** modify FXMaster’s `core_*` scene entries or effects created by other modules.
+- `FXMASTER.api.presets.switch(name, opts)` stops any active API-managed presets before playing the requested one. If `name` is omitted or falsy, it only stops active API presets.
+- `FXMASTER.api.presets.hasFxmaster()` and `FXMASTER.api.presets.hasFxmasterPlus()` are available when a macro needs to check the active module tier.
+- API-created preset rows can be inspected and removed from the **API Effects UI Manager**.
 
-### Filter Effects
+### Effects API
 
-- Adding or updating a named filter
-  ```javascript
-  FXMASTER.filters.addFilter("myfilterID", "color", {
-    color: { value: "#ff00ff", apply: true },
-    gamma: 1.0,
-    contrast: 1.0,
-    brightness: 1.0,
-    saturation: 0.2,
-  });
-  ```
-- Removing a named filter
-  ```javascript
-  FXMASTER.filters.removeFilter("myfilterID");
-  ```
-- Toggling a named filter on and off
-  ```javascript
-  FXMASTER.filters.switch("myfilterID", "color", {
-    color: { value: "#ff00ff", apply: true },
-    gamma: 1.0,
-    contrast: 1.0,
-    brightness: 1.0,
-    saturation: 0.2,
-  });
-  ```
-- Setting the list of active filters
-  ```javascript
-  FXMASTER.filters.setFilters([
+FXMaster’s _Effects API_ adds arbitrary scene-wide _Particle Effects_ and _Filter Effects_ without replacing FXMaster’s built-in scene manager state. API-created rows appear in the **API Effects UI Manager**, can be layered with the rest of the FX stack, and can be removed by id, by exact payload match, or through a toggle group.
+
+#### Accessing the Effects API
+
+```js
+FXMASTER.api.effects
+```
+
+Available methods:
+
+```js
+FXMASTER.api.effects.play(...)
+FXMASTER.api.effects.stop(...)
+FXMASTER.api.effects.toggle(...)
+
+FXMASTER.api.effects.particles.stop(...)
+FXMASTER.api.effects.particles.toggle(...)
+FXMASTER.api.effects.filters.stop(...)
+FXMASTER.api.effects.filters.toggle(...)
+```
+
+> **Note:** There is no scoped `play` helper. Use `FXMASTER.api.effects.play({ particles: [...] })` or `FXMASTER.api.effects.play({ filters: [...] })` when you only want one effect kind.
+
+The easiest way to capture an exact `options` payload is to configure an effect in the FXMaster UI and save it as a macro, or inspect an API-created row in the **API Effects UI Manager**.
+
+#### Effect entry shape
+
+Use `effects` when you want a mixed, ordered list of particles and filters. Each entry in `effects` must include `kind`.
+
+```js
+const mixedEffects = [
+  {
+    kind: "filter",
+    type: "color",
+    options: {
+      belowTokens: false,
+      color: { value: "#9cc8ff", apply: true },
+      saturation: 0.1,
+      contrast: 1.05,
+    },
+  },
+  {
+    kind: "particle",
+    type: "rain",
+    options: {
+      direction: 90,
+      density: 0.15,
+      speed: 1,
+    },
+  },
+];
+```
+
+Use `particles` or `filters` when you only want a single effect kind. In those arrays, `kind` is implied and can be omitted.
+
+```js
+const particles = [
+  { type: "snow", options: { direction: 110, density: 0.12, speed: 0.9 } },
+];
+
+const filters = [
+  { type: "underwater", options: { speed: 0.5, scale: 1.2 } },
+];
+```
+
+Each effect entry can also include `id` or `effectId` for a stable API-managed id. FXMaster preserves explicit ids only when they use the API id namespace (for example `apiMacro_myStorm_p` or `apiMacro_myStorm_f`); otherwise it generates a new id automatically. Saved FXMaster macros use this pattern for static stop samples.
+
+Any effect `options` object may also include `levels` to restrict that effect to one or more native Scene Levels.
+
+#### Effects API arguments
+
+| Field | Used by | Description |
+| --- | --- | --- |
+| `effects` | `play`, `stop`, `toggle` | Ordered mixed array of effect entries. Use this when you want to mix particles and filters and preserve the requested FX stack order from top to bottom. |
+| `particles` | `play`, `stop`, `toggle` | Particle-only array. For `play` and `toggle`, entries are particle definitions. For `stop`, entries may be ids, UIDs, or full particle payloads. |
+| `filters` | `play`, `stop`, `toggle` | Filter-only array. For `play` and `toggle`, entries are filter definitions. For `stop`, entries may be ids, UIDs, or full filter payloads. |
+| `scene` | all methods | Target Scene document or Scene UUID. Defaults to the current scene. |
+| `skipFading` | `play`, `stop`, `toggle` | When `true`, FXMaster applies or removes particles and filters immediately instead of fading them in or out. |
+| `toggleKey` | `toggle` | Stable key used to associate repeated toggle calls with the same API-managed group. Aliases `key`, `id`, and `name` are also accepted. |
+
+#### Play, stop, and toggle
+
+Play a mixed, ordered set of effects and capture the ids that were created:
+
+```js
+const ids = await FXMASTER.api.effects.play({
+  effects: [
     {
+      kind: "filter",
       type: "color",
       options: {
-        /* ... */
+        color: { value: "#9cc8ff", apply: true },
+        saturation: 0.1,
+        contrast: 1.05,
       },
     },
     {
-      type: "lightning",
-      options: {
-        /* ... */
-      },
-    },
-  ]);
-  ```
-
-#### Available Filter Effects With Supported Options
-
-| Type         | Options                                                  |
-| ------------ | -------------------------------------------------------- |
-| `lightning`  | `belowTokens`, `frequency`, `spark_duration`, `brightness`, `audioAware`, `audioBassThreshold`, `audioChannels`              |
-| `underwater` | `belowTokens`, `speed`, `scale`                                         |
-| `predator`   | `belowTokens`, `noise`, `period`, `lineWidth`                           |
-| `color`      | `belowTokens`, `color`, `saturation`, `contrast`, `brightness`, `gamma` |
-| `bloom`      | `belowTokens`, `blur`, `bloomScale`, `threshold`                        |
-| `oldfilm`    | `belowTokens`, `sepia`, `noise`, `noiseSize`, `scratch`, `scratchDensity`                                         |
-
-You can get a complete list by typing `CONFIG.fxmaster.filters` in your web console.
-
-### Particle Effects
-
-- Switching a named particle effect on and off:
-  ```javascript
-  Hooks.call("fxmaster.switchParticleEffect", {
-    name: "myParticleEffectID",
-    type: "rain",
-    options: { density: 0.5 },
-  });
-  ```
-- Setting the active paticle effects:
-  ```javascript
-  Hooks.call("fxmaster.updateParticleEffects", [
-    {
+      kind: "particle",
       type: "rain",
       options: {
-        /* ... */
+        direction: 90,
+        density: 0.15,
+        speed: 1,
+      },
+    },
+  ],
+  skipFading: true,
+});
+```
+
+Play only particles:
+
+```js
+await FXMASTER.api.effects.play({
+  particles: [
+    { type: "snow", options: { direction: 110, density: 0.12, speed: 0.9 } },
+    { type: "fog", options: { scale: 1.2, density: 0.08, alpha: 0.6 } },
+  ],
+});
+```
+
+Play only filters on a specific Scene:
+
+```js
+await FXMASTER.api.effects.play({
+  filters: [
+    {
+      type: "underwater",
+      options: { speed: 0.5, scale: 1.2 },
+    },
+  ],
+  scene: "Scene.abc123",
+});
+```
+
+Stop by the ids returned from `play`:
+
+```js
+await FXMASTER.api.effects.stop({
+  ...ids,
+  skipFading: true,
+});
+```
+
+Stop by exact payload match when ids are not available:
+
+```js
+await FXMASTER.api.effects.stop({
+  effects: [
+    {
+      kind: "filter",
+      type: "color",
+      options: {
+        color: { value: "#9cc8ff", apply: true },
+        saturation: 0.1,
+        contrast: 1.05,
       },
     },
     {
-      type: "bubbles",
+      kind: "particle",
+      type: "rain",
       options: {
-        /* ... */
+        direction: 90,
+        density: 0.15,
+        speed: 1,
       },
     },
-  ]);
-  ```
+  ],
+  skipFading: true,
+});
+```
 
-#### Available Particle Effects With Supported Options
+Toggle a named effect group on or off:
 
-| Type           | `FXMaster+` | `scale` | `direction` | `speed` | `lifetime` | `density` | `alpha` | `tint` |         `animations`         |
-| -------------- | :-----: | :-----: | :---------: | :-----: | :--------: | :-------: | :-----: | :----: | :--------------------------: |
-| `snowstorm`    |        |    ✓    |      ✓      |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `bubbles`      |        |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `clouds`       |        |    ✓    |      ✓      |    ✓    |     ✓      |           |    ✓    |   ✓    |                              |
-| `embers`       |        |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `rainsimple`   |        |    ✓    |      ✓      |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `stars`        |        |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `crows`        |        |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `bats`         |        |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `spiders`      |        |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `fog`          |        |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `raintop`      |        |    ✓    |      ✓      |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `birds`        |        |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    | ✓ (`glide`, `flap`, `mixed`) |
-| `leaves`       |        |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `rain`         |        |    ✓    |      ✓      |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `snow`         |        |    ✓    |      ✓      |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `eagles`       |        |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |     ✓ (`glide`, `flap`)      |
-| `rats`         |        |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `sakurabloom`  |    ✓    |    ✓    |      ✓      |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `sakurablossom`|    ✓    |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
-| `fireflies`    |    ✓    |    ✓    |             |    ✓    |     ✓      |     ✓     |    ✓    |   ✓    |                              |
+```js
+await FXMASTER.api.effects.toggle({
+  effects: [
+    {
+      kind: "particle",
+      type: "fog",
+      options: { scale: 1.25, density: 0.08, alpha: 0.6 },
+    },
+    {
+      kind: "filter",
+      type: "bloom",
+      options: { blur: 2, bloomScale: 1.1, threshold: 0.4 },
+    },
+  ],
+  toggleKey: "swamp-haze",
+  skipFading: true,
+});
+```
 
-#### Some Particle Effect Options
+When `toggleKey` is omitted, FXMaster derives a repeatable toggle key from the effect payload. Later calls with the same payload, or the same explicit `toggleKey`, toggle that group off.
 
-| Option       | Type                              | Description                                                                                                                         |
-| ------------ | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `scale`      | `number`                          | A factor that scales the effect relative to its base size.                                                                          |
-| `direction`  | `number`                          | The direction of the effect in degrees.                                                                                             |
-| `speed`      | `number`                          | A factor that adjusts the speed of the effect relative to its base speed.                                                           |
-| `lieftime`   | `number`                          | A factor that adjusts the lifetime of the individual particles.                                                                     |
-| `density`    | `number`                          | The density of the effect. For most effects, it represents the number of particles per grid unit.                                   |
-| `alpha`      | `number`                          | A factor between 0 and 1 that adjusts the opacity of the particles (this is called "Opacity" in Particle Effects Management).       |
-| `tint`       | `{value: string, apply: boolean}` | Tint the effect with this color.                                                                                                    |
-| `animations` | `string[]`                        | An array of animations from list of animations for the effect to use. If it is empty or not defined, the default animation is used. |
+`play` and `stop` return an object shaped like `{ particles: string[], filters: string[] }`. `toggle` returns `{ active, action, particles, filters }`.
+
+#### Scoped helpers
+
+Use the scoped helpers when you already know you only want one effect kind.
+
+```js
+await FXMASTER.api.effects.particles.stop(ids.particles, { skipFading: true });
+await FXMASTER.api.effects.filters.stop(ids.filters, { skipFading: true });
+
+await FXMASTER.api.effects.particles.toggle(
+  [{ type: "snow", options: { direction: 110, density: 0.12, speed: 0.9 } }],
+  { toggleKey: "roof-snow", skipFading: true },
+);
+
+await FXMASTER.api.effects.filters.toggle(
+  [
+    {
+      type: "color",
+      options: { color: { value: "#88ccff", apply: true }, saturation: 0.15 },
+    },
+  ],
+  { toggleKey: "cold-tint" },
+);
+```
+
+#### Built-in filter effect types
+
+Core FXMaster currently registers these filter types:
+
+`bloom`, `color`, `fog`, `lightning`, `oldfilm`, `predator`, `underwater`
+
+You can inspect the currently registered filter types in a running world with:
+
+```js
+Object.keys(CONFIG.fxmaster.filterEffects ?? {})
+```
+
+Filter option names vary by effect. The most reliable way to get an exact filter payload is to configure the effect in the UI and save it as a macro, then reuse the generated `options` object inside `FXMASTER.api.effects`.
+
+#### Built-in particle effect types
+
+Core FXMaster currently registers these particle types:
+
+`autumnleaves`, `bats`, `birds`, `bubbles`, `clouds`, `crows`, `eagles`, `embers`, `fog`, `hail`, `rain`, `rats`, `snow`, `snowstorm`, `spiders`, `stars`
+
+FXMaster+ may register additional particle effect types.
+
+You can inspect the currently registered particle types in a running world with:
+
+```js
+Object.keys(CONFIG.fxmaster.particleEffects ?? {})
+```
+
+#### Common particle effect options
+
+Most particle effects accept a subset of the following options. The exact option bag varies by effect type.
+
+| Option | Type | Description |
+| --- | --- | --- |
+| `scale` | `number` | Scale factor applied relative to the effect’s base size. |
+| `direction` | `number` | Effect direction in degrees. |
+| `speed` | `number` | Speed multiplier relative to the effect’s base speed. |
+| `lifetime` | `number` | Lifetime multiplier for the emitted particles. |
+| `density` | `number` | Particle density for the effect. |
+| `alpha` | `number` | Particle opacity from `0` to `1`. |
+| `tint` | `{ value: string, apply: boolean }` | Tint the effect with a color when supported. |
+| `animations` | `string[]` | Optional animation names used by effects that support multiple motion variants. |
 
 ## Contributing
 

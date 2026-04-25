@@ -44,26 +44,92 @@
 
           <div class="fxmaster-particle-expand">
             <div class="fxmaster-particle-params">
-              {{#each effect.parameters as |parameterConfig parameterName|}}
-                {{#if (fxmasterShouldRenderParam "particle" type parameterName)}}
-                  <label class="fxmaster-param-label">
-                    {{localize parameterConfig.label}}
+              {{#if (or
+                    (fxmasterShouldRenderParam "particle" type "belowTokens")
+                    (fxmasterShouldRenderParam "particle" type "belowTiles")
+                    (fxmasterShouldRenderParam "particle" type "belowForeground")
+              )}}
+                <div class="fxmaster-placement-row">
+                  {{#if (fxmasterShouldRenderParam "particle" type "belowTokens")}}
+                    <div class="fxmaster-param-field fxmaster-param-field--placement-toggle" data-param="belowTokens">
+                      {{{fxmasterParameter
+                            effect
+                            effect.parameters.belowTokens
+                            "belowTokens"
+                            (getEffectParams ../../activeEffects ../../passiveEffects type)
+                         }}}
+                    </div>
+                  {{else}}
+                    {{{fxmasterHiddenParameter
+                          effect
+                          effect.parameters.belowTokens
+                          "belowTokens"
+                          (getEffectParams ../../activeEffects ../../passiveEffects type)
+                    }}}
+                  {{/if}}
 
-                    {{{fxmasterParameter
+                  {{#if (fxmasterShouldRenderParam "particle" type "belowTiles")}}
+                    <div class="fxmaster-param-field fxmaster-param-field--placement-toggle" data-param="belowTiles">
+                      {{{fxmasterParameter
+                            effect
+                            effect.parameters.belowTiles
+                            "belowTiles"
+                            (getEffectParams ../../activeEffects ../../passiveEffects type)
+                         }}}
+                    </div>
+                  {{else}}
+                    {{{fxmasterHiddenParameter
+                          effect
+                          effect.parameters.belowTiles
+                          "belowTiles"
+                          (getEffectParams ../../activeEffects ../../passiveEffects type)
+                    }}}
+                  {{/if}}
+
+                  {{#if (fxmasterShouldRenderParam "particle" type "belowForeground")}}
+                    <div class="fxmaster-param-field fxmaster-param-field--placement-toggle" data-param="belowForeground">
+                      {{{fxmasterParameter
+                            effect
+                            effect.parameters.belowForeground
+                            "belowForeground"
+                            (getEffectParams ../../activeEffects ../../passiveEffects type)
+                         }}}
+                    </div>
+                  {{else}}
+                    {{{fxmasterHiddenParameter
+                          effect
+                          effect.parameters.belowForeground
+                          "belowForeground"
+                          (getEffectParams ../../activeEffects ../../passiveEffects type)
+                    }}}
+                  {{/if}}
+                </div>
+              {{/if}}
+
+              {{#each effect.parameters as |parameterConfig parameterName|}}
+                {{#unless (fxmasterIsPlacementParam parameterName)}}
+                  {{#if (fxmasterShouldRenderParam "particle" type parameterName)}}
+                    <div class="fxmaster-param-field" data-param="{{parameterName}}">
+                      {{#if (fxmasterShouldRenderParamTitle parameterConfig parameterName)}}
+                        <span class="fxmaster-param-title" {{{fxmasterParamTooltipAttrs parameterConfig}}}>{{localize parameterConfig.label}}</span>
+                      {{/if}}
+
+                      {{{fxmasterParameter
+                            effect
+                            parameterConfig
+                            parameterName
+                            (getEffectParams ../../../activeEffects ../../../passiveEffects type)
+                         }}}
+                    </div>
+                  {{else}}
+                    {{{fxmasterHiddenParameter
                           effect
                           parameterConfig
                           parameterName
                           (getEffectParams ../../../activeEffects ../../../passiveEffects type)
-                       }}}
-                  </label>
-                {{else}}
-                  {{{fxmasterHiddenParameter
-                        effect
-                        parameterConfig
-                        parameterName
-                        (getEffectParams ../../../activeEffects ../../../passiveEffects type)
-                  }}}
-                {{/if}}
+                    }}}
+                  {{/if}}
+                {{/unless}}
               {{/each}}
             </div>
           </div>

@@ -3,6 +3,7 @@ import { packageId } from "../../constants.js";
 import { deletionUpdate } from "../../utils.js";
 import { ApiEffectEditor } from "./api-effect-editor.js";
 import { logger } from "../../logger.js";
+import { getSceneEffectSourceInfo } from "../../common/effect-stack.js";
 
 function safeJSONStringify(value) {
   try {
@@ -40,10 +41,10 @@ function isLegacyOperatorKey(id) {
 /**
  * ApiEffectsManagement
  * --------------------
- * Lists scene-wide particle/filter effects that were added via the API.
- * Provides quick removal per effect, an expandable view of the stored API parameters, and an editor for a single instance.
+ * Lists scene-wide particle/filter effects that were added via the API. Provides quick removal per effect, an expandable view of the stored API parameters, and an editor for a single instance.
  */
 export class ApiEffectsManagement extends FXMasterBaseFormV2 {
+  static FXMASTER_POSITION_FLAG = "dialog-position-apieffects";
   /** @type {ApiEffectsManagement|undefined} */
   static #instance;
 
@@ -74,7 +75,7 @@ export class ApiEffectsManagement extends FXMasterBaseFormV2 {
       minimizable: true,
     },
     position: {
-      width: 650,
+      width: 780,
       height: "auto",
     },
   };
@@ -118,14 +119,15 @@ export class ApiEffectsManagement extends FXMasterBaseFormV2 {
       const uid = `${kind}:${id}`;
       const type = String(info?.type ?? "").trim();
       const nameFallback = String(info?.type ?? info?.name ?? "").trim() || "Unknown";
+      const sourceName = typeof info?.sourceName === "string" ? info.sourceName.trim() : "";
 
-      const kindKey =
-        kind === "particle" ? "FXMASTER.Common.ApiEffectsKindParticle" : "FXMASTER.Common.ApiEffectsKindFilter";
+      const kindKey = kind === "particle" ? "FXMASTER.Layers.KindParticle" : "FXMASTER.Layers.KindFilter";
 
       const canEdit = canEditType(kind, type);
       const displayName = canEdit ? getDisplayName(kind, type) : nameFallback;
 
-      const detailsObj = { uid, kind, id, ...info };
+      const sourceInfo = getSceneEffectSourceInfo(id);
+      const detailsObj = { uid, kind, id, source: sourceInfo.sourceLabel, ...info };
 
       apiEffects.push({
         uid,
@@ -133,7 +135,11 @@ export class ApiEffectsManagement extends FXMasterBaseFormV2 {
         kindLabel: game.i18n.localize(kindKey),
         icon: kind === "particle" ? "fas fa-cloud-rain" : "fas fa-filter",
         id,
-        name: displayName,
+        label: displayName,
+        effectType: type || nameFallback,
+        sourceLabel: sourceInfo.sourceLabel,
+        sourceName,
+        apiSource: sourceInfo.apiSource,
         details: safeJSONStringify(detailsObj),
         expanded: this._expandedUids?.has?.(uid) ?? false,
         canEdit,
@@ -156,10 +162,17 @@ export class ApiEffectsManagement extends FXMasterBaseFormV2 {
     }
 
     apiEffects.sort((a, b) => {
-      const k = a.kind.localeCompare(b.kind, undefined, { sensitivity: "base" });
-      if (k) return k;
-      const n = a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true });
-      if (n) return n;
+      const effect = a.label.localeCompare(b.label, undefined, { sensitivity: "base", numeric: true });
+      if (effect) return effect;
+      const kind = a.kind.localeCompare(b.kind, undefined, { sensitivity: "base" });
+      if (kind) return kind;
+      const source = a.sourceLabel.localeCompare(b.sourceLabel, undefined, { sensitivity: "base", numeric: true });
+      if (source) return source;
+      const name = (a.sourceName ?? "").localeCompare(b.sourceName ?? "", undefined, {
+        sensitivity: "base",
+        numeric: true,
+      });
+      if (name) return name;
       return a.id.localeCompare(b.id, undefined, { sensitivity: "base", numeric: true });
     });
 
@@ -174,20 +187,36 @@ export class ApiEffectsManagement extends FXMasterBaseFormV2 {
 
     await new Promise((r) => requestAnimationFrame(r));
 
-    const next = { top: pos.top, left: pos.left };
+    const element = this.element?.[0] ?? this.element ?? null;
+    if (!element || element.isConnected === false) return;
+
+    const next = {};
+    if (Number.isFinite(pos.top)) next.top = pos.top;
+    if (Number.isFinite(pos.left)) next.left = pos.left;
     if (Number.isFinite(pos.width)) next.width = pos.width;
+    if (!Object.keys(next).length) return;
 
     try {
-      this.setPosition(next);
+      const liveElement = this.element?.[0] ?? this.element ?? null;
+      if (!liveElement || liveElement.isConnected === false) return;
+      await this.setPosition(next);
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
   }
 
+  _storeCurrentPosition() {
+    this._persistPositionFlag(this.position);
+  }
+
   async _onClose(...args) {
     super._onClose(...args);
-    const { top, left, width } = this.position;
-    game.user.setFlag(packageId, "dialog-position-apieffects", { top, left, width });
+    this._storeCurrentPosition();
+    try {
+      if (ApiEffectsManagement.instance === this) ApiEffectsManagement.#instance = undefined;
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
 
   static toggleApiCollapse(event, row) {

@@ -4,7 +4,7 @@
  * Re-exports every public symbol from the focused utility modules.
  *
  * Module breakdown:
- * - {@link module:compat}        - V12/V13/V14 flag operator abstraction
+ * - {@link module:compat}        - V13/V14+ flag operator abstraction
  * - {@link module:math}          - Numeric rounding, clamping, coercion
  * - {@link module:color}         - CSS variable resolution, color format conversion
  * - {@link module:viewport}      - Camera snapping, stage matrix, resolution safety
@@ -23,6 +23,27 @@ export {
   isLegacyOperatorKey,
   getForcedDeletionOperator,
   getForcedReplacementOperator,
+  getCanvasLevel,
+  getSceneLevels,
+  resolveSingleSceneLevelSelection,
+  normalizeSceneLevelSelection,
+  ensureSingleSceneLevelSelection,
+  getSceneForegroundElevation,
+  getTileOcclusionModes,
+  tileHasActiveOcclusion,
+  isTileOverhead,
+  getDocumentLevelsSet,
+  inferVisibleLevelForDocument,
+  isDocumentOnCurrentCanvasLevel,
+  getSelectedSceneLevelIds,
+  isEffectActiveForCurrentCanvasLevel,
+  isEffectActiveForCurrentOrVisibleCanvasLevel,
+  resolveDocumentOcclusionElevation,
+  syncCanvasLiveLevelSurfaceState,
+  getCanvasLiveLevelSurfaceRevealState,
+  getCanvasLiveLevelSurfaceState,
+  buildCanvasLiveLevelSurfaceSignature,
+  isLiveLevelSurfaceRevealActive,
 } from "./compat.js";
 
 export {
@@ -42,6 +63,8 @@ export { getDialogColors, getCssVarValue, addAlphaToRgb } from "./color.js";
 export {
   getSnappedCameraCss,
   snappedStageMatrix,
+  currentWorldMatrix,
+  currentRenderParentMatrix,
   cameraMatrixChanged,
   mat3FromPixi,
   ellipseSteps,
@@ -73,14 +96,26 @@ export {
 } from "./geometry.js";
 
 export {
+  _belowTokensEnabled,
+  _belowTilesEnabled,
+  _belowForegroundEnabled,
   RTPool,
   releaseTokenSprites,
+  releaseTileSprites,
   collectTokenAlphaSprites,
+  collectTileAlphaSprites,
   stageLocalMatrixOf,
+  tileDocumentRestrictsWeather,
+  tileRestrictsWeatherForMask,
+  isTokenRevealedByHoveredUpperLevel,
   composeMaskMinusTokens,
   composeMaskMinusTokensRT,
+  composeMaskMinusTiles,
+  composeMaskMinusTilesRT,
+  composeMaskMinusCoverageRT,
   ensureCssSpaceMaskSprite,
   repaintTokensMaskInto,
+  repaintTilesMaskInto,
   safeMaskTexture,
   buildRegionMaskRT,
   applyMaskSpriteTransform,
@@ -96,10 +131,17 @@ export {
 export { clearCoalesceMap, coalesceNextFrame } from "./coalesce.js";
 
 export {
+  getSceneDarknessLevel,
+  normalizeDarknessActivationRange,
+  resolveDarknessActivationEnabled,
+  isDarknessRangeActive,
+  isEffectActiveForSceneDarkness,
+} from "./darkness.js";
+
+export {
   onSwitchParticleEffects,
   onUpdateParticleEffects,
   cleanupRegionFilterEffects,
   cleanupRegionParticleEffects,
-  parseSpecialEffects,
   updateSceneControlHighlights,
 } from "./scene-effects.js";

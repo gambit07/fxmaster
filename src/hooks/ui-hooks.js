@@ -36,6 +36,13 @@ export function registerUIHooks(ctx) {
     ctx.openAFx.delete(app);
   });
 
+  Hooks.on("renderFxLayersManagement", (app) => {
+    ctx.openLFx.add(app);
+  });
+  Hooks.on("closeFxLayersManagement", (app) => {
+    ctx.openLFx.delete(app);
+  });
+
   Hooks.on("updateSetting", (setting) => {
     if (setting?.key !== `${packageId}.enable`) return;
     try {

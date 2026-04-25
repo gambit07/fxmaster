@@ -1,4 +1,3 @@
-// SPDX-FileCopyrightText: 2025 Gambit
 
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
@@ -11,15 +10,15 @@ precision mediump int;
 uniform sampler2D uSampler;
 uniform sampler2D maskSampler;
 
-/* ---- Pixi pipeline frames (match Color) ---- */
-uniform vec2  viewSize;     // CSS px of mask RT (usually screen size)
-uniform vec4  inputSize;    // xy: input size in CSS px; zw: 1/size
-uniform vec4  outputFrame;  // xy: offset in CSS px;   zw: size
+/** ---- Pixi pipeline frames (match Color) ---- */
+uniform vec2  viewSize;     /** CSS px of mask RT (usually screen size) */
+uniform vec4  inputSize;    /** xy: input size in CSS px; zw: 1/size */
+uniform vec4  outputFrame;  /** xy: offset in CSS px;   zw: size */
 
 uniform float hasMask;
 uniform float maskReady;
 
-/* ---- Effect params ---- */
+/** ---- Effect params ---- */
 uniform float time;
 uniform vec3  color;
 uniform float density;
@@ -29,44 +28,43 @@ uniform float invertMask;
 uniform float maskSoft;
 uniform float strength;
 
-/* ---- Region fade (shared with Color) ---- */
-// 0=polygon, 1=rect, 2=ellipse, -1=none
+/** ---- Region fade (shared with Color) ---- */
 uniform int   uRegionShape;
 uniform mat3  uCssToWorld;
 
-/* Rect/Ellipse analytics */
+/** Rect/Ellipse analytics */
 uniform vec2  uCenter;
 uniform vec2  uHalfSize;
 uniform float uRotation;
 
-/* Polygon SDF (absolute-width & inradius only) */
+/** Polygon SDF (absolute-width & inradius only) */
 uniform sampler2D uSdf;
-uniform mat3  uUvFromWorld;   // world -> SDF UV
-uniform vec2  uSdfScaleOff;   // [scale, offset] for decode
-uniform float uSdfInsideMax;  // inradius (world px)
-uniform vec2  uSdfTexel;      // 1/texture size (UV texel)
+uniform mat3  uUvFromWorld;   /** world -> SDF UV */
+uniform vec2  uSdfScaleOff;   /** [scale, offset] for decode */
+uniform float uSdfInsideMax;  /** inradius (world px) */
+uniform vec2  uSdfTexel;      /** 1/texture size (UV texel) */
 
-/* Absolute width */
-uniform float uFadeWorld;     // world px
-uniform float uFadePx;        // CSS px
+/** Absolute width */
+uniform float uFadeWorld;     /** world px */
+uniform float uFadePx;        /** CSS px */
 
-/* Percent mode */
-uniform float uUsePct;        // 1 => use uFadePct
-uniform float uFadePct;       // 0..1
+/** Percent mode */
+uniform float uUsePct;        /** 1 => use uFadePct */
+uniform float uFadePct;       /** 0..1 */
 
-/* SDF-backed polygon % fades (used for multi-shape regions) */
-uniform float uUseSdf;        // 1 => use SDF for polygon % fades
+/** SDF-backed polygon % fades (used for multi-shape regions) */
+uniform float uUseSdf;        /** 1 => use SDF for polygon % fades */
 
-/* Polygon edges (percent mode) */
+/** Polygon edges (percent mode) */
 #define MAX_EDGES 64
 uniform float uEdgeCount;
-uniform vec4  uEdges[MAX_EDGES]; // (Ax,Ay,Bx,By) world units
-uniform float uSmoothKWorld;     // world-px smoothing radius
+uniform vec4  uEdges[MAX_EDGES]; /** (Ax,Ay,Bx,By) world units */
+uniform float uSmoothKWorld;     /** world-px smoothing radius */
 
-varying vec2 vFilterCoord;   // world-anchored coord (from custom vertex)
-varying vec2 vTextureCoord;  // sampler UVs
+varying vec2 vFilterCoord;   /** world-anchored coord (from custom vertex) */
+varying vec2 vTextureCoord;  /** sampler UVs */
 
-/* ---------------- noise ---------------- */
+/** ---------------- noise ---------------- */
 float rand(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453123); }
 float noise(vec2 p){
   vec2 i = floor(p), f = fract(p);
@@ -86,19 +84,19 @@ float fbm(vec2 p){
 }
 vec3 applyContrast(vec3 c, float contrast){ float t=(1.0-contrast)*0.5; return c*contrast + vec3(t); }
 
-/* ---------------- main ---------------- */
+/** ---------------- main ---------------- */
 
-/* Shared region fade infrastructure */
+/** Shared region fade infrastructure */
 #include <region-fade-common>
 
 void main(void){
   vec4 src = texture2D(uSampler, vTextureCoord);
   float inMask = src.a;
 
-  /* SCREEN position in CSS px (match Color) */
+  /** SCREEN position in CSS px (match Color) */
   vec2 screenPx = outputFrame.xy + vTextureCoord * inputSize.xy;
 
-  /* Region/suppression gating in CSS px */
+  /** Region/suppression gating in CSS px */
   if (hasMask > 0.5) {
     bool maskUsable = (maskReady > 0.5) &&
                       (viewSize.x >= 1.0) &&
@@ -113,7 +111,7 @@ void main(void){
     }
   }
 
-  /* Per-pixel edge fade */
+  /** Per-pixel edge fade */
   float fadeEdge = 1.0;
   vec2  pW       = applyCssToWorld(screenPx);
 
@@ -135,11 +133,11 @@ void main(void){
     }
   }
 
-  /* Fog intensity gated by region mask & fade */
+  /** Fog intensity gated by region mask & fade */
   float k = clamp(density, 0.0, 1.0) * clamp(strength, 0.0, 1.0) * inMask * fadeEdge;
   if (k <= 0.0001) { gl_FragColor = src; return; }
 
-  /* World-anchored fog pattern */
+  /** World-anchored fog pattern */
   vec2 p = vFilterCoord * 7.0 * dimensions * 0.00025;
   float t = (time * 0.0025);
 
@@ -148,7 +146,7 @@ void main(void){
            r.y = fbm(p*q + vec2(9.3,2.8) + 0.35*t);
   float f = fbm(p*0.2 + r*3.102);
 
-  vec3 baseFog = mix(color, vec3(1.5), clamp(abs(r.x), 0.4, 1.0));
+  vec3 baseFog = mix(color, vec3(1.2), clamp(abs(r.x), 0.4, 1.0));
   float shape  = f*f*f + 0.6*f*f + 0.5*f;
   vec3 fogRGB  = applyContrast(baseFog * shape, 3.0);
 

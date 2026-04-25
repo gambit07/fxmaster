@@ -1,10 +1,12 @@
 import { FXMasterBaseFormV2 } from "../../base-form.js";
 import { packageId } from "../../constants.js";
-import { resetFlag } from "../../utils.js";
+import { resetFlag, updateSceneControlHighlights } from "../../utils.js";
 import { logger } from "../../logger.js";
 import { getHiddenEffectsCount, openEffectsVisibilityManager } from "../../common/effects-visibility-manager.js";
+import { buildSceneEffectUid, promoteEffectStackUids } from "../../common/effect-stack.js";
 
 export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
+  static FXMASTER_POSITION_FLAG = "dialog-position-particleeffects";
   /** @type {ParticleEffectsManagement|undefined} */
   static #instance;
 
@@ -65,7 +67,10 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
     const hidden = game.user.getFlag(packageId, "hiddenParticleEffects");
     const hiddenParticleEffects = new Set(Array.isArray(hidden) ? hidden : []);
 
-    const passiveEffects = game.settings.get(packageId, "passiveParticleConfig") ?? {};
+    const passiveEffects = foundry.utils.deepClone(game.settings.get(packageId, "passiveParticleConfig") ?? {});
+    for (const options of Object.values(passiveEffects)) {
+      if (options && typeof options === "object") delete options.levels;
+    }
     const { particleEffects } = CONFIG.fxmaster;
 
     const getSortLabel = (cls) => {
@@ -160,27 +165,37 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
     this._updateHideEffectsTooltip();
 
     const pos = game.user.getFlag(packageId, "dialog-position-particleeffects");
-    if (!pos) return;
+    if (pos) {
+      await new Promise((r) => requestAnimationFrame(r));
 
-    await new Promise((r) => requestAnimationFrame(r));
+      const liveElement = this.element;
+      if (!liveElement?.isConnected) return;
 
-    const next = { top: pos.top, left: pos.left };
-    if (Number.isFinite(pos.width)) next.width = pos.width;
+      const next = { top: pos.top, left: pos.left };
+      if (Number.isFinite(pos.width)) next.width = pos.width;
 
-    try {
-      this.setPosition(next);
-    } catch (err) {}
+      try {
+        this.setPosition(next);
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    }
+
+    const liveElement = this.element;
+    if (!liveElement?.isConnected) return;
 
     this._autosizeInit();
 
-    const content = this.element.querySelector(".window-content");
+    const content = liveElement.querySelector(".window-content") ?? liveElement;
 
     this._wireRangeWheelBehavior({
       getScrollWrapper: (slider) => slider.closest(".fxmaster-particles-group-wrapper") ?? content,
       onInput: (event, slider) => ParticleEffectsManagement.updateParam.call(this, event, slider),
     });
-    this.wireColorInputs(this.element, ParticleEffectsManagement.updateParam);
-    this.wireMultiSelectInputs?.(this.element, ParticleEffectsManagement.updateParam);
+    this.wireColorInputs(liveElement, ParticleEffectsManagement.updateParam);
+    this.wireMultiSelectInputs?.(liveElement, ParticleEffectsManagement.updateParam);
+    this.wireSelectInputs?.(liveElement, ParticleEffectsManagement.updateParam);
+    this.applyTooltipDirection(liveElement);
   }
 
   async updateEnabledState(type, enabled) {
@@ -194,17 +209,22 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
     if (!scene) return;
     const current = foundry.utils.duplicate(scene.getFlag(packageId, "effects") ?? {});
 
+    const effectId = `core_${type}`;
+
     if (enabled) {
       const options = FXMasterBaseFormV2.gatherFilterOptions(effectsDB, this.element);
-      current[`core_${type}`] = { type, options };
+      current[effectId] = { type, options };
     } else {
-      delete current[`core_${type}`];
+      delete current[effectId];
     }
 
     await resetFlag(scene, "effects", current);
 
-    const hasParticles = Object.keys(current).some((key) => key.startsWith("core_"));
-    FXMasterBaseFormV2.setToolButtonHighlight("particle-effects", hasParticles);
+    if (enabled) {
+      await promoteEffectStackUids([buildSceneEffectUid("particle", effectId)], scene);
+    }
+
+    updateSceneControlHighlights();
   }
 
   static async updateParam(event, input) {
@@ -219,6 +239,8 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
     if (!type) return;
 
     const scene = canvas.scene;
+    if (!scene) return;
+    const sceneId = scene.id ?? null;
     const current = foundry.utils.duplicate(scene.getFlag(packageId, "effects") ?? {});
     const isActive = !!current[`core_${type}`];
     if (!isActive) return;
@@ -239,14 +261,9 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
 
     const options = FXMasterBaseFormV2.gatherFilterOptions(effectDef, this.element);
 
-    const prevOpts = current[`core_${type}`]?.options ?? {};
-    const d1 = foundry.utils.diffObject(prevOpts, options);
-    const d2 = foundry.utils.diffObject(options, prevOpts);
-    if (foundry.utils.isEmpty(d1) && foundry.utils.isEmpty(d2)) return;
-
-    this._debouncedEffectsWrite ||= foundry.utils.debounce(async ({ type, options }) => {
+    const writeOptions = async ({ sceneId, type, options, refresh = false }) => {
       try {
-        const scene = canvas.scene;
+        const scene = sceneId ? game.scenes?.get?.(sceneId) ?? null : null;
         if (!scene) return;
         const cur = foundry.utils.duplicate(scene.getFlag(packageId, "effects") ?? {});
         if (!cur[`core_${type}`]) return;
@@ -254,16 +271,34 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
         const prev = cur[`core_${type}`]?.options ?? {};
         const a = foundry.utils.diffObject(prev, options);
         const b = foundry.utils.diffObject(options, prev);
-        if (foundry.utils.isEmpty(a) && foundry.utils.isEmpty(b)) return;
+        const shouldRefresh = refresh && canvas?.scene?.id === sceneId;
+        if (foundry.utils.isEmpty(a) && foundry.utils.isEmpty(b)) {
+          if (shouldRefresh) await canvas?.particleeffects?.drawParticleEffects?.({ soft: true });
+          return;
+        }
 
         cur[`core_${type}`].options = options;
         await resetFlag(scene, "effects", cur);
+        if (shouldRefresh) await canvas?.particleeffects?.drawParticleEffects?.({ soft: true });
       } catch (err) {
         logger.debug("FXMaster:", err);
       }
-    }, 750);
+    };
 
-    this._debouncedEffectsWrite({ type, options: foundry.utils.deepClone(options) });
+    if (String(control.name).endsWith("_levels")) {
+      await writeOptions({ sceneId, type, options: foundry.utils.deepClone(options), refresh: true });
+      return;
+    }
+
+    this._debouncedEffectsWrites ??= new Map();
+    const debounceKey = `${sceneId ?? "scene"}:${type}`;
+    let debouncedWrite = this._debouncedEffectsWrites.get(debounceKey);
+    if (!debouncedWrite) {
+      debouncedWrite = foundry.utils.debounce(writeOptions, 750);
+      this._debouncedEffectsWrites.set(debounceKey, debouncedWrite);
+    }
+
+    debouncedWrite({ sceneId, type, options: foundry.utils.deepClone(options) });
   }
 
   async close(options) {
@@ -271,17 +306,27 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
 
     for (const [type, effectDB] of Object.entries(CONFIG.fxmaster.particleEffects)) {
       passiveEffects[type] = FXMasterBaseFormV2.gatherFilterOptions(effectDB, this.element);
+      if (passiveEffects[type] && typeof passiveEffects[type] === "object") delete passiveEffects[type].levels;
     }
 
     await game.settings.set(packageId, "passiveParticleConfig", passiveEffects);
     return super.close(options);
   }
 
+  _storeCurrentPosition() {
+    this._persistPositionFlag(this.position);
+  }
+
   async _onClose(...args) {
     super._onClose(...args);
 
-    const { top, left, width } = this.position;
-    game.user.setFlag(packageId, "dialog-position-particleeffects", { top, left, width });
+    this._storeCurrentPosition();
+
+    try {
+      if (ParticleEffectsManagement.instance === this) ParticleEffectsManagement.#instance = undefined;
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     try {
       this._autosizeCleanup?.();
@@ -314,17 +359,48 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
     this._autosizeSetMaxClamp();
   }
 
-  /** While user is drag-resizing, allow manual size (drop autosize class). */
+  /**
+   * Allow manual sizing while the window is actively being drag-resized.
+   *
+   * @returns {() => void}
+   */
   _autosizeWireResizeAutoToggle() {
     const winEl = this.element;
     if (!winEl) return () => {};
     const handles = winEl.querySelectorAll(".window-resizable-handle, .ui-resizable-handle");
-    const onDown = () => winEl.classList.remove("fxm-autosize");
+    let isPointerResizeActive = false;
+
+    const restoreAuto = () => {
+      if (!isPointerResizeActive) return;
+      isPointerResizeActive = false;
+
+      requestAnimationFrame(() => {
+        if (!this.element?.isConnected) return;
+        this._autosizeRestoreAuto();
+      });
+    };
+
+    const onDown = () => {
+      isPointerResizeActive = true;
+      winEl.classList.remove("fxm-autosize");
+    };
+
     handles.forEach((h) => h.addEventListener("pointerdown", onDown, { passive: true }));
-    return () => handles.forEach((h) => h.removeEventListener("pointerdown", onDown));
+    window.addEventListener("pointerup", restoreAuto, { passive: true });
+    window.addEventListener("pointercancel", restoreAuto, { passive: true });
+
+    return () => {
+      handles.forEach((h) => h.removeEventListener("pointerdown", onDown));
+      window.removeEventListener("pointerup", restoreAuto);
+      window.removeEventListener("pointercancel", restoreAuto);
+    };
   }
 
-  /** Observe expand/collapse rows; when anything opens, restore autosize and set fallback class. */
+  /**
+   * Observe expand and collapse state changes so automatic sizing can be restored after content changes.
+   *
+   * @returns {() => void}
+   */
   _autosizeObserveRows() {
     const winEl = this.element;
     if (!winEl) return () => {};
@@ -354,7 +430,11 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
     return () => mo.disconnect();
   }
 
-  /** One-call init that wires everything and returns a single cleanup fn. */
+  /**
+   * Initialize automatic sizing helpers and register a combined cleanup routine.
+   *
+   * @returns {void}
+   */
   _autosizeInit() {
     this._autosizeCleanup?.();
     this._autosizeRestoreAuto();

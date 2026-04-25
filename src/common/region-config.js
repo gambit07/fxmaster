@@ -1,13 +1,24 @@
+import { isSoundFxParameterVisible } from "../handlebars-helpers.js";
 import { logger } from "../logger.js";
+import { resolveDarknessActivationEnabled } from "../utils.js";
 export class CommonRegionBehaviorConfig extends foundry.applications.sheets.RegionBehaviorConfig {
   static PARTS = foundry.utils.mergeObject(super.PARTS, { form: { scrollable: [""] } }, { inplace: false });
 
-  /** Override in subclasses */
+  /**
+   * Localization key for the primary fieldset legend. Override in subclasses when grouping is required.
+   *
+   * @type {string|null}
+   */
   static FIELDSET_LEGEND_I18N = null;
 
   async _renderHTML(context, options) {
     const rendered = await super._renderHTML(context, options);
     rendered.form.classList.add("scrollable");
+    this._configureDarknessActivationInputs(rendered.form);
+    this._primeDarknessActivationToggles(rendered.form);
+
+    this._wireElevationGateVisibility(rendered.form);
+    this._wireFxmasterConditionalVisibility(rendered.form);
 
     const legendKey = this.constructor.FIELDSET_LEGEND_I18N;
     if (!legendKey) return rendered;
@@ -19,11 +30,76 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
     if (!fieldset) return rendered;
 
     this._groupByEnabled(fieldset);
-
-    this._wireElevationGateVisibility(rendered.form);
-    this._wireFxmasterConditionalVisibility(rendered.form);
-
     return rendered;
+  }
+
+  _configureDarknessActivationInputs(form) {
+    if (!form) return;
+
+    const clampField = (input) => {
+      const current = Number.parseFloat(String(input?.value ?? ""));
+      if (!Number.isFinite(current)) return;
+      const clamped = Math.min(1, Math.max(0, current));
+      input.value = `${clamped}`;
+    };
+
+    const selectors =
+      'input[name^="system."][name$="_darknessActivationRange_min"], input[name^="system."][name$="_darknessActivationRange_max"]';
+
+    for (const input of form.querySelectorAll(selectors)) {
+      try {
+        input.type = "text";
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+      input.removeAttribute("min");
+      input.removeAttribute("max");
+      input.removeAttribute("step");
+      input.inputMode = "decimal";
+      input.autocomplete = "off";
+      input.size = 3;
+      input.classList.add("fxmaster-darkness-activation-input");
+
+      const group = input.closest(".form-group");
+      group?.classList.add("fxmaster-darkness-activation-group");
+      const label = group?.querySelector("label");
+      if (label) {
+        const isMin = input.name.endsWith("_darknessActivationRange_min");
+        label.textContent = game.i18n.localize(
+          isMin ? "FXMASTER.Params.DarknessActivationMin" : "FXMASTER.Params.DarknessActivationMax",
+        );
+      }
+
+      input.addEventListener("change", () => clampField(input));
+      input.addEventListener("blur", () => clampField(input));
+    }
+  }
+
+  _primeDarknessActivationToggles(form) {
+    if (!form) return;
+
+    const sourceSystem =
+      this.document?._source?.system ?? this.object?._source?.system ?? this.object?.toObject?.()?.system ?? {};
+
+    for (const checkbox of form.querySelectorAll(
+      'input[type="checkbox"][name^="system."][name$="_darknessActivationEnabled"]',
+    )) {
+      const fullName = String(checkbox.name ?? "");
+      const base = fullName.replace(/^system\./, "").replace(/_darknessActivationEnabled$/, "");
+      const storedExplicit = sourceSystem?.[`${base}_darknessActivationEnabled`];
+      if (typeof storedExplicit === "boolean") continue;
+
+      const minInput = form.querySelector(`[name="system.${base}_darknessActivationRange_min"]`);
+      const maxInput = form.querySelector(`[name="system.${base}_darknessActivationRange_max"]`);
+      if (!minInput && !maxInput) continue;
+
+      checkbox.checked = resolveDarknessActivationEnabled({
+        darknessActivationRange: {
+          min: minInput?.value,
+          max: maxInput?.value,
+        },
+      });
+    }
   }
 
   _groupByEnabled(fieldset) {
@@ -96,8 +172,8 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
     const sources = [];
     try {
       const cfg = CONFIG?.fxmaster;
-      if (cfg?.particleEffects) sources.push(cfg.particleEffects);
-      if (cfg?.filterEffects) sources.push(cfg.filterEffects);
+      if (cfg?.particleEffects) sources.push({ kind: "particle", defs: cfg.particleEffects });
+      if (cfg?.filterEffects) sources.push({ kind: "filter", defs: cfg.filterEffects });
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
@@ -106,6 +182,8 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
 
     const findGroupByName = (name) => {
       let el = form.querySelector(`.form-group [name="system.${name}"]`);
+      if (el) return el.closest(".form-group");
+      el = form.querySelector(`.form-group [name="system.${name}_min"], .form-group [name="system.${name}_max"]`);
       if (el) return el.closest(".form-group");
       el = form.querySelector(`.form-group [data-edit="system.${name}"], .form-group [name^="system.${name}["]`);
       return el ? el.closest(".form-group") : null;
@@ -212,8 +290,8 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
       return true;
     };
 
-    for (const defs of sources) {
-      for (const [type, cls] of Object.entries(defs ?? {})) {
+    for (const source of sources) {
+      for (const [type, cls] of Object.entries(source?.defs ?? {})) {
         const params = cls?.parameters;
         if (!params) continue;
 
@@ -222,12 +300,18 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
           const hideWhen = paramCfg?.hideWhen;
           const regionOnly = !!paramCfg?.regionOnly;
           const sceneOnly = !!paramCfg?.sceneOnly;
-          if (!showWhen && !hideWhen && !regionOnly && !sceneOnly) continue;
+          const soundFxParam = paramName === "soundFxEnabled";
+          if (!showWhen && !hideWhen && !regionOnly && !sceneOnly && !soundFxParam) continue;
 
-          const group = findGroupByName(`${type}_${paramName}`);
-          if (!group) continue;
+          const groups =
+            paramCfg?.type === "range-dual"
+              ? [findGroupByName(`${type}_${paramName}_min`), findGroupByName(`${type}_${paramName}_max`)].filter(
+                  Boolean,
+                )
+              : [findGroupByName(`${type}_${paramName}`)].filter(Boolean);
+          if (!groups.length) continue;
 
-          rules.push({ type, paramName, showWhen, hideWhen, regionOnly, sceneOnly, group });
+          rules.push({ kind: source.kind, type, paramName, showWhen, hideWhen, regionOnly, sceneOnly, groups });
         }
       }
     }
@@ -241,8 +325,9 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
         const hideOk = r.hideWhen ? evalCond(r.hideWhen, r.type) : false;
         const regionOk = !r.regionOnly || isRegionContext;
         const sceneOk = !r.sceneOnly || !isRegionContext;
-        const visible = showOk && !hideOk && regionOk && sceneOk;
-        r.group.style.display = visible ? "" : "none";
+        const soundFxOk = isSoundFxParameterVisible(r.kind, r.type, r.paramName);
+        const visible = showOk && !hideOk && regionOk && sceneOk && soundFxOk;
+        for (const group of r.groups ?? []) group.style.display = visible ? "" : "none";
       }
     };
 

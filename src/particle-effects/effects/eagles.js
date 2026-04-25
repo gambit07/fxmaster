@@ -29,6 +29,7 @@ export class EaglesParticleEffect extends FXMasterParticleEffect {
     const p = super.parameters;
     return {
       belowTokens: p.belowTokens,
+      belowTiles: p.belowTiles,
       soundFxEnabled: p.soundFxEnabled,
       tint: p.tint,
       directionalMovement: {
@@ -228,166 +229,35 @@ export class EaglesParticleEffect extends FXMasterParticleEffect {
       const spriteSheetTexture = PIXI.Texture.from(
         "modules/fxmaster/assets/particle-effects/effects/eagles/eagle.webp",
       );
-      const spriteSheetData = {
-        meta: {
-          scale: "1",
-        },
-        frames: {
-          "eagle0000.webp": {
-            frame: { x: 0, y: 0, w: 512, h: 512 },
-            rotated: false,
-            trimmed: false,
-            spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
-            sourceSize: { w: 512, h: 512 },
-          },
-          "eagle0001.webp": {
-            frame: { x: 512, y: 0, w: 512, h: 512 },
-            rotated: false,
-            trimmed: false,
-            spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
-            sourceSize: { w: 512, h: 512 },
-          },
-          "eagle0002.webp": {
-            frame: { x: 0, y: 512, w: 512, h: 512 },
-            rotated: false,
-            trimmed: false,
-            spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
-            sourceSize: { w: 512, h: 512 },
-          },
-          "eagle0003.webp": {
-            frame: { x: 512, y: 512, w: 512, h: 512 },
-            rotated: false,
-            trimmed: false,
-            spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
-            sourceSize: { w: 512, h: 512 },
-          },
-          "eagle0004.webp": {
-            frame: { x: 1024, y: 0, w: 512, h: 512 },
-            rotated: false,
-            trimmed: false,
-            spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
-            sourceSize: { w: 512, h: 512 },
-          },
-          "eagle0005.webp": {
-            frame: { x: 1024, y: 512, w: 512, h: 512 },
-            rotated: false,
-            trimmed: false,
-            spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
-            sourceSize: { w: 512, h: 512 },
-          },
-          "eagle0006.webp": {
-            frame: { x: 0, y: 1024, w: 512, h: 512 },
-            rotated: false,
-            trimmed: false,
-            spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
-            sourceSize: { w: 512, h: 512 },
-          },
-          "eagle0007.webp": {
-            frame: { x: 512, y: 1024, w: 512, h: 512 },
-            rotated: false,
-            trimmed: false,
-            spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
-            sourceSize: { w: 512, h: 512 },
-          },
-          "eagle0008.webp": {
-            frame: { x: 1024, y: 1024, w: 512, h: 512 },
-            rotated: false,
-            trimmed: false,
-            spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
-            sourceSize: { w: 512, h: 512 },
-          },
-          "eagle0009.webp": {
-            frame: { x: 1536, y: 0, w: 512, h: 512 },
-            rotated: false,
-            trimmed: false,
-            spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
-            sourceSize: { w: 512, h: 512 },
-          },
-          "eagle0010.webp": {
-            frame: { x: 1536, y: 512, w: 512, h: 512 },
-            rotated: false,
-            trimmed: false,
-            spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
-            sourceSize: { w: 512, h: 512 },
-          },
-          "eagle0011.webp": {
-            frame: { x: 1536, y: 1024, w: 512, h: 512 },
-            rotated: false,
-            trimmed: false,
-            spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
-            sourceSize: { w: 512, h: 512 },
-          },
-          "eagle0012.webp": {
-            frame: { x: 0, y: 1536, w: 512, h: 512 },
-            rotated: false,
-            trimmed: false,
-            spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
-            sourceSize: { w: 512, h: 512 },
-          },
-          "eagle0013.webp": {
-            frame: { x: 512, y: 1536, w: 512, h: 512 },
-            rotated: false,
-            trimmed: false,
-            spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
-            sourceSize: { w: 512, h: 512 },
-          },
-          "eagle0014.webp": {
-            frame: { x: 1024, y: 1536, w: 512, h: 512 },
-            rotated: false,
-            trimmed: false,
-            spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
-            sourceSize: { w: 512, h: 512 },
-          },
-          "eagle0015.webp": {
-            frame: { x: 1536, y: 1536, w: 512, h: 512 },
-            rotated: false,
-            trimmed: false,
-            spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
-            sourceSize: { w: 512, h: 512 },
-          },
-          "eagle0016.webp": {
-            frame: { x: 2048, y: 0, w: 512, h: 512 },
-            rotated: false,
-            trimmed: false,
-            spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
-            sourceSize: { w: 512, h: 512 },
-          },
-          "eagle0017.webp": {
-            frame: { x: 2048, y: 512, w: 512, h: 512 },
-            rotated: false,
-            trimmed: false,
-            spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
-            sourceSize: { w: 512, h: 512 },
-          },
-          "eagle0018.webp": {
-            frame: { x: 2048, y: 1024, w: 512, h: 512 },
-            rotated: false,
-            trimmed: false,
-            spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
-            sourceSize: { w: 512, h: 512 },
-          },
-          "eagle0019.webp": {
-            frame: { x: 2048, y: 1536, w: 512, h: 512 },
-            rotated: false,
-            trimmed: false,
-            spriteSourceSize: { x: 0, y: 0, w: 512, h: 512 },
-            sourceSize: { w: 512, h: 512 },
-          },
-        },
-      };
-      const spriteSheet = new PIXI.Spritesheet(spriteSheetTexture, spriteSheetData);
-      this.constructor._textureCache = parseSpriteSheetSync.call(spriteSheet);
+      const base = spriteSheetTexture?.baseTexture ?? spriteSheetTexture;
+      const frameData = [
+        [0, 0],
+        [512, 0],
+        [0, 512],
+        [512, 512],
+        [1024, 0],
+        [1024, 512],
+        [0, 1024],
+        [512, 1024],
+        [1024, 1024],
+        [1536, 0],
+        [1536, 512],
+        [1536, 1024],
+        [0, 1536],
+        [512, 1536],
+        [1024, 1536],
+        [1536, 1536],
+        [2048, 0],
+        [2048, 512],
+        [2048, 1024],
+        [2048, 1536],
+      ];
+
+      this.constructor._textureCache = frameData.map(([x, y]) => {
+        const frame = new PIXI.Rectangle(x, y, 512, 512);
+        return new PIXI.Texture(base, frame);
+      });
     }
     return this.constructor._textureCache;
   }
-}
-
-function parseSpriteSheetSync() {
-  let textures;
-  this._callback = (parsedTextures) => (textures = Object.values(parsedTextures));
-  this._batchIndex = 0;
-  this._processFrames(0);
-  this._processAnimations();
-  this._parseComplete();
-  return textures;
 }

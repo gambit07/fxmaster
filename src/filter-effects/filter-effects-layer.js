@@ -1,17 +1,19 @@
 /**
  * FilterEffectsLayer
  * ------------------
- * Applies region-scoped post-processing filters in FXMaster.
- * - Renders a per-region, screen-space (CSS px) alpha mask aligned to the camera.
- * - Attaches configured filter instances to `canvas.environment`.
- * - Keeps masks and filter areas in sync with camera transforms.
+ * Builds and maintains region-scoped filter runtimes for FXMaster.
+ * - Renders per-region screen-space masks aligned to the camera.
+ * - Updates region filter uniforms, cutouts, and elevation gates.
+ * - Exposes live runtime lookups for the global compositor stack.
  */
-
 import { packageId, MAX_EDGES } from "../constants.js";
 import { logger } from "../logger.js";
 import { isEnabled } from "../settings.js";
 import { normalize } from "./filters/mixins/filter.js";
 import {
+  _belowTokensEnabled,
+  _belowTilesEnabled,
+  _belowForegroundEnabled,
   traceRegionShapePath2D,
   snappedStageMatrix,
   mat3FromPixi,
@@ -22,6 +24,9 @@ import {
   estimateRegionInradius,
   composeMaskMinusTokens,
   composeMaskMinusTokensRT,
+  composeMaskMinusTiles,
+  composeMaskMinusTilesRT,
+  composeMaskMinusCoverageRT,
   rectFromAligned,
   rectFromShapes,
   buildRegionMaskRT,
@@ -29,15 +34,17 @@ import {
   coalesceNextFrame,
   getCssViewportMetrics,
   getSnappedCameraCss,
+  getSceneDarknessLevel,
+  isEffectActiveForSceneDarkness,
 } from "../utils.js";
 import { BaseEffectsLayer } from "../common/base-effects-layer.js";
 import { SceneMaskManager } from "../common/base-effects-scene-manager.js";
+import { buildRegionEffectUid } from "../common/effect-stack.js";
 
 const FILTER_TYPE = `${packageId}.filterEffectsRegion`;
 
 /**
- * Track global renderer.roundPixels mutations without attaching state to the PIXI renderer object.
- * Keyed by the renderer instance.
+ * Track global renderer.roundPixels mutations without attaching state to the PIXI renderer object. Keyed by the renderer instance.
  * @type {WeakMap<object, {count:number, prev:boolean}>}
  * @private
  */
@@ -50,8 +57,7 @@ const _rendererRoundPixelsState = new WeakMap();
 const _geomKeyCache = new WeakMap();
 
 /**
- * Build a stable string key representing the geometry of a set of region shapes. The key is used to detect when an SDF texture needs rebuilding.
- * Results are cached on the shapes array reference via a {@link WeakMap} so repeated calls during the same frame (or subsequent frames with unchanged geometry) skip the full serialisation walk.
+ * Build a stable string key representing the geometry of a set of region shapes. The key is used to detect when an SDF texture needs rebuilding. Results are cached on the shapes array reference via a {@link WeakMap} so repeated calls during the same frame (or subsequent frames with unchanged geometry) skip the full serialisation walk.
  * @param {object[]} shapes - Array of shape descriptors from a region document.
  * @returns {string} A comma-separated canonical representation of the shapes.
  */
@@ -129,7 +135,7 @@ function _analyzeAnalyticShape(placeable) {
   const s = typeof raw?.toObject === "function" ? raw.toObject() : raw;
   const type = s?.type ?? raw?.type ?? "unknown";
 
-  /* If a shape is represented by multiple polygons do not treat it as a simple analytic primitive. */
+  /** If a shape is represented by multiple polygons do not treat it as a simple analytic primitive. */
   const polys = s?.polygons ?? raw?.polygons;
   if (Array.isArray(polys) && polys.length > 1) return null;
 
@@ -204,9 +210,7 @@ function _analyzeAnalyticShape(placeable) {
     const bh = Number(bRaw?.height);
 
     /**
-     * Heuristic: does this emanation polygon approximate an ellipse?
-     * Checks edge uniformity and area-to-bounding-box ratio.
-     * bw/bh MUST be declared above this function to avoid TDZ issues.
+     * Heuristic: does this emanation polygon approximate an ellipse? Checks edge uniformity and area-to-bounding-box ratio. bw/bh MUST be declared above this function to avoid TDZ issues.
      */
     const emanationLooksEllipseLike = () => {
       const baseType = s?.base?.type ?? raw?.base?.type ?? null;
@@ -327,7 +331,7 @@ function _edtSignedFromBinary(binaryCanvas, { encK = 8.0 } = {}) {
   const INF = 1e20;
   const n = W * H;
 
-  /* 1D exact EDT. */
+  /** 1D exact EDT. */
   const edt1d = (f, n, d, v, z) => {
     let k = 0;
     v[0] = 0;
@@ -359,7 +363,7 @@ function _edtSignedFromBinary(binaryCanvas, { encK = 8.0 } = {}) {
     }
   };
 
-  /* 2D exact EDT from a binary feature predicate. */
+  /** 2D exact EDT from a binary feature predicate. */
   const maxN = Math.max(W, H);
   const f = new Float32Array(maxN);
   const d = new Float32Array(maxN);
@@ -369,7 +373,7 @@ function _edtSignedFromBinary(binaryCanvas, { encK = 8.0 } = {}) {
   const tmp = new Float32Array(n);
 
   const edt2dMask = (featureIsInside) => {
-    /* Row pass */
+    /** Row pass */
     for (let y = 0; y < H; y++) {
       const row = y * W;
       for (let x = 0; x < W; x++) {
@@ -380,7 +384,7 @@ function _edtSignedFromBinary(binaryCanvas, { encK = 8.0 } = {}) {
       for (let x = 0; x < W; x++) tmp[row + x] = d[x];
     }
 
-    /* Column pass */
+    /** Column pass */
     const out = new Float32Array(n);
     for (let x = 0; x < W; x++) {
       for (let y = 0; y < H; y++) f[y] = tmp[y * W + x];
@@ -390,7 +394,7 @@ function _edtSignedFromBinary(binaryCanvas, { encK = 8.0 } = {}) {
     return out;
   };
 
-  /* dOut: distance to inside features. dIn: distance to outside features. */
+  /** dOut: distance to inside features. dIn: distance to outside features. */
   const dOut = edt2dMask(true);
   const dIn = edt2dMask(false);
 
@@ -428,14 +432,14 @@ function _buildRegionSDF_FromBinary(placeable, worldBounds, { maxDistWorld = nul
   const gl = r.gl;
   const maxTex = gl?.getParameter?.(gl.MAX_TEXTURE_SIZE) || 8192;
 
-  /* Base resolution: one SDF texel roughly corresponds to one renderer output pixel in world units. */
+  /** Base resolution: one SDF texel roughly corresponds to one renderer output pixel in world units. */
   let wpt = Math.max(safeBounds.width / devW, safeBounds.height / devH);
   if (!Number.isFinite(wpt) || wpt <= 0) wpt = 1;
 
   const encK = 8.0;
   if (Number.isFinite(Number(maxDistWorld)) && Number(maxDistWorld) > 0) {
-    /* Signed SDF uses half the 8-bit range for inside distances. */
-    const maxSdTex = 127.0 / encK; // ~15.875 texels
+    /** Signed SDF uses half of the 8-bit range for inside distances. */
+    const maxSdTex = 127.0 / encK;
     const wantWpt = Number(maxDistWorld) / Math.max(maxSdTex, 1e-6);
     if (Number.isFinite(wantWpt) && wantWpt > 0) wpt = Math.max(wpt, wantWpt);
   }
@@ -460,18 +464,18 @@ function _buildRegionSDF_FromBinary(placeable, worldBounds, { maxDistWorld = nul
   const innerW = Math.max(1, W - 2 * padPx);
   const innerH = Math.max(1, H - 2 * padPx);
 
-  /* World-units per texel for SDF decode. */
+  /** World-units per texel for SDF decode. */
   const wptX = safeBounds.width / innerW;
   const wptY = safeBounds.height / innerH;
   wpt = Math.max(wptX, wptY);
 
-  /* Encoding scale is fixed at encK=8.0 for best precision. */
+  /** Encoding scale is fixed at encK=8.0 for best precision. */
   const bin = document.createElement("canvas");
   bin.width = W;
   bin.height = H;
   const ctx = bin.getContext("2d", { willReadFrequently: true });
 
-  /* Map safeBounds -> [padPx, padPx]..[W-padPx, H-padPx] */
+  /** Map safeBounds -> [padPx, padPx]..[W-padPx, H-padPx] */
   const sx = innerW / safeBounds.width;
   const sy = innerH / safeBounds.height;
   const ox = padPx - safeBounds.x * sx;
@@ -514,7 +518,7 @@ function _buildRegionSDF_FromBinary(placeable, worldBounds, { maxDistWorld = nul
 
   const texture = new PIXI.Texture(base);
 
-  /* World -> UV mapping for the inset-drawn binary/SDF texture. */
+  /** World -> UV mapping for the inset-drawn binary/SDF texture. */
   const uSx = innerW / (W * safeBounds.width);
   const uSy = innerH / (H * safeBounds.height);
   const uTx = padPx / W - safeBounds.x * uSx;
@@ -552,31 +556,52 @@ function normalizeRegionBehaviorDocs(behaviorDocs) {
   return Array.from(behaviorDocs);
 }
 
+/**
+ * Select the appropriate region mask texture for a filter.
+ *
+ * @param {{ maskRT?: PIXI.RenderTexture|null, maskCutoutTokensRT?: PIXI.RenderTexture|null, maskCutoutTilesRT?: PIXI.RenderTexture|null, maskCutoutCombinedRT?: PIXI.RenderTexture|null }|null|undefined} entry
+ * @param {boolean} belowTokens
+ * @param {boolean} belowTiles
+ * @returns {PIXI.RenderTexture|null}
+ */
+function chooseRegionFilterMaskTexture(entry, belowTokens, belowTiles) {
+  if (!entry) return null;
+  if (belowTokens && belowTiles) {
+    return entry.maskCutoutCombinedRT || entry.maskCutoutTokensRT || entry.maskCutoutTilesRT || entry.maskRT || null;
+  }
+  if (belowTokens) return entry.maskCutoutTokensRT || entry.maskCutoutCombinedRT || entry.maskRT || null;
+  if (belowTiles) return entry.maskCutoutTilesRT || entry.maskCutoutCombinedRT || entry.maskRT || null;
+  return entry.maskRT || null;
+}
+
 export class FilterEffectsLayer extends BaseEffectsLayer {
   constructor() {
     super();
     this.regionMasks = new Map();
     this._sdfCache = new Map();
     this._gatePassCache = new Map();
+    this.stackEntries = new Map();
 
     this._tokensDirty = false;
 
     /**
-     * Whether any region-scoped filters currently require below-tokens cutouts.
-     * Used to keep SceneMaskManager's shared token silhouettes alive without forcing the scene-level filter masking pipeline to stay active.
+     * Whether any region-scoped filters currently require below-tokens cutouts. Used to keep SceneMaskManager's shared token silhouettes alive without forcing the scene-level filter masking pipeline to stay active.
      * @type {boolean}
      * @private
      */
     this._regionBelowTokensNeeded = false;
+    this._regionBelowTilesNeeded = false;
 
     this._lastCutoutCamFrac = null;
+    this._lastRegionDarknessSignatures = new Map();
+    this._lastDarknessLevel = getSceneDarknessLevel();
 
     this._rebuiltThisTick = false;
 
     /**
-     * I need `roundPixels = true` for consistent mask alignment, but the setting must not leak beyond the layer lifecycle.
+     * `roundPixels = true` is required for consistent mask alignment, but the setting must not leak beyond the layer lifecycle.
      *
-     * A small ref-counted state is kept on the renderer so multiple instances (or reload edge-cases) won't fight over the value.
+     * A small reference-counted state is stored per renderer so multiple instances, including reload edge cases, do not compete for the same renderer flag.
      * @type {boolean}
      * @private
      */
@@ -599,8 +624,43 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
   }
 
   /**
-   * Notify the layer that token silhouettes changed (movement, resize, visibility, etc).
-   * Used to cheaply recompose below-tokens cutout RTs without rebuilding base region masks.
+   * Return the live filter runtime for a stored stack uid.
+   *
+   * @param {string} uid
+   * @returns {PIXI.Filter|null}
+   */
+  getStackFilter(uid) {
+    return this.stackEntries.get(uid)?.filter ?? null;
+  }
+
+  /**
+   * Build a signature describing which region-scoped filters for a single region are active at the supplied darkness level.
+   *
+   * @param {PlaceableObject} placeable
+   * @param {number} darknessLevel
+   * @returns {string}
+   */
+  _buildRegionDarknessActivationSignature(placeable, darknessLevel = getSceneDarknessLevel()) {
+    const regionId = placeable?.id ?? "";
+    const behaviors = Array.from(placeable?.document?.behaviors ?? []).filter(
+      (behavior) => behavior?.type === FILTER_TYPE && !behavior?.disabled,
+    );
+
+    const parts = [];
+    for (const behavior of behaviors) {
+      const defs = behavior.getFlag(packageId, "filters") ?? {};
+      for (const [id, info] of Object.entries(defs)) {
+        parts.push(
+          `${regionId}:${behavior.id}:${id}:${isEffectActiveForSceneDarkness(info?.options, darknessLevel) ? 1 : 0}`,
+        );
+      }
+    }
+
+    return parts.sort().join("|");
+  }
+
+  /**
+   * Notify the layer that token silhouettes changed (movement, resize, visibility, etc). Used to cheaply recompose below-tokens cutout RTs without rebuilding base region masks.
    */
   notifyTokensChanged() {
     this._tokensDirty = true;
@@ -637,45 +697,48 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
   }
 
   /**
-   * Keep SceneMaskManager informed about region-level belowTokens requirements.
-   * This prevents scene-level managers from accidentally disabling token silhouettes while region-level effects still need them.
+   * Keep SceneMaskManager informed about region-level below-tokens and below-tiles requirements.
+   *
    * @private
    */
   _updateRegionBelowTokensNeeded() {
-    let any = false;
+    let anyBelowTokens = false;
+    let anyBelowTiles = false;
     for (const entry of this.regionMasks.values()) {
       const filters = entry?.filters ?? [];
-      if (filters.some((f) => !!f.__fxmBelowTokens)) {
-        any = true;
-        break;
-      }
+      if (filters.some((f) => !!f.__fxmBelowTokens)) anyBelowTokens = true;
+      if (filters.some((f) => !!f.__fxmBelowTiles)) anyBelowTiles = true;
+      if (anyBelowTokens && anyBelowTiles) break;
     }
 
-    if (this._regionBelowTokensNeeded === any) return;
-    this._regionBelowTokensNeeded = any;
+    const changedTokens = this._regionBelowTokensNeeded !== anyBelowTokens;
+    const changedTiles = this._regionBelowTilesNeeded !== anyBelowTiles;
+    this._regionBelowTokensNeeded = anyBelowTokens;
+    this._regionBelowTilesNeeded = anyBelowTiles;
+
+    if (!changedTokens && !changedTiles) return;
 
     try {
-      SceneMaskManager.instance.setBelowTokensNeeded?.("filters", any, "regions");
+      SceneMaskManager.instance.setBelowTokensNeeded?.("filters", anyBelowTokens, "regions");
+      SceneMaskManager.instance.setBelowTilesNeeded?.("filters", anyBelowTiles, "regions");
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
   }
 
   /**
-   * Recompose all region cutout masks that have belowTokens enabled (base - tokens silhouette).
-   * Uses the shared tokens RenderTexture maintained by SceneMaskManager to avoid O(regions × tokens).
-   * This is synchronous and safe to call during panning/zooming or token movement.
+   * Recompose all region cutout masks that have below-tokens or below-tiles enabled. Uses shared coverage RenderTextures maintained by {@link SceneMaskManager}.
    */
-  _recomposeBelowTokensCutoutsSync() {
+  _recomposeBelowTokensCutoutsSync({ refreshSharedMasks = true } = {}) {
     let anyBelowTokens = false;
+    let anyBelowTiles = false;
     for (const entry of this.regionMasks.values()) {
       const filters = entry?.filters ?? [];
-      if (filters.some((f) => !!f.__fxmBelowTokens) && entry.maskRT && entry.maskCutoutRT) {
-        anyBelowTokens = true;
-        break;
-      }
+      if (filters.some((f) => !!f.__fxmBelowTokens) && entry.maskRT && entry.maskCutoutTokensRT) anyBelowTokens = true;
+      if (filters.some((f) => !!f.__fxmBelowTiles) && entry.maskRT && entry.maskCutoutTilesRT) anyBelowTiles = true;
+      if (anyBelowTokens && anyBelowTiles) break;
     }
-    if (!anyBelowTokens) {
+    if (!anyBelowTokens && !anyBelowTiles) {
       try {
         this._updateRegionBelowTokensNeeded();
       } catch (err) {
@@ -686,35 +749,54 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
     }
 
     try {
-      SceneMaskManager.instance.setBelowTokensNeeded?.("filters", true, "regions");
+      SceneMaskManager.instance.setBelowTokensNeeded?.("filters", anyBelowTokens, "regions");
+      SceneMaskManager.instance.setBelowTilesNeeded?.("filters", anyBelowTiles, "regions");
+      if (refreshSharedMasks) SceneMaskManager.instance.refreshTokensSync?.();
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
 
-    try {
-      SceneMaskManager.instance.refreshTokensSync?.();
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
-
-    const { tokens } = SceneMaskManager.instance.getMasks?.("filters") ?? {};
+    const { tokens, tiles } = SceneMaskManager.instance.getMasks?.("filters") ?? {};
     for (const entry of this.regionMasks.values()) {
-      if (!entry?.maskRT || !entry?.maskCutoutRT) continue;
-      const anyBelow = (entry.filters ?? []).some((f) => !!f.__fxmBelowTokens);
-      if (!anyBelow) continue;
+      if (!entry?.maskRT) continue;
+      const filters = entry.filters ?? [];
+      const wantsBelowTokens = filters.some((f) => !!f.__fxmBelowTokens);
+      const wantsBelowTiles = filters.some((f) => !!f.__fxmBelowTiles);
 
       try {
-        if (tokens) {
-          composeMaskMinusTokensRT(entry.maskRT, tokens, { outRT: entry.maskCutoutRT });
-        } else {
-          composeMaskMinusTokens(entry.maskRT, { outRT: entry.maskCutoutRT });
+        if (wantsBelowTokens && entry.maskCutoutTokensRT) {
+          if (tokens) composeMaskMinusTokensRT(entry.maskRT, tokens, { outRT: entry.maskCutoutTokensRT });
+          else composeMaskMinusTokens(entry.maskRT, { outRT: entry.maskCutoutTokensRT });
+        }
+        if (wantsBelowTiles && entry.maskCutoutTilesRT) {
+          if (tiles) composeMaskMinusTilesRT(entry.maskRT, tiles, { outRT: entry.maskCutoutTilesRT });
+          else composeMaskMinusTiles(entry.maskRT, { outRT: entry.maskCutoutTilesRT });
+        }
+        if (wantsBelowTokens && wantsBelowTiles && entry.maskCutoutCombinedRT) {
+          composeMaskMinusCoverageRT(entry.maskRT, [tokens, tiles], { outRT: entry.maskCutoutCombinedRT });
         }
       } catch (err) {
-        logger?.error?.("FXMaster: error recomposing token cutout mask", err);
+        logger?.error?.("FXMaster: error recomposing region coverage cutout mask", err);
       }
     }
 
     this._tokensDirty = false;
+  }
+
+  /**
+   * Recompose live region below-object cutout masks against the current shared scene coverage textures.
+   *
+   * Region-scoped below-tiles filters use per-region cutout render textures derived from the shared SceneMaskManager tile silhouettes. Tile hover fade updates those shared silhouettes every frame in the compositor, so region cutouts must also be refreshed against the latest shared masks instead of waiting for token/camera invalidation.
+   *
+   * @param {{ refreshSharedMasks?: boolean }} [options]
+   * @returns {void}
+   */
+  refreshCoverageCutoutsSync({ refreshSharedMasks = false } = {}) {
+    try {
+      this._recomposeBelowTokensCutoutsSync({ refreshSharedMasks });
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
 
   async _draw() {
@@ -861,7 +943,7 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       throw e;
     }
 
-    /* Polygon edge lists are only needed when doing polygon-based edge fading (uRegionShape=0). For the common single-shape analytic cases (rect/circle/ellipse) skip computing edges entirely for performance. */
+    /** Polygon edge lists are only needed when doing polygon-based edge fading (uRegionShape=0). For the common single-shape analytic cases (rect/circle/ellipse) skip computing edges entirely for performance. */
     let edgeCount = 0;
     const uEdgesArray = new Float32Array(MAX_EDGES * 4);
 
@@ -876,7 +958,7 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       uSdfTexel = null,
       uSdfInsideMax = 0;
 
-    /* For uRegionShape=0 (polygon) Edge Fade %, decide between edge-list (fastPoly) and SDF (% fade). Multi-shape regions always use the SDF path. */
+    /** For uRegionShape=0 (polygon) Edge Fade %, decide between edge-list (fastPoly) and SDF (% fade). Multi-shape regions always use the SDF path. */
     let fastPoly = false;
 
     if (analytic && !forceComplexFade) {
@@ -955,48 +1037,70 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       }
     }
 
-    let anyWantsBelow = false;
+    let anyWantsBelowTokens = false;
+    let anyWantsBelowTiles = false;
     for (const behavior of behaviors) {
       const defs = behavior.getFlag(packageId, "filters");
       if (!defs) continue;
       for (const [, { options: ropts }] of Object.entries(defs)) {
-        if (ropts?.belowTokens) {
-          anyWantsBelow = true;
-          break;
-        }
+        if (!isEffectActiveForSceneDarkness(ropts, getSceneDarknessLevel())) continue;
+        if (_belowTokensEnabled(ropts?.belowTokens)) anyWantsBelowTokens = true;
+        if (_belowTilesEnabled(ropts?.belowTiles)) anyWantsBelowTiles = true;
+        if (anyWantsBelowTokens && anyWantsBelowTiles) break;
       }
-      if (anyWantsBelow) break;
+      if (anyWantsBelowTokens && anyWantsBelowTiles) break;
     }
 
-    let maskCutoutRT = null;
-    if (anyWantsBelow) {
-      const outRT = this._acquireRT(maskRT.width | 0, maskRT.height | 0, maskRT.resolution || 1);
+    let maskCutoutTokensRT = null;
+    let maskCutoutTilesRT = null;
+    let maskCutoutCombinedRT = null;
+    if (anyWantsBelowTokens || anyWantsBelowTiles) {
       try {
-        SceneMaskManager.instance.setBelowTokensNeeded?.("filters", true, "regions");
+        SceneMaskManager.instance.setBelowTokensNeeded?.("filters", anyWantsBelowTokens, "regions");
+        SceneMaskManager.instance.setBelowTilesNeeded?.("filters", anyWantsBelowTiles, "regions");
         SceneMaskManager.instance.refreshTokensSync?.();
       } catch (err) {
         logger.debug("FXMaster:", err);
       }
-      const { tokens } = SceneMaskManager.instance.getMasks?.("filters") ?? {};
-      maskCutoutRT = tokens
-        ? composeMaskMinusTokensRT(maskRT, tokens, { outRT })
-        : composeMaskMinusTokens(maskRT, { outRT });
-      try {
-        maskCutoutRT.baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
-        maskCutoutRT.baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
-      } catch (err) {
-        logger.debug("FXMaster:", err);
+      const { tokens, tiles } = SceneMaskManager.instance.getMasks?.("filters") ?? {};
+      if (anyWantsBelowTokens) {
+        const outRT = this._acquireRT(maskRT.width | 0, maskRT.height | 0, maskRT.resolution || 1);
+        maskCutoutTokensRT = tokens
+          ? composeMaskMinusTokensRT(maskRT, tokens, { outRT })
+          : composeMaskMinusTokens(maskRT, { outRT });
+      }
+      if (anyWantsBelowTiles) {
+        const outRT = this._acquireRT(maskRT.width | 0, maskRT.height | 0, maskRT.resolution || 1);
+        maskCutoutTilesRT = tiles
+          ? composeMaskMinusTilesRT(maskRT, tiles, { outRT })
+          : composeMaskMinusTiles(maskRT, { outRT });
+      }
+      if (anyWantsBelowTokens && anyWantsBelowTiles) {
+        const outRT = this._acquireRT(maskRT.width | 0, maskRT.height | 0, maskRT.resolution || 1);
+        maskCutoutCombinedRT = composeMaskMinusCoverageRT(maskRT, [tokens, tiles], { outRT });
+      }
+      for (const rt of [maskCutoutTokensRT, maskCutoutTilesRT, maskCutoutCombinedRT]) {
+        if (!rt?.baseTexture) continue;
+        try {
+          rt.baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
+          rt.baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
       }
     }
 
     const defaultSmoothK = Math.max(2.0 * worldPerCss, 1e-6);
     const appliedFilters = [];
 
+    const darknessLevel = getSceneDarknessLevel();
+
     for (const behavior of behaviors) {
       const filterDefs = behavior.getFlag(packageId, "filters");
       if (!filterDefs || Object.keys(filterDefs).length === 0) continue;
 
       for (const [id, { type, options: rawOptions }] of Object.entries(filterDefs)) {
+        if (!isEffectActiveForSceneDarkness(rawOptions, darknessLevel)) continue;
         const FilterClass = CONFIG.fxmaster.filterEffects[type];
         if (!FilterClass) {
           logger.warn(game.i18n.format("FXMASTER.Filters.TypeErrors.TypeUnknown", { id, type }));
@@ -1005,13 +1109,23 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
 
         const options = normalize(rawOptions ?? {});
         const filter = new FilterClass(options, id);
-        const wantBelow = !!options?.belowTokens;
+        const wantBelow = _belowTokensEnabled(options?.belowTokens);
+        const wantBelowTiles = _belowTilesEnabled(options?.belowTiles);
+        const wantBelowForeground = _belowForegroundEnabled(options?.belowForeground);
+        const uid = buildRegionEffectUid("filter", regionId, behavior.id, id);
         filter.__fxmBelowTokens = wantBelow;
+        filter.__fxmBelowTiles = wantBelowTiles;
+        filter.__fxmBelowForeground = wantBelowForeground;
+        filter.__fxmStackUid = uid;
 
         if (filter.uniforms) {
           const u = filter.uniforms;
 
-          u.maskSampler = wantBelow && maskCutoutRT ? maskCutoutRT : maskRT;
+          u.maskSampler = chooseRegionFilterMaskTexture(
+            { maskRT, maskCutoutTokensRT, maskCutoutTilesRT, maskCutoutCombinedRT },
+            wantBelow,
+            wantBelowTiles,
+          );
           u.hasMask = 1.0;
           u.viewSize =
             u.viewSize instanceof Float32Array && u.viewSize.length >= 2
@@ -1020,6 +1134,17 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
           u.deviceToCss = deviceToCss;
           u.maskReady = 1.0;
           u.maskSoft = 0.0;
+          filter.__fxmMaskVariants = {
+            baseMaskRT: maskRT ?? null,
+            cutoutTokensRT: maskCutoutTokensRT ?? null,
+            cutoutTilesRT: maskCutoutTilesRT ?? null,
+            cutoutCombinedRT: maskCutoutCombinedRT ?? null,
+            tokensMaskRT: null,
+            cssW,
+            cssH,
+            deviceToCss,
+            maskSoft: false,
+          };
           u.uCssToWorld = cssToWorldMat3;
 
           const raw = Math.max(0, Number(options?.fadePercent) || 0);
@@ -1112,18 +1237,28 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
         }
 
         appliedFilters.push(filter);
+        this.stackEntries.set(uid, { uid, filter, regionId, behaviorId: behavior.id, effectId: id });
       }
     }
 
     if (appliedFilters.length > 0) {
-      canvas.environment.filters = [...(canvas.environment.filters ?? []), ...appliedFilters];
-      this.regionMasks.set(regionId, { filters: appliedFilters, maskRT, maskCutoutRT });
+      this.regionMasks.set(regionId, {
+        filters: appliedFilters,
+        maskRT,
+        maskCutoutTokensRT,
+        maskCutoutTilesRT,
+        maskCutoutCombinedRT,
+      });
+      this._lastRegionDarknessSignatures.set(
+        regionId,
+        this._buildRegionDarknessActivationSignature(placeable, darknessLevel),
+      );
       this._applyElevationGate(placeable);
       this._refreshEnvFilterArea();
       this._updateRegionBelowTokensNeeded();
     } else {
       this._releaseRT(maskRT);
-      if (maskCutoutRT) this._releaseRT(maskCutoutRT);
+      for (const rt of [maskCutoutTokensRT, maskCutoutTilesRT, maskCutoutCombinedRT]) if (rt) this._releaseRT(rt);
       this._updateRegionBelowTokensNeeded();
     }
   }
@@ -1142,8 +1277,7 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
   }
 
   /**
-   * Schedule a mask refresh for one or more regions on the next animation frame.
-   * Multiple calls within the same frame are batched so that no region ID is lost.
+   * Schedule a mask refresh for one or more regions on the next animation frame. Multiple calls within the same frame are batched so that no region ID is lost.
    * @param {string} regionId
    */
   requestRegionMaskRefresh(regionId) {
@@ -1228,8 +1362,14 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
         removeFromTarget(entry.filters);
         for (const f of entry.filters) f.destroy?.();
         this._releaseRT(entry.maskRT);
-        if (entry.maskCutoutRT) this._releaseRT(entry.maskCutoutRT);
+        for (const rt of [entry.maskCutoutTokensRT, entry.maskCutoutTilesRT, entry.maskCutoutCombinedRT]) {
+          if (rt) this._releaseRT(rt);
+        }
         this.regionMasks.delete(regionId);
+        this._lastRegionDarknessSignatures.delete(regionId);
+        for (const f of entry.filters ?? []) {
+          if (f?.__fxmStackUid) this.stackEntries.delete(f.__fxmStackUid);
+        }
       }
       const sdf = this._sdfCache.get(regionId);
       if (sdf) {
@@ -1251,9 +1391,12 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
         removeFromTarget(entry.filters);
         for (const f of entry.filters) f.destroy?.();
         this._releaseRT(entry.maskRT);
-        if (entry.maskCutoutRT) this._releaseRT(entry.maskCutoutRT);
+        for (const rt of [entry.maskCutoutTokensRT, entry.maskCutoutTilesRT, entry.maskCutoutCombinedRT]) {
+          if (rt) this._releaseRT(rt);
+        }
       }
       this.regionMasks.clear();
+      this.stackEntries.clear();
       for (const e of this._sdfCache.values()) {
         try {
           e.texture?.destroy(true);
@@ -1293,45 +1436,54 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
     }
     entry.maskRT = newRT;
 
-    const anyWantsBelow = (entry.filters || []).some((f) => !!f.__fxmBelowTokens);
-    if (anyWantsBelow) {
-      const old = entry.maskCutoutRT;
-      const reuse =
-        !!old &&
-        (old.width | 0) === (newRT.width | 0) &&
-        (old.height | 0) === (newRT.height | 0) &&
-        (old.resolution || 1) === (newRT.resolution || 1);
-
-      const outRT = reuse ? old : this._acquireRT(newRT.width | 0, newRT.height | 0, newRT.resolution || 1);
+    const anyWantsBelowTokens = (entry.filters || []).some((f) => !!f.__fxmBelowTokens);
+    const anyWantsBelowTiles = (entry.filters || []).some((f) => !!f.__fxmBelowTiles);
+    if (anyWantsBelowTokens || anyWantsBelowTiles) {
       try {
-        SceneMaskManager.instance.setBelowTokensNeeded?.("filters", true, "regions");
+        SceneMaskManager.instance.setBelowTokensNeeded?.("filters", anyWantsBelowTokens, "regions");
+        SceneMaskManager.instance.setBelowTilesNeeded?.("filters", anyWantsBelowTiles, "regions");
         SceneMaskManager.instance.refreshTokensSync?.();
       } catch (err) {
         logger.debug("FXMaster:", err);
       }
-      const { tokens } = SceneMaskManager.instance.getMasks?.("filters") ?? {};
-      entry.maskCutoutRT = tokens
-        ? composeMaskMinusTokensRT(newRT, tokens, { outRT })
-        : composeMaskMinusTokens(newRT, { outRT });
+      const { tokens, tiles } = SceneMaskManager.instance.getMasks?.("filters") ?? {};
 
-      if (old && !reuse && old !== entry.maskCutoutRT) {
+      const rebuildVariant = (want, key, builder) => {
+        const old = entry[key];
+        if (!want) {
+          if (old) this._releaseRT(old);
+          entry[key] = null;
+          return;
+        }
+        const reuse =
+          !!old &&
+          (old.width | 0) === (newRT.width | 0) &&
+          (old.height | 0) === (newRT.height | 0) &&
+          (old.resolution || 1) === (newRT.resolution || 1);
+        const outRT = reuse ? old : this._acquireRT(newRT.width | 0, newRT.height | 0, newRT.resolution || 1);
+        entry[key] = builder(outRT);
+        if (old && !reuse && old !== entry[key]) this._releaseRT(old);
         try {
-          this._releaseRT(old);
+          entry[key].baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
+          entry[key].baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
         } catch (err) {
           logger.debug("FXMaster:", err);
         }
-      }
+      };
 
-      try {
-        entry.maskCutoutRT.baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
-        entry.maskCutoutRT.baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
-      } catch (err) {
-        logger.debug("FXMaster:", err);
-      }
+      rebuildVariant(anyWantsBelowTokens, "maskCutoutTokensRT", (outRT) =>
+        tokens ? composeMaskMinusTokensRT(newRT, tokens, { outRT }) : composeMaskMinusTokens(newRT, { outRT }),
+      );
+      rebuildVariant(anyWantsBelowTiles, "maskCutoutTilesRT", (outRT) =>
+        tiles ? composeMaskMinusTilesRT(newRT, tiles, { outRT }) : composeMaskMinusTiles(newRT, { outRT }),
+      );
+      rebuildVariant(anyWantsBelowTokens && anyWantsBelowTiles, "maskCutoutCombinedRT", (outRT) =>
+        composeMaskMinusCoverageRT(newRT, [tokens, tiles], { outRT }),
+      );
     } else {
-      if (entry.maskCutoutRT) {
-        this._releaseRT(entry.maskCutoutRT);
-        entry.maskCutoutRT = null;
+      for (const key of ["maskCutoutTokensRT", "maskCutoutTilesRT", "maskCutoutCombinedRT"]) {
+        if (entry[key]) this._releaseRT(entry[key]);
+        entry[key] = null;
       }
     }
 
@@ -1375,7 +1527,8 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       if (!u) continue;
 
       const wantBelow = !!f.__fxmBelowTokens;
-      const rtForThisFilter = wantBelow && entry.maskCutoutRT ? entry.maskCutoutRT : newRT;
+      const wantBelowTiles = !!f.__fxmBelowTiles;
+      const rtForThisFilter = chooseRegionFilterMaskTexture(entry, wantBelow, wantBelowTiles) || newRT;
 
       u.maskSampler = rtForThisFilter;
       u.hasMask = 1.0;
@@ -1386,11 +1539,22 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       u.deviceToCss = deviceToCss;
       u.maskReady = 1.0;
       u.maskSoft = 0.0;
+      f.__fxmMaskVariants = {
+        baseMaskRT: newRT ?? null,
+        cutoutTokensRT: entry.maskCutoutTokensRT ?? null,
+        cutoutTilesRT: entry.maskCutoutTilesRT ?? null,
+        cutoutCombinedRT: entry.maskCutoutCombinedRT ?? null,
+        tokensMaskRT: null,
+        cssW,
+        cssH,
+        deviceToCss,
+        maskSoft: false,
+      };
 
       u.uCssToWorld = cssToWorldMat3;
       u.uRegionShape = mode;
 
-      /* 1 => SDF-backed polygon fades; 0 => edge-list (fastPoly) fades. */
+      /** 1 => SDF-backed polygon fades; 0 => edge-list (fastPoly) fades. */
       u.uUseSdf = mode === 0 && !fastPoly ? 1.0 : 0.0;
 
       if (mode === 0) {
@@ -1583,15 +1747,15 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
     super._animate();
 
     let anyBelowTokens = false;
+    let anyBelowTiles = false;
     for (const entry of this.regionMasks.values()) {
       const filters = entry?.filters ?? [];
-      if (filters.some((f) => !!f.__fxmBelowTokens) && entry.maskRT && entry.maskCutoutRT) {
-        anyBelowTokens = true;
-        break;
-      }
+      if (filters.some((f) => !!f.__fxmBelowTokens) && entry.maskRT && entry.maskCutoutTokensRT) anyBelowTokens = true;
+      if (filters.some((f) => !!f.__fxmBelowTiles) && entry.maskRT && entry.maskCutoutTilesRT) anyBelowTiles = true;
+      if (anyBelowTokens && anyBelowTiles) break;
     }
 
-    if (anyBelowTokens) {
+    if (anyBelowTokens || anyBelowTiles) {
       const r = canvas?.app?.renderer;
       const res = r?.resolution || 1;
       const { txCss, tyCss } = getSnappedCameraCss();
@@ -1626,6 +1790,22 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
     }
 
     this._refreshEnvFilterArea();
+
+    try {
+      const darknessLevel = getSceneDarknessLevel();
+      if (Math.abs(darknessLevel - (this._lastDarknessLevel ?? darknessLevel)) > 1e-4) {
+        this._lastDarknessLevel = darknessLevel;
+        for (const region of canvas.regions?.placeables ?? []) {
+          const signature = this._buildRegionDarknessActivationSignature(region, darknessLevel);
+          if (signature !== (this._lastRegionDarknessSignatures.get(region.id) ?? "")) {
+            this._lastRegionDarknessSignatures.set(region.id, signature);
+            void this.drawRegionFilterEffects(region, { soft: true });
+          }
+        }
+      }
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     try {
       for (const entry of this.regionMasks.values()) {

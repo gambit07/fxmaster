@@ -30,6 +30,7 @@ export class CrowsParticleEffect extends DefaultRectangleSpawnMixin(FXMasterPart
     const p = super.parameters;
     return {
       belowTokens: p.belowTokens,
+      belowTiles: p.belowTiles,
       soundFxEnabled: p.soundFxEnabled,
       tint: p.tint,
       directionalMovement: {

@@ -5,7 +5,6 @@
   },
   "CONTROLS": {
     "Effects": "Controles de efectos",
-    "SpecialFX": "Efectos especiales",
     "ParticleEffects": "Efectos de partículas",
     "InvertMask": "Invertir máscara de efectos de partículas",
     "Filters": "Efectos de filtro",
@@ -19,7 +18,6 @@
       "FilterEffect": "Efecto de filtro",
       "ParticleEffectsManagementTitle": "Gestión de efectos de partículas",
       "FilterEffectsManagementTitle": "Gestión de efectos de filtro",
-      "SpecialEffectsManagementTitle": "Gestión de efectos especiales",
       "SaveChanges": "Guardar cambios",
       "EnableEffects": "Habilitar efectos",
       "DisableAll": "Deshabilitar todos los efectos",
@@ -31,18 +29,15 @@
       "ResetPassiveSuccess": "Parámetros de partículas y filtros restablecidos correctamente",
       "Yes": "Sí",
       "No": "No",
-      "Author": "Autor",
-      "Favorites": "Favoritos",
-      "Favorite": "Favorito",
       "Enable": "Habilitar",
       "ErrorCannotFindEffect": "FXMaster | No se pudieron encontrar los datos del efecto.",
-      "TileCreated": "Se ha creado una nueva baldosa para el efecto {effect}",
-      "PermissionCreate": "Usar efectos especiales de FXMaster",
-      "PermissionCreateHint": "Permite a los usuarios con el rol seleccionado o superior usar los efectos especiales de FXMaster desde los controles de escena.",
       "Environment": "Entorno",
       "Interface": "Interfaz",
       "Music": "Música",
-      "Splash": "Salpicadura"
+      "Splash": "Salpicadura",
+      "Unknown": "Unknown",
+      "ApiEffects": "Manage API Effects",
+      "ApiEffectsManagementTitle": "Manage API Effects"
     },
     "Params": {
       "Saturation": "Saturación",
@@ -95,7 +90,18 @@
       "ShadowBlur": "Difuminado de la sombra",
       "ShadowOpacity": "Opacidad de la sombra",
       "BelowTokens": "Debajo de las fichas",
-      "SoundFxEnabled": "Sound FX"
+      "SoundFxEnabled": "Sound FX",
+      "BelowTiles": "Below Tiles",
+      "DarknessActivationRange": "Darkness Activation Range",
+      "DarknessActivationMinimum": "Darkness Minimum",
+      "DarknessActivationMaximum": "Darkness Maximum",
+      "BelowForeground": "Below Foreground",
+      "DarknessActivationMin": "Darkness Activation Min",
+      "DarknessActivationMax": "Darkness Activation Max",
+      "BlendMode": "Blend Mode",
+      "Levels": "Levels",
+      "AllLevels": "All Levels",
+      "DarknessActivationEnabled": "Darkness Activation"
     },
     "Particles": {
       "Groups": {
@@ -190,43 +196,6 @@
         "AlwaysVisibleForGM": "Siempre visible para el DJ"
       }
     },
-    "AnimationEffect": {
-      "AllAnimations": "Todas las animaciones",
-      "Copied": "Copiado: {value}",
-      "CopyElement": "Copiar texto al portapapeles",
-      "CustomDirectoryHint": "Ruta donde se almacenan tus archivos .webm. Requiere actualizar la base de datos de animaciones.",
-      "CustomDirectoryName": "Carpeta de animaciones personalizadas",
-      "FileName": "Nombre del archivo",
-      "FilePath": "Ruta del archivo",
-      "ModuleLabel": {
-        "JB2APatreon": "JB2A Patreon",
-        "JB2AFree": "JB2A Free",
-        "JB2AExtras": "JB2A Extras",
-        "JinkersAnimatedArt": "Jinker's Animated Art",
-        "AnimatedSpellEffects": "Animated Spell Effects",
-        "AnimatedSpellEffectsCartoon": "Animated Spell Effects: Cartoon",
-        "BossLootAssetsPremium": "Boss Loot Animated Assets Premium",
-        "BossLootAdventuresPremium": "Boss Loot Adventures Premium",
-        "BossLootAssetsFree": "Boss Loot Animated Assets Free",
-        "Custom": "Personalizado",
-        "WildMagicSurge": "Wild Magic Surge"
-      },
-      "RefreshDbHint": "Reconstruye la base de datos para detectar animaciones nuevas o eliminadas y analizar las miniaturas. Este proceso puede tardar, especialmente en servicios como The Forge.",
-      "RefreshDbName": "Actualizar base de datos de animaciones",
-      "RightClickForDetails": "Clic derecho para ver detalles:",
-      "ScanComplete": "FXMaster | ¡Escaneo de animaciones completado!",
-      "ScanModules": "FXMaster | Escaneando módulos de animaciones {current}/{total}…",
-      "ScanningThumbnails": "FXMaster | Escaneando miniaturas de animaciones…",
-      "ScanningThumbnailsProgress": "FXMaster | Miniaturas: {current}/{total}",
-      "ScanStart": "FXMaster | Iniciando escaneo de animaciones…",
-      "SearchAnimations": "Buscar animaciones",
-      "SearchQueries": "Consultas avanzadas admitidas, por ejemplo: (eldritch OR arrow) AND NOT blast",
-      "SequencerPath": "Ruta de base de datos de Sequencer",
-      "Update": "Actualizar efecto de animación",
-      "RefreshDbError": "FXMaster | No se encontraron efectos de animación en la base de datos de FXMaster. Espere a que termine el escaneo actual o vaya a 'Configuración del módulo -> FXMaster -> Actualizar base de datos de animaciones'.",
-      "RefreshDbEmpty": "FXMaster | No hay efectos de animación en la base de datos. FXMaster los carga desde tu carpeta de animaciones personalizada o proveedores como JB2A, Boss Loot, etc. Si has añadido animaciones, actualiza la base de datos desde 'Configuración del módulo -> FXMaster -> Actualizar base de datos de animaciones'.",
-      "ScanCompleteEmpty": "FXMaster | Escaneo completado – No se encontraron efectos de animación. Añade animaciones y vuelve a actualizar."
-    },
     "SoundFX": {
       "ControlTitle": "Sound FX",
       "ManagerTitle": "Sound FX Manager",
@@ -256,6 +225,55 @@
       "FadeTimeHint": "Fade in/out time in milliseconds.",
       "EffectsHint": "Select one effect for a single-effect sound rule, or select multiple effects to create a combo rule with higher priority.",
       "NoEffectsSelected": "No effects selected."
+    },
+    "Layers": {
+      "Title": "Manage Layers",
+      "Order": "Order",
+      "Effect": "Effect",
+      "Source": "Source",
+      "Owner": "Owner",
+      "Actions": "Actions",
+      "Action": "Action",
+      "MoveUp": "Move up",
+      "MoveDown": "Move down",
+      "ResetOrder": "Reset order",
+      "Empty": "No enabled particle or filter effects were found.",
+      "KindParticle": "Particle",
+      "KindFilter": "Filter",
+      "SourceScene": "Scene",
+      "SourceApi": "API",
+      "SourceApiPreset": "API - Preset",
+      "SourceApiMacro": "API - Macro",
+      "SourceRegion": "Region",
+      "ScopeRegion": "Region",
+      "Level": "Level"
+    },
+    "ParamTooltips": {
+      "BelowTiles": "Renders effects underneath tiles visually.",
+      "DarknessActivationRange": "Only render this effect when the current scene darkness level falls within the selected range.",
+      "BelowForeground": "Renders effects underneath the active foreground image visually.",
+      "DarknessActivationMin": "Minimum scene darkness level required for this effect to render.",
+      "DarknessActivationMax": "Maximum scene darkness level allowed for this effect to render.",
+      "BlendMode": "How the adjusted color result blends with the sampled scene color.",
+      "Levels": "Limit this scene effect to the selected scene levels. Leave it on All Levels to render everywhere.",
+      "DarknessActivationEnabled": "Enable scene darkness gating for this effect. When disabled, the effect renders at all darkness levels."
+    },
+    "RenderOrder": {
+      "BelowTiles": "Below Tiles"
+    },
+    "BlendModes": {
+      "Normal": "Normal",
+      "Multiply": "Multiply",
+      "Screen": "Screen",
+      "Overlay": "Overlay",
+      "SoftLight": "Soft Light",
+      "HardLight": "Hard Light",
+      "ColorDodge": "Color Dodge",
+      "ColorBurn": "Color Burn",
+      "Darken": "Darken",
+      "Lighten": "Lighten",
+      "Difference": "Difference",
+      "Exclusion": "Exclusion"
     }
   }
 }

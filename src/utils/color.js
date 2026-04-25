@@ -28,11 +28,11 @@ export function getCssVarValue(varName) {
  * @returns {string}
  */
 export function addAlphaToRgb(rgbString, alpha) {
-  /* Legacy: rgb(R, G, B) */
+  /** Legacy: rgb(R, G, B) */
   const legacy = rgbString.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
   if (legacy) return `rgba(${legacy[1]}, ${legacy[2]}, ${legacy[3]}, ${alpha})`;
 
-  /* Modern CSS Color Level 4: rgb(R G B) or rgb(R G B / A) */
+  /** Modern CSS Color Level 4: rgb(R G B) or rgb(R G B / A) */
   const modern = rgbString.match(/^rgb\((\d+)\s+(\d+)\s+(\d+)(?:\s*\/\s*[\d.]+%?)?\)$/);
   if (modern) return `rgba(${modern[1]}, ${modern[2]}, ${modern[3]}, ${alpha})`;
 

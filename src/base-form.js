@@ -1,17 +1,14 @@
 import { getDialogColors } from "./utils.js";
+import { ALL_LEVELS_SELECTION, packageId } from "./constants.js";
 import { logger } from "./logger.js";
 /**
- * An abstract FormApplication that handles functionality common to multiple FXMaster forms.
- * In particular, it provides the following functionality:
- * * Handling of collapsible elements
- * * Making slider changes for range inputs update the accompanying text box immediately
- * * Handling the disabled state of the submission button
+ * An abstract FormApplication that handles functionality common to multiple FXMaster forms. In particular, it provides the following functionality: * Handling of collapsible elements * Making slider changes for range inputs update the accompanying text box immediately * Handling the disabled state of the submission button
  *
  * @extends FormApplication
  * @abstract
  * @interface
  *
- * @param {Object} object                     Some object which is the target data structure to be be updated by the form.
+ * @param {Object} object                     Some object which is the target data structure to be updated by the form.
  * @param {FormApplicationOptions} [options]  Additional options which modify the rendering of the sheet.
  */
 
@@ -25,6 +22,73 @@ export class FXMasterBaseFormV2 extends Base {
       updateParam: FXMasterBaseFormV2.updateParam,
     },
   };
+
+  /**
+   * Foundry can finish an async ApplicationV2 render after a scene switch has already detached the window element. In that race, the core position update tries to read element.offsetWidth from null. Treat that case as a no-op instead of surfacing an unhandled render rejection.
+   *
+   * @param {object} [position]
+   * @returns {object}
+   */
+  setPosition(position = {}) {
+    const getElement = () => this.element?.[0] ?? this.element ?? null;
+    const isDetached = () => {
+      const element = getElement();
+      return !element || element.isConnected === false;
+    };
+    const persistPosition = (value) => {
+      this._persistPositionFlag(value ?? this.position ?? null);
+      return value;
+    };
+    const handlePositionError = (err) => {
+      const message = String(err?.message ?? "");
+      if (message.includes("offsetWidth") && isDetached()) {
+        logger.debug("FXMaster:", err);
+        return this.position ?? {};
+      }
+      throw err;
+    };
+
+    try {
+      if (isDetached()) return this.position ?? {};
+      const result = super.setPosition(position);
+      if (result && typeof result.then === "function") return result.then(persistPosition).catch(handlePositionError);
+      return persistPosition(result ?? this.position ?? {});
+    } catch (err) {
+      return handlePositionError(err);
+    }
+  }
+
+  /**
+   * Return the user flag key used to persist this window's position.
+   *
+   * @returns {string|null}
+   */
+  _getPositionFlagKey() {
+    return this.constructor.FXMASTER_POSITION_FLAG ?? null;
+  }
+
+  /**
+   * Persist a finite ApplicationV2 position to the current user's FXMaster flags.
+   *
+   * @param {object|null|undefined} position
+   * @returns {void}
+   */
+  _persistPositionFlag(position) {
+    const key = this._getPositionFlagKey();
+    if (!key || !position) return;
+
+    const next = {};
+    if (Number.isFinite(position.top)) next.top = position.top;
+    if (Number.isFinite(position.left)) next.left = position.left;
+    if (Number.isFinite(position.width)) next.width = position.width;
+    if (!Object.keys(next).length) return;
+
+    try {
+      game.user.setFlag(packageId, key, next);
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+  }
 
   /**
    * @param {HTMLElement} element  The root element to search for color inputs. Defaults to the form element.
@@ -119,33 +183,150 @@ export class FXMasterBaseFormV2 extends Base {
   }
 
   /**
+   * Wire single-select widgets so selection changes trigger updateParam immediately.
+   *
+   * @param {HTMLElement} element  The root element to listen on. Defaults to the form element.
+   * @param {Function} updateFn    The update function to call.
+   */
+  wireSelectInputs(element = this.element, updateFn = this.constructor.actions?.updateParam) {
+    if (!element || !updateFn) return;
+
+    try {
+      this._fxmSelectAbort?.abort?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    const ac = new AbortController();
+    this._fxmSelectAbort = ac;
+
+    const invoke = (event, control) => {
+      try {
+        updateFn.call(this, event, control);
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    };
+
+    const resolveControl = (target) => {
+      const control = target?.closest?.("select[name]:not([multiple])") ?? null;
+      if (!control || control.closest?.("multi-select")) return null;
+      return control;
+    };
+
+    for (const eventName of ["change", "input"]) {
+      element.addEventListener(
+        eventName,
+        (event) => {
+          const control = resolveControl(event.target);
+          if (!control || !element.contains(control)) return;
+          invoke(event, control);
+        },
+        { capture: true, signal: ac.signal },
+      );
+    }
+  }
+
+  /**
    * Update the textual output next to a range input.  Many parameter update handlers repeat the same code to update the <code>.range-value</code> element whenever a range slider is adjusted. This static helper encapsulates that behavior so it can be reused by management classes.
    *
    * @param {HTMLInputElement} input  The range input element that changed.
    */
   static updateRangeOutput(input) {
     if (!input || input.type !== "range") return;
+
+    const dual = input.closest(".fxmaster-input-range-dual");
+    if (dual) {
+      const formatValue = (slider, rawValue) => {
+        const decimalsAttr = Number(
+          slider?.dataset?.decimals ?? slider?.closest?.(".fxmaster-input-range-dual")?.dataset?.decimals,
+        );
+        const stepText = String(slider?.step ?? "");
+        const stepDecimals = stepText.includes(".") ? Math.max(0, stepText.length - stepText.indexOf(".") - 1) : 0;
+        const decimals = Number.isFinite(decimalsAttr) ? decimalsAttr : stepDecimals;
+        const value = Number(rawValue);
+        if (!Number.isFinite(value)) return String(rawValue ?? "");
+        return decimals > 0 ? value.toFixed(decimals) : String(Math.round(value));
+      };
+
+      const sliders = Array.from(dual.querySelectorAll('input[type="range"]'));
+      const minSlider = dual.querySelector('input[type="range"][data-range-role="min"]') ?? sliders[0] ?? null;
+      const maxSlider = dual.querySelector('input[type="range"][data-range-role="max"]') ?? sliders[1] ?? null;
+      const minOutput = dual.querySelector(".range-value-min");
+      const maxOutput = dual.querySelector(".range-value-max");
+      if (minSlider && minOutput) minOutput.textContent = formatValue(minSlider, minSlider.value);
+      if (maxSlider && maxOutput) maxOutput.textContent = formatValue(maxSlider, maxSlider.value);
+
+      const min = Number(minSlider?.min ?? input.min ?? 0);
+      const max = Number(maxSlider?.max ?? input.max ?? 1);
+      const span = Math.max(1e-9, max - min);
+      const minVal = Number(minSlider?.value ?? min);
+      const maxVal = Number(maxSlider?.value ?? max);
+      dual.style.setProperty("--range-start-pct", String(((minVal - min) / span) * 100));
+      dual.style.setProperty("--range-end-pct", String(((maxVal - min) / span) * 100));
+      return;
+    }
+
     const container = input.closest(".fxmaster-input-range");
     const output = container?.querySelector(".range-value");
     if (output) output.textContent = input.value;
   }
 
   /**
-   * Set or remove the visual highlight on a tool button in the UI. Both filter- and particle-effect managers share identical logic to update their corresponding toolbar buttons based on whether any effects are active.
-   * This helper centralizes that styling so managers need only mspecify the tool name and whether highlighting should be applied.
+   * Apply or remove the FXMaster highlight styling on a single control element.
    *
-   * @param {string} toolName        The value of the data-tool attribute for the button.
-   * @param {boolean} isHighlighted  Whether the button should be highlighted.
+   * @param {HTMLElement|null|undefined} element
+   * @param {boolean} isHighlighted
+   * @returns {void}
+   */
+  static setControlHighlight(element, isHighlighted) {
+    if (!element) return;
+    if (isHighlighted) {
+      element.style?.setProperty("background-color", "var(--color-warm-2)");
+      element.style?.setProperty("border-color", "var(--color-warm-3)");
+      return;
+    }
+    element.style?.removeProperty("background-color");
+    element.style?.removeProperty("border-color");
+  }
+
+  /**
+   * Set or remove the visual highlight on every matching tool button in the UI.
+   *
+   * @param {string} toolName
+   * @param {boolean} isHighlighted
+   * @returns {void}
    */
   static setToolButtonHighlight(toolName, isHighlighted) {
-    const btn = document.querySelector(`[data-tool="${toolName}"]`);
-    if (!btn) return;
-    if (isHighlighted) {
-      btn.style?.setProperty("background-color", "var(--color-warm-2)");
-      btn.style?.setProperty("border-color", "var(--color-warm-3)");
-    } else {
-      btn.style?.removeProperty("background-color");
-      btn.style?.removeProperty("border-color");
+    for (const button of document.querySelectorAll(`[data-tool="${toolName}"]`)) {
+      this.setControlHighlight(button, isHighlighted);
+    }
+  }
+
+  /**
+   * Set or remove the visual highlight on the parent Effects scene-control button.
+   *
+   * @param {boolean} isHighlighted
+   * @returns {void}
+   */
+  static setSceneEffectsControlHighlight(isHighlighted) {
+    const selectors = [
+      '#scene-controls-layers button.control[data-control="effects"]',
+      '#scene-controls-layers button[data-action="control"][data-control="effects"]',
+      'button[data-action="control"][data-control="effects"]',
+      'li.scene-control[data-control="effects"] button',
+      'li.scene-control[data-control="effects"]',
+    ];
+
+    const seen = new Set();
+
+    for (const selector of selectors) {
+      for (const match of document.querySelectorAll(selector)) {
+        const element = match?.matches?.("li") ? match.querySelector?.("button") ?? match : match;
+        if (!element || seen.has(element)) continue;
+        seen.add(element);
+        this.setControlHighlight(element, isHighlighted);
+      }
     }
   }
   static toggleFilter(event, button) {
@@ -168,6 +349,25 @@ export class FXMasterBaseFormV2 extends Base {
       const base = `${label}_${key}`;
       const input = form.querySelector(`[name="${base}"]`);
       const apply = form.querySelector(`[name="${base}_apply"]`);
+
+      if (param.type === "range-dual") {
+        const minInput = form.querySelector(`[name="${base}_min"]`);
+        const maxInput = form.querySelector(`[name="${base}_max"]`);
+        if (!minInput && !maxInput) continue;
+
+        const fallbackMin = Number(param.value?.min ?? param.min ?? 0);
+        const fallbackMax = Number(param.value?.max ?? param.max ?? 1);
+        let minValue = Number.parseFloat(minInput?.value ?? `${fallbackMin}`);
+        let maxValue = Number.parseFloat(maxInput?.value ?? `${fallbackMax}`);
+
+        if (!Number.isFinite(minValue)) minValue = fallbackMin;
+        if (!Number.isFinite(maxValue)) maxValue = fallbackMax;
+        if (minValue > maxValue) [minValue, maxValue] = [maxValue, minValue];
+
+        options[key] = { min: minValue, max: maxValue };
+        continue;
+      }
+
       if (!input) continue;
 
       if (param.type === "color") {
@@ -178,7 +378,7 @@ export class FXMasterBaseFormV2 extends Base {
         continue;
       }
 
-      if (param.type === "multi-select") {
+      if (param.type === "multi-select" || param.type === "scene-levels") {
         const multi =
           form.querySelector(`multi-select[name="${base}"]`) ||
           form.querySelector(`multi-select[data-name="${base}"]`) ||
@@ -188,34 +388,44 @@ export class FXMasterBaseFormV2 extends Base {
         let values = [];
 
         if (multi) {
-          try {
-            const mv = multi.value ?? multi.getAttribute?.("value");
-            if (mv instanceof Set) values = Array.from(mv);
-            else if (Array.isArray(mv)) values = mv;
-            else if (typeof mv === "string" && mv.trim()) {
-              const s = mv.trim();
-              try {
-                const parsed = JSON.parse(s);
-                if (Array.isArray(parsed)) values = parsed;
-                else values = s.split(",");
-              } catch {
-                values = s.split(",");
+          if (param.type !== "scene-levels") {
+            try {
+              const mv = multi.value ?? multi.getAttribute?.("value");
+              if (mv instanceof Set) values = Array.from(mv);
+              else if (Array.isArray(mv)) values = mv;
+              else if (typeof mv === "string" && mv.trim()) {
+                const s = mv.trim();
+                try {
+                  const parsed = JSON.parse(s);
+                  if (Array.isArray(parsed)) values = parsed;
+                  else values = s.split(",");
+                } catch {
+                  values = s.split(",");
+                }
               }
+            } catch (err) {
+              logger.debug("FXMaster:", err);
             }
-          } catch (err) {
-            logger.debug("FXMaster:", err);
           }
 
           if (!values.length) {
             try {
-              const tags = Array.from(
-                multi.querySelectorAll(
-                  ".tag[data-key], .tag[data-value], .tag[data-id], .tag[data-tag], .tag[data-option]",
-                ),
-              );
-              values = tags
-                .map((t) => t.dataset.key ?? t.dataset.value ?? t.dataset.id ?? t.dataset.tag ?? t.dataset.option)
-                .filter(Boolean);
+              const tags = Array.from(multi.querySelectorAll(".tag"));
+              const allLevelsLabel = String(game?.i18n?.localize?.("FXMASTER.Params.AllLevels") ?? "All Levels");
+              const hasAllLevelsTag = tags.some((tag) => tag.textContent?.trim() === allLevelsLabel);
+              if (hasAllLevelsTag) values = [ALL_LEVELS_SELECTION];
+              else {
+                values = tags
+                  .map((t) => t.dataset.key ?? t.dataset.value ?? t.dataset.id ?? t.dataset.tag ?? t.dataset.option)
+                  .filter(Boolean);
+                if (
+                  !values.length &&
+                  param.type === "scene-levels" &&
+                  multi.querySelector(".tags, .tag-list, .selected, .selected-tags")
+                ) {
+                  values = [ALL_LEVELS_SELECTION];
+                }
+              }
             } catch (err) {
               logger.debug("FXMaster:", err);
             }
@@ -235,7 +445,7 @@ export class FXMasterBaseFormV2 extends Base {
             }
           }
 
-          if (!values.length) {
+          if (!values.length && param.type !== "scene-levels") {
             try {
               const hidden =
                 multi.querySelector(`input[type="hidden"][name="${base}"]`) ||
@@ -266,7 +476,7 @@ export class FXMasterBaseFormV2 extends Base {
               .filter(Boolean);
         }
 
-        if (!values.length) {
+        if (!values.length && param.type !== "scene-levels") {
           values = Array.isArray(param.value)
             ? param.value
             : param.value != null && param.value !== ""
@@ -275,7 +485,36 @@ export class FXMasterBaseFormV2 extends Base {
         }
 
         values = Array.from(new Set(values.map(String).filter((v) => v != null && v !== "")));
-        options[key] = values;
+        if (param.type === "scene-levels") {
+          let allLevelsSelected = values.includes(ALL_LEVELS_SELECTION);
+          if (!allLevelsSelected && multi) {
+            try {
+              const allLevelsLabel = String(game?.i18n?.localize?.("FXMASTER.Params.AllLevels") ?? "All Levels");
+              allLevelsSelected = !!multi.querySelector(`option[value="${ALL_LEVELS_SELECTION}"]:checked`);
+              if (!allLevelsSelected) {
+                allLevelsSelected = Array.from(
+                  multi.querySelectorAll(
+                    ".tag[data-key], .tag[data-value], .tag[data-id], .tag[data-tag], .tag[data-option], .tag",
+                  ),
+                ).some((tag) => {
+                  const value =
+                    tag.dataset.key ??
+                    tag.dataset.value ??
+                    tag.dataset.id ??
+                    tag.dataset.tag ??
+                    tag.dataset.option ??
+                    tag.textContent?.trim();
+                  return value === ALL_LEVELS_SELECTION || value === allLevelsLabel;
+                });
+              }
+            } catch (err) {
+              logger.debug("FXMaster:", err);
+            }
+          }
+          options[key] = allLevelsSelected ? [] : values.filter((value) => value !== ALL_LEVELS_SELECTION);
+        } else {
+          options[key] = values;
+        }
         continue;
       }
 
@@ -295,6 +534,35 @@ export class FXMasterBaseFormV2 extends Base {
     return options;
   }
 
+  /**
+   * Keep paired dual-range slider values ordered and clamped.
+   *
+   * @param {HTMLInputElement|null|undefined} input
+   * @returns {void}
+   */
+  static syncDualRangeInput(input) {
+    if (!input || input.type !== "range") return;
+
+    const container = input.closest(".fxmaster-input-range-dual");
+    if (!container) return;
+
+    const minSlider = container.querySelector('input[type="range"][data-range-role="min"]');
+    const maxSlider = container.querySelector('input[type="range"][data-range-role="max"]');
+    if (!minSlider || !maxSlider) return;
+
+    let minValue = Number.parseFloat(minSlider.value || "0");
+    let maxValue = Number.parseFloat(maxSlider.value || "0");
+    if (!Number.isFinite(minValue) || !Number.isFinite(maxValue)) return;
+
+    if (input === minSlider && minValue > maxValue) {
+      maxValue = minValue;
+      maxSlider.value = String(maxValue);
+    } else if (input === maxSlider && maxValue < minValue) {
+      minValue = maxValue;
+      minSlider.value = String(minValue);
+    }
+  }
+
   _onRender(options) {
     super._onRender?.(options);
     this.animateTitleBar(this);
@@ -302,6 +570,30 @@ export class FXMasterBaseFormV2 extends Base {
       this._fxmWireConditionalVisibility?.();
     } catch (err) {
       logger.debug("FXMaster:", err);
+    }
+    try {
+      this.applyTooltipDirection(this.element);
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+  }
+
+  /**
+   * Apply the configured FXMaster tooltip direction to every tooltip element in a rendered application.
+   *
+   * @param {HTMLElement|null|undefined} root
+   * @returns {void}
+   */
+  applyTooltipDirection(root = this.element) {
+    if (!root) return;
+
+    const configuredDirection = String(game?.settings?.get?.(packageId, "tooltipDirection") ?? "UP")
+      .trim()
+      .toUpperCase();
+    const direction = ["UP", "DOWN", "LEFT", "RIGHT"].includes(configuredDirection) ? configuredDirection : "UP";
+
+    for (const element of root.querySelectorAll?.("[data-tooltip]") ?? []) {
+      element.dataset.tooltipDirection = direction;
     }
   }
 
@@ -316,19 +608,100 @@ export class FXMasterBaseFormV2 extends Base {
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
+    try {
+      this._fxmSelectAbort?.abort?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    try {
+      this._fxmRangeBehaviorAbort?.abort?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    this._fxmRangeBehaviorAbort = null;
     return super._onClose?.(...args);
   }
 
   /**
-   * Prevent mousewheel changing unfocused sliders, but allow mousewheel stepping for the focused slider (without scrolling the container).
+   * Prevent wheel and keyboard adjustments on unfocused sliders, while keeping focused slider changes synchronized with the rendered output and backing data model.
    */
   _wireRangeWheelBehavior({ getScrollWrapper, onInput } = {}) {
+    try {
+      this._fxmRangeBehaviorAbort?.abort();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    this._fxmRangeBehaviorAbort = null;
+
     const root = this.element;
     if (!root) return;
 
     const content = root.querySelector(".window-content") ?? root;
-
     const getWrapper = getScrollWrapper ?? ((slider) => slider.closest(".window-content") ?? content);
+    const ac = new AbortController();
+    this._fxmRangeBehaviorAbort = ac;
+
+    const isFocusedSlider = (slider) => slider && (document.activeElement === slider || slider.matches?.(":focus"));
+    const clampToStep = (slider, rawValue) => {
+      const min = Number.parseFloat(slider.min);
+      const max = Number.parseFloat(slider.max);
+      const stepAttr = Number.parseFloat(slider.step);
+      const hasMin = Number.isFinite(min);
+      const hasMax = Number.isFinite(max);
+      const step = Number.isFinite(stepAttr) && stepAttr > 0 ? stepAttr : 1;
+      const base = hasMin ? min : 0;
+      let next = Number.isFinite(rawValue) ? rawValue : Number.parseFloat(slider.value || "0") || 0;
+      if (hasMin) next = Math.max(min, next);
+      if (hasMax) next = Math.min(max, next);
+      next = base + Math.round((next - base) / step) * step;
+      if (hasMin) next = Math.max(min, next);
+      if (hasMax) next = Math.min(max, next);
+      const decimals = (() => {
+        const source = slider.step && slider.step !== "any" ? slider.step : `${step}`;
+        const idx = source.indexOf(".");
+        return idx >= 0 ? Math.max(0, source.length - idx - 1) : 0;
+      })();
+      return decimals > 0 ? Number(next.toFixed(decimals)) : next;
+    };
+    const syncSlider = (slider, event = null) => {
+      if (!slider) return;
+      this.constructor.syncDualRangeInput(slider);
+      this.constructor.updateRangeOutput(slider);
+      onInput?.(event, slider);
+    };
+    const resolveScrollWrapper = (slider) => {
+      const preferred = getWrapper(slider) ?? content;
+      const isScrollable = (element) => {
+        if (!element) return false;
+        const { scrollHeight, clientHeight } = element;
+        return scrollHeight > clientHeight + 1;
+      };
+
+      if (isScrollable(preferred)) return preferred;
+
+      let current = preferred?.parentElement ?? null;
+      while (current && current !== root) {
+        if (isScrollable(current)) return current;
+        current = current.parentElement;
+      }
+
+      return isScrollable(content) ? content : preferred;
+    };
+    const applySliderValue = (slider, nextValue, { dispatchChange = true } = {}) => {
+      const next = clampToStep(slider, nextValue);
+      const cur = Number.parseFloat(slider.value || "0");
+      if (Number.isFinite(cur) && Math.abs(cur - next) <= 1e-9) {
+        this.constructor.syncDualRangeInput(slider);
+        this.constructor.updateRangeOutput(slider);
+        return;
+      }
+
+      slider.value = String(next);
+      this.constructor.syncDualRangeInput(slider);
+      this.constructor.updateRangeOutput(slider);
+      slider.dispatchEvent(new Event("input", { bubbles: true }));
+      if (dispatchChange) slider.dispatchEvent(new Event("change", { bubbles: true }));
+    };
 
     root.querySelectorAll('input[type="range"]').forEach((slider) => {
       slider.addEventListener(
@@ -340,50 +713,104 @@ export class FXMasterBaseFormV2 extends Base {
             slider.focus();
           }
         },
-        { passive: true },
+        { passive: true, signal: ac.signal },
       );
-
-      slider.addEventListener(
-        "wheel",
-        (e) => {
-          const isFocused = document.activeElement === slider || slider.matches(":focus");
-
-          if (isFocused) {
-            e.preventDefault();
-            e.stopImmediatePropagation();
-
-            const step = Number.parseFloat(slider.step || "1") || 1;
-            const min = Number.parseFloat(slider.min || "0");
-            const max = Number.parseFloat(slider.max || "100");
-            const cur = Number.parseFloat(slider.value || "0") || 0;
-
-            const dir = e.deltaY < 0 ? 1 : -1;
-            const next = Math.min(max, Math.max(min, cur + dir * step));
-
-            slider.value = String(next);
-            slider.dispatchEvent(new Event("input", { bubbles: true }));
-            slider.dispatchEvent(new Event("change", { bubbles: true }));
-            return;
-          }
-
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          const wrapper = getWrapper(slider) ?? content;
-          wrapper.scrollTop += e.deltaY;
-        },
-        { passive: false, capture: true },
-      );
-
-      const output = slider.closest(".fxmaster-input-range")?.querySelector("output, .range-value");
-      if (output) {
-        slider.addEventListener("input", (event) => {
-          output.textContent = slider.value;
-          onInput?.(event, slider);
-        });
-      } else if (onInput) {
-        slider.addEventListener("input", (event) => onInput(event, slider));
-      }
     });
+
+    root.addEventListener(
+      "wheel",
+      (event) => {
+        const slider = event.target?.closest?.('input[type="range"]');
+        if (!slider || !root.contains(slider)) return;
+
+        event.preventDefault();
+        event.stopImmediatePropagation();
+
+        if (isFocusedSlider(slider)) {
+          const step = Number.parseFloat(slider.step || "1") || 1;
+          const cur = Number.parseFloat(slider.value || "0") || 0;
+          const dir = event.deltaY < 0 ? 1 : -1;
+          applySliderValue(slider, cur + dir * step);
+          return;
+        }
+
+        try {
+          slider.blur?.();
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+        const wrapper = resolveScrollWrapper(slider);
+        wrapper.scrollTop += event.deltaY;
+      },
+      { passive: false, capture: true, signal: ac.signal },
+    );
+
+    root.addEventListener(
+      "keydown",
+      (event) => {
+        const slider = event.target?.closest?.('input[type="range"]');
+        if (!slider || !root.contains(slider) || !isFocusedSlider(slider)) return;
+
+        const key = String(event.key || "");
+        const cur = Number.parseFloat(slider.value || "0") || 0;
+        const step = Number.parseFloat(slider.step || "1") || 1;
+        const pageStep = step * 10;
+        const min = Number.parseFloat(slider.min);
+        const max = Number.parseFloat(slider.max);
+
+        let next = null;
+        switch (key) {
+          case "ArrowLeft":
+          case "ArrowDown":
+            next = cur - step;
+            break;
+          case "ArrowRight":
+          case "ArrowUp":
+            next = cur + step;
+            break;
+          case "PageDown":
+            next = cur - pageStep;
+            break;
+          case "PageUp":
+            next = cur + pageStep;
+            break;
+          case "Home":
+            next = Number.isFinite(min) ? min : cur;
+            break;
+          case "End":
+            next = Number.isFinite(max) ? max : cur;
+            break;
+          default:
+            return;
+        }
+
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        applySliderValue(slider, next);
+      },
+      { capture: true, signal: ac.signal },
+    );
+
+    root.addEventListener(
+      "input",
+      (event) => {
+        const slider = event.target?.closest?.('input[type="range"]');
+        if (!slider || !root.contains(slider)) return;
+        syncSlider(slider, event);
+      },
+      { capture: true, signal: ac.signal },
+    );
+
+    root.addEventListener(
+      "change",
+      (event) => {
+        const slider = event.target?.closest?.('input[type="range"]');
+        if (!slider || !root.contains(slider)) return;
+        this.constructor.syncDualRangeInput(slider);
+        this.constructor.updateRangeOutput(slider);
+      },
+      { capture: true, signal: ac.signal },
+    );
   }
 
   /**
@@ -403,10 +830,10 @@ export class FXMasterBaseFormV2 extends Base {
    * Wire a lightweight, extendable system for hiding/showing parameters based on other parameter values.
    *
    * To opt-in, a parameter config can declare:
-   *   - showWhen: { otherParamName: expectedValue, ... }
-   *   - hideWhen: { otherParamName: expectedValue, ... }
-   *   - regionOnly: true
-   *   - sceneOnly: true
+   * - showWhen: { otherParamName: expectedValue, ... }
+   * - hideWhen: { otherParamName: expectedValue, ... }
+   * - regionOnly: true
+   * - sceneOnly: true
    */
   _fxmWireConditionalVisibility() {
     this._fxmUnwireConditionalVisibility();
@@ -445,7 +872,11 @@ export class FXMasterBaseFormV2 extends Base {
 
           const inputName = `${label}_${paramName}`;
           const input =
-            root.querySelector(`[name="${inputName}"]`) || root.querySelector(`[name="${inputName}_apply"]`) || null;
+            root.querySelector(`[name="${inputName}"]`) ||
+            root.querySelector(`[name="${inputName}_apply"]`) ||
+            root.querySelector(`[name="${inputName}_min"]`) ||
+            root.querySelector(`[name="${inputName}_max"]`) ||
+            null;
           if (!input) continue;
 
           const row = this.constructor._fxmFindFieldRow(input, root);
@@ -626,7 +1057,7 @@ export class FXMasterBaseFormV2 extends Base {
     }
 
     const wrapper = el.closest(
-      ".fxmaster-input-range, .fxmaster-input-checkbox, .fxmaster-input-color, .fxmaster-input-multi",
+      ".fxmaster-input-range, .fxmaster-input-range-dual, .fxmaster-input-checkbox, .fxmaster-input-color, .fxmaster-input-multi, .fxmaster-input-select",
     );
     if (wrapper) {
       const parent = wrapper.parentElement;

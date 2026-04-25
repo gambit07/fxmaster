@@ -24,7 +24,7 @@ export function registerCanvasHooks(ctx) {
      */
     clearCoalesceMap();
 
-    /** Invalidate cached belowTokens results for the new canvas. */
+    /** Invalidate cached below-object results for the new canvas. */
     ctx.invalidateBelowTokensCache();
 
     /**
@@ -72,6 +72,7 @@ export function registerCanvasHooks(ctx) {
     if (isEnabled()) {
       ctx.requestSceneParticlesSuppressionRefresh();
       ctx.requestRegionMaskRefreshAll();
+      ctx.requestTokenMaskRefresh();
       try {
         canvas.particleeffects?.refreshAboveSceneMask?.();
       } catch (err) {
@@ -178,10 +179,19 @@ export function registerCanvasHooks(ctx) {
     }
 
     try {
-      const needFilterTokens = ctx.sceneWantsBelowTokensFilters() || ctx.regionWantsBelowTokensFilters();
-      const needParticleTokens = ctx.sceneWantsBelowTokensParticles() || ctx.regionWantsBelowTokensParticles();
-      if (needFilterTokens) SceneMaskManager.instance.refreshSync?.("filters");
-      if (needParticleTokens) SceneMaskManager.instance.refreshSync?.("particles");
+      const needFilterCoverage =
+        ctx.sceneWantsBelowTokensFilters() ||
+        ctx.sceneWantsBelowTilesFilters() ||
+        ctx.regionWantsBelowTokensFilters() ||
+        ctx.regionWantsBelowTilesFilters();
+      const needParticleCoverage =
+        ctx.sceneWantsBelowTokensParticles() ||
+        ctx.sceneWantsBelowTilesParticles() ||
+        ctx.regionWantsBelowTokensParticles() ||
+        ctx.regionWantsBelowTilesParticles();
+      if (needFilterCoverage) SceneMaskManager.instance.refreshSync?.("filters");
+      if (needParticleCoverage) SceneMaskManager.instance.refreshSync?.("particles");
+      if (needFilterCoverage || needParticleCoverage) ctx.requestTokenMaskRefresh();
     } catch (err) {
       logger.debug("FXMaster:", err);
     }

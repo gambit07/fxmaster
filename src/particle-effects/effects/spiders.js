@@ -43,6 +43,7 @@ export class SpiderParticleEffect extends DefaultRectangleSpawnMixin(FXMasterPar
     const p = super.parameters;
     return {
       belowTokens: p.belowTokens,
+      belowTiles: p.belowTiles,
       soundFxEnabled: p.soundFxEnabled,
       tint: p.tint,
       directionalMovement: {

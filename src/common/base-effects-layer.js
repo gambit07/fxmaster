@@ -1,8 +1,7 @@
 /**
  * FXMaster: Base Effects Layer
  *
- * Abstract base class for Particle and Filter effects layers.
- * Provides:
+ * Abstract base class for Particle and Filter effects layers. Provides:
  * - Shared {@link RTPool} management for render textures.
  * - A camera-tracking animation loop via {@link BaseEffectsLayer#_animate}.
  * - Common teardown logic for subclasses.
@@ -113,8 +112,7 @@ export class BaseEffectsLayer extends CONFIG.fxmaster.FullCanvasObjectMixinNS(CO
   }
 
   /**
-   * Hook invoked when the camera (stage transform) changes.
-   * Subclasses should override this to react to camera movement.
+   * Hook invoked when the camera (stage transform) changes. Subclasses should override this to react to camera movement.
    *
    * @protected
    * @returns {void}

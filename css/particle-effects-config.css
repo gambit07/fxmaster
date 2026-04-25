@@ -1,23 +1,16 @@
-/* =========================================================
-   FXMaster — Particle Effects Config Window (full CSS)
-   ========================================================= */
-
-/* sensible defaults (overridden via JS when restoring autosize) */
 :root {
   --fxmaster-max-height: 90vh;
   --fxmaster-radius: 6px;
 }
 
-/* ——— Base app window: allow natural height growth ——— */
 .fxmaster-app.window-app,
 .fxmaster-app.ui-dialog {
   height: auto !important;
-  min-height: 0 !important; /* prevent residual min-height from forcing scroll */
+  min-height: 0 !important;
   max-height: var(--fxmaster-max-height) !important;
   overflow: visible !important;
 }
 
-/* inner content scrolls (not the shell) */
 .fxmaster-app .window-content {
   height: auto !important;
   min-height: 0 !important;
@@ -26,8 +19,6 @@
   overflow-x: hidden !important;
 }
 
-/* ——— “Autosize” switch: wipes inline sizes left by jQuery UI resize ———
-   Add/Remove .fxm-autosize on the .window-app from JS when rows open/close. */
 .window-app.fxm-autosize {
   height: auto !important;
   min-height: 0 !important;
@@ -41,14 +32,12 @@
   overflow-y: auto !important;
   overflow-x: hidden !important;
 }
-/* while resizing, keep auto; jQuery UI adds these classes during drag */
 .window-app.fxm-autosize.ui-resizable,
 .window-app.fxm-autosize.ui-resizable-resizing {
   height: auto !important;
   min-height: 0 !important;
 }
 
-/* ——— App root (id) ——— */
 #particle-effects-config {
   height: auto;
   max-height: var(--fxmaster-max-height);
@@ -57,16 +46,17 @@
 #particle-effects-config .window-content,
 .ui-dialog.fxmaster-app .ui-dialog-content {
   height: auto;
-  min-height: 0; /* ensure no inherited min-height forces scrollbars */
+  min-height: 0;
   max-height: var(--fxmaster-max-height);
   overflow-y: auto;
   overflow-x: hidden;
 }
 
-/* ====== Main grid ====== */
 .fxmaster-particles-container {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  grid-auto-rows: max-content;
+  align-items: start;
   gap: 1rem;
   padding: 1rem;
   box-sizing: border-box;
@@ -75,36 +65,32 @@
   overflow: visible;
 }
 
-/* Column (left/right) wrappers that can scroll when needed */
 .fxmaster-particles-group-wrapper {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
   flex: 1 1 auto;
+  align-self: start;
+  min-width: 0;
   min-height: 0;
-  max-height: var(--fxmaster-max-height);
-  overflow-y: auto;
+  max-height: none;
+  overflow: visible;
   padding-right: 0.25rem;
 }
 
-/* When any row inside a column is open, let the column grow and let the window absorb it.
-   Modern browsers: :has(). For broader support, toggle .fxm-column-open from JS. */
 .fxmaster-particles-group-wrapper:has(.fxmaster-particles-row.open) {
   max-height: none;
   overflow: visible;
 }
-/* Fallback class (toggle from JS alongside expand): */
 .fxmaster-particles-group-wrapper.fxm-column-open {
   max-height: none;
   overflow: visible;
 }
 
-/* ====== Groups / Rows ====== */
 .fxmaster-particles-group {
   cursor: pointer;
 }
 
-/* Open-state boxing */
 #particle-effects-config .fxmaster-particles-row.open {
   border: 1px solid var(--color-warm-2);
   border-bottom: none;
@@ -117,14 +103,12 @@
   margin-bottom: 0.25rem;
 }
 
-/* Expand panels: never scroll internally; let the column/window grow */
 #particle-effects-config .fxmaster-particle-expand,
 #particle-effects-config .fxmaster-particles-group-expand {
   max-height: none;
   overflow: visible;
 }
 
-/* ====== Param grid ====== */
 .fxmaster-particle-params {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
@@ -137,7 +121,6 @@
   gap: 0.25rem;
 }
 
-/* ====== Arrow offsets ====== */
 .fxmaster-arrow-group {
   right: 0.5rem;
 }
@@ -145,8 +128,6 @@
   right: 3.2rem;
 }
 
-/* ====== Misc ====== */
-/* Resist accidental clipping anywhere in the FXMaster app window */
 .fxmaster-app * {
   overflow-anchor: none;
 }

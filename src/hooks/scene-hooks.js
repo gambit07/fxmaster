@@ -1,17 +1,15 @@
 /**
- * FXMaster: Scene, Input & Miscellaneous Hooks
+ * FXMaster: Scene Hooks
  *
- * Handles the `ready` one-shot, `updateScene` flag processing, canvas pan/zoom mask refresh, `dropCanvasData` video creation, and `hotbarDrop` macro creation.
+ * Handles the `ready` one-shot, `updateScene` flag processing, and canvas pan/zoom mask refresh coordination.
  *
  * @module hooks/scene-hooks
  */
 
-import { packageId } from "../constants.js";
+import { API_EFFECT_UPDATE_OPTIONS_FLAG, packageId } from "../constants.js";
 import { logger } from "../logger.js";
-import { coalesceNextFrame, updateSceneControlHighlights, parseSpecialEffects } from "../utils.js";
-import { isEnabled } from "../settings.js";
-import { SpecialEffectsManagement } from "../special-effects/applications/special-effects-management.js";
-import { SpecialEffectsLayer } from "../special-effects/special-effects-layer.js";
+import { coalesceNextFrame, updateSceneControlHighlights } from "../utils.js";
+import { cleanupLegacyAnimationData, isEnabled } from "../settings.js";
 import { FilterEffectsSceneManager } from "../filter-effects/filter-effects-scene-manager.js";
 import {
   ParticleEffectsRegionBehaviorConfig,
@@ -28,7 +26,30 @@ const SUPPRESS_SCENE_FILTERS = `${packageId}.suppressSceneFilters`;
 const SUPPRESS_SCENE_PARTICLES = `${packageId}.suppressSceneParticles`;
 
 /**
- * Register scene update, input, and miscellaneous hooks.
+ * Read one-shot API effect render options from the same scene update that changed the effect flags.
+ *
+ * When the internal flag object already exists, Foundry may diff only the changing nonce field on later updates.
+ * In that case, the current stored flag value is used as long as the update touched the flag path.
+ *
+ * @param {Scene} scene
+ * @param {object} flat Flattened updateScene data.
+ * @returns {boolean}
+ */
+function shouldSkipApiEffectFading(scene, flat) {
+  const base = "flags." + packageId + "." + API_EFFECT_UPDATE_OPTIONS_FLAG;
+  const touched = Object.keys(flat ?? {}).some((key) => key === base || key.startsWith(base + "."));
+  if (!touched) return false;
+
+  if (flat?.[base]?.skipFading === true) return true;
+  if (flat?.[base]?.skipFading === false) return false;
+  if (flat?.[base + ".skipFading"] === true) return true;
+  if (flat?.[base + ".skipFading"] === false) return false;
+
+  return scene?.getFlag?.(packageId, API_EFFECT_UPDATE_OPTIONS_FLAG)?.skipFading === true;
+}
+
+/**
+ * Register scene update and camera hooks.
  *
  * @param {object} ctx - Shared hook context from {@link createHookContext}.
  */
@@ -38,9 +59,9 @@ export function registerSceneHooks(ctx) {
     if (game.settings.get(packageId, "releaseMessage") !== version && game.user.isGM) {
       const content = `
         <div class="fxmaster-announcement" style="border:4px solid #4A90E2; border-radius:6px; padding:12px;">
-          <h3 style="margin:0;">🎉Welcome to Gambit's FXMaster V7.5.1!</h3>
-            <p style="font-size: 1em;">Official V14 support! And a few bugfixes.</p><p style="font-size: 1em;">This release adds some new features including adding an Edge Fade % to Region Particle Effects and adding an Edge Fade % to both Particle and Filter Region Suppression effects! Please check out the <a href= "https://github.com/gambit07/fxmaster/releases/latest" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Release Notes</a> for more detail.</p>
-            <p style="font-size: 1em;">If you'd like to support my development time and get access to the <a href="https://foundryvtt.com/packages/fxmaster-plus" target="_blank" style="color: #CC66CC; text-decoration: none; font-weight: bold;">Gambit's FXMaster+</a>, <a href="https://foundryvtt.com/packages/gambitsAssetPreviewer" target="_blank" style="color: #CC66CC; text-decoration: none; font-weight: bold;">Gambit's Asset Previewer</a>, and <a href="https://foundryvtt.com/packages/gambitsImageViewer" target="_blank" style="color: #CC66CC; text-decoration: none; font-weight: bold;">Gambit's Image Viewer</a> modules, please consider supporting the project on <a href="https://patreon.com/GambitsLounge" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Patreon</a>.</p><p>FXMaster+ Effects: <ul><li><span style="color: #3276c4; text-decoration: none; font-weight: bold;">Water</span></li><li><span style="color: #7c7c7c; text-decoration: none; font-weight: bold;">Lightning Bolts</span></li><li><span style="color: #0ada64; text-decoration: none; font-weight: bold;">Glitch</span></li><li><span style="color: #017371; text-decoration: none; font-weight: bold;">Fish</span></li><li><span style="color: #3bd1ffff; text-decoration: none; font-weight: bold;">Ice</span></li><li><span style="color: #a08332ff; text-decoration: none; font-weight: bold;">Sandstorm</span></li><li><span style="color: #74653fff; text-decoration: none; font-weight: bold;">Duststorm</span></li><li><span style="color: #53c57e; text-decoration: none; font-weight: bold;">Ghosts</span></li><li><span style="color: rgb(211, 176, 0); text-decoration: none; font-weight: bold;">Sunlight</span></li><li><span style="color: #7f00ff; text-decoration: none; font-weight: bold;">Magic Crystals</span></li><li><span style="color: #d5b60a; text-decoration: none; font-weight: bold;">Fireflies</span></li><li><span style="color: #ffb7c5; text-decoration: none; font-weight: bold;">Sakura Bloom</span></li><li><span style="color: #ffb7c5; text-decoration: none; font-weight: bold;">Sakura Blossoms</span></li><li><span style="text-decoration: none; font-weight: bold;">And add your own Particle Effects!</span></li></ul></p><p>If you have any questions about the module feel free to join the <a href= "https://discord.gg/YvxHrJ4tVu" target="_blank" style="color: #4e5d94; text-decoration: none; font-weight: bold;">Discord</a>!
+          <h3 style="margin:0;">🎉Welcome to Gambit's FXMaster V8.0.0!</h3>
+            <p style="font-size: 1em;">Tons of great new features in V8 to make your effects more customizable than ever, including Level specific placement, a new Layer Manager tool for ordering effect layers, new Macro functionality, and more! If you run into any issues please join the Discord below and report them! Also please check out the <a href= "https://github.com/gambit07/fxmaster/releases/latest" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Release Notes</a> for more detail.</p>
+            <p style="font-size: 1em;">If you'd like to support my development time and get access to the <a href="https://foundryvtt.com/packages/fxmaster-plus" target="_blank" style="color: #CC66CC; text-decoration: none; font-weight: bold;">Gambit's FXMaster+</a>, <a href="https://foundryvtt.com/packages/gambitsAssetPreviewer" target="_blank" style="color: #CC66CC; text-decoration: none; font-weight: bold;">Gambit's Asset Previewer</a>, and <a href="https://foundryvtt.com/packages/gambitsImageViewer" target="_blank" style="color: #CC66CC; text-decoration: none; font-weight: bold;">Gambit's Image Viewer</a> modules, please consider supporting the project on <a href="https://patreon.com/GambitsLounge" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Patreon</a>.</p><p>FXMaster+ Effects: <ul><li><span style="color: #535353; text-decoration: none; font-weight: bold;">Wind</span></li><li><span style="color: #6e6e6e; text-decoration: none; font-weight: bold;">Wind Wisps</span></li><li><span style="color: #3276c4; text-decoration: none; font-weight: bold;">Water</span></li><li><span style="color: #7c7c7c; text-decoration: none; font-weight: bold;">Lightning Bolts</span></li><li><span style="color: #0ada64; text-decoration: none; font-weight: bold;">Glitch</span></li><li><span style="color: #017371; text-decoration: none; font-weight: bold;">Fish</span></li><li><span style="color: #3bd1ffff; text-decoration: none; font-weight: bold;">Ice</span></li><li><span style="color: #a08332ff; text-decoration: none; font-weight: bold;">Sandstorm</span></li><li><span style="color: #74653fff; text-decoration: none; font-weight: bold;">Duststorm</span></li><li><span style="color: #53c57e; text-decoration: none; font-weight: bold;">Ghosts</span></li><li><span style="color: rgb(211, 176, 0); text-decoration: none; font-weight: bold;">Sunlight</span></li><li><span style="color: #7f00ff; text-decoration: none; font-weight: bold;">Magic Crystals</span></li><li><span style="color: #d5b60a; text-decoration: none; font-weight: bold;">Fireflies</span></li><li><span style="color: #ffb7c5; text-decoration: none; font-weight: bold;">Sakura Bloom</span></li><li><span style="color: #ffb7c5; text-decoration: none; font-weight: bold;">Sakura Blossoms</span></li><li><span style="text-decoration: none; font-weight: bold;">And add your own Particle Effects!</span></li></ul></p><p>If you have any questions about the module feel free to join the <a href= "https://discord.gg/YvxHrJ4tVu" target="_blank" style="color: #4e5d94; text-decoration: none; font-weight: bold;">Discord</a>!
           </div>
       `;
       ChatMessage.create({ content });
@@ -60,7 +81,7 @@ export function registerSceneHooks(ctx) {
       setSheet(SUPPRESS_SCENE_FILTERS, SuppressSceneFiltersRegionBehaviorConfig);
     }
 
-    if (isEnabled()) await parseSpecialEffects();
+    await cleanupLegacyAnimationData();
   });
 
   Hooks.on("updateScene", async (scene, data) => {
@@ -76,20 +97,27 @@ export function registerSceneHooks(ctx) {
       (k) => k.startsWith(`flags.${packageId}.filters`) || k.startsWith(`flags.${packageId}.-=filters`),
     );
 
+    const stackChanged = Object.keys(flat).some(
+      (k) => k.startsWith(`flags.${packageId}.stack`) || k.startsWith(`flags.${packageId}.-=stack`),
+    );
+
+    const skipFading = shouldSkipApiEffectFading(scene, flat);
+
     if (effectsChanged) {
-      if (isEnabled()) canvas.particleeffects?.drawParticleEffects?.({ soft: true });
+      if (isEnabled()) await canvas.particleeffects?.drawParticleEffects?.({ soft: !skipFading });
       ctx.requestSceneParticlesSuppressionRefresh();
     }
 
     if (filtersChanged) {
       if (isEnabled()) {
-        FilterEffectsSceneManager.instance.update();
+        await FilterEffectsSceneManager.instance.update({ skipFading });
         ctx.ensurePinned();
       }
     }
 
-    if (effectsChanged || filtersChanged || data.active === true) updateSceneControlHighlights();
+    if (effectsChanged || filtersChanged || stackChanged || data.active === true) updateSceneControlHighlights();
 
+    if (effectsChanged || filtersChanged || stackChanged) ctx.scheduleLayersWindowRefresh();
     if (data.active === true) ctx.scheduleOpenWindowsRefresh();
 
     if (data.width !== undefined || data.height !== undefined) {
@@ -128,90 +156,4 @@ export function registerSceneHooks(ctx) {
 
   Hooks.on("canvasPan", () => requestViewMaskRefresh());
   Hooks.on("canvasZoom", () => requestViewMaskRefresh());
-
-  Hooks.on("dropCanvasData", async (canvas, data) => {
-    if (data.type !== "SpecialEffect") return;
-
-    /** Load video metadata with a timeout and error handler to prevent hanging. */
-    const VIDEO_LOAD_TIMEOUT_MS = 10000;
-    const loaded = await new Promise((resolve) => {
-      const vid = document.createElement("video");
-      const timer = setTimeout(() => {
-        vid.onloadedmetadata = null;
-        vid.onerror = null;
-        resolve(false);
-      }, VIDEO_LOAD_TIMEOUT_MS);
-
-      vid.addEventListener(
-        "loadedmetadata",
-        () => {
-          clearTimeout(timer);
-          data.width = vid.videoWidth * data.scale.x;
-          data.height = vid.videoHeight * data.scale.y;
-          resolve(true);
-        },
-        false,
-      );
-      vid.addEventListener(
-        "error",
-        () => {
-          clearTimeout(timer);
-          resolve(false);
-        },
-        false,
-      );
-      vid.src = data.file;
-    });
-
-    if (!loaded) {
-      ui.notifications.warn(game.i18n.format("FXMASTER.Common.VideoLoadFailed", { file: data.file }));
-      return;
-    }
-
-    const tileData = {
-      alpha: 1,
-      flags: {},
-      height: data.height,
-      hidden: false,
-      texture: { src: data.file },
-      locked: false,
-      occlusion: { mode: 1, alpha: 0 },
-      overhead: false,
-      rotation: 0,
-      tileSize: 100,
-      video: { loop: true, autoplay: true, volume: 0 },
-      width: data.width,
-      x: data.x - 0.5 * data.width,
-      y: data.y - 0.5 * data.height,
-      z: 100,
-    };
-    ui.notifications.info(game.i18n.format("FXMASTER.Common.TileCreated", { effect: data.label }));
-    await canvas.scene.createEmbeddedDocuments("Tile", [tileData]);
-  });
-
-  Hooks.on("hotbarDrop", (hotbar, data) => {
-    if (data.type !== "SpecialEffect") return;
-    const macroCommand = SpecialEffectsLayer._createMacro(data);
-    const macroData = {
-      command: macroCommand,
-      name: data.label,
-      type: "script",
-      author: game.user.id,
-    };
-    Macro.create(macroData).then((macro) => {
-      if (macro) game.user.assignHotbarMacro(macro, hotbar);
-    });
-    return false;
-  });
-
-  Hooks.on("updateSetting", (setting) => {
-    if (setting.key === "fxmaster.specialEffects") {
-      parseSpecialEffects();
-      Object.values(ui.windows).forEach((w) => {
-        if (w instanceof SpecialEffectsManagement) {
-          w.render(false);
-        }
-      });
-    }
-  });
 }

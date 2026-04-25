@@ -37,9 +37,9 @@
       "paths": ["templates", "css", "lang"]
     }
   },
-  "version": "7.5.2",
+  "version": "7.9.1",
   "compatibility": {
-    "minimum": "12",
+    "minimum": "13",
     "verified": "14",
     "maximum": "14"
   },

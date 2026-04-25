@@ -1,7 +1,7 @@
 /**
  * FXMaster: Token & Tile Hooks
  *
- * Registers Foundry hooks for token and tile create/update/delete events that trigger mask refreshes for the below-tokens rendering pipeline.
+ * Registers Foundry hooks for token and tile create/update/delete events that trigger mask refreshes for below-object rendering pipelines.
  *
  * @module hooks/token-hooks
  */
@@ -41,4 +41,9 @@ export function registerTokenHooks(ctx) {
   Hooks.on("createTile", () => ctx.requestTokenMaskRefresh());
   Hooks.on("updateTile", () => ctx.requestTokenMaskRefresh());
   Hooks.on("deleteTile", () => ctx.requestTokenMaskRefresh());
+  Hooks.on("refreshTile", (placeable) => {
+    if (placeable?.document?.parent !== canvas.scene) return;
+    if (!isEnabled()) return;
+    ctx.requestTokenMaskRefresh();
+  });
 }

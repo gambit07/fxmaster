@@ -14,8 +14,7 @@ import { logger } from "../logger.js";
 const _stateMap = new Map();
 
 /**
- * Cancel all pending coalesced callbacks and clear the state map.
- * Called on `canvasInit` to release references to destroyed PIXI objects.
+ * Cancel all pending coalesced callbacks and clear the state map. Called on `canvasInit` to release references to destroyed PIXI objects.
  */
 export function clearCoalesceMap() {
   for (const s of _stateMap.values()) {

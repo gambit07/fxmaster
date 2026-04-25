@@ -5,7 +5,6 @@
   },
   "CONTROLS": {
     "Effects": "FXMaster Controls",
-    "SpecialFX": "Animation Effects",
     "ParticleEffects": "Particle Effects",
     "InvertMask": "Invert Particle Effect Mask",
     "Filters": "Filter Effects",
@@ -19,7 +18,6 @@
       "FilterEffect": "Filter Effect",
       "ParticleEffectsManagementTitle": "Particle Effects Management",
       "FilterEffectsManagementTitle": "Filter Effects Management",
-      "SpecialEffectsManagementTitle": "Animation Effects Management",
       "SaveChanges": "Save Changes",
       "EnableEffects": "Enable Effects",
       "DisableAll": "Disable Effects For Everybody",
@@ -31,14 +29,8 @@
       "ResetPassiveSuccess": "Particle and Filter parameters successfully reset",
       "Yes": "Yes",
       "No": "No",
-      "Author": "Author",
-      "Favorites": "Favorites",
-      "Favorite": "Favorite",
       "Enable": "Enable",
       "ErrorCannotFindEffect": "FXMaster | Couldn't find effect data.",
-      "TileCreated": "A new Tile was created for effect {effect}",
-      "PermissionCreate": "Use FXMaster special effects",
-      "PermissionCreateHint": "Allow users with the selected role or above to use FXMaster special effects through the scene controls.",
       "Environment": "Environment",
       "Interface": "Interface",
       "Music": "Music",
@@ -50,8 +42,8 @@
       "HiddenEffectsHint": "Toggle effects to hide them from this management list (per-user). Hidden effects can still be enabled via the API.",
       "ActiveEffectTooltip": "Currently active",
       "HideEffectsTooltip": "Hidden effects: {count}",
-      "ApiEffects": "API Effects",
-      "ApiEffectsManagementTitle": "API Effects",
+      "ApiEffects": "Manage API Effects",
+      "ApiEffectsManagementTitle": "Manage API Effects",
       "ApiEffectsKind": "Kind",
       "ApiEffectsName": "Name",
       "ApiEffectsType": "Type",
@@ -64,7 +56,8 @@
       "ApiEffectsEdit": "Edit",
       "ApiEffectsEditUnavailable": "Edit (unavailable)",
       "ApiEffectEditorTitle": "Edit API Effect",
-      "ApiEffectMissing": "This API effect no longer exists on this Scene."
+      "ApiEffectMissing": "This API effect no longer exists on this Scene.",
+      "Unknown": "Unknown"
     },
     "Params": {
       "Saturation": "Saturation",
@@ -234,7 +227,18 @@
       "VortexSpeed": "Vortex Speed",
       "VortexDirection": "Vortex Direction",
       "VortexStrength": "Vortex Strength",
-      "VortexClockwise": "Clockwise Rotation"
+      "VortexClockwise": "Clockwise Rotation",
+      "BelowTiles": "Below Tiles",
+      "DarknessActivationRange": "Darkness Activation Range",
+      "DarknessActivationMinimum": "Darkness Minimum",
+      "DarknessActivationMaximum": "Darkness Maximum",
+      "BelowForeground": "Below Foreground",
+      "DarknessActivationMin": "Darkness Activation Min",
+      "DarknessActivationMax": "Darkness Activation Max",
+      "BlendMode": "Blend Mode",
+      "Levels": "Levels",
+      "AllLevels": "All Levels",
+      "DarknessActivationEnabled": "Darkness Activation"
     },
     "ParamTooltips": {
       "Saturation": "Color intensity. 0 = grayscale; 1 = original; >1 = oversaturated.",
@@ -383,7 +387,15 @@
       "VortexSpeed": "Speed of the vortex water motion. Higher = faster swirling.",
       "VortexDirection": "Direction in degrees used to orient the vortex flow.",
       "VortexStrength": "Strength of the vortex deformation and swirl. Higher = stronger rotational pull.",
-      "VortexClockwise": "Sets the vortex rotation direction. Enabled = clockwise; disabled = counterclockwise."
+      "VortexClockwise": "Sets the vortex rotation direction. Enabled = clockwise; disabled = counterclockwise.",
+      "BelowTiles": "Renders effects underneath tiles visually.",
+      "DarknessActivationRange": "Only render this effect when the current scene darkness level falls within the selected range.",
+      "BelowForeground": "Renders effects underneath the active foreground image visually.",
+      "DarknessActivationMin": "Minimum scene darkness level required for this effect to render.",
+      "DarknessActivationMax": "Maximum scene darkness level allowed for this effect to render.",
+      "BlendMode": "How the adjusted color result blends with the sampled scene color.",
+      "Levels": "Limit this scene effect to the selected scene levels. Leave it on All Levels to render everywhere.",
+      "DarknessActivationEnabled": "Enable scene darkness gating for this effect. When disabled, the effect renders at all darkness levels."
     },
     "Particles": {
       "Groups": {
@@ -526,48 +538,6 @@
         "AlwaysVisibleForGM": "Always Visible for GM"
       }
     },
-    "AnimationEffect": {
-      "AllAnimations": "All Animations",
-      "FilterHint": "Filter animations by tag. Where present includes module provider names, a Custom tag for a user-added animation folder, and a Favorites tag for favorited animations.",
-      "Copied": "Copied: {value}",
-      "CopyElement": "Copy Text to Clipboard",
-      "CustomDirectoryHint": "A path where your own .webm files live. This requires an Animation Database Refresh.",
-      "CustomDirectoryName": "Custom Animations Folder",
-      "FileName": "File Name",
-      "FilePath": "File Path",
-      "ModuleLabel": {
-        "JB2APatreon": "JB2A Patreon",
-        "JB2AFree": "JB2A Free",
-        "JB2AExtras": "JB2A Extras",
-        "JinkersAnimatedArt": "Jinker's Animated Art",
-        "AnimatedSpellEffects": "Animated Spell Effects",
-        "AnimatedSpellEffectsCartoon": "Animated Spell Effects: Cartoon",
-        "BossLootAssetsPremium": "Boss Loot Animated Assets Premium",
-        "BossLootAdventuresPremium": "Boss Loot Adventures Premium",
-        "BossLootAssetsFree": "Boss Loot Animated Assets Free",
-        "Custom": "Custom",
-        "WildMagicSurge": "Wild Magic Surge",
-        "EskieEffectsFree": "Eskie Effects Free",
-        "EskieEffects": "Eskie Effects"
-      },
-      "RefreshDbHint": "Rebuild the animations database to account for any newly added or removed animations. Optional thumbnail scanning.",
-      "RefreshDbName": "Refresh Animations",
-      "RightClickForDetails": "Right click for Details:",
-      "ScanComplete": "FXMaster | Animation Scan Complete!",
-      "ScanModules": "FXMaster | Scanning Animation Modules {current}/{total}...",
-      "ScanningThumbnails": "FXMaster | Scanning Animation Thumbnails...",
-      "ScanningThumbnailsProgress": "FXMaster | Scanning Animation Thumbnails {current}/{total}",
-      "ScanStart": "FXMaster | Beginning Animation Scan...",
-      "SearchAnimations": "Search Animations",
-      "SearchQueries": "Advanced queries supported, ex: (eldritch OR arrow) AND NOT blast",
-      "SequencerPath": "Sequencer DB Path",
-      "Update": "Update Animation Effect",
-      "RefreshDbError": "FXMaster | No animation effects found in FXMaster DB. Wait for the current Animation Scan to complete, or go to 'Module Settings -> FXMaster -> Refresh Animations Database' to re-run the Animation Scan.",
-      "RefreshDbEmpty": "FXMaster | No animation effects present in the FXMaster DB. FXMaster populates animations from your own custom animations folder specified in the module settings, or from providers such as JB2A, Boss Loot, etc. If animations have been added, go to 'Module Settings -> FXMaster -> Refresh Animations Database' to re-run the Animation Scan.",
-      "ScanCompleteEmpty": "FXMaster | Animation Scan Complete - No animation effects found. FXMaster populates animations from your own custom animations folder specified in the module settings, or from providers such as JB2A, Boss Loot, etc.",
-      "Thumbnails": "Thumbnails",
-      "ThumbnailsHint": "Enables lookup for animation thumbnails during the Refresh Animations scan. Animation providers that support thumbnail lookup are JB2A and Eskie Effects."
-    },
     "SoundFX": {
       "ControlTitle": "Manage Sound Effects",
       "ManagerTitle": "Sound Effects Manager",
@@ -605,6 +575,18 @@
       "RegionBoundsOnly": "Play within Region bounds",
       "RegionEasing": "Use easing",
       "RegionWalls": "Constrained by walls",
+      "RegionWallsHint": "When enabled, wall and surface occlusion block sound.",
+      "RegionMuffled": "Muffled by walls",
+      "RegionMuffledHint": "When enabled, wall and surface occlusion muffle sound.",
+      "MuffledEffect": "Muffled Effect",
+      "MuffledEffectHint": "Audio effect used when a wall or surface occludes the sound.",
+      "MuffledIntensity": "Muffled Effect Intensity",
+      "MuffledIntensityHint": "How strongly the muffled effect is applied, from 1 to 10.",
+      "MuffledEffectChoice": {
+        "lowpass": "Lowpass Filter",
+        "highpass": "Highpass Filter",
+        "reverb": "Reverb"
+      },
       "UnitMs": "ms",
       "UnitPercent": "%",
       "ConfigDescription": {
@@ -634,6 +616,86 @@
       "Disabled": "Disabled",
       "UnnamedRule": "Unnamed Rule",
       "CurrentMode": "Current Mode: {mode}"
+    },
+    "Layers": {
+      "Title": "Manage Layers",
+      "Order": "Order",
+      "Effect": "Effect",
+      "Source": "Source",
+      "Owner": "Owner",
+      "Actions": "Actions",
+      "Action": "Action",
+      "MoveUp": "Move up",
+      "MoveDown": "Move down",
+      "ResetOrder": "Reset order",
+      "Empty": "No enabled particle or filter effects were found.",
+      "KindParticle": "Particle",
+      "KindFilter": "Filter",
+      "SourceScene": "Scene",
+      "SourceApi": "API",
+      "SourceApiPreset": "API - Preset",
+      "SourceApiMacro": "API - Macro",
+      "SourceRegion": "Region",
+      "ScopeRegion": "Region",
+      "Level": "Level"
+    },
+    "RenderOrder": {
+      "BelowTiles": "Below Tiles"
+    },
+    "BlendModes": {
+      "Normal": "Normal",
+      "Multiply": "Multiply",
+      "Screen": "Screen",
+      "Overlay": "Overlay",
+      "SoftLight": "Soft Light",
+      "HardLight": "Hard Light",
+      "ColorDodge": "Color Dodge",
+      "ColorBurn": "Color Burn",
+      "Darken": "Darken",
+      "Lighten": "Lighten",
+      "Difference": "Difference",
+      "Exclusion": "Exclusion"
+    },
+    "Settings": {
+      "TooltipDirection": "Tooltip Direction",
+      "TooltipDirectionHint": "Choose where FXMaster parameter tooltips appear when hovering labels or controls.",
+      "TooltipDirectionChoices": {
+        "Top": "Top",
+        "Bottom": "Bottom",
+        "Left": "Left",
+        "Right": "Right"
+      },
+      "EnableLogger": "Enable FXMaster Debugging",
+      "EnableLoggerHint": "Write FXMaster debugging, warning, and error messages to the browser console.",
+      "PatreonSupportHint": "If you'd like to support me, Gambit! Subscribing helps support development of this and my other free modules, and also gets you access to my premium modules Gambit's FXMaster+, Gambit's Asset Previewer, and Gambit's Image Viewer!"
+    },
+    "Macro": {
+      "Saved": "Macro '{name}' has been saved in the macro directory.",
+      "UnknownParticleType": "Encountered unknown particle effect type '{type}' during macro creation. The effect was skipped.",
+      "UnknownFilterType": "Encountered unknown filter effect type '{type}' during macro creation. The effect was skipped.",
+      "ParticleEffectName": "Particle Effect: {label}",
+      "FilterEffectName": "Filter Effect: {label}",
+      "ParticleEffectsName": "Particle Effects",
+      "FilterEffectsName": "Filter Effects",
+      "ParticleAndFilterEffectsName": "Particle & Filter Effects",
+      "NameDialogTitle": "Save Effects as Macro",
+      "NameDialogHint": "Enter the name to use for the saved macro.",
+      "NameLabel": "Macro Name",
+      "ActionLabel": "Macro Action",
+      "ActionPlay": "Play",
+      "ActionToggle": "Toggle",
+      "ActionHint": "Play creates a new API-effect instance. Toggle turns the saved effect group on or off.",
+      "SkipFadingLabel": "Skip Fading",
+      "SkipFadingHint": "Apply and remove these API effects immediately, without fade in or fade out.",
+      "Save": "Save",
+      "Cancel": "Cancel"
+    },
+    "API": {
+      "PresetNotFound": "Preset '{name}' was not found.",
+      "InvalidColor": "Invalid color '{color}'. Expected a hex color like #RRGGBB.",
+      "InvalidSpeedLevel": "Invalid speed level '{speed}'. Supported values: very-low, low, medium, high, very-high.",
+      "InvalidDensityLevel": "Invalid density level '{density}'. Supported values: very-low, low, medium, high, very-high.",
+      "PlusPresetInactive": "Preset '{name}' is an FXMaster+ preset, but FXMaster+ is not active. Some effects may not load."
     }
   }
 }

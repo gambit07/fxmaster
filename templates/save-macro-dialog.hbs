@@ -1,0 +1,78 @@
+<form class="fxmaster-form fxmaster-save-macro-dialog">
+  <div class="form-group fxmaster-save-macro-option fxmaster-save-macro-option--name">
+    <label
+      for="fxmaster-save-macro-name"
+      data-tooltip="{{labels.hint}}"
+      data-tooltip-direction="RIGHT"
+    >{{labels.name}}</label>
+    <div class="form-fields fxmaster-save-macro-name-field">
+      <input
+        id="fxmaster-save-macro-name"
+        type="text"
+        name="macroName"
+        value="{{defaultName}}"
+        aria-label="{{labels.name}}"
+        class="fxmaster-save-macro-name-input"
+        autofocus
+      >
+    </div>
+  </div>
+
+  <div class="form-group fxmaster-save-macro-option fxmaster-save-macro-option--action">
+    <label
+      for="fxmaster-save-macro-action-toggle"
+      data-tooltip="{{labels.actionHint}}"
+      data-tooltip-direction="RIGHT"
+    >{{labels.action}}</label>
+
+    <div class="form-fields fxmaster-save-macro-action-control">
+      <div class="fxmaster-input-checkbox fxmaster-input-checkbox--placement">
+        <label class="fxmaster-placement-toggle fxmaster-save-macro-action-toggle">
+          <input
+            id="fxmaster-save-macro-action-toggle"
+            type="checkbox"
+            name="macroActionToggle"
+            aria-label="{{labels.action}}"
+          >
+          <span class="fxmaster-placement-toggle-slider fxmaster-save-macro-action-slider" aria-hidden="true">
+            <span class="fxmaster-placement-toggle-content fxmaster-save-macro-action-content">
+              <span class="fxmaster-placement-toggle-label fxmaster-save-macro-action-label fxmaster-save-macro-action-label--play">{{labels.actionPlay}}</span>
+              <span class="fxmaster-placement-toggle-label fxmaster-save-macro-action-label fxmaster-save-macro-action-label--toggle">{{labels.actionToggle}}</span>
+            </span>
+          </span>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <div class="form-group fxmaster-save-macro-option fxmaster-save-macro-option--skip-fading">
+    <label
+      for="fxmaster-save-macro-skip-fading"
+      data-tooltip="{{labels.skipFadingHint}}"
+      data-tooltip-direction="RIGHT"
+    >{{labels.skipFading}}</label>
+
+    <div class="form-fields fxmaster-save-macro-switch-field">
+      <label class="fxm-switch fxmaster-save-macro-skip-fading-toggle">
+        <input
+          id="fxmaster-save-macro-skip-fading"
+          type="checkbox"
+          name="skipFading"
+          aria-label="{{labels.skipFading}}"
+        >
+        <span class="fxm-slider" aria-hidden="true"></span>
+      </label>
+    </div>
+  </div>
+
+  <footer class="form-footer">
+    <button type="submit" data-action="save" class="fxmaster-button">
+      <i class="fas fa-check"></i>
+      {{labels.save}}
+    </button>
+    <button type="button" data-action="cancel" class="fxmaster-button">
+      <i class="fas fa-times"></i>
+      {{labels.cancel}}
+    </button>
+  </footer>
+</form>

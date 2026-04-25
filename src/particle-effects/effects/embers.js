@@ -29,6 +29,7 @@ export class EmbersParticleEffect extends FXMasterParticleEffect {
     const p = super.parameters;
     return {
       belowTokens: p.belowTokens,
+      belowTiles: p.belowTiles,
       soundFxEnabled: p.soundFxEnabled,
       tint: { ...p.tint, value: { ...p.tint.value, value: "#f77300" } },
       topDown: { label: "FXMASTER.Params.TopDown", type: "checkbox", value: false },

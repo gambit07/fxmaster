@@ -26,25 +26,91 @@
 
     <div class="fxmaster-filter-expand">
       <div class="fxmaster-filter-params">
+        {{#if (or
+              (fxmasterShouldRenderParam "filter" type "belowTokens")
+              (fxmasterShouldRenderParam "filter" type "belowTiles")
+              (fxmasterShouldRenderParam "filter" type "belowForeground")
+        )}}
+          <div class="fxmaster-placement-row">
+            {{#if (fxmasterShouldRenderParam "filter" type "belowTokens")}}
+              <div class="fxmaster-param-field fxmaster-param-field--placement-toggle" data-param="belowTokens">
+                {{{fxmasterParameter
+                      filter
+                      filter.parameters.belowTokens
+                      "belowTokens"
+                      (getEffectParams ../activeFilters ../passiveFilters type)
+                   }}}
+              </div>
+            {{else}}
+              {{{fxmasterHiddenParameter
+                    filter
+                    filter.parameters.belowTokens
+                    "belowTokens"
+                    (getEffectParams ../activeFilters ../passiveFilters type)
+              }}}
+            {{/if}}
+
+            {{#if (fxmasterShouldRenderParam "filter" type "belowTiles")}}
+              <div class="fxmaster-param-field fxmaster-param-field--placement-toggle" data-param="belowTiles">
+                {{{fxmasterParameter
+                      filter
+                      filter.parameters.belowTiles
+                      "belowTiles"
+                      (getEffectParams ../activeFilters ../passiveFilters type)
+                   }}}
+              </div>
+            {{else}}
+              {{{fxmasterHiddenParameter
+                    filter
+                    filter.parameters.belowTiles
+                    "belowTiles"
+                    (getEffectParams ../activeFilters ../passiveFilters type)
+              }}}
+            {{/if}}
+
+            {{#if (fxmasterShouldRenderParam "filter" type "belowForeground")}}
+              <div class="fxmaster-param-field fxmaster-param-field--placement-toggle" data-param="belowForeground">
+                {{{fxmasterParameter
+                      filter
+                      filter.parameters.belowForeground
+                      "belowForeground"
+                      (getEffectParams ../activeFilters ../passiveFilters type)
+                   }}}
+              </div>
+            {{else}}
+              {{{fxmasterHiddenParameter
+                    filter
+                    filter.parameters.belowForeground
+                    "belowForeground"
+                    (getEffectParams ../activeFilters ../passiveFilters type)
+              }}}
+            {{/if}}
+          </div>
+        {{/if}}
+
         {{#each filter.parameters as |parameterConfig parameterName|}}
-          {{#if (fxmasterShouldRenderParam "filter" type parameterName)}}
-            <label>
-              {{localize parameterConfig.label}}
-              {{{fxmasterParameter
+          {{#unless (fxmasterIsPlacementParam parameterName)}}
+            {{#if (fxmasterShouldRenderParam "filter" type parameterName)}}
+              <div class="fxmaster-param-field" data-param="{{parameterName}}">
+                {{#if (fxmasterShouldRenderParamTitle parameterConfig parameterName)}}
+                  <span class="fxmaster-param-title" {{{fxmasterParamTooltipAttrs parameterConfig}}}>{{localize parameterConfig.label}}</span>
+                {{/if}}
+                {{{fxmasterParameter
+                      filter
+                      parameterConfig
+                      parameterName
+                      (getEffectParams ../../activeFilters ../../passiveFilters type)
+                   }}}
+              </div>
+            {{else}}
+              {{{fxmasterHiddenParameter
                     filter
                     parameterConfig
                     parameterName
                     (getEffectParams ../../activeFilters ../../passiveFilters type)
-                 }}}
-            </label>
-          {{else}}
-            {{{fxmasterHiddenParameter
-                  filter
-                  parameterConfig
-                  parameterName
-                  (getEffectParams ../../activeFilters ../../passiveFilters type)
-            }}}
-          {{/if}}
+              }}}
+            {{/if}}
+          {{/unless}}
         {{/each}}
       </div>
     </div>

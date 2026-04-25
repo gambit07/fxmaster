@@ -11,8 +11,7 @@ import { logger } from "../../logger.js";
  */
 export class BloomFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   /**
-   * Construct a BloomFilter with defaults and uniform wiring.
-   * Initializes mask uniforms, fade controls, and effect parameters.
+   * Construct a BloomFilter with defaults and uniform wiring. Initializes mask uniforms, fade controls, and effect parameters.
    * @param {object} [options={}] - Initial filter options.
    * @param {string} [id] - Stable id for filter instances.
    */
@@ -46,6 +45,7 @@ export class BloomFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   static get parameters() {
     return {
       belowTokens: { label: "FXMASTER.Params.BelowTokens", type: "checkbox", value: false },
+      belowTiles: { label: "FXMASTER.Params.BelowTiles", type: "checkbox", value: false },
       soundFxEnabled: { label: "FXMASTER.Params.SoundFxEnabled", type: "checkbox", value: false },
       blur: { label: "FXMASTER.Params.Blur", type: "range", max: 10.0, min: 0.0, step: 1.0, value: 1.0 },
       bloomScale: { label: "FXMASTER.Params.Bloom", type: "range", max: 1.0, min: 0.0, step: 0.1, value: 0.1 },
@@ -62,8 +62,7 @@ export class BloomFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   }
 
   /**
-   * Apply uniforms from options with clamping and fade handling.
-   * Also forwards any mask-related options to the mixin.
+   * Apply uniforms from options with clamping and fade handling. Also forwards any mask-related options to the mixin.
    * @param {object} [opts={}] - Options payload.
    */
   _applyUniforms(opts = {}) {

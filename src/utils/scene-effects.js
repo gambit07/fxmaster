@@ -1,13 +1,14 @@
 /**
  * FXMaster: Scene Effect Helpers
  *
- * High-level operations for toggling particle effects, cleaning up region effects, parsing special effects from flags, and updating scene control button highlights.
+ * High-level operations for toggling particle effects, cleaning up region effects, and updating scene control button highlights.
  */
 
 import { packageId } from "../constants.js";
 import { logger } from "../logger.js";
-import { isLegacyOperatorKey, resetFlag } from "./compat.js";
+import { ensureSingleSceneLevelSelection, isLegacyOperatorKey, resetFlag } from "./compat.js";
 import { omit } from "./math.js";
+import { buildSceneEffectUid, promoteEffectStackUids } from "../common/effect-stack.js";
 
 /**
  * Toggle a named core particle effect in the current scene.
@@ -16,15 +17,22 @@ import { omit } from "./math.js";
  */
 export async function onSwitchParticleEffects(parameters) {
   if (!canvas.scene) return;
-  const current = canvas.scene.getFlag(packageId, "effects") ?? {};
+  const scene = canvas.scene;
+  const current = scene.getFlag(packageId, "effects") ?? {};
   const key = `core_${parameters.type}`;
   const disable = key in current;
-  const effects = disable
-    ? omit(current, key)
-    : { ...current, [key]: { type: parameters.type, options: parameters.options } };
+  const options = ensureSingleSceneLevelSelection(
+    parameters.options && typeof parameters.options === "object" ? { ...parameters.options } : {},
+    scene,
+  );
+  const effects = disable ? omit(current, key) : { ...current, [key]: { type: parameters.type, options } };
 
-  if (Object.keys(effects).length === 0) await canvas.scene.unsetFlag(packageId, "effects");
-  else await resetFlag(canvas.scene, "effects", effects);
+  if (Object.keys(effects).length === 0) await scene.unsetFlag(packageId, "effects");
+  else await resetFlag(scene, "effects", effects);
+
+  if (!disable) {
+    await promoteEffectStackUids([buildSceneEffectUid("particle", key)], scene);
+  }
 }
 
 /**
@@ -36,9 +44,22 @@ export async function onUpdateParticleEffects(parametersArray) {
   if (!canvas.scene) return;
   const scene = canvas.scene;
   const old = scene.getFlag(packageId, "effects") || {};
-  const added = Object.fromEntries(parametersArray.map((p) => [foundry.utils.randomID(), p]));
+  const added = Object.fromEntries(
+    parametersArray.map((p) => {
+      const info = p && typeof p === "object" ? { ...p } : {};
+      info.options = ensureSingleSceneLevelSelection(
+        info.options && typeof info.options === "object" ? { ...info.options } : {},
+        scene,
+      );
+      return [foundry.utils.randomID(), info];
+    }),
+  );
   const merged = foundry.utils.mergeObject(old, added, { inplace: false });
-  await resetFlag(canvas.scene, "effects", merged);
+  await resetFlag(scene, "effects", merged);
+  await promoteEffectStackUids(
+    Object.keys(added).map((id) => buildSceneEffectUid("particle", id)),
+    scene,
+  );
 }
 
 /**
@@ -63,17 +84,6 @@ export function cleanupRegionParticleEffects(regionId) {
   } catch (err) {
     logger.debug("FXMaster:", err);
   }
-}
-
-/**
- * Parse and cache special FX definitions.
- * @returns {Promise<void>}
- */
-export async function parseSpecialEffects() {
-  let effectsMap = game.settings.get(packageId, "dbSpecialEffects") || {};
-  if (!effectsMap || typeof effectsMap !== "object") effectsMap = {};
-
-  CONFIG.fxmaster.userSpecials = effectsMap;
 }
 
 /**
@@ -103,17 +113,5 @@ export function updateSceneControlHighlights() {
   CONFIG.fxmaster.FXMasterBaseFormV2.setToolButtonHighlight("filters", hasCoreFilters);
   CONFIG.fxmaster.FXMasterBaseFormV2.setToolButtonHighlight("api-effects", hasApiEffects);
 
-  const controlBtn = document.querySelector(`#scene-controls-layers button.control[data-control="effects"]`);
-
-  const controlEl = controlBtn?.matches?.("li") ? controlBtn.querySelector?.("button") ?? controlBtn : controlBtn;
-
-  if (controlEl) {
-    if (hasAnyEffects) {
-      controlEl.style.setProperty("background-color", "var(--color-warm-2)");
-      controlEl.style.setProperty("border-color", "var(--color-warm-3)");
-    } else {
-      controlEl.style.removeProperty("background-color");
-      controlEl.style.removeProperty("border-color");
-    }
-  }
+  CONFIG.fxmaster.FXMasterBaseFormV2.setSceneEffectsControlHighlight(hasAnyEffects);
 }
