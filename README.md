@@ -15,14 +15,26 @@
 
 **<p>Any support via the <a href="https://www.patreon.com/GambitsLounge" target="_blank" rel="nofollow noopener">Patreon</a> or <a href="https://ko-fi.com/gambit07" target="_blank" rel="nofollow noopener">Ko-fi</a> is greatly appreciated! If you are a Patreon subscriber you will receive access to the FXMaster+ module. FXMaster+ can be accessed from Patreon, and it's where I will be adding new particle effects and filters moving forward. For the month of April, it will get you access to the ⚪Wind, ⚪Wind Wisp, 🔵Water, 🟡Lightning Bolts, 🔵Fish, 🟢Glitch, 🔵Ice, 🟤Duststorm, 🟤Sandstorm, 🟢Ghosts, 🟡Sunlight, 🟢Magic Crystals, 🟡Fireflies, 🌸Sakura Bloom, and 🌸Sakura Blossoms Effects - Effects are previewed below:</p>**
 
-<video
-  autoplay
-  muted
-  playsinline
-  loop
-  preload="auto"
-  src="https://github.com/user-attachments/assets/cbeb1216-8ee0-49b1-b6df-9d69a74b9731">
-</video>
+  <video
+    autoplay
+    muted
+    playsinline
+    loop
+    preload="auto"
+    src="https://github.com/user-attachments/assets/1cafe9e1-2763-40a6-b47e-7c5d03de5fbf">
+  </video>
+
+<details>
+  <summary>Water (click to expand)</summary>
+  <video
+    autoplay
+    muted
+    playsinline
+    loop
+    preload="auto"
+    src="https://github.com/user-attachments/assets/cbeb1216-8ee0-49b1-b6df-9d69a74b9731">
+  </video>
+</details>
 
 <details>
   <summary>Lightning Bolts (click to expand)</summary>
