@@ -27,17 +27,17 @@
     }
   },
   "url": "https://github.com/gambit07/fxmaster",
-  "license": "https://raw.githubusercontent.com/gambit07/fxmaster/v7.5.2/LICENSE.md",
-  "readme": "https://raw.githubusercontent.com/gambit07/fxmaster/v7.5.2/README.md",
+  "license": "https://raw.githubusercontent.com/gambit07/fxmaster/v8.0.0/LICENSE.md",
+  "readme": "https://raw.githubusercontent.com/gambit07/fxmaster/v8.0.0/README.md",
   "bugs": "https://github.com/gambit07/fxmaster/issues",
-  "changelog": "https://github.com/gambit07/fxmaster/releases/tag/v7.5.2",
+  "changelog": "https://github.com/gambit07/fxmaster/releases/tag/v8.0.0",
   "flags": {
     "hotReload": {
       "extensions": ["css", "hbs", "json"],
       "paths": ["templates", "css", "lang"]
     }
   },
-  "version": "7.9.1",
+  "version": "8.0.0",
   "compatibility": {
     "minimum": "13",
     "verified": "14",
@@ -114,5 +114,5 @@
   ],
   "socket": true,
   "manifest": "https://github.com/gambit07/fxmaster/releases/latest/download/module.json",
-  "download": "https://github.com/gambit07/fxmaster/releases/download/v7.5.2/module.zip"
+  "download": "https://github.com/gambit07/fxmaster/releases/download/v8.0.0/module.zip"
 }
