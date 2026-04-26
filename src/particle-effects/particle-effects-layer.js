@@ -177,14 +177,9 @@ function chooseParticleMaskTexture(bundle, belowTokens, belowTiles) {
 }
 
 /**
- * Keep a DisplayObject usable as a PIXI mask without letting its white mask
- * texture render as normal scene content.
+ * Keep a DisplayObject usable as a PIXI mask without letting its white mask texture render as normal scene content.
  *
- * In V13 the scene-particle soft transition can temporarily render the wrapper
- * container directly while a belowTokens mask has just been attached. If the
- * mask sprite remains renderable, its full-scene white allow-mask is drawn
- * before the particle fade completes. PIXI masks should remain visible for mask
- * evaluation, but non-renderable so they never contribute color.
+ * In V13 the scene-particle soft transition can temporarily render the wrapper container directly while a belowTokens mask has just been attached. If the mask sprite remains renderable, its full-scene white allow-mask is drawn before the particle fade completes. PIXI masks should remain visible for mask evaluation, but non-renderable so they never contribute color.
  *
  * @param {PIXI.DisplayObject|null|undefined} maskObject
  * @returns {void}
@@ -1864,52 +1859,6 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     const VW = cssW | 0;
     const VH = cssH | 0;
 
-    let anyWantsBelowTokens = false;
-    let anyWantsBelowTiles = false;
-    for (const behavior of behaviors) {
-      const defs = behavior.getFlag(packageId, "particleEffects") || {};
-      for (const [type, params] of Object.entries(defs)) {
-        if (!isEffectActiveForSceneDarkness(params?.options, darknessLevel)) continue;
-        const EffectClass = CONFIG.fxmaster.particleEffects[type];
-        if (!EffectClass) continue;
-        if (particleBelowTokensEnabled(params?.belowTokens ?? params?.options?.belowTokens)) anyWantsBelowTokens = true;
-        if (particleBelowTilesEnabled(params?.belowTiles ?? params?.options?.belowTiles)) anyWantsBelowTiles = true;
-        if (anyWantsBelowTokens && anyWantsBelowTiles) break;
-      }
-      if (anyWantsBelowTokens && anyWantsBelowTiles) break;
-    }
-
-    if (shared.base && (anyWantsBelowTokens || anyWantsBelowTiles)) {
-      try {
-        SceneMaskManager.instance.setBelowTokensNeeded?.("particles", anyWantsBelowTokens, "regions");
-        SceneMaskManager.instance.setBelowTilesNeeded?.("particles", anyWantsBelowTiles, "regions");
-        SceneMaskManager.instance.refreshTokensSync?.();
-      } catch (err) {
-        logger.debug("FXMaster:", err);
-      }
-
-      const masks = SceneMaskManager.instance.getMasks?.("particles") ?? {};
-      const tokensRT = masks.tokens ?? null;
-      const tilesRT = masks.tiles ?? null;
-
-      if (anyWantsBelowTokens) {
-        const outRT = this._acquireRT(shared.base.width | 0, shared.base.height | 0, shared.base.resolution || 1);
-        shared.cutoutTokens = tokensRT
-          ? composeMaskMinusTokensRT(shared.base, tokensRT, { outRT })
-          : composeMaskMinusTokens(shared.base, { outRT });
-      }
-      if (anyWantsBelowTiles) {
-        const outRT = this._acquireRT(shared.base.width | 0, shared.base.height | 0, shared.base.resolution || 1);
-        shared.cutoutTiles = tilesRT
-          ? composeMaskMinusTilesRT(shared.base, tilesRT, { outRT })
-          : composeMaskMinusTiles(shared.base, { outRT });
-      }
-      if (anyWantsBelowTokens && anyWantsBelowTiles) {
-        const outRT = this._acquireRT(shared.base.width | 0, shared.base.height | 0, shared.base.resolution || 1);
-        shared.cutoutCombined = composeMaskMinusCoverageRT(shared.base, [tokensRT, tilesRT], { outRT });
-      }
-    }
-
     for (const behavior of behaviors) {
       const defs = behavior.getFlag(packageId, "particleEffects") || {};
       for (const [type, params] of Object.entries(defs)) {
@@ -1955,6 +1904,39 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         const uid = buildRegionEffectUid("particle", regionId, behavior.id, type);
         if (layerLevel === "aboveDarkness") this._aboveContent.addChild(container);
         else this._belowContainer.addChild(container);
+
+        if (!shared.base) shared.base = buildRegionMaskRT(placeable, { rtPool: this._rtPool });
+
+        if (belowTokens || belowTiles) {
+          try {
+            if (belowTokens) SceneMaskManager.instance.setBelowTokensNeeded?.("particles", true, "regions");
+            if (belowTiles) SceneMaskManager.instance.setBelowTilesNeeded?.("particles", true, "regions");
+            SceneMaskManager.instance.refreshTokensSync?.();
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
+
+          const masks = SceneMaskManager.instance.getMasks?.("particles") ?? {};
+          const tokensRT = masks.tokens ?? null;
+          const tilesRT = masks.tiles ?? null;
+
+          if (belowTokens && !shared.cutoutTokens) {
+            const outRT = this._acquireRT(shared.base.width | 0, shared.base.height | 0, shared.base.resolution || 1);
+            shared.cutoutTokens = tokensRT
+              ? composeMaskMinusTokensRT(shared.base, tokensRT, { outRT })
+              : composeMaskMinusTokens(shared.base, { outRT });
+          }
+          if (belowTiles && !shared.cutoutTiles) {
+            const outRT = this._acquireRT(shared.base.width | 0, shared.base.height | 0, shared.base.resolution || 1);
+            shared.cutoutTiles = tilesRT
+              ? composeMaskMinusTilesRT(shared.base, tilesRT, { outRT })
+              : composeMaskMinusTiles(shared.base, { outRT });
+          }
+          if (belowTokens && belowTiles && !shared.cutoutCombined) {
+            const outRT = this._acquireRT(shared.base.width | 0, shared.base.height | 0, shared.base.resolution || 1);
+            shared.cutoutCombined = composeMaskMinusCoverageRT(shared.base, [tokensRT, tilesRT], { outRT });
+          }
+        }
 
         const maskTex = chooseParticleMaskTexture(shared, belowTokens, belowTiles);
         suppressVisibleMaskPaint(spr);

@@ -392,9 +392,11 @@ By default, _Filter Effects_ added via the scene app are displayed across the en
 
 _Filter Effects_ are only displayed outside the region areas when masked. If a Hole shape is added to the region, scene filter effects will display in the hole area cutout.
 
-### API Effects UI Manager
+### API Effects UI Manager&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/pen-to-square-light.svg" media="(prefers-color-scheme: dark)"><source srcset="./media/font-awesome/pen-to-square-dark.svg" media="(prefers-color-scheme: light)"><img src="./media/font-awesome/pen-to-square-dark.svg" alt="" aria-hidden="true" role="presentation" height="20" width="20" style="vertical-align:middle;"></picture>
 
 The _API Effects_ manager is a utility for inspecting, editing, and removing scene-wide effects that were added via macros or presets through FXMaster’s APIs.
+
+![Manage API Effects](./media/screenshots/manage-api-effects.webp)
 
 To open: **Scene Controls → FXMaster Controls → API Effects** (plug icon).
 
@@ -426,7 +428,7 @@ when the macro was created.
 When clicked, this tool shows a confirmation dialog to delete all _Particle Effects_ and _Filter Effects_ from the
 current scene.
 
-## Levels
+## Levels&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/clone-light.svg" media="(prefers-color-scheme: dark)"><source srcset="./media/font-awesome/clone-dark.svg" media="(prefers-color-scheme: light)"><img src="./media/font-awesome/clone-dark.svg" alt="" aria-hidden="true" role="presentation" height="20" width="20" style="vertical-align:middle;"></picture>
 
 When using native Scene Levels in Foundry V14+, scene-wide _Particle Effects_ and _Filter Effects_ can be limited to specific Levels instead of rendering across the whole scene. This makes it possible to keep an effect on only the selected floor or floors while other Levels remain unaffected.
 
@@ -445,11 +447,13 @@ This Level restriction can be combined with other FXMaster routing options such 
 - Region-based FXMaster effects follow the Region's own placement, assigned levels, and elevation visibility handling.
 - On scenes that do not use multiple native Scene Levels, scene-wide effects behave as normal global effects.
 
-## Layers
+## Layers&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/clone-light.svg" media="(prefers-color-scheme: dark)"><source srcset="./media/font-awesome/clone-dark.svg" media="(prefers-color-scheme: light)"><img src="./media/font-awesome/clone-dark.svg" alt="" aria-hidden="true" role="presentation" height="20" width="20" style="vertical-align:middle;"></picture>
 
 The _Manage Layers_ window is used to control the render order of enabled FXMaster effects. It allows scene-wide, region-based, and API-created effects to be mixed together in a single stack so you can decide which effects render above or below the others.
 
 ### Manage Layers Window
+
+![Manage Layers](./media/screenshots/manage-layers.webp)
 
 To open: **Scene Controls → FXMaster Controls → Manage Layers** (layer-group icon).
 
