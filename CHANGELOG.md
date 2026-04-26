@@ -1,5 +1,8 @@
 # Changelog
 
+## [v8.0.1] - 2026-04-25
+- Bugfix for V13 where certain Particle Effects would render with a full white overlay
+
 ## [v8.0.0] - 2026-04-25
 Welcome to FXMaster V8.0.0! This can be considered the full release for Foundry V14. A few things to note, as noted the Animation Effects functionality in FXMaster has been removed in this build. Additionally, support for V12 has been removed, FXMaster now contains compatability for V13+.
 - Complete revamp for V14's Levels. Filters and Particles can be placed on specific levels for a scene with a new Scene multi-select. Regions now also respect multi-level placement for effects, and region suppression can be applied to specific levels. This update should allow a ton of flexibility when setting up your scenes, hope everyone enjoys!
