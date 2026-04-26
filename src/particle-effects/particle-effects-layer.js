@@ -62,6 +62,13 @@ function canUseNativeWeatherOcclusionStackPass() {
 }
 
 /**
+ * Foundry V13's stack pass can expose the local white scene-clip mask when a bare scene slot is rendered directly. V14 does not exhibit that leak and can keep the direct path that avoids simple-scene pan drift.
+ */
+function canUseDirectSceneParticleSlotRender() {
+  return Number(globalThis.game?.release?.generation ?? 0) >= 14;
+}
+
+/**
  * Build a region-scoped particle context so region effects use region bounds rather than scene bounds.
  *
  * @param {PlaceableObject} placeable
@@ -575,7 +582,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     const sceneHasWeatherOcclusionTiles = needsSceneWeatherTileCheck ? this._sceneHasWeatherOcclusionTiles() : false;
 
     /**
-     * Plain scene particles can render directly from their dedicated scene slot when no native weather-occluding roof surfaces are involved. Falling back to the screen-space weather occlusion pass in the simple case reintroduces visible pan drift at the scene bounds.
+     * Plain scene particles can render directly from their dedicated scene slot when no native weather-occluding roof surfaces are involved. In V13 that direct slot path can leak its local scene clip, so only V14+ keeps the optimization.
      */
     const wantsNativeWeatherOcclusion =
       canUseNativeWeatherOcclusion &&
@@ -586,6 +593,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     const hasMaskTextureOverride =
       !!maskTextureOverride && maskTextureOverride !== PIXI.Texture.EMPTY && !maskTextureOverride.destroyed;
     const useDirectSceneSlotRender =
+      canUseDirectSceneParticleSlotRender() &&
       !hasMaskTextureOverride &&
       !entry?.regionId &&
       !entry?.belowTokens &&
@@ -1621,7 +1629,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
           logger.debug("FXMaster:", err);
         }
         try {
-          existing.blendMode = PIXI.BLEND_MODES.NORMAL;
+          existing.blendMode = defaultBlend;
         } catch (err) {
           logger.debug("FXMaster:", err);
         }
@@ -1665,7 +1673,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
           const transientUid = this._promoteSceneRuntimeToTransient(runtimeUid);
           const ec = new EffectClass(options);
           ec.zIndex = existing.zIndex ?? zIndex - 1;
-          ec.blendMode = PIXI.BLEND_MODES.NORMAL;
+          ec.blendMode = defaultBlend;
           ec._fxmOptsCache = foundry.utils.deepClone(options);
           ec.alpha = 0;
           addToLayer(ec);
@@ -1728,7 +1736,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
 
         const ec = new EffectClass(options);
         ec.zIndex = existing.zIndex ?? zIndex - 1;
-        ec.blendMode = PIXI.BLEND_MODES.NORMAL;
+        ec.blendMode = defaultBlend;
         ec._fxmOptsCache = foundry.utils.deepClone(options);
         addToLayer(ec);
         cur.set(id, ec);

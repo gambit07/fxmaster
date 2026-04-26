@@ -1,1 +1,1 @@
-- Bugfix for V13 where certain Particle Effects would render with a full white overlay
+- Bugfix #2 for V13 where certain Particle Effects would render with a full white overlay

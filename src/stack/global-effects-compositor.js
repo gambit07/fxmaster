@@ -1143,6 +1143,51 @@ export class GlobalEffectsCompositor {
   }
 
   /**
+   * Return whether a numeric or string blend mode is the PIXI normal blend mode.
+   *
+   * Particle emitter behavior configs use strings such as "screen" while the live display tree uses PIXI blend-mode constants. The transparent particle-only paths are only equivalent for rows that remain normal-blended all the way through the emitter.
+   *
+   * @param {number|string|null|undefined} value
+   * @returns {boolean}
+   */
+  #isNormalBlendMode(value) {
+    if (value === undefined || value === null || value === "") return true;
+    if (typeof value === "string") {
+      const text = value.trim().toLowerCase();
+      if (!text) return true;
+      if (text === "normal") return true;
+      const numeric = Number(text);
+      return Number.isFinite(numeric) && numeric === PIXI.BLEND_MODES.NORMAL;
+    }
+
+    return Number(value) === PIXI.BLEND_MODES.NORMAL;
+  }
+
+  /**
+   * Return whether a particle runtime can safely use transparent contribution rendering.
+   *
+   * @param {object|null|undefined} runtime
+   * @returns {boolean}
+   */
+  #particleRuntimeUsesOnlyNormalBlend(runtime) {
+    if (!runtime) return false;
+
+    const fx = runtime?.fx ?? runtime?.slot ?? null;
+    if (!fx || !this.#isNormalBlendMode(fx?.blendMode)) return false;
+
+    const defaultConfig = fx?.constructor?.defaultConfig ?? null;
+    if (defaultConfig && !this.#isNormalBlendMode(defaultConfig?.blendMode)) return false;
+
+    const behaviors = Array.isArray(defaultConfig?.behaviors) ? defaultConfig.behaviors : [];
+    for (const behavior of behaviors) {
+      if (behavior?.type !== "blendMode") continue;
+      if (!this.#isNormalBlendMode(behavior?.config?.blendMode)) return false;
+    }
+
+    return true;
+  }
+
+  /**
    * Return whether the current stack can skip the full environment capture and render as a transparent particle overlay.
    *
    * This is intentionally limited to scene-scoped normal-blend particle rows. Rendering normal particles into a transparent texture and presenting that texture over the live scene is equivalent to baking them into a captured scene frame, while avoiding a full scene capture every particle tick. Additive/screen/custom blend particles keep the full-frame path so their blend math remains baked against the scene behind them.
@@ -1161,9 +1206,7 @@ export class GlobalEffectsCompositor {
       const runtime = row?.uid ? this.#resolveParticleRuntime(row.uid) : null;
       if (!runtime) return false;
 
-      const fx = runtime?.fx ?? runtime?.slot ?? null;
-      const blendMode = Number(fx?.blendMode ?? PIXI.BLEND_MODES.NORMAL);
-      if (blendMode !== PIXI.BLEND_MODES.NORMAL) return false;
+      if (!this.#particleRuntimeUsesOnlyNormalBlend(runtime)) return false;
     }
 
     return true;
@@ -1191,9 +1234,7 @@ export class GlobalEffectsCompositor {
     if (weatherMaskTexture || wantsBelowForeground || useParticleTileRestore) return false;
 
     const runtime = row?.uid ? this.#resolveParticleRuntime(row.uid) : null;
-    const fx = runtime?.fx ?? runtime?.slot ?? null;
-    const blendMode = Number(fx?.blendMode ?? PIXI.BLEND_MODES.NORMAL);
-    return blendMode === PIXI.BLEND_MODES.NORMAL;
+    return this.#particleRuntimeUsesOnlyNormalBlend(runtime);
   }
 
   /**
