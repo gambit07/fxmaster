@@ -1,5 +1,8 @@
 # Changelog
 
+## [v8.0.3] - 2026-04-26
+- Bugfix #2 for V13 where certain Particle Effects would render with a full white overlay
+
 ## [v8.0.2] - 2026-04-26
 - Bugfix #2 for V13 where certain Particle Effects would render with a full white overlay
 
