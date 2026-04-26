@@ -5,6 +5,7 @@
   },
   "CONTROLS": {
     "Effects": "Controles do FXMaster",
+    "SpecialFX": "Efeitos de Animação",
     "ParticleEffects": "Efeitos de Partículas",
     "InvertMask": "Inverter Máscara de Efeitos",
     "Filters": "Efeitos de Filtro",
@@ -18,6 +19,7 @@
       "FilterEffect": "Efeito de Filtro",
       "ParticleEffectsManagementTitle": "Gerenciamento de Efeitos de Partículas",
       "FilterEffectsManagementTitle": "Gerenciamento de Efeitos de Filtro",
+      "SpecialEffectsManagementTitle": "Gerenciamento de Efeitos de Animação",
       "SaveChanges": "Salvar Alterações",
       "EnableEffects": "Habilitar Efeitos",
       "DisableAll": "Desabilitar Efeitos para Todos",
@@ -29,8 +31,14 @@
       "ResetPassiveSuccess": "Parâmetros de Partículas e Filtros redefinidos com sucesso",
       "Yes": "Sim",
       "No": "Não",
+      "Author": "Autor",
+      "Favorites": "Favoritos",
+      "Favorite": "Favorito",
       "Enable": "Habilitar",
       "ErrorCannotFindEffect": "FXMaster | Não foi possível encontrar dados do efeito.",
+      "TileCreated": "Uma nova Peça foi criada para o efeito {effect}",
+      "PermissionCreate": "Usar efeitos especiais do FXMaster",
+      "PermissionCreateHint": "Permite que usuários com a permissão selecionada ou superior usem efeitos especiais do FXMaster por meio dos controles de cena.",
       "Environment": "Ambiente",
       "Interface": "Interface",
       "Music": "Música",
@@ -56,8 +64,7 @@
       "ApiEffectsEdit": "Editar",
       "ApiEffectsEditUnavailable": "Editar (indisponível)",
       "ApiEffectEditorTitle": "Editar Efeito da API",
-      "ApiEffectMissing": "Este efeito da API não existe mais nesta Cena.",
-      "Unknown": "Unknown"
+      "ApiEffectMissing": "Este efeito da API não existe mais nesta Cena."
     },
     "Params": {
       "Saturation": "Saturação",
@@ -227,18 +234,7 @@
       "VortexSpeed": "Velocidade do Redemoinho",
       "VortexDirection": "Direção do Redemoinho",
       "VortexStrength": "Força do Redemoinho",
-      "VortexClockwise": "Rotação no Sentido Horário",
-      "BelowTiles": "Below Tiles",
-      "DarknessActivationRange": "Darkness Activation Range",
-      "DarknessActivationMinimum": "Darkness Minimum",
-      "DarknessActivationMaximum": "Darkness Maximum",
-      "BelowForeground": "Below Foreground",
-      "DarknessActivationMin": "Darkness Activation Min",
-      "DarknessActivationMax": "Darkness Activation Max",
-      "BlendMode": "Blend Mode",
-      "Levels": "Levels",
-      "AllLevels": "All Levels",
-      "DarknessActivationEnabled": "Darkness Activation"
+      "VortexClockwise": "Rotação no Sentido Horário"
     },
     "ParamTooltips": {
       "Saturation": "Intensidade da cor. 0 = tons de cinza; 1 = original; >1 = supersaturado.",
@@ -387,15 +383,7 @@
       "VortexSpeed": "Velocidade do movimento da água em redemoinho. Maior = redemoinho mais rápido.",
       "VortexDirection": "Direção em graus usada para orientar o fluxo do redemoinho.",
       "VortexStrength": "Intensidade da deformação e vórtice do redemoinho. Maior = atração rotacional mais forte.",
-      "VortexClockwise": "Define a direção de rotação do redemoinho. Habilitado = horário; desabilitado = anti-horário.",
-      "BelowTiles": "Renders effects underneath tiles visually.",
-      "DarknessActivationRange": "Only render this effect when the current scene darkness level falls within the selected range.",
-      "BelowForeground": "Renders effects underneath the active foreground image visually.",
-      "DarknessActivationMin": "Minimum scene darkness level required for this effect to render.",
-      "DarknessActivationMax": "Maximum scene darkness level allowed for this effect to render.",
-      "BlendMode": "How the adjusted color result blends with the sampled scene color.",
-      "Levels": "Limit this scene effect to the selected scene levels. Leave it on All Levels to render everywhere.",
-      "DarknessActivationEnabled": "Enable scene darkness gating for this effect. When disabled, the effect renders at all darkness levels."
+      "VortexClockwise": "Define a direção de rotação do redemoinho. Habilitado = horário; desabilitado = anti-horário."
     },
     "Particles": {
       "Groups": {
@@ -538,6 +526,48 @@
         "AlwaysVisibleForGM": "Sempre Visível para o Mestre"
       }
     },
+    "AnimationEffect": {
+      "AllAnimations": "Todas as Animações",
+      "FilterHint": "Filtre as animações por etiqueta. Quando presentes, incluem nomes de fornecedores de módulos, uma etiqueta Personalizada para uma pasta de animações adicionada pelo usuário e uma etiqueta Favoritos para animações favoritas.",
+      "Copied": "Copiado: {value}",
+      "CopyElement": "Copiar Texto para Área de Transferência",
+      "CustomDirectoryHint": "Um caminho onde seus arquivos .webm estão localizados. Isso requer uma Atualização do Banco de Animações.",
+      "CustomDirectoryName": "Pasta Personalizada de Animações",
+      "FileName": "Nome do Arquivo",
+      "FilePath": "Caminho do Arquivo",
+      "ModuleLabel": {
+        "JB2APatreon": "JB2A Patreon",
+        "JB2AFree": "JB2A Free",
+        "JB2AExtras": "JB2A Extras",
+        "JinkersAnimatedArt": "Jinker's Animated Art",
+        "AnimatedSpellEffects": "Animated Spell Effects",
+        "AnimatedSpellEffectsCartoon": "Animated Spell Effects: Cartoon",
+        "BossLootAssetsPremium": "Boss Loot Animated Assets Premium",
+        "BossLootAdventuresPremium": "Boss Loot Adventures Premium",
+        "BossLootAssetsFree": "Boss Loot Animated Assets Free",
+        "Custom": "Personalizado",
+        "WildMagicSurge": "Wild Magic Surge",
+        "EskieEffectsFree": "Eskie Effects Free",
+        "EskieEffects": "Eskie Effects"
+      },
+      "RefreshDbHint": "Recrie o banco de dados de animações para incluir quaisquer animações adicionadas ou removidas recentemente. Varredura de miniaturas opcional.",
+      "RefreshDbName": "Atualizar Animações",
+      "RightClickForDetails": "Clique direito para Detalhes:",
+      "ScanComplete": "FXMaster | Varredura de Animação Concluída!",
+      "ScanModules": "FXMaster | Verificando Módulos de Animação {current}/{total}...",
+      "ScanningThumbnails": "FXMaster | Verificando Miniaturas de Animação...",
+      "ScanningThumbnailsProgress": "FXMaster | Verificando Miniaturas de Animação {current}/{total}",
+      "ScanStart": "FXMaster | Começando Varredura de Animação...",
+      "SearchAnimations": "Procurar Animação",
+      "SearchQueries": "Consultas avançadas são suportadas, ex: (eldritch OR arrow) AND NOT blast",
+      "SequencerPath": "Caminho do Banco do Sequencer",
+      "Update": "Atualizar Efeito de Animação",
+      "RefreshDbError": "FXMaster | Nenhum efeito de animação encontrado no banco de dados do FXMaster. Aguarde a conclusão da Verificação de Animações atual ou acesse 'Configurações de Módulo -> FXMaster -> Atualizar Animações' para executar a Verificação de Animações novamente.",
+      "RefreshDbEmpty": "FXMaster | Não há efeitos de animação presentes no banco de dados do FXMaster. O FXMaster preenche as animações a partir da sua pasta personalizada de animações especificada nas configurações do módulo ou de provedores como JB2A, Boss Loot, etc. Se animações foram adicionadas, acesse 'Configurações de Módulo -> FXMaster -> Atualizar Animações' para executar novamente a Verificação de Animações.",
+      "ScanCompleteEmpty": "FXMaster | Verificação de Animações Concluída - Nenhum efeito de animação encontrado. O FXMaster carrega animações a partir da sua pasta personalizada de animações especificada nas configurações do módulo, ou de provedores como JB2A, Boss Loot, etc.",
+      "Thumbnails": "Miniaturas",
+      "ThumbnailsHint": "Permite a busca de miniaturas de animações durante a verificação de Atualização de Animações. Os provedores de animação que suportam a busca de miniaturas são JB2A e Eskie Effects."
+    },
     "SoundFX": {
       "ControlTitle": "Gerenciar Efeitos Sonoros",
       "ManagerTitle": "Gerenciador de Efeitos Sonoros",
@@ -604,45 +634,6 @@
       "Disabled": "Desabilitado",
       "UnnamedRule": "Regra Sem Nome",
       "CurrentMode": "Modo Atual: {mode}"
-    },
-    "Layers": {
-      "Title": "Manage Layers",
-      "Order": "Order",
-      "Effect": "Effect",
-      "Source": "Source",
-      "Owner": "Owner",
-      "Actions": "Actions",
-      "Action": "Action",
-      "MoveUp": "Move up",
-      "MoveDown": "Move down",
-      "ResetOrder": "Reset order",
-      "Empty": "No enabled particle or filter effects were found.",
-      "KindParticle": "Particle",
-      "KindFilter": "Filter",
-      "SourceScene": "Scene",
-      "SourceApi": "API",
-      "SourceApiPreset": "API - Preset",
-      "SourceApiMacro": "API - Macro",
-      "SourceRegion": "Region",
-      "ScopeRegion": "Region",
-      "Level": "Level"
-    },
-    "RenderOrder": {
-      "BelowTiles": "Below Tiles"
-    },
-    "BlendModes": {
-      "Normal": "Normal",
-      "Multiply": "Multiply",
-      "Screen": "Screen",
-      "Overlay": "Overlay",
-      "SoftLight": "Soft Light",
-      "HardLight": "Hard Light",
-      "ColorDodge": "Color Dodge",
-      "ColorBurn": "Color Burn",
-      "Darken": "Darken",
-      "Lighten": "Lighten",
-      "Difference": "Difference",
-      "Exclusion": "Exclusion"
     }
   }
 }
