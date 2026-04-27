@@ -1,5 +1,10 @@
 # Changelog
 
+## [v8.0.5] - 2026-04-26
+- Bugfix for Region behaviors elevation constraints not working to hide particle or filter Effects
+- Bugfix for Foundry's native Suppress Weather handling not always covering all regions if multiple regions with the behavior were present
+- Updated the FXMaster Tools button to FXMaster Tools Overview. This is now a clickable button and opens an overview window of the various functionality you can expect in FXMaster (and FXMaster+ if present). Also contains video popouts for specific examples on how to accomplish some common tasks in FXMaster.
+
 ## [v8.0.4] - 2026-04-26
 - Bugfix for Region behaviors elevation constraints not working to hide particle or filter Effects
 - Bugfix for Foundry's native Suppress Weather handling not always covering all regions if multiple regions with the behavior were present
