@@ -701,7 +701,7 @@
       "ControlTitle": "FXMaster Tools Overview",
       "Title": "FXMaster Overview",
       "Heading": "What can FXMaster do?",
-      "Intro": "FXMaster helps GMs add atmosphere to a Scene, especially on large Scenes, with animated particles, visual filters, region-based effects, layers, and reusable macros.",
+      "Intro": "FXMaster helps GMs add atmosphere to a Scene with animated particles, visual filters, region-based effects and effect suppression, layers, reusable macros, and more!",
       "PreviewHover": "Open example preview",
       "PreviewPlaceholder": "Add an example video or image URL in fxmaster-info.js for this preview.",
       "Sections": {
