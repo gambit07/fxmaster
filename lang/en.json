@@ -696,6 +696,71 @@
       "InvalidSpeedLevel": "Invalid speed level '{speed}'. Supported values: very-low, low, medium, high, very-high.",
       "InvalidDensityLevel": "Invalid density level '{density}'. Supported values: very-low, low, medium, high, very-high.",
       "PlusPresetInactive": "Preset '{name}' is an FXMaster+ preset, but FXMaster+ is not active. Some effects may not load."
+    },
+    "Info": {
+      "ControlTitle": "FXMaster Tools Overview",
+      "Title": "FXMaster Overview",
+      "Heading": "What can FXMaster do?",
+      "Intro": "FXMaster helps GMs add atmosphere to a Scene, especially on large Scenes, with animated particles, visual filters, region-based effects, layers, and reusable macros.",
+      "PreviewHover": "Open example preview",
+      "PreviewPlaceholder": "Add an example video or image URL in fxmaster-info.js for this preview.",
+      "Sections": {
+        "Particles": {
+          "Title": "Particle Effects",
+          "Text": "Add scene-wide ambience such as rain, snow, fog, clouds, embers, stars, birds, bats, spiders, and other weather or creature effects. Each effect comes with various parameters to customize the effect's look: density, scale, speed, tint, and more."
+        },
+        "Filters": {
+          "Title": "Filter Effects",
+          "Text": "Change the look of the Scene with visual treatments like color grading, bloom, fog, old film, underwater distortion, predator vision, or lightning. Each effect comes with a number of different parameters to customize the effect's look."
+        },
+        "Regions": {
+          "Title": "Regions and Masking",
+          "Text": "Use Region behaviors to place particles or filters only in specific areas, react to token enter or exit events, respect elevation, or suppress scene effects with softer edges. In V14, FXMaster region behaviors also support native Scene Level selections for even more flexible placement and layering options."
+        },
+        "PlacementLevels": {
+          "Title": "Placement and Levels",
+          "Text": "Placement options route Scene effects below tokens, below tiles, or below foreground coverage so particles and filters sit where you want. On Scenes using native Levels on V14, Scene-wide effects can also be limited to selected floors."
+        },
+        "Layers": {
+          "Title": "Manage Layers",
+          "Text": "Review enabled scene, region, and API-created effects in one stack, then move effects up or down to control how FXMaster effects render over one another."
+        },
+        "ApiEffects": {
+          "Title": "Manage API Effects",
+          "Text": "Inspect, edit, or remove effects that were added by macros, presets, or third-party integrations without digging through Scene flags."
+        },
+        "SoundEffects": {
+          "Title": "Manage Sound Effects",
+          "Text": "When FXMaster+ is active, create sound rules that play when matching particles or filters are activated with SoundFX on, these rules can apply to both scene-wide or region-specific effects. Regions have additional configuration flexibility including easing and wall blocking/muffling options."
+        },
+        "UserParticles": {
+          "Title": "Manage User Particle Effects",
+          "Text": "When FXMaster+ is active, define custom particle effects from your own images and icons using ambient float or directional drift motion styles."
+        },
+        "Macros": {
+          "Title": "Save Particle and Filter Effects as Macro",
+          "Text": "Save the current particle and filter setup as a reusable macro from the FXMaster controls. Helpful when quick playback or toggles are useful for recurring ambience. Macros can also stack the same effect multiple times for additional customization."
+        },
+        "Cleanup": {
+          "Title": "Clear Scene Particle and Filter Effects",
+          "Text": "The cleanup control clears all Scene-level Particle Effects and Filter Effects from the current Scene."
+        },
+        "Performance": {
+          "Title": "Performance Tips",
+          "Text": "Particle density can affect performance, especially on large Scenes. FXMaster leverages Foundry's Performance Mode setting to allow limiting density on a per-user basis: Low = 25% of current particle density, Medium = 50%, High = 75%, and Maximum = 100%."
+        }
+      },
+      "FooterText": "For full setup notes, detailed Region behavior options, and developer API examples, read the",
+      "FooterReadmeLink": "full README on GitHub",
+      "Actions": {
+        "OpenParticleEffects": "Open Particle Effects",
+        "OpenFilterEffects": "Open Filter Effects",
+        "OpenRegionControls": "Open Region Controls",
+        "OpenLayers": "Open Layers Manager",
+        "OpenApiEffects": "Open API Manager",
+        "OpenSoundEffects": "Open Sound Effects Manager",
+        "OpenUserParticleEffects": "Open User Particle Effects Manager"
+      }
     }
   }
 }

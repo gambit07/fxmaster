@@ -516,10 +516,7 @@ function resolveSurfaceLevelIds({ mesh = null, object = null, document = null, l
 }
 
 /**
- * Return whether a value is a Foundry document-like source whose elevation field
- * should be trusted over a live mesh fallback. V14 level texture meshes can expose
- * PrimaryCanvasGroup as object/document, whose elevation is not the stacked
- * texture's actual elevation.
+ * Return whether a value is a Foundry document-like source whose elevation field should be trusted over a live mesh fallback. V14 level texture meshes seemingly can expose PrimaryCanvasGroup as object/document, whose elevation is not the stacked texture's actual elevation.
  *
  * @param {*} value
  * @returns {boolean}
@@ -612,8 +609,7 @@ function surfaceLevelIdsIntersect(surfaceLevelIds, candidateLevelIds) {
 }
 
 /**
- * Resolve Level ids by matching a live surface texture source against configured
- * V14 Level background/foreground images.
+ * Resolve Level ids by matching a live surface texture source against configured V14 Level background/foreground images.
  *
  * @param {{ mesh?: object|null, object?: object|null, document?: foundry.abstract.Document|null, level?: object|null }} [surface]
  * @returns {Set<string>}
@@ -645,8 +641,7 @@ function resolveSurfaceConfiguredLevelIds({ mesh = null, object = null, document
 }
 
 /**
- * Resolve directly-owned Level ids from live surface fields that identify a single
- * owner Level rather than a broad document visibility list.
+ * Resolve directly-owned Level ids from live surface fields that identify a single owner Level rather than a broad document visibility list.
  *
  * @param {{ mesh?: object|null, object?: object|null, document?: foundry.abstract.Document|null, level?: object|null }} [surface]
  * @returns {Set<string>}
@@ -1030,7 +1025,8 @@ function regionPassesSuppressionGate(placeable, kind) {
 }
 
 /**
- * Collect hard weather suppression regions and FXMaster per-region suppression descriptors for a pipeline.
+ * Collect hard-edged suppressWeather descriptors and configurable FXMaster suppression descriptors for a pipeline.
+ *
  * @param {PlaceableObject[]} regions
  * @param {"filters"|"particles"} kind
  * @param {object|null} [context]

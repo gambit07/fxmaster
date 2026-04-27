@@ -3,7 +3,9 @@ import { FilterEffectsSceneManager } from "../filter-effects/filter-effects-scen
 import { SceneMaskManager } from "../common/base-effects-scene-manager.js";
 import { isEnabled } from "../settings.js";
 import { logger } from "../logger.js";
+import { packageId } from "../constants.js";
 import {
+  computeRegionGatePass,
   currentWorldMatrix,
   getCanvasLevel,
   getCssViewportMetrics,
@@ -609,7 +611,7 @@ export class GlobalEffectsCompositor {
 
         if (row.kind === "filter") {
           const filter = this.#resolveFilter(row.uid);
-          if (!filter) continue;
+          if (!this.#filterRuntimeCanRender(filter)) continue;
 
           selectedSurfaceMaskTexture = rowUsesSelectedSurfaceMask
             ? this.#rowHasVisibleSelectedLevelSurfaces(row)
@@ -698,7 +700,7 @@ export class GlobalEffectsCompositor {
           }
         } else {
           const runtime = this.#resolveParticleRuntime(row.uid);
-          if (!runtime) continue;
+          if (!this.#particleRuntimeCanRender(runtime)) continue;
 
           let selectedParticleMaskOverride = null;
           if (rowUsesSelectedSurfaceMask) {
@@ -858,6 +860,91 @@ export class GlobalEffectsCompositor {
     return (
       FilterEffectsSceneManager.instance.getStackFilter(uid) ?? canvas?.filtereffects?.getStackFilter?.(uid) ?? null
     );
+  }
+
+  /**
+   * Return whether a filter runtime is currently allowed to contribute to the stack pass.
+   *
+   * Region elevation/POV gates disable their live filter instances. The stack compositor renders from the stored stack rows, so it must explicitly honor that live disabled state instead of re-applying the filter from the row alone.
+   *
+   * @param {PIXI.Filter|null|undefined} filter
+   * @returns {boolean}
+   */
+  #filterRuntimeCanRender(filter) {
+    if (!filter || filter.destroyed || filter._destroyed) return false;
+    return filter.enabled !== false;
+  }
+
+  /**
+   * Return whether a particle runtime is currently allowed to contribute to the stack pass.
+   *
+   * Scene-particle source slots can be render-suppressed between compositor frames, so renderable/visible state is only treated as authoritative for region runtimes. Region elevation/POV gates hide the region container and disable the effect instance, both of which must suppress compositor rendering.
+   *
+   * @param {object|null|undefined} runtime
+   * @returns {boolean}
+   */
+  #particleRuntimeCanRender(runtime) {
+    if (!runtime) return false;
+
+    const fx = runtime?.fx ?? null;
+    if (fx?.destroyed || fx?._destroyed) return false;
+
+    const isRegionRuntime = !!runtime?.regionId;
+    if (!isRegionRuntime) return true;
+
+    if (fx && "enabled" in fx && fx.enabled === false) return false;
+
+    const container = runtime?.container ?? null;
+    const slot = runtime?.slot ?? null;
+    if (container?.destroyed || slot?.destroyed) return false;
+    if (container?.visible === false || slot?.visible === false) return false;
+    if (container?.renderable === false || slot?.renderable === false) return false;
+
+    return true;
+  }
+
+  /**
+   * Return whether a region stack row passes the current token/elevation gate.
+   *
+   * @param {object|null|undefined} row
+   * @returns {boolean}
+   */
+  #rowPassesRegionGate(row) {
+    if (this.#getRowScope(row) !== "region") return true;
+
+    const regionId = row?.ownerId ?? row?.regionId ?? null;
+    const placeable = regionId ? canvas?.regions?.get?.(regionId) : null;
+    if (!placeable) return false;
+
+    const behaviorType =
+      row?.kind === "particle"
+        ? `${packageId}.particleEffectsRegion`
+        : row?.kind === "filter"
+        ? `${packageId}.filterEffectsRegion`
+        : null;
+    if (!behaviorType) return true;
+
+    try {
+      return computeRegionGatePass(placeable, { behaviorType }) !== false;
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+      return true;
+    }
+  }
+
+  /**
+   * Return whether a stored stack row has a live runtime that should render this frame.
+   *
+   * @param {object|null|undefined} row
+   * @returns {boolean}
+   */
+  #rowHasRenderableRuntime(row) {
+    if (!row?.uid) return false;
+    if (!this.#rowPassesRegionGate(row)) return false;
+
+    if (row.kind === "filter") return this.#filterRuntimeCanRender(this.#resolveFilter(row.uid));
+    if (row.kind === "particle") return this.#particleRuntimeCanRender(this.#resolveParticleRuntime(row.uid));
+    return true;
   }
 
   /**
@@ -5199,7 +5286,7 @@ export class GlobalEffectsCompositor {
    * @returns {Array<object>}
    */
   #collectRenderableRows(scene) {
-    const rows = getOrderedEnabledEffectRenderRows(scene);
+    const rows = getOrderedEnabledEffectRenderRows(scene).filter((row) => this.#rowHasRenderableRuntime(row));
     const known = new Set();
     for (const row of rows) {
       if (row?.uid) known.add(row.uid);
@@ -5208,7 +5295,7 @@ export class GlobalEffectsCompositor {
     const transientRows = [];
     const collectTransientRows = (sourceRows) => {
       for (const row of sourceRows ?? []) {
-        if (row?.uid && !known.has(row.uid)) transientRows.push(row);
+        if (row?.uid && !known.has(row.uid) && this.#rowHasRenderableRuntime(row)) transientRows.push(row);
       }
     };
 

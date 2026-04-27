@@ -9,6 +9,16 @@
   --fxm-switch-thumb-border: rgba(0, 0, 0, 0.65);
 }
 
+/* FXMaster overview tool uses a custom capture listener instead of Foundry native button flow. */
+#controls [data-tool="activation"],
+#controls [data-tool="activation"] *,
+#scene-controls [data-tool="activation"],
+#scene-controls [data-tool="activation"] *,
+#scene-controls-layers [data-tool="activation"],
+#scene-controls-layers [data-tool="activation"] * {
+  cursor: pointer;
+}
+
 .fxmaster-filters-header,
 .fxmaster-filters-row,
 .fxmaster-api-effects-header,
@@ -1314,5 +1324,151 @@
 
   .fxmaster-save-macro-option .form-fields {
     justify-content: flex-start;
+  }
+}
+
+.fxmaster-info-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  max-height: var(--fxmaster-max-height);
+  overflow-y: auto;
+  padding-right: 0.15rem;
+}
+
+.fxmaster-info-hero {
+  display: flex;
+  gap: 0.85rem;
+  align-items: center;
+  padding: 0.8rem;
+  border: var(--fxmaster-border);
+  border-radius: var(--fxmaster-radius);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.fxmaster-info-hero-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 3rem;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-dark-4);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 1.35rem;
+}
+
+.fxmaster-info-hero-copy h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.25rem;
+}
+
+.fxmaster-info-hero-copy p,
+.fxmaster-info-card p,
+.fxmaster-info-footer {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.fxmaster-info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.fxmaster-info-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+  padding: 0.75rem;
+  border: var(--fxmaster-border);
+  border-radius: var(--fxmaster-radius);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.fxmaster-info-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.fxmaster-info-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  margin: 0;
+  font-size: 1rem;
+}
+
+.fxmaster-info-card h3 i {
+  flex: 0 0 1.15rem;
+  text-align: center;
+  opacity: 0.9;
+}
+
+.fxmaster-info-preview {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 1.45rem;
+  height: 1.45rem;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid var(--color-border-dark-4);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.85;
+}
+
+.fxmaster-info-preview:hover,
+.fxmaster-info-preview:focus {
+  border-color: var(--color-warm-2);
+  opacity: 1;
+}
+
+.fxmaster-info-preview i {
+  font-size: 0.78rem;
+}
+
+.fxmaster-info-link {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.1rem 0 0;
+  min-height: 1.75rem;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.82rem;
+}
+
+.fxmaster-info-link i {
+  font-size: 0.75rem;
+}
+
+.fxmaster-info-footer {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--fxmaster-radius);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 0.92rem;
+  opacity: 0.9;
+}
+
+.fxmaster-info-footer a {
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .fxmaster-info-grid {
+    grid-template-columns: 1fr;
   }
 }

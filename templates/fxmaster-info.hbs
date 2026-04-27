@@ -1,0 +1,55 @@
+<section class="fxmaster-info-container">
+  <header class="fxmaster-info-hero">
+    <div class="fxmaster-info-hero-icon" aria-hidden="true">
+      <i class="fas fa-wand-magic-sparkles"></i>
+    </div>
+    <div class="fxmaster-info-hero-copy">
+      <h2>{{localize "FXMASTER.Info.Heading"}}</h2>
+      <p>{{localize "FXMASTER.Info.Intro"}}</p>
+    </div>
+  </header>
+
+  <div class="fxmaster-info-grid">
+    {{#each sections as |section|}}
+      <article class="fxmaster-info-card{{#if section.preview}} fxmaster-info-card--has-preview{{/if}}">
+        <div class="fxmaster-info-card-header">
+          <h3><i class="{{section.icon}}" aria-hidden="true"></i>{{localize section.title}}</h3>
+          {{#if section.preview}}
+            <button
+              type="button"
+              class="fxmaster-info-preview"
+              data-fxmaster-preview="true"
+              data-fxmaster-preview-type="{{section.preview.type}}"
+              data-fxmaster-preview-src="{{section.preview.src}}"
+              data-fxmaster-preview-label="{{localize section.title}}"
+              data-fxmaster-preview-max-width="{{section.preview.maxWidth}}"
+              data-fxmaster-preview-max-height="{{section.preview.maxHeight}}"
+              aria-label="{{localize "FXMASTER.Info.PreviewHover"}}"
+            >
+              <i class="fas fa-circle-play" aria-hidden="true"></i>
+            </button>
+          {{/if}}
+        </div>
+        <p>{{localize section.text}}</p>
+        {{#if section.action}}
+          <button
+            type="button"
+            class="fxmaster-info-link fxmaster-button"
+            data-fxmaster-action="{{section.action.id}}"
+          >
+            <i class="fas fa-arrow-up-right-from-square" aria-hidden="true"></i>
+            <span>{{localize section.action.label}}</span>
+          </button>
+        {{/if}}
+      </article>
+    {{/each}}
+  </div>
+
+  <footer class="fxmaster-info-footer">
+    <i class="fas fa-circle-info" aria-hidden="true"></i>
+    <span>
+      {{localize "FXMASTER.Info.FooterText"}}
+      <a href="{{readmeUrl}}" target="_blank" rel="nofollow noopener noreferrer">{{localize "FXMASTER.Info.FooterReadmeLink"}}</a>.
+    </span>
+  </footer>
+</section>

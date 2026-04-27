@@ -40,6 +40,7 @@ let _tmpUpperLevelCoverageCacheValue = undefined;
 let _tmpRegionCanvasSprite = null;
 
 let _tmpSceneSuppressionSprite = null;
+let _tmpSceneSuppressionHardMaskRT = null;
 let _sceneSuppressionSoftCache = new Map();
 let _sceneSuppressionSoftCacheTick = 0;
 
@@ -3517,6 +3518,40 @@ function _getSceneSuppressionSoftMaskEntry(region, stageMatrix, edgeFadePercent)
 }
 
 /**
+ * Ensure a reusable hard-suppression region mask matches the scene allow-mask render texture.
+ *
+ * @param {PIXI.RenderTexture} sceneAllowRT
+ * @returns {PIXI.RenderTexture|null}
+ * @private
+ */
+function _ensureSceneSuppressionHardMaskRT(sceneAllowRT) {
+  if (!sceneAllowRT) return null;
+
+  const width = Math.max(1, sceneAllowRT.width | 0);
+  const height = Math.max(1, sceneAllowRT.height | 0);
+  const resolution = sceneAllowRT.resolution || 1;
+  const bad =
+    !_tmpSceneSuppressionHardMaskRT ||
+    _tmpSceneSuppressionHardMaskRT.destroyed ||
+    (_tmpSceneSuppressionHardMaskRT.width | 0) !== width ||
+    (_tmpSceneSuppressionHardMaskRT.height | 0) !== height ||
+    (_tmpSceneSuppressionHardMaskRT.resolution || 1) !== resolution;
+
+  if (!bad) return _tmpSceneSuppressionHardMaskRT;
+
+  const oldRT = _tmpSceneSuppressionHardMaskRT ?? null;
+  _tmpSceneSuppressionHardMaskRT = PIXI.RenderTexture.create({ width, height, resolution, multisample: 0 });
+  try {
+    _tmpSceneSuppressionHardMaskRT.baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
+    _tmpSceneSuppressionHardMaskRT.baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+  }
+  _destroyTextureDeferred(oldRT);
+  return _tmpSceneSuppressionHardMaskRT;
+}
+
+/**
  * Render a cached world-space soft suppression mask directly into a scene allow-mask RT.
  *
  * @param {PIXI.RenderTexture} rt
@@ -3558,7 +3593,11 @@ function _renderSceneSuppressionSoftMask(rt, region, stageMatrix, edgeFadePercen
 }
 
 /**
- * Render a hard-edged suppression region directly into a scene allow-mask RT.
+ * Render a hard-edged suppression region into a scene allow-mask render texture.
+ *
+ * The region is first composed into an isolated binary mask, then erased from
+ * the scene allow mask. Shape holes remain transparent in the local mask instead
+ * of restoring pixels suppressed by another region.
  *
  * @param {PIXI.RenderTexture} rt
  * @param {PlaceableObject} region
@@ -3570,30 +3609,30 @@ function _renderSceneSuppressionHardRegion(rt, region, stageMatrix) {
   const r = canvas?.app?.renderer;
   if (!r || !rt || !region) return;
 
-  const { solids: solidsGfx, holes: holesGfx } = _getRegionMaskGfx();
-  solidsGfx.clear();
-  holesGfx.clear();
+  const maskRT = _ensureSceneSuppressionHardMaskRT(rt);
+  if (!maskRT) return;
 
-  solidsGfx.transform.setFromMatrix(stageMatrix);
-  holesGfx.transform.setFromMatrix(stageMatrix);
+  _renderBinaryRegionMaskRT(maskRT, region, stageMatrix);
 
-  solidsGfx.beginFill(0xffffff, 1);
-  holesGfx.beginFill(0xffffff, 1);
+  const spr = (_tmpSceneSuppressionSprite ??= new PIXI.Sprite(PIXI.Texture.EMPTY));
+  spr.texture = maskRT;
+  spr.blendMode = PIXI.BLEND_MODES.ERASE;
+  spr.alpha = 1;
+  spr.roundPixels = false;
+  spr.filters = null;
+  spr.transform.setFromMatrix(new PIXI.Matrix());
+  spr.position.set(0, 0);
+  spr.scale.set(1, 1);
+  spr.width = Math.max(1, rt.width | 0);
+  spr.height = Math.max(1, rt.height | 0);
 
-  const shapes = region?.document?.shapes ?? [];
-  for (const s of shapes) {
-    if (s?.hole) traceRegionShapePIXI(holesGfx, s);
-    else traceRegionShapePIXI(solidsGfx, s);
+  try {
+    r.render(spr, { renderTexture: rt, clear: false });
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+  } finally {
+    spr.texture = PIXI.Texture.EMPTY;
   }
-
-  solidsGfx.endFill();
-  holesGfx.endFill();
-
-  solidsGfx.blendMode = PIXI.BLEND_MODES.ERASE;
-  holesGfx.blendMode = PIXI.BLEND_MODES.NORMAL;
-
-  r.render(solidsGfx, { renderTexture: rt, clear: false });
-  r.render(holesGfx, { renderTexture: rt, clear: false });
 }
 
 /**
@@ -3754,11 +3793,11 @@ export function computeRegionGatePass(placeable, { behaviorType }) {
 }
 
 /**
- * Build a scene-wide "allow" mask render texture.
+ * Build a scene-wide allow-mask render texture.
  *
- * Supports two suppression paths:
- * - `weatherRegions`: hard binary suppression with legacy global hole behavior.
- * - `suppressionRegions`: per-region suppression masks that may use inward edge fade.
+ * Supports two per-region suppression inputs:
+ * - `weatherRegions`: hard-edged suppression without customization.
+ * - `suppressionRegions`: suppression with optional inward edge fade.
  *
  * The legacy `regions` option is retained as an alias for `weatherRegions`.
  *
@@ -3778,7 +3817,9 @@ export function buildSceneAllowMaskRT({
   const res = safeMaskResolutionForCssArea(cssW, cssH);
   const hardRegionEntries = (Array.isArray(weatherRegions) ? weatherRegions : Array.isArray(regions) ? regions : [])
     .map((entry) => (entry?.region ? entry : { region: entry }))
-    .filter((entry) => !!entry?.region);
+    .filter((entry) => !!entry?.region)
+    .map((entry) => ({ ...entry, edgeFadePercent: 0 }));
+  const suppressionEntries = [...hardRegionEntries, ...(Array.isArray(suppressionRegions) ? suppressionRegions : [])];
 
   let rt = reuseRT ?? null;
   const needsNew =
@@ -3855,54 +3896,11 @@ export function buildSceneAllowMaskRT({
     }
   }
 
-  /** Apply hard-edged weather suppression with legacy global hole restoration. */
-  if (hardRegionEntries.length) {
-    const { solids: solidsGfx, holes: holesGfx } = _getSceneAllowMaskGfx();
-    solidsGfx.clear();
-    holesGfx.clear();
-
-    solidsGfx.transform.setFromMatrix(M);
-    holesGfx.transform.setFromMatrix(M);
-
-    solidsGfx.beginFill(0xffffff, 1);
-    holesGfx.beginFill(0xffffff, 1);
-
-    for (const entry of hardRegionEntries) {
-      const region = entry?.region ?? entry;
-      const shapes = region?.document?.shapes ?? [];
-      for (const s of shapes) {
-        if (s?.hole) traceRegionShapePIXI(holesGfx, s);
-        else traceRegionShapePIXI(solidsGfx, s);
-      }
-    }
-
-    solidsGfx.endFill();
-    holesGfx.endFill();
-
-    solidsGfx.blendMode = PIXI.BLEND_MODES.ERASE;
-    holesGfx.blendMode = PIXI.BLEND_MODES.NORMAL;
-
-    r.render(solidsGfx, { renderTexture: rt, clear: false });
-    r.render(holesGfx, { renderTexture: rt, clear: false });
-
-    for (const entry of hardRegionEntries) {
-      const region = entry?.region ?? entry;
-      const preserveObjects = Array.isArray(entry?.preserveObjects) ? entry.preserveObjects.filter(Boolean) : [];
-      if (!region || !preserveObjects.length) continue;
-
-      _restorePreservedOverlayObjectsIntoSceneAllowMask(rt, region, M, preserveObjects, {
-        width: cssW | 0,
-        height: cssH | 0,
-        resolution: res,
-      });
-    }
-  }
-
-  /** Apply per-region suppression masks so local holes stay attached to the source region. */
-  if (Array.isArray(suppressionRegions) && suppressionRegions.length) {
+  /** Apply each suppression region as an isolated mask so holes remain local to that region. */
+  if (suppressionEntries.length) {
     _trimSceneSuppressionSoftCache(canvas?.scene?.id ?? null);
 
-    for (const entry of suppressionRegions) {
+    for (const entry of suppressionEntries) {
       const region = entry?.region ?? entry;
       if (!region) continue;
 

@@ -550,6 +550,14 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     const { root, slot } = entry;
     if (!root || root.destroyed || !slot || slot.destroyed) return false;
 
+    if (entry?.regionId) {
+      const fx = entry?.fx ?? null;
+      const container = entry?.container ?? slot;
+      if (fx?.destroyed || fx?._destroyed) return false;
+      if (fx && "enabled" in fx && fx.enabled === false) return false;
+      if (container?.visible === false || container?.renderable === false) return false;
+    }
+
     const slots = this._stackRoots.get(root);
     if (!slots?.size) return false;
 
