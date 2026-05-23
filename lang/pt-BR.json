@@ -24,9 +24,9 @@
       "DisableAllHint": "Ativar esta opção desabilita os efeitos para todos os usuários e tem prioridade sobre a opção de habilitar. É uma medida de segurança quando migrações falham. Normalmente você não precisa alterá-la. Após a mudança, é necessário recarregar manualmente.",
       "ClearParticleAndFilterEffectsTitle": "Excluir Efeitos",
       "ClearParticleAndFilterEffectsContent": "<p>Excluir permanentemente todos os <em>Efeitos de Partículas</em> e <em>Efeitos de Filtro</em> desta cena?</p>",
-      "ResetEffectDefaults": "Reset to Defaults",
-      "ResetEffectDefaultsSuccess": "{effect} parameters reset to defaults",
-      "PowerToggleContextHint": "Left-click to toggle. Right-click for reset options.",
+      "ResetEffectDefaults": "Redefinir para os Padrões",
+      "ResetEffectDefaultsSuccess": "Os parâmetros de {effect} foram redefinidos para os padrões",
+      "PowerToggleContextHint": "Clique-esquerdo para alternar. Clique-direito para redefinir as opções.",
       "Yes": "Sim",
       "No": "Não",
       "Enable": "Habilitar",
@@ -238,7 +238,53 @@
       "BlendMode": "Modo de Mesclagem",
       "Levels": "Níveis",
       "AllLevels": "Todos os Níveis",
-      "DarknessActivationEnabled": "Ativação da Escuridão"
+      "DarknessActivationEnabled": "Ativação da Escuridão",
+      "Intensity": "Intensidade",
+      "AuroraMode": "Modo da Aurora",
+      "AuroraModeSide": "Vista Lateral",
+      "AuroraModeTopDown": "Cima para Baixo",
+      "AuroraModeHorizon": "Horizonte",
+      "AuroraPalette": {
+        "Name": "Paleta da Aurora",
+        "Lakeside": "Aurora Boreal à Beira do Lago",
+        "NorthernGetaway": "Refúgio do Norte",
+        "NorthernLights": "Aurora Boreal",
+        "ForestNorthernLights": "Aurora Boreal Florestal",
+        "PhenomenalAurora": "Aurora Fenomenal",
+        "Aurora": "Aurora",
+        "Custom": "Cores Personalizadas"
+      },
+      "AuroraColorDepth": "Cor de Profundidade",
+      "AuroraColorLower": "Cor da Cortina Inferior",
+      "AuroraColorCore": "Cor Central",
+      "AuroraColorBright": "Cor da Borda Brilhante",
+      "AuroraColorGlow": "Cor Brilhante",
+      "AuroraCount": "Contagem da Aurora",
+      "AuroraRibbonWidth": "Largura da Faixa",
+      "AuroraWaviness": "Ondulação",
+      "AuroraSoftness": "Suavidade",
+      "AuroraSideVerticalPosition": "Posição da Altura da Cortina",
+      "AuroraSideCurtainHeight": "Queda da Cortina",
+      "AuroraTopDownAngle": "Ângulo do Caminho",
+      "AuroraTopDownDepth": "Brilho de Profundidade",
+      "AuroraHorizonStartHeight": "Âncora Inicial",
+      "AuroraHorizonEndHeight": "Âncora Final",
+      "AuroraHorizonSkyReach": "Queda Aérea",
+      "AuroraHorizonAngle": "Inclinação do Caminho",
+      "BorderTop": "Superior",
+      "BorderRight": "Direita",
+      "BorderBottom": "Inferior",
+      "BorderLeft": "Esquerda",
+      "AuroraHorizonStartPosition": "Âncora Inicial",
+      "AuroraHorizonEndPosition": "Âncora Final",
+      "AuroraHorizonDip": "Queda Aérea",
+      "AuroraHorizonCurtainHeight": "Alcance da Cortina",
+      "AuroraHorizonDepth": "Profundidade Aérea",
+      "AuroraHorizonOverheadPosition": "Ponto Aéreo",
+      "AuroraHorizonHazeStrength": "Força da Bruma",
+      "AuroraHorizonHazeHeight": "Altura da Bruma",
+      "AuroraTopDownHazeStrength": "Força da Bruma",
+      "AuroraMixedColors": "Cores Misturadas"
     },
     "ParamTooltips": {
       "Saturation": "Intensidade da cor. 0 = tons de cinza; 1 = original; >1 = supersaturado.",
@@ -395,7 +441,30 @@
       "DarknessActivationMax": "Nível máximo de escuridão da cena permitido para que este efeito seja renderizado.",
       "BlendMode": "Como o resultado da cor ajustada se mistura com a cor da cena amostrada.",
       "Levels": "Limite este efeito de cena aos níveis de cena selecionados. Deixe em Todos os Níveis para renderizar em todos os lugares.",
-      "DarknessActivationEnabled": "Habilite o controle de escuridão da cena para este efeito. Quando desabilitado, o efeito será renderizado em todos os níveis de escuridão."
+      "DarknessActivationEnabled": "Habilite o controle de escuridão da cena para este efeito. Quando desabilitado, o efeito será renderizado em todos os níveis de escuridão.",
+      "AuroraMode": "Vista Lateral cria cortinas horizontais, Cima para Baixo cria faixas sinuosas suspensas e Horizonte cria uma cortina superior que se estende em direção ao observador e retorna pela borda superior.",
+      "AuroraPalette": "Defina as cores predefinidas de uma coleção de paletas da Aurora Boreal. Selecionar uma predefinição copia seus valores padrão para as entradas de cor. A opção Cores Personalizadas carrega e salva sua paleta personalizada.",
+      "AuroraColorDepth": "Parada de cor mais escura/profunda utilizada para estruturas sutis, sombras e profundidade atmosférica.",
+      "AuroraColorLower": "Cor da cortina inferior utilizada em dobras mais escuras e faixas distantes.",
+      "AuroraColorCore": "Cor principal da aurora boreal utilizada em toda a extensão das faixas.",
+      "AuroraColorBright": "Cor de borda brilhante utilizada para bordas de cortina visíveis e estruturas de raios ativos.",
+      "AuroraColorGlow": "Cor de brilho de altíssima energia, utilizada para realce e coroas luminosas.",
+      "AuroraCount": "Número de faixas ou cortinas de aurora a serem desenhadas. No modo Horizonte, valores mais altos criam passagens distintas ancoradas no topo, em vez de simplesmente alargar um feixe.",
+      "AuroraRibbonWidth": "Controla a largura aparente de cada faixa. Valores pequenos resultam em feixes nítidos; valores maiores criam cortinas amplas.",
+      "AuroraWaviness": "Controla a variação do percurso natural.",
+      "AuroraSoftness": "Controla a difusão de cada borda da faixa. Valores mais altos criam um brilho atmosférico mais suave.",
+      "AuroraSideVerticalPosition": "Define a altura média das cortinas horizontais no modo Vista Lateral.",
+      "AuroraSideCurtainHeight": "Controla a distância que as cortinas da Visão Lateral se afastam da faixa principal.",
+      "AuroraTopDownAngle": "Rotaciona o caminho da aurora.",
+      "AuroraTopDownDepth": "Adiciona brilho e sombra secundários para realçar a profundidade.",
+      "AuroraHorizonAngle": "Inclina a trajetória da passagem da aurora para que ela cruze a cena em um ângulo.",
+      "AuroraHorizonStartPosition": "Posição horizontal da pequena âncora na borda superior, onde a aurora começa a entrar na cena.",
+      "AuroraHorizonEndPosition": "Posição horizontal do pequeno ponto de saída na borda superior, onde a aurora se curva para fora da cena.",
+      "AuroraHorizonDip": "O quanto a aurora se inclina em direção ao observador antes de voltar a se curvar para cima, em direção à borda superior. Valores mais altos tornam a porção aérea maior e mais próxima.",
+      "AuroraHorizonHazeStrength": "Controla a intensidade do amplo véu do campo do Horizonte entre as principais faixas da aurora.",
+      "AuroraHorizonHazeHeight": "Controla a extensão do véu do campo de visão do Horizonte na cena. O valor 1.0 preenche toda a altura da cena. Valores menores mantêm a névoa mais próxima da faixa da aurora.",
+      "AuroraTopDownHazeStrength": "Controla a intensidade da bruma difusa de Cima para Baixo e do véu entre as bandas.",
+      "AuroraMixedColors": "Rotaciona lentamente as cinco cores da aurora selecionadas, alternando entre seus diferentes papéis ao longo do tempo, criando mudanças graduais de papéis."
     },
     "Particles": {
       "Groups": {
@@ -515,7 +584,8 @@
         "Duststorm": "Tempestade de Poeira",
         "Ice": "Gelo",
         "Glitch": "Glitch",
-        "LightningBolts": "Raios de Relâmpagos"
+        "LightningBolts": "Raios de Relâmpagos",
+        "AuroraBorealis": "Aurora Boreal"
       },
       "TypeErrors": {
         "TypeUnknown": "O efeito de filtro \"{id}\" é de tipo desconhecido \"{type}\". Ignorado.",
@@ -527,7 +597,8 @@
         "ParticleEffectRegionBehaviorName": "FXMaster: Efeitos de Partículas",
         "FilterEffectRegionBehaviorName": "FXMaster: Efeitos de Filtro",
         "SuppressSceneFiltersRegionBehaviorName": "FXMaster: Suprimir Filtros da Cena",
-        "SuppressSceneParticlesRegionBehaviorName": "FXMaster: Suprimir Partículas da Cena"
+        "SuppressSceneParticlesRegionBehaviorName": "FXMaster: Suprimir Partículas da Cena",
+        "SuppressSceneSoundsRegionBehaviorName": "FXMaster: Suprimir Sons da Cena"
       },
       "ElevationVisibility": {
         "Label": "Restrições de Elevação",
@@ -536,6 +607,9 @@
         "Targets": "Visão de Tokens Específicos",
         "TokenTargets": "UUID do Token",
         "AlwaysVisibleForGM": "Sempre Visível para o Mestre"
+      },
+      "BehaviorHints": {
+        "SuppressSceneSoundsRegionBehaviorHint": "Suprime efeitos sonoros do FXMaster para ouvintes nesta Região, a nível de cena."
       }
     },
     "SoundFX": {
@@ -549,6 +623,7 @@
       "Mode": "Modo Multi-Áudio",
       "ModeParallel": "Paralelo (todos os sons tocam simultaneamente)",
       "ModeSequential": "Sequencial (um áudio de cada vez, reproduzido em ordem de prioridade)",
+      "ModeRandom": "Aleatório (um som de cada vez, selecionado aleatoriamente da lista)",
       "File": "Arquivo de Áudio",
       "Browse": "Navegar",
       "Level": "Nível",
@@ -568,7 +643,7 @@
       "EffectsHint": "Selecione um efeito para uma regra de áudio de efeito único ou selecione vários efeitos para criar uma regra combinada com maior prioridade.",
       "NoEffectsSelected": "Nenhum efeito selecionado.",
       "PausePlaylists": "Pausar Playlists",
-      "PausePlaylistsHint": "Quando esta regra estiver ativa no escopo da Cena ou do Visualizador, pause todas as faixas da playlist que estiver sendo reproduzidas neste cliente. A reprodução será retomada quando não houver mais regras correspondentes com esta opção ativas.",
+      "PausePlaylistsHint": "Quando esta regra estiver ativa no escopo da Cena ou do Visualizador, pause todas as faixas da playlist que estiver sendo reproduzidas. A reprodução será retomada quando não houver mais regras ativas correspondentes com esta opção.",
       "RegionSoundOptions": "Opções de Áudio de Região",
       "RegionRadius": "Raio da Região",
       "RegionRadiusHintPct": "O Raio da Região é expresso como uma porcentagem do tamanho de cada componente da Região desconectada (0-500%).",
@@ -615,7 +690,32 @@
       "Enabled": "Habilitado",
       "Disabled": "Desabilitado",
       "UnnamedRule": "Regra Sem Nome",
-      "CurrentMode": "Modo Atual: {mode}"
+      "CurrentMode": "Modo Atual: {mode}",
+      "SuppressSceneSounds": {
+        "Hint": "Suprime efeitos sonoros do FXMaster a nível de cena, enquanto o ouvinte estiver dentro desta Região.",
+        "Easing": "Ativar Flexibilização",
+        "EasingHint": "Diminui gradualmente o volume dos efeitos sonoros da cena à medida que o ouvinte se move da borda da Região em direção ao seu interior.",
+        "Muffled": "Ativar Abafamento",
+        "MuffledHint": "Considera o limite da Região como uma parede e aplica o áudio abafado da regra do efeito sonoro em vez de silenciar completamente os efeitos sonoros da cena.",
+        "FIELDS": {
+          "easing": {
+            "label": "Ativar Flexibilização",
+            "hint": "Diminui gradualmente o volume dos efeitos sonoros da cena à medida que o ouvinte se move da borda da Região em direção ao seu interior."
+          },
+          "muffled": {
+            "label": "Ativar Abafamento",
+            "hint": "Considera o limite da Região como uma parede e aplica o áudio abafado da regra do efeito sonoro em vez de silenciar completamente os efeitos sonoros da cena."
+          },
+          "muffledEffect": {
+            "label": "Efeito Abafado",
+            "hint": "Efeito de áudio aplicado quando o abafamento está ativo."
+          },
+          "muffledIntensity": {
+            "label": "Intensidade do Abafamento",
+            "hint": "Intensidade do efeito de áudio abafado."
+          }
+        }
+      }
     },
     "Layers": {
       "Title": "Gerenciar Camadas",
@@ -628,7 +728,7 @@
       "MoveUp": "Mover para Cima",
       "MoveDown": "Mover para Baixo",
       "ResetOrder": "Redefinir ordem",
-      "Empty": "Não foram encontrados efeitos de partículas ou filtros ativados.",
+      "Empty": "Nenhuma pilha de linha habilitada do FXMaster foi encontrada.",
       "KindParticle": "Partícula",
       "KindFilter": "Filtro",
       "SourceScene": "Cena",
@@ -637,7 +737,12 @@
       "SourceApiMacro": "API - Macro",
       "SourceRegion": "Região",
       "ScopeRegion": "Região",
-      "Level": "Nível"
+      "Level": "Nível",
+      "KindSuppression": "Supressão",
+      "SuppressSceneParticles": "Suprimir Partículas da Cena",
+      "SuppressSceneFilters": "Suprimir Filtros da Cena",
+      "SuppressWeather": "Suprimir Clima",
+      "SuppressionMeta": "Operador de Supressão de Cena"
     },
     "RenderOrder": {
       "BelowTiles": "Abaixo das Peças"
@@ -656,6 +761,12 @@
       "Difference": "Difference",
       "Exclusion": "Exclusion"
     },
+    "Tile": {
+      "RestrictsParticles": "FXMaster: Restringir Partículas",
+      "RestrictsParticlesHint": "Quando ativada, esta camada superior oculta as partículas do FXMaster abaixo dela. A opção Restringir Clima afeta tanto as Partículas quanto os Filtros.",
+      "RestrictsFilters": "FXMaster: Restringir Filtros",
+      "RestrictsFiltersHint": "Quando ativada, esta camada superior oculta os filtros do FXMaster abaixo dela. A opção Restringir Clima afeta tanto as Partículas quanto os Filtros."
+    },
     "Settings": {
       "TooltipDirection": "Direção da Dica",
       "TooltipDirectionHint": "Escolha onde as dicas de parâmetros do FXMaster aparecem ao passar o cursor sobre os rótulos ou controles.",
@@ -667,7 +778,11 @@
       },
       "EnableLogger": "Ativar Debug do FXMaster",
       "EnableLoggerHint": "Escreve mensagens de depuração, aviso e erro do FXMaster no console do navegador.",
-      "PatreonSupportHint": "Se você quiser me apoiar, Aposte! Assinar ajuda a financiar o desenvolvimento deste e de meus outros módulos gratuitos, além de dar acesso aos meus módulos premium: Gambit's FXMaster+, Gambit's Asset Previewer e Gambit's Image Viewer!"
+      "PatreonSupportHint": "Se você quiser me apoiar, Aposte! Assinar ajuda a financiar o desenvolvimento deste e de meus outros módulos gratuitos, além de dar acesso aos meus módulos premium: Gambit's FXMaster+, Gambit's Asset Previewer e Gambit's Image Viewer!",
+      "ApplyRegionBehaviorsToOverheadLevels": "Aplicar Comportamentos de Região aos Níveis Superiores",
+      "ApplyRegionBehaviorsToOverheadLevelsHint": "Quando uma Região é atribuída a múltiplos Níveis de Cena, permite que sobreposições de Nível superior exibam os efeitos de partículas, efeitos de filtro e supressão de cena dessa Região. Isso pode ter um grande impacto no desempenho em cenas com múltiplos níveis. Teste cuidadosamente antes de usar em uma sessão de mesa.",
+      "CompositeGridInFxStack": "Incluir Grade do Foundry na Pilha de Efeitos",
+      "CompositeGridInFxStackHint": "Renderiza as linhas normais da grade do Foundry na entrada do compositor do FXMaster, permitindo que partículas e filtros da cena apareçam sobre a grade. Os realces da grade e os controles permanecem acima do FXMaster."
     },
     "Macro": {
       "Saved": "A macro '{name}' foi salva no diretório de macros.",
