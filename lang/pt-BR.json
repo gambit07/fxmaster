@@ -526,8 +526,8 @@
       "BehaviorNames": {
         "ParticleEffectRegionBehaviorName": "FXMaster: Efeitos de Partículas",
         "FilterEffectRegionBehaviorName": "FXMaster: Efeitos de Filtro",
-        "SuppressSceneFiltersRegionBehaviorName": "FXMaster: Suprimir filtros da cena",
-        "SuppressSceneParticlesRegionBehaviorName": "FXMaster: Suprimir partículas da cena"
+        "SuppressSceneFiltersRegionBehaviorName": "FXMaster: Suprimir Filtros da Cena",
+        "SuppressSceneParticlesRegionBehaviorName": "FXMaster: Suprimir Partículas da Cena"
       },
       "ElevationVisibility": {
         "Label": "Restrições de Elevação",
