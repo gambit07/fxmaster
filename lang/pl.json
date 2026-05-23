@@ -42,8 +42,8 @@
       "HiddenEffectsHint": "Przełącz efekty, aby ukryć je z tej listy zarządzania (dla każdego użytkownika). Ukryte efekty nadal można włączyć za pośrednictwem API.",
       "ActiveEffectTooltip": "Obecnie aktywny",
       "HideEffectsTooltip": "Ukryte efekty: {count}",
-      "ApiEffects": "Manage API Effects",
-      "ApiEffectsManagementTitle": "Manage API Effects",
+      "ApiEffects": "Zarządzaj efektami API",
+      "ApiEffectsManagementTitle": "Zarządzaj efektami API",
       "ApiEffectsKind": "Rodzaj",
       "ApiEffectsName": "Nazwa",
       "ApiEffectsType": "Typ",
@@ -57,7 +57,7 @@
       "ApiEffectsEditUnavailable": "Edytuj (niedostępne)",
       "ApiEffectEditorTitle": "Edytuj efekt API",
       "ApiEffectMissing": "Ten efekt API nie istnieje już w tej scenie.",
-      "Unknown": "Unknown"
+      "Unknown": "Nieznany"
     },
     "Params": {
       "Saturation": "Saturacja",
@@ -228,17 +228,17 @@
       "VortexDirection": "Kierunek wiru",
       "VortexStrength": "Siła wiru",
       "VortexClockwise": "Obrót w prawo",
-      "BelowTiles": "Below Tiles",
-      "DarknessActivationRange": "Darkness Activation Range",
-      "DarknessActivationMinimum": "Darkness Minimum",
-      "DarknessActivationMaximum": "Darkness Maximum",
-      "BelowForeground": "Below Foreground",
-      "DarknessActivationMin": "Darkness Activation Min",
-      "DarknessActivationMax": "Darkness Activation Max",
-      "BlendMode": "Blend Mode",
-      "Levels": "Levels",
-      "AllLevels": "All Levels",
-      "DarknessActivationEnabled": "Darkness Activation"
+      "BelowTiles": "Poniżej kafelków",
+      "DarknessActivationRange": "Zasięg aktywacji ciemności",
+      "DarknessActivationMinimum": "Minimalna ciemność",
+      "DarknessActivationMaximum": "Maksymalna ciemność",
+      "BelowForeground": "Poniżej pierwszego planu",
+      "DarknessActivationMin": "Minimalna aktywacja ciemności",
+      "DarknessActivationMax": "Maksymalna aktywacja ciemności",
+      "BlendMode": "Tryb mieszania",
+      "Levels": "Poziomy",
+      "AllLevels": "Wszystkie poziomy",
+      "DarknessActivationEnabled": "Aktywacja ciemności"
     },
     "ParamTooltips": {
       "Saturation": "Intensywność koloru. 0 = skala szarości; 1 = oryginał; >1 = przesycone.",
@@ -388,14 +388,14 @@
       "VortexDirection": "Kąt w stopniach służący do określenia kierunku przepływu wirowego.",
       "VortexStrength": "Siła odkształcenia wiru i zawirowania. Im wyższa wartość, tym silniejsze działanie siły obrotowej.",
       "VortexClockwise": "Ustawia kierunek obrotu wiru. Włączone = zgodnie z ruchem wskazówek zegara; wyłączone = przeciwnie do ruchu wskazówek zegara.",
-      "BelowTiles": "Renders effects underneath tiles visually.",
-      "DarknessActivationRange": "Only render this effect when the current scene darkness level falls within the selected range.",
-      "BelowForeground": "Renders effects underneath the active foreground image visually.",
-      "DarknessActivationMin": "Minimum scene darkness level required for this effect to render.",
-      "DarknessActivationMax": "Maximum scene darkness level allowed for this effect to render.",
-      "BlendMode": "How the adjusted color result blends with the sampled scene color.",
-      "Levels": "Limit this scene effect to the selected scene levels. Leave it on All Levels to render everywhere.",
-      "DarknessActivationEnabled": "Enable scene darkness gating for this effect. When disabled, the effect renders at all darkness levels."
+      "BelowTiles": "Wizualnie przedstawia efekty pod kafelkami.",
+      "DarknessActivationRange": "Efekt ten należy wyświetlać tylko wtedy, gdy poziom zaciemnienia bieżącej sceny mieści się w wybranym zakresie.",
+      "BelowForeground": "Wizualnie wyświetla efekty pod aktywnym obrazem na pierwszym planie.",
+      "DarknessActivationMin": "Minimalny poziom zaciemnienia sceny wymagany do wyświetlenia tego efektu.",
+      "DarknessActivationMax": "Maksymalny poziom zaciemnienia sceny dopuszczalny do wyświetlenia tego efektu.",
+      "BlendMode": "W jaki sposób skorygowany kolor komponuje się z kolorem sceny, z której pobrano próbkę.",
+      "Levels": "Ogranicz działanie tego efektu sceny do wybranych poziomów sceny. Pozostaw opcję „Wszystkie poziomy”, aby efekt został zastosowany wszędzie.",
+      "DarknessActivationEnabled": "Włącz opcję ograniczenia ciemności sceny dla tego efektu. Gdy opcja jest wyłączona, efekt jest renderowany przy każdym poziomie ciemności."
     },
     "Particles": {
       "Groups": {
@@ -575,6 +575,18 @@
       "RegionBoundsOnly": "Odtwarzaj w granicach strefy",
       "RegionEasing": "Zastosuj łagodzenie",
       "RegionWalls": "Ograniczony przez ściany",
+      "RegionWallsHint": "Po włączeniu tej opcji ściany i powierzchnie blokują dźwięk.",
+      "RegionMuffled": "Tłumione przez ściany",
+      "RegionMuffledHint": "Po włączeniu tej funkcji ściany i powierzchnie tłumią dźwięk.",
+      "MuffledEffect": "Tłumienie efektu",
+      "MuffledEffectHint": "Efekt dźwiękowy stosowany w sytuacji, gdy ściana lub inna powierzchnia tłumi dźwięk.",
+      "MuffledIntensity": "Intensywność tłumienia efektu",
+      "MuffledIntensityHint": "Jak silny ma być efekt tłumienia, w skali od 1 do 10.",
+      "MuffledEffectChoice": {
+        "lowpass": "Filtr dolnoprzepustowy",
+        "highpass": "Filtr górnoprzepustowy",
+        "reverb": "Pogłos"
+      },
       "UnitMs": "ms",
       "UnitPercent": "%",
       "ConfigDescription": {
@@ -606,53 +618,149 @@
       "CurrentMode": "Tryb bieżący: {mode}"
     },
     "Layers": {
-      "Title": "Manage Layers",
-      "Order": "Order",
-      "Effect": "Effect",
-      "Source": "Source",
-      "Owner": "Owner",
-      "Actions": "Actions",
-      "Action": "Action",
-      "MoveUp": "Move up",
-      "MoveDown": "Move down",
-      "ResetOrder": "Reset order",
-      "Empty": "No enabled particle or filter effects were found.",
-      "KindParticle": "Particle",
-      "KindFilter": "Filter",
-      "SourceScene": "Scene",
+      "Title": "Zarządzaj warstwami",
+      "Order": "Kolejność",
+      "Effect": "Efekt",
+      "Source": "Źródło",
+      "Owner": "Właściciel",
+      "Actions": "Akcje",
+      "Action": "Akcja",
+      "MoveUp": "Przejdź w górę",
+      "MoveDown": "Przejdź w dół",
+      "ResetOrder": "Zresetuj kolejność",
+      "Empty": "Nie znaleziono żadnych włączonych efektów cząsteczkowych ani filtrów.",
+      "KindParticle": "Cząsteczkowy",
+      "KindFilter": "Filtr",
+      "SourceScene": "Scena",
       "SourceApi": "API",
-      "SourceApiPreset": "API - Preset",
-      "SourceApiMacro": "API - Macro",
-      "SourceRegion": "Region",
-      "ScopeRegion": "Region",
-      "Level": "Level"
+      "SourceApiPreset": "API - ustawienia wstępne",
+      "SourceApiMacro": "API - Makro",
+      "SourceRegion": "Strefa",
+      "ScopeRegion": "Strefa",
+      "Level": "Poziom"
     },
     "RenderOrder": {
-      "BelowTiles": "Below Tiles"
+      "BelowTiles": "Poniżej kafelków"
     },
     "BlendModes": {
-      "Normal": "Normal",
-      "Multiply": "Multiply",
-      "Screen": "Screen",
-      "Overlay": "Overlay",
-      "SoftLight": "Soft Light",
-      "HardLight": "Hard Light",
-      "ColorDodge": "Color Dodge",
-      "ColorBurn": "Color Burn",
-      "Darken": "Darken",
-      "Lighten": "Lighten",
-      "Difference": "Difference",
-      "Exclusion": "Exclusion"
-    },
-    "Tile": {
-      "RestrictsParticles": "FXMaster: Restricts Particles",
-      "RestrictsParticlesHint": "When enabled, this overhead tile hides FXMaster particles beneath it. Restricts Weather affects both Particles and Filters.",
-      "RestrictsFilters": "FXMaster: Restricts Filters",
-      "RestrictsFiltersHint": "When enabled, this overhead tile hides FXMaster filters beneath it. Restricts Weather affects both Particles and Filters."
+      "Normal": "Normalny",
+      "Multiply": "Pomnóż",
+      "Screen": "Ekran",
+      "Overlay": "Nakładka",
+      "SoftLight": "Delikatne światło",
+      "HardLight": "Ostre światło",
+      "ColorDodge": "Rozjaśnianie kolorów",
+      "ColorBurn": "Przyciemnienie kolorów",
+      "Darken": "Przyciemnienie",
+      "Lighten": "Rozjaśnianie",
+      "Difference": "Różnica",
+      "Exclusion": "Wykluczenie"
     },
     "Settings": {
-      "ApplyRegionBehaviorsToOverheadLevels": "Apply Region Behaviors to Overhead Levels",
-      "ApplyRegionBehaviorsToOverheadLevelsHint": "When a Region is assigned to multiple Scene Levels, allow overhead Level overlays to display that Region's particle effects, filter effects, and scene suppression. This can have a big impact on performance on multi-level scenes."
+      "TooltipDirection": "Kierunek podpowiedzi",
+      "TooltipDirectionHint": "Wybierz, gdzie mają pojawiać się podpowiedzi dotyczące parametrów FXMaster po najechaniu kursorem na etykiety lub elementy sterujące.",
+      "TooltipDirectionChoices": {
+        "Top": "Góra",
+        "Bottom": "Dół",
+        "Left": "Lewo",
+        "Right": "Prawo"
+      },
+      "EnableLogger": "Włącz debugowanie FXMaster",
+      "EnableLoggerHint": "Wyświetlaj komunikaty dotyczące debugowania, ostrzeżenia i błędy programu FXMaster w konsoli przeglądarki.",
+      "PatreonSupportHint": "Jeśli chcesz mnie wesprzeć, Gambit! Subskrypcja pomaga w rozwoju tego i innych moich darmowych modułów, a ponadto zapewnia dostęp do moich modułów premium: Gambit's FXMaster+, Gambit's Asset Previewer oraz Gambit's Image Viewer!"
+    },
+    "Macro": {
+      "Saved": "Makro „{name}” zostało zapisane w katalogu makr.",
+      "UnknownParticleType": "Podczas tworzenia makra napotkano nieznany typ efektu cząsteczkowego „{type}”. Efekt został pominięty.",
+      "UnknownFilterType": "Podczas tworzenia makra napotkano nieznany typ efektu filtrującego „{type}”. Efekt został pominięty.",
+      "ParticleEffectName": "Efekt cząsteczkowy: {label}",
+      "FilterEffectName": "Efekt filtru: {label}",
+      "ParticleEffectsName": "Efekty cząsteczkowe",
+      "FilterEffectsName": "Efekty filtrów",
+      "ParticleAndFilterEffectsName": "Efekty cząsteczkowe i filtry",
+      "NameDialogTitle": "Zapisz efekt jako makro",
+      "NameDialogHint": "Wpisz nazwę, pod którą chcesz zapisać makro.",
+      "NameLabel": "Nazwa makra",
+      "ActionLabel": "Działanie makro",
+      "ActionPlay": "Odtwórz",
+      "ActionToggle": "Przełącz",
+      "ActionHint": "Funkcja Odtwórz tworzy nową instancję efektu API. Funkcja Przełącz włącza lub wyłącza zapisaną grupę efektów.",
+      "SkipFadingLabel": "Pomiń wygaszanie",
+      "SkipFadingHint": "Zastosuj i usuń te efekty API natychmiast, bez stopniowego pojawiania się lub zanikania.",
+      "Save": "Zapisz",
+      "Cancel": "Anuluj"
+    },
+    "API": {
+      "PresetNotFound": "Nie znaleziono presetu „{name}”.",
+      "InvalidColor": "Nieprawidłowy kolor „{color}”. Oczekiwano koloru w formacie szesnastkowym, np. #RRGGBB.",
+      "InvalidSpeedLevel": "Nieprawidłowy poziom prędkości „{speed}”. Obsługiwane wartości: bardzo niski, niski, średni, wysoki, bardzo wysoki.",
+      "InvalidDensityLevel": "Nieprawidłowy poziom gęstości „{density}”. Obsługiwane wartości: bardzo niski, niski, średni, wysoki, bardzo wysoki.",
+      "PlusPresetInactive": "Ustawienie „{name}” jest ustawieniem programu FXMaster+, ale program FXMaster+ nie jest uruchomiony. Niektóre efekty mogą się nie załadować."
+    },
+    "Info": {
+      "ControlTitle": "FXMaster Przegląd narzędzi",
+      "Title": "FXMaster Przegląd",
+      "Heading": "Co potrafi FXMaster?",
+      "Intro": "FXMaster pomaga prowadzącym w tworzeniu atmosfery w scenach dzięki animowanym cząsteczkom, filtrom wizualnym, efektom opartym na obszarach oraz możliwości wyłączania efektów, warstwom, makrom wielokrotnego użytku i wielu innym funkcjom!",
+      "PreviewHover": "Otwórz podgląd przykładu",
+      "PreviewPlaceholder": "W pliku fxmaster-info.js dodaj adres URL przykładowego filmu lub obrazu do tego podglądu.",
+      "Sections": {
+        "Particles": {
+          "Title": "Efekty cząsteczkowe",
+          "Text": "Dodaj efekty atmosferyczne obejmujące całą scenę, takie jak deszcz, śnieg, mgła, chmury, żar, gwiazdy, ptaki, nietoperze, pająki oraz inne efekty pogodowe lub związane ze stworzeniami. Każdy efekt posiada szereg parametrów umożliwiających dostosowanie jego wyglądu: gęstość, skalę, prędkość, odcień i inne."
+        },
+        "Filters": {
+          "Title": "Efekty filtrów",
+          "Text": "Zmień wygląd sceny za pomocą efektów wizualnych, takich jak korekcja kolorów, rozmycie, mgła, styl starego filmu, zniekształcenie podwodne, widzenie drapieżnika czy błyskawice. Każdy efekt posiada szereg różnych parametrów, które pozwalają dostosować jego wygląd."
+        },
+        "Regions": {
+          "Title": "Strefy i maskowanie",
+          "Text": "Za pomocą zachowań Stref można umieszczać cząsteczki lub filtry wyłącznie w określonych obszarach, reagować na zdarzenia wejścia lub wyjścia tokenów, uwzględniać różnice wysokości lub tłumić efekty sceniczne, uzyskując bardziej płynne przejścia. W wersji 14 zachowania Stref FXMaster obsługują również natywne zaznaczenia na poziomie sceny, co zapewnia jeszcze większą elastyczność w rozmieszczaniu i nakładaniu warstw."
+        },
+        "PlacementLevels": {
+          "Title": "Rozmieszczenie i poziomy",
+          "Text": "Opcje rozmieszczenia pozwalają umieścić efekty w scenie poniżej tokenów, poniżej kafelków lub poniżej elementów pierwszego planu, dzięki czemu cząsteczki i filtry pojawiają się dokładnie tam, gdzie chcesz. W scenach wykorzystujących natywne poziomy w wersji 14 efekty obejmujące całą scenę można również ograniczyć do wybranych pięter."
+        },
+        "Layers": {
+          "Title": "Zarządzaj warstwami",
+          "Text": "Przejrzyj sceny, strefy i efekty utworzone przez API w jednym widoku, a następnie przesuwaj efekty w górę lub w dół, aby kontrolować sposób nakładania się efektów FXMaster."
+        },
+        "ApiEffects": {
+          "Title": "Zarządzaj efektami API",
+          "Text": "Sprawdzaj, edytuj lub usuwaj efekty dodane przez makra, gotowe ustawienia lub integracje innych firm bez konieczności przeglądania flag scen."
+        },
+        "SoundEffects": {
+          "Title": "Zarządzanie efektami dźwiękowymi",
+          "Text": "Gdy program FXMaster+ jest aktywny, można tworzyć reguły dźwiękowe, które uruchamiają się po aktywacji pasujących cząsteczek lub filtrów przy włączonej funkcji SoundFX; reguły te mogą dotyczyć zarówno efektów obejmujących całą scenę, jak i efektów ograniczonych do konkretnych stref. Strefy oferują dodatkową elastyczność konfiguracji, w tym opcje płynności ruchu oraz blokowania/tłumienia dźwięku przez ściany."
+        },
+        "UserParticles": {
+          "Title": "Zarządzaj efektami cząsteczkowymi użytkownika",
+          "Text": "Gdy FXMaster+ jest aktywny, możesz tworzyć własne efekty cząsteczkowe na podstawie swoich obrazów i ikon, wykorzystując style ruchu otoczenia lub ruchu kierunkowego."
+        },
+        "Macros": {
+          "Title": "Zapisz efekty cząsteczkowe i filtrów jako makro",
+          "Text": "Zapisz bieżącą konfigurację cząsteczek i filtrów jako makro wielokrotnego użytku za pomocą elementów sterujących FXMaster. Jest to przydatne, gdy potrzebne jest szybkie odtwarzanie lub przełączanie powtarzających się efektów otoczenia. Makra umożliwiają również wielokrotne nakładanie tego samego efektu, co pozwala na dodatkowe dostosowanie."
+        },
+        "Cleanup": {
+          "Title": "Wyczyść efekty cząsteczkowe i filtry",
+          "Text": "Funkcja czyszczenia usuwa wszystkie efekty cząsteczkowe i efekty filtrów na poziomie sceny z bieżącej sceny."
+        },
+        "Performance": {
+          "Title": "Porady dotyczące wydajności",
+          "Text": "Gęstość cząstek może wpływać na wydajność, zwłaszcza w przypadku rozległych scen. FXMaster wykorzystuje ustawienie „Tryb wydajności” Foundry, umożliwiające ograniczenie gęstości cząstek indywidualnie dla każdego użytkownika: Niska = 25% aktualnej gęstości cząstek, Średnia = 50%, Wysoka = 75% i Maksymalna = 100%."
+        }
+      },
+      "FooterText": "Pełne informacje dotyczące konfiguracji, szczegółowe opcje działania regionów oraz przykłady wykorzystania interfejsu API dla programistów można znaleźć w",
+      "FooterReadmeLink": "pełny plik README na GitHubie",
+      "Actions": {
+        "OpenParticleEffects": "Otwórz efekty cząsteczkowe",
+        "OpenFilterEffects": "Otwórz efekty filtrów",
+        "OpenRegionControls": "Otwórz sterowanie stref",
+        "OpenLayers": "Otwórz menedżera warstw",
+        "OpenApiEffects": "Otwórz menedżera API",
+        "OpenSoundEffects": "Otwórz menedżera efektów dźwiękowych",
+        "OpenUserParticleEffects": "Otwórz menedżera efektów cząsteczkowych użytkownika"
+      }
     }
   }
 }
