@@ -8,6 +8,7 @@ Welcome to FXMaster V8.1! I highly recommend updating to this version if you pre
 - Added right click menu for particle and filter effects toggle buttons. Right clicking will now allow you to reset individual effects to their default settings on a per-scene basis.
 - Added new Shadow parameter options to the Bats, Birds, Crows, and Eagles particle effects. These options are functionally equivalent to the Clouds shadow option and allow additional flexibility for birds to cast shadows
 - Updated region behaviors to modify effects in real-time when making adjustments. This means enabling effects, modifying parameters, etc will be viewable on screen as adjustments are made. Saving the region will confirm these updates while hitting close window will cancel them. This should allow tweaking region effects MUCH easier compared to previous versions
+- Added localizations for FXMaster+ Aurora Borealis and some new functionality
 - Re-added the small specials layer removed in V8.0. At least one module was using it which was one more than I was aware of
 - Bugfix for the Old Film filter not updating parameters properly
-- Bugfix for scene Particles not applying properly to Levels when individual levels were selected.
+- Bugfix for scene Particles not applying properly to Levels when individual levels were selected
