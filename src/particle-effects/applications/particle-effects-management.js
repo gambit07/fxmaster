@@ -195,7 +195,58 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
     this.wireColorInputs(liveElement, ParticleEffectsManagement.updateParam);
     this.wireMultiSelectInputs?.(liveElement, ParticleEffectsManagement.updateParam);
     this.wireSelectInputs?.(liveElement, ParticleEffectsManagement.updateParam);
+    this.wirePowerToggleResetMenu(liveElement, {
+      selector: ".fxmaster-particle-toggle",
+      onReset: this.resetEffectDefaults,
+    });
     this.applyTooltipDirection(liveElement);
+  }
+
+  /**
+   * Reset one particle effect's management parameters to its authored defaults.
+   *
+   * @param {string} type
+   * @returns {Promise<void>}
+   */
+  async resetEffectDefaults(type) {
+    const effectsDB = CONFIG.fxmaster.particleEffects[type];
+    if (!effectsDB) {
+      logger.warn(game.i18n.format("FXMASTER.Particles.TypeErrors.TypeNotFound", { type }));
+      return;
+    }
+
+    try {
+      for (const fn of this._debouncedEffectsWrites?.values?.() ?? []) fn?.cancel?.();
+      this._debouncedEffectsWrites?.clear?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    const defaults = FXMasterBaseFormV2.getDefaultOptions(effectsDB);
+    const passiveDefaults = foundry.utils.deepClone(defaults);
+    if (passiveDefaults && typeof passiveDefaults === "object") delete passiveDefaults.levels;
+
+    const existingPassive = foundry.utils.deepClone(game.settings.get(packageId, "passiveParticleConfig") ?? {});
+    const passiveEffects =
+      existingPassive && typeof existingPassive === "object" && !Array.isArray(existingPassive) ? existingPassive : {};
+    passiveEffects[type] = passiveDefaults;
+    await game.settings.set(packageId, "passiveParticleConfig", passiveEffects);
+
+    const scene = canvas.scene;
+    const effectId = `core_${type}`;
+    if (scene) {
+      const current = foundry.utils.duplicate(scene.getFlag(packageId, "effects") ?? {});
+      if (current[effectId]) {
+        current[effectId] = { type, options: foundry.utils.deepClone(defaults) };
+        await resetFlag(scene, "effects", current);
+        await canvas?.particleeffects?.drawParticleEffects?.({ soft: true });
+      }
+    }
+
+    updateSceneControlHighlights();
+    const label = game.i18n.localize(effectsDB.label ?? type);
+    ui.notifications.info(game.i18n.format("FXMASTER.Common.ResetEffectDefaultsSuccess", { effect: label }));
+    await this.render(true);
   }
 
   async updateEnabledState(type, enabled) {

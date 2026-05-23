@@ -111,7 +111,7 @@ export class LightningFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
    * @returns {boolean}
    */
   _canAccessUniforms() {
-    if (this.destroyed || this._destroyed) return false;
+    if (this.destroyed) return false;
     return true;
   }
 
@@ -137,7 +137,7 @@ export class LightningFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
    * @returns {boolean}
    */
   _isFlashGenerationActive(generation) {
-    return generation === this._flashGeneration && this.enabled && !this.destroyed && !this._destroyed;
+    return generation === this._flashGeneration && this.enabled && !this.destroyed;
   }
 
   /**

@@ -24,9 +24,9 @@
       "DisableAllHint": "Esta opción deshabilita los efectos para todos los usuarios. Tiene prioridad sobre la opción de habilitar. Es una medida de seguridad cuando fallan las migraciones. Normalmente no es necesario usarla. Tras cambiarla, se debe recargar manualmente.",
       "ClearParticleAndFilterEffectsTitle": "Borrar efectos de partículas y filtros",
       "ClearParticleAndFilterEffectsContent": "<p>¿Desea eliminar permanentemente todos los <em>efectos de partículas</em> y <em>efectos de filtro</em> de esta escena?</p>",
-      "ResetPassiveParameters": "Restablecer parámetros de partículas y filtros",
-      "ResetPassiveParametersHint": "Restablece los parámetros de partículas y filtros a sus valores predeterminados",
-      "ResetPassiveSuccess": "Parámetros de partículas y filtros restablecidos correctamente",
+      "ResetEffectDefaults": "Reset to Defaults",
+      "ResetEffectDefaultsSuccess": "{effect} parameters reset to defaults",
+      "PowerToggleContextHint": "Left-click to toggle. Right-click for reset options.",
       "Yes": "Sí",
       "No": "No",
       "Enable": "Habilitar",
@@ -274,6 +274,16 @@
       "Lighten": "Lighten",
       "Difference": "Difference",
       "Exclusion": "Exclusion"
+    },
+    "Tile": {
+      "RestrictsParticles": "FXMaster: Restricts Particles",
+      "RestrictsParticlesHint": "When enabled, this overhead tile hides FXMaster particles beneath it. Restricts Weather affects both Particles and Filters.",
+      "RestrictsFilters": "FXMaster: Restricts Filters",
+      "RestrictsFiltersHint": "When enabled, this overhead tile hides FXMaster filters beneath it. Restricts Weather affects both Particles and Filters."
+    },
+    "Settings": {
+      "ApplyRegionBehaviorsToOverheadLevels": "Apply Region Behaviors to Overhead Levels",
+      "ApplyRegionBehaviorsToOverheadLevelsHint": "When a Region is assigned to multiple Scene Levels, allow overhead Level overlays to display that Region's particle effects, filter effects, and scene suppression. This can have a big impact on performance on multi-level scenes."
     }
   }
 }

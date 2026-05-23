@@ -24,9 +24,9 @@
       "DisableAllHint": "이 옵션을 켜면 모든 사용자의 효과가 비활성화됩니다. 활성화 설정보다 우선하며, 마이그레이션 실패 등 문제 발생 시를 위한 안전장치입니다. 일반적으로 수동 설정할 필요는 없습니다. 변경 후에는 수동 새로고침이 필요합니다.",
       "ClearParticleAndFilterEffectsTitle": "파티클·필터 효과 제거",
       "ClearParticleAndFilterEffectsContent": "<p>이 장면의 모든 <em>파티클 효과</em>와 <em>필터 효과</em>를 영구적으로 제거하시겠습니까?</p>",
-      "ResetPassiveParameters": "파티클·필터 파라미터 초기화",
-      "ResetPassiveParametersHint": "파티클과 필터의 파라미터를 기본값으로 되돌립니다",
-      "ResetPassiveSuccess": "파티클·필터 파라미터가 성공적으로 초기화되었습니다",
+      "ResetEffectDefaults": "Reset to Defaults",
+      "ResetEffectDefaultsSuccess": "{effect} parameters reset to defaults",
+      "PowerToggleContextHint": "Left-click to toggle. Right-click for reset options.",
       "Yes": "예",
       "No": "아니오",
       "Enable": "활성화",
@@ -274,6 +274,16 @@
       "Lighten": "Lighten",
       "Difference": "Difference",
       "Exclusion": "Exclusion"
+    },
+    "Tile": {
+      "RestrictsParticles": "FXMaster: Restricts Particles",
+      "RestrictsParticlesHint": "When enabled, this overhead tile hides FXMaster particles beneath it. Restricts Weather affects both Particles and Filters.",
+      "RestrictsFilters": "FXMaster: Restricts Filters",
+      "RestrictsFiltersHint": "When enabled, this overhead tile hides FXMaster filters beneath it. Restricts Weather affects both Particles and Filters."
+    },
+    "Settings": {
+      "ApplyRegionBehaviorsToOverheadLevels": "Apply Region Behaviors to Overhead Levels",
+      "ApplyRegionBehaviorsToOverheadLevelsHint": "When a Region is assigned to multiple Scene Levels, allow overhead Level overlays to display that Region's particle effects, filter effects, and scene suppression. This can have a big impact on performance on multi-level scenes."
     }
   }
 }

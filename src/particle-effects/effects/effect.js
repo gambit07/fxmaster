@@ -210,6 +210,59 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
     };
   }
 
+  /** Shared optional DropShadowFilter controls used by particles that support wrapper-level shadows. */
+  static get shadowParameters() {
+    return {
+      dropShadow: { label: "FXMASTER.Params.Shadow", type: "checkbox", value: false },
+      shadowOnly: {
+        label: "FXMASTER.Params.ShadowOnly",
+        type: "checkbox",
+        value: false,
+        showWhen: { dropShadow: true },
+      },
+      shadowRotation: {
+        label: "FXMASTER.Params.ShadowRotation",
+        type: "range",
+        min: 0,
+        value: 315,
+        max: 360,
+        step: 1,
+        decimals: 0,
+        showWhen: { dropShadow: true },
+      },
+      shadowDistance: {
+        label: "FXMASTER.Params.ShadowDistance",
+        type: "range",
+        min: 0,
+        value: 70,
+        max: 300,
+        step: 1,
+        decimals: 0,
+        showWhen: { dropShadow: true },
+      },
+      shadowBlur: {
+        label: "FXMASTER.Params.ShadowBlur",
+        type: "range",
+        min: 0,
+        value: 2,
+        max: 20,
+        step: 0.5,
+        decimals: 1,
+        showWhen: { dropShadow: true },
+      },
+      shadowOpacity: {
+        label: "FXMASTER.Params.ShadowOpacity",
+        type: "range",
+        min: 0,
+        value: 1,
+        max: 1,
+        step: 0.05,
+        decimals: 2,
+        showWhen: { dropShadow: true },
+      },
+    };
+  }
+
   /** Merge provided options into the parameter schema without inserting new keys. */
   static mergeWithDefaults(options) {
     const merged = foundry.utils.mergeObject(this.parameters, options, { insertKeys: false, inplace: false });
@@ -367,6 +420,7 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
     this._applyLifetimeToConfig(options, config);
     this._applyTintToConfig(options, config);
     this._applyAlphaToConfig(options, config);
+    this._applyDropShadowToConfig(options, config);
   }
 
   /** Multiply a stepped value-list by a factor. */
@@ -511,6 +565,20 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
       });
   }
 
+  /** Copy shared DropShadowFilter options onto the emitter config. */
+  _applyDropShadowToConfig(options, config) {
+    if (!options?.dropShadow) return;
+
+    config._dropShadowEnabled = !!options.dropShadow?.value;
+    config._dropShadowOnly = !!options.shadowOnly?.value;
+    config._dropshadowRotation = Number.isFinite(options.shadowRotation?.value) ? options.shadowRotation.value : 315;
+    config._dropshadowDistance = Number.isFinite(options.shadowDistance?.value)
+      ? options.shadowDistance.value
+      : Math.hypot(50, 50);
+    config._dropshadowBlur = Number.isFinite(options.shadowBlur?.value) ? options.shadowBlur.value : 2;
+    config._dropshadowOpacity = Number.isFinite(options.shadowOpacity?.value) ? options.shadowOpacity.value : 1;
+  }
+
   /** ----------------------------------------------------------------------- */
   /** Lateral Movement                                                         */
   /** ----------------------------------------------------------------------- */
@@ -523,7 +591,11 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
    */
   createEmitter(config) {
     const baseCreate = super.createEmitter?.bind(this);
-    const emitter = baseCreate ? baseCreate(config) : new PIXI.particles.Emitter(this, config);
+    const emitter = config?._dropShadowEnabled
+      ? this._fxmCreateDropShadowEmitter(config)
+      : baseCreate
+      ? baseCreate(config)
+      : new PIXI.particles.Emitter(this, config);
 
     try {
       const opts = this._fxmLastOptions ?? this.options ?? {};
@@ -533,6 +605,180 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
     }
 
     return emitter;
+  }
+
+  /**
+   * Create an emitter inside a wrapper container and apply a wrapper-level DropShadowFilter.
+   * @param {PIXI.particles.EmitterConfigV3 & { _dropShadowEnabled?: boolean, _dropShadowOnly?: boolean, _dropshadowRotation?: number, _dropshadowDistance?: number, _dropshadowBlur?: number, _dropshadowOpacity?: number }} config
+   * @returns {PIXI.particles.Emitter}
+   * @protected
+   */
+  _fxmCreateDropShadowEmitter(config) {
+    const wrapper = new PIXI.Container();
+    this.addChild(wrapper);
+
+    config.autoUpdate = true;
+    config.emit = false;
+    const emitter = new PIXI.particles.Emitter(wrapper, config);
+
+    if (!config._dropShadowEnabled) return emitter;
+    this._fxmApplyDropShadowFilter(wrapper, emitter, config);
+    return emitter;
+  }
+
+  /**
+   * Apply and lifecycle-manage a DropShadowFilter for an emitter wrapper.
+   * @param {PIXI.Container} wrapper
+   * @param {PIXI.particles.Emitter} emitter
+   * @param {object} config
+   * @protected
+   */
+  _fxmApplyDropShadowFilter(wrapper, emitter, config) {
+    const r = CONFIG.fxmaster.getParticleRenderer?.(this);
+    const DropShadowCtor = PIXI?.filters?.DropShadowFilter;
+    if (!r || !DropShadowCtor || !wrapper || !emitter) return;
+
+    const BASE_OFFSET = { x: 50, y: -50 };
+    const baseDistance = Math.hypot(BASE_OFFSET.x, BASE_OFFSET.y) || 50;
+
+    const angleDeg = Number.isFinite(config._dropshadowRotation) ? config._dropshadowRotation : 315;
+    const angleRad = Math.toRadians(angleDeg);
+    const distance = Number.isFinite(config._dropshadowDistance) ? config._dropshadowDistance : baseDistance;
+    const blur = Number.isFinite(config._dropshadowBlur) ? config._dropshadowBlur : 1;
+    const alpha = Number.isFinite(config._dropshadowOpacity) ? config._dropshadowOpacity : 0.5;
+    const shadowOnly = !!config._dropShadowOnly;
+
+    const dir = { x: Math.cos(angleRad), y: Math.sin(angleRad) };
+    const screenRect = new PIXI.Rectangle(0, 0, 1, 1);
+
+    const updateScreenRect = () => {
+      const scr = r.screen;
+      screenRect.x = 0;
+      screenRect.y = 0;
+      screenRect.width = Math.max(1, scr.width | 0);
+      screenRect.height = Math.max(1, scr.height | 0);
+    };
+
+    updateScreenRect();
+
+    const shadow = new DropShadowCtor({
+      offset: { x: 0, y: 0 },
+      blur,
+      alpha,
+      color: 0x000000,
+      quality: 20,
+      shadowOnly,
+      resolution: r.resolution || window.devicePixelRatio || 1,
+    });
+
+    shadow.autoFit = false;
+    shadow.padding = 0;
+
+    wrapper.filterArea = screenRect;
+    shadow.filterArea = screenRect;
+
+    const clampShadowResolution = () => {
+      try {
+        const gl = r.gl;
+        const maxTex = gl?.getParameter?.(gl.MAX_TEXTURE_SIZE) || 8192;
+
+        const wCSS = Math.max(1, screenRect.width | 0);
+        const hCSS = Math.max(1, screenRect.height | 0);
+        const maxDim = Math.max(wCSS, hCSS);
+
+        const baseRes = r.resolution || window.devicePixelRatio || 1;
+        const safeRes = Math.max(0.5, Math.min(baseRes, maxTex / maxDim));
+
+        if (!Number.isFinite(safeRes) || safeRes <= 0) {
+          shadow.enabled = false;
+          shadow.alpha = 0;
+          return;
+        }
+
+        if (!Number.isFinite(shadow.resolution) || shadow.resolution > safeRes || shadow.resolution <= 0) {
+          shadow.resolution = safeRes;
+        }
+      } catch {
+        try {
+          shadow.enabled = false;
+          shadow.alpha = 0;
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+      }
+    };
+
+    clampShadowResolution();
+
+    const existing = wrapper.filters ?? null;
+    wrapper.filters = existing ? existing.concat([shadow]) : [shadow];
+
+    let lastOffX = NaN;
+    let lastOffY = NaN;
+    let lastBlur = NaN;
+    let lastAlpha = NaN;
+    let lastShadowOnly = undefined;
+
+    const tick = () => {
+      const zoom = canvas?.stage?.scale?.x ?? 1;
+
+      const offX = dir.x * distance * zoom;
+      const offY = dir.y * distance * zoom;
+
+      if (offX !== lastOffX || offY !== lastOffY) {
+        if (shadow.offset) {
+          shadow.offset.x = offX;
+          shadow.offset.y = offY;
+        }
+        lastOffX = offX;
+        lastOffY = offY;
+      }
+
+      if (blur !== lastBlur) {
+        if ("blur" in shadow) shadow.blur = blur;
+        lastBlur = blur;
+      }
+
+      if (alpha !== lastAlpha) {
+        if ("alpha" in shadow) shadow.alpha = alpha;
+        lastAlpha = alpha;
+      }
+
+      if (shadowOnly !== lastShadowOnly) {
+        if ("shadowOnly" in shadow) shadow.shadowOnly = shadowOnly;
+        lastShadowOnly = shadowOnly;
+      }
+    };
+
+    PIXI.Ticker.shared.add(tick);
+
+    const onResize = () => {
+      updateScreenRect();
+      clampShadowResolution();
+    };
+    r.on?.("resize", onResize);
+
+    const origDestroy = emitter.destroy?.bind(emitter);
+    emitter.destroy = (...args) => {
+      PIXI.Ticker.shared.remove(tick);
+      try {
+        r.off?.("resize", onResize);
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+
+      try {
+        if (wrapper.filters) {
+          const arr = wrapper.filters.filter((f) => f !== shadow);
+          wrapper.filters = arr.length ? arr : null;
+        }
+        shadow.destroy?.();
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+
+      return origDestroy ? origDestroy(...args) : undefined;
+    };
   }
 
   /**

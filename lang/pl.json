@@ -24,9 +24,9 @@
       "DisableAllHint": "Ustawienie tej opcji spowoduje wyłączenie efektów dla wszystkich użytkowników. Nadpisuje flagę włączenia. To zabezpieczenie na wypadek niepowodzenia migracji. Zwykle nie musisz tego zmieniać. Po zmianie wymagane jest ręczne odświeżenie.",
       "ClearParticleAndFilterEffectsTitle": "Wyczyść efekty cząsteczkowe i filtry",
       "ClearParticleAndFilterEffectsContent": "<p>Trwale usunąć wszystkie <em>efekty cząsteczkowe</em> i <em>efekty filtrów</em> z tej sceny?</p>",
-      "ResetPassiveParameters": "Resetowanie parametrów cząstek i filtra",
-      "ResetPassiveParametersHint": "Przywraca domyślne wartości parametrów cząsteczek i filtra.",
-      "ResetPassiveSuccess": "Parametry cząstek i filtra zostały pomyślnie zresetowane",
+      "ResetEffectDefaults": "Reset to Defaults",
+      "ResetEffectDefaultsSuccess": "{effect} parameters reset to defaults",
+      "PowerToggleContextHint": "Left-click to toggle. Right-click for reset options.",
       "Yes": "Tak",
       "No": "Nie",
       "Enable": "Włącz",
@@ -643,6 +643,16 @@
       "Lighten": "Lighten",
       "Difference": "Difference",
       "Exclusion": "Exclusion"
+    },
+    "Tile": {
+      "RestrictsParticles": "FXMaster: Restricts Particles",
+      "RestrictsParticlesHint": "When enabled, this overhead tile hides FXMaster particles beneath it. Restricts Weather affects both Particles and Filters.",
+      "RestrictsFilters": "FXMaster: Restricts Filters",
+      "RestrictsFiltersHint": "When enabled, this overhead tile hides FXMaster filters beneath it. Restricts Weather affects both Particles and Filters."
+    },
+    "Settings": {
+      "ApplyRegionBehaviorsToOverheadLevels": "Apply Region Behaviors to Overhead Levels",
+      "ApplyRegionBehaviorsToOverheadLevelsHint": "When a Region is assigned to multiple Scene Levels, allow overhead Level overlays to display that Region's particle effects, filter effects, and scene suppression. This can have a big impact on performance on multi-level scenes."
     }
   }
 }

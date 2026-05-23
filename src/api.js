@@ -1,30 +1,27 @@
 /**
- * FXMaster Preset API
- * -------------------
- * Provides an integration API for other modules/macros to apply. Predefined preset effects by name.
+ * FXMaster Preset API.
  *
- * Presets are defined in ./api-effects.js
+ * Provides an integration API for other modules and macros to apply predefined preset effects by name. Presets are defined in ./api-effects.js.
  *
- * Usage:
+ * @example
  * await FXMASTER.api.presets.play("sunshower", { topDown: false, direction: "north", belowTokens: false, belowTiles: false, belowForeground: false, darknessActivationMin: 0, darknessActivationMax: 1, soundFx: false, density: "high", speed: "low" });
- * await FXMASTER.api.presets.stop("blizzard"); await FXMASTER.api.presets.toggle("blizzard", { topDown: true});
+ * await FXMASTER.api.presets.stop("blizzard");
+ * await FXMASTER.api.presets.toggle("blizzard", { topDown: true });
  * await FXMASTER.api.presets.switch("sunshower", { topDown: true });
  * const allPresets = FXMASTER.api.presets.list();
  * const validPresets = FXMASTER.api.presets.listValid();
  * const activePresets = FXMASTER.api.presets.listActive();
  * const activeOnScene = FXMASTER.api.presets.listActive({ scene: "<sceneUuid>" });
- *
- * Behavior summary:
- * - `play` enables a preset and updates an already-active preset when new options are provided.
- * - `stop` disables a preset.
- * - `toggle` switches a preset on or off.
- * - `switch` disables active presets before enabling the requested preset.
- * - `list`, `listValid`, and `listActive` expose preset catalog and activity information.
  */
 
 import { API_EFFECT_ID_PREFIX, API_EFFECT_UPDATE_OPTIONS_FLAG, packageId } from "./constants.js";
 import { API_EFFECTS, API_EFFECT_NAMES } from "./api-effects.js";
-import { addDeletionKey, ensureSingleSceneLevelSelection, normalizeDarknessActivationRange } from "./utils.js";
+import {
+  addDeletionKey,
+  ensureSingleSceneLevelSelection,
+  normalizeDarknessActivationRange,
+  fxmDocumentId,
+} from "./utils.js";
 import { logger } from "./logger.js";
 import { buildSceneEffectUid, promoteEffectStackUids } from "./common/effect-stack.js";
 
@@ -66,6 +63,7 @@ const ACTIVE_KEY_RE = /^apiPreset_(.+)_(?:p|f)\d+$/;
  * @property {PresetLevelsValue} [levels] Scene Level id, Level name, or an array of ids/names used to restrict the preset to specific scene levels. Invalid selections fall back to all levels.
  * @property {Scene|string} [scene] Scene document or scene UUID to target.
  * @property {boolean} [silent=true] Suppress UI warnings for missing presets or invalid override values.
+ * @property {boolean} [skipFading=false] Skip effect fade transitions when applying preset updates.
  */
 
 /**
@@ -1281,7 +1279,7 @@ function getSceneLevels(scene) {
 
   const push = (level) => {
     if (!level) return;
-    const id = String(level?.id ?? level?._id ?? "").trim();
+    const id = fxmDocumentId(level);
     const looksLikeLevel =
       !!id || "elevation" in Object(level) || "isView" in Object(level) || "isVisible" in Object(level);
     if (!looksLikeLevel) return;
@@ -1342,7 +1340,7 @@ function getSceneLevelIds(scene) {
   return Array.from(
     new Set(
       getSceneLevels(scene)
-        .map((level) => String(level?.id ?? level?._id ?? "").trim())
+        .map((level) => fxmDocumentId(level))
         .filter(Boolean),
     ),
   );
@@ -1370,7 +1368,7 @@ function normalizePresetLevelMatcher(value) {
 function presetLevelMatches(level, matcher) {
   if (!matcher) return false;
 
-  const candidates = [level?.id, level?.name, level?.label, level?._source?.name, level?._source?.label, level?.title];
+  const candidates = [level?.id, level?.name, level?.label, level?.title];
 
   return candidates.some((candidate) => normalizePresetLevelMatcher(candidate) === matcher);
 }
@@ -1401,7 +1399,7 @@ function resolvePresetLevelSelection(value, scene) {
 
   for (const matcher of requested) {
     const match = levels.find((level) => presetLevelMatches(level, matcher));
-    const levelId = String(match?.id ?? match?._id ?? "").trim();
+    const levelId = fxmDocumentId(match);
     if (!levelId || seen.has(levelId)) continue;
     seen.add(levelId);
     resolved.push(levelId);
@@ -1558,10 +1556,10 @@ function isValidEffectInfo(info) {
  * Remove all scene FX created by this preset API for the given preset name.
  *
  * @param {string} name
- * @param {{ scene?: any }} [opts]
+ * @param {{ scene?: any, skipFading?: boolean }} [opts]
  * @returns {Promise<boolean>}
  */
-export async function stopPreset(name, { scene = null } = {}) {
+export async function stopPreset(name, { scene = null, skipFading = false } = {}) {
   const presetName = normalizePresetName(name);
   const sc = scene ? resolveScene(scene) : canvas?.scene;
   if (!sc) return false;
@@ -1573,30 +1571,41 @@ export async function stopPreset(name, { scene = null } = {}) {
 
   const particleUpdate = {};
   const filterUpdate = {};
+  const removedUids = [];
+
+  const stripDeletionPrefix = (key) => (key.startsWith("-=") || key.startsWith("==") ? key.slice(2) : key);
 
   for (const k of Object.keys(curParticles)) {
-    if (
-      k.startsWith(particlePrefix) ||
-      ((k.startsWith("-=") || k.startsWith("==")) && k.slice(2).startsWith(particlePrefix))
-    ) {
-      addDeletionKey(particleUpdate, k);
-    }
+    const cleanKey = stripDeletionPrefix(k);
+    if (!cleanKey.startsWith(particlePrefix)) continue;
+    addDeletionKey(particleUpdate, k);
+    removedUids.push(buildSceneEffectUid("particle", cleanKey));
   }
   for (const k of Object.keys(curFilters)) {
-    if (
-      k.startsWith(filterPrefix) ||
-      ((k.startsWith("-=") || k.startsWith("==")) && k.slice(2).startsWith(filterPrefix))
-    ) {
-      addDeletionKey(filterUpdate, k);
+    const cleanKey = stripDeletionPrefix(k);
+    if (!cleanKey.startsWith(filterPrefix)) continue;
+    addDeletionKey(filterUpdate, k);
+    removedUids.push(buildSceneEffectUid("filter", cleanKey));
+  }
+
+  let nextStack = null;
+  if (removedUids.length) {
+    const removeSet = new Set(removedUids);
+    const currentStack = sc.getFlag?.(packageId, "stack");
+    if (Array.isArray(currentStack)) {
+      const filtered = currentStack.filter((entry) => !removeSet.has(entry?.uid));
+      if (filtered.length !== currentStack.length) nextStack = filtered;
     }
   }
 
-  const promises = [];
-  if (Object.keys(particleUpdate).length) promises.push(sc.setFlag(packageId, "effects", particleUpdate));
-  if (Object.keys(filterUpdate).length) promises.push(sc.setFlag(packageId, "filters", filterUpdate));
+  if (!Object.keys(particleUpdate).length && !Object.keys(filterUpdate).length && !nextStack) return true;
 
-  if (!promises.length) return true;
-  await Promise.all(promises);
+  await commitApiEffectsSceneUpdate(sc, {
+    particleUpdate,
+    filterUpdate,
+    stack: nextStack,
+    skipFading,
+  });
   return true;
 }
 
@@ -1627,6 +1636,7 @@ export async function playPreset(
     levels = undefined,
     scene = null,
     silent = true,
+    skipFading = false,
   } = {},
 ) {
   const sc = scene ? resolveScene(scene) : canvas?.scene;
@@ -1743,11 +1753,7 @@ export async function playPreset(
     filterUpdate[key] = filters[i];
   }
 
-  const promises = [];
-  if (Object.keys(particleUpdate).length) promises.push(sc.setFlag(packageId, "effects", particleUpdate));
-  if (Object.keys(filterUpdate).length) promises.push(sc.setFlag(packageId, "filters", filterUpdate));
-
-  await Promise.all(promises);
+  await commitApiEffectsSceneUpdate(sc, { particleUpdate, filterUpdate, skipFading });
 
   const promotedUids = [
     ...particles.map((_, i) => buildSceneEffectUid("particle", `${particlePrefix}${i}`)),
@@ -1789,7 +1795,7 @@ export async function togglePreset(name, opts = {}) {
   const enabled = hasParticles || hasFilters;
 
   if (enabled) {
-    await stopPreset(name, { scene: sc });
+    await stopPreset(name, { scene: sc, skipFading: opts.skipFading });
     return false;
   }
 

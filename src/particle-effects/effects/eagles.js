@@ -4,13 +4,6 @@ import { FXMasterParticleEffect } from "./effect.js";
  * A full-screen particle effect which renders flying eagles.
  */
 export class EaglesParticleEffect extends FXMasterParticleEffect {
-  /**
-   * The cached textures for this weather effect.
-   * @type {PIXI.Texture[] | undefined}
-   * @private
-   */
-  static _textureCache;
-
   /** @override */
   static label = "FXMASTER.Particles.Effects.Eagles";
 
@@ -32,6 +25,7 @@ export class EaglesParticleEffect extends FXMasterParticleEffect {
       belowTiles: p.belowTiles,
       soundFxEnabled: p.soundFxEnabled,
       tint: p.tint,
+      ...this.shadowParameters,
       directionalMovement: {
         label: "FXMASTER.Params.DirectionalMovement",
         type: "checkbox",

@@ -30,18 +30,20 @@ export function getSceneDarknessLevel(scene) {
   const liveCanvas = globalThis.canvas ?? null;
   const activeScene = scene ?? liveCanvas?.scene ?? globalThis.game?.scenes?.current ?? null;
 
-  const candidates = [
-    liveCanvas?.environment?.darknessLevel,
-    activeScene?._source?.environment?.darknessLevel,
-    activeScene?.environment?.darknessLevel,
-  ];
-
-  for (const candidate of candidates) {
+  for (const candidate of [liveCanvas?.environment?.darknessLevel, activeScene?.environment?.darknessLevel]) {
     const n = Number(candidate);
     if (Number.isFinite(n)) return clamp01(n);
   }
 
-  return 0;
+  let snapshotDarkness;
+  try {
+    snapshotDarkness = activeScene?.toObject?.(false)?.environment?.darknessLevel;
+  } catch (_err) {
+    snapshotDarkness = undefined;
+  }
+
+  const n = Number(snapshotDarkness);
+  return Number.isFinite(n) ? clamp01(n) : 0;
 }
 
 /**

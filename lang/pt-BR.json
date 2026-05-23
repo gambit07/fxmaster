@@ -26,9 +26,9 @@
       "DisableAllHint": "Ativar esta opção desabilita os efeitos para todos os usuários e tem prioridade sobre a opção de habilitar. É uma medida de segurança quando migrações falham. Normalmente você não precisa alterá-la. Após a mudança, é necessário recarregar manualmente.",
       "ClearParticleAndFilterEffectsTitle": "Excluir Efeitos",
       "ClearParticleAndFilterEffectsContent": "<p>Excluir permanentemente todos os <em>Efeitos de Partículas</em> e <em>Efeitos de Filtro</em> desta cena?</p>",
-      "ResetPassiveParameters": "Redefinir Parâmetros de Partículas e Filtros",
-      "ResetPassiveParametersHint": "Redefine os parâmetros de Partícula e de Filtro para os valores padrão.",
-      "ResetPassiveSuccess": "Parâmetros de Partículas e Filtros redefinidos com sucesso",
+      "ResetEffectDefaults": "Reset to Defaults",
+      "ResetEffectDefaultsSuccess": "{effect} parameters reset to defaults",
+      "PowerToggleContextHint": "Left-click to toggle. Right-click for reset options.",
       "Yes": "Sim",
       "No": "Não",
       "Author": "Autor",
@@ -634,6 +634,16 @@
       "Disabled": "Desabilitado",
       "UnnamedRule": "Regra Sem Nome",
       "CurrentMode": "Modo Atual: {mode}"
+    },
+    "Tile": {
+      "RestrictsParticles": "FXMaster: Restricts Particles",
+      "RestrictsParticlesHint": "When enabled, this overhead tile hides FXMaster particles beneath it. Restricts Weather affects both Particles and Filters.",
+      "RestrictsFilters": "FXMaster: Restricts Filters",
+      "RestrictsFiltersHint": "When enabled, this overhead tile hides FXMaster filters beneath it. Restricts Weather affects both Particles and Filters."
+    },
+    "Settings": {
+      "ApplyRegionBehaviorsToOverheadLevels": "Apply Region Behaviors to Overhead Levels",
+      "ApplyRegionBehaviorsToOverheadLevelsHint": "When a Region is assigned to multiple Scene Levels, allow overhead Level overlays to display that Region's particle effects, filter effects, and scene suppression. This can have a big impact on performance on multi-level scenes."
     }
   }
 }

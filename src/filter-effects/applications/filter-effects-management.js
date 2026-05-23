@@ -152,7 +152,58 @@ export class FilterEffectsManagement extends FXMasterBaseFormV2 {
     this.wireColorInputs(liveElement, FilterEffectsManagement.updateParam);
     this.wireMultiSelectInputs?.(liveElement, FilterEffectsManagement.updateParam);
     this.wireSelectInputs?.(liveElement, FilterEffectsManagement.updateParam);
+    this.wirePowerToggleResetMenu(liveElement, {
+      selector: ".fxmaster-filter-toggle",
+      onReset: this.resetEffectDefaults,
+    });
     this.applyTooltipDirection(liveElement);
+  }
+
+  /**
+   * Reset one filter effect's management parameters to its authored defaults.
+   *
+   * @param {string} type
+   * @returns {Promise<void>}
+   */
+  async resetEffectDefaults(type) {
+    const filtersDB = CONFIG.fxmaster.filterEffects[type];
+    if (!filtersDB) {
+      logger.warn(game.i18n.format("FXMASTER.Filters.TypeErrors.TypeNotFound", { type }));
+      return;
+    }
+
+    try {
+      for (const fn of this._debouncedFiltersWrites?.values?.() ?? []) fn?.cancel?.();
+      this._debouncedFiltersWrites?.clear?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    const defaults = FXMasterBaseFormV2.getDefaultOptions(filtersDB);
+    const passiveDefaults = foundry.utils.deepClone(defaults);
+    if (passiveDefaults && typeof passiveDefaults === "object") delete passiveDefaults.levels;
+
+    const existingPassive = foundry.utils.deepClone(game.settings.get(packageId, "passiveFilterConfig") ?? {});
+    const passiveFilters =
+      existingPassive && typeof existingPassive === "object" && !Array.isArray(existingPassive) ? existingPassive : {};
+    passiveFilters[type] = passiveDefaults;
+    await game.settings.set(packageId, "passiveFilterConfig", passiveFilters);
+
+    const scene = canvas.scene;
+    const effectId = `core_${type}`;
+    if (scene) {
+      const current = foundry.utils.duplicate(scene.getFlag(packageId, "filters") ?? {});
+      if (current[effectId]) {
+        current[effectId] = { type, options: foundry.utils.deepClone(defaults) };
+        await resetFlag(scene, "filters", current);
+        await FilterEffectsSceneManager.instance.update({ skipFading: true });
+      }
+    }
+
+    updateSceneControlHighlights();
+    const label = game.i18n.localize(filtersDB.label ?? type);
+    ui.notifications.info(game.i18n.format("FXMASTER.Common.ResetEffectDefaultsSuccess", { effect: label }));
+    await this.render(true);
   }
 
   async close(options) {

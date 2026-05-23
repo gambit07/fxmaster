@@ -151,7 +151,7 @@ function getSceneLevelDocuments(scene = canvas?.scene ?? null) {
  * @returns {string}
  */
 function getSceneLevelLabel(level) {
-  const candidates = [level?.name, level?.label, level?._source?.name, level?._source?.label, level?.title, level?.id];
+  const candidates = [level?.name, level?.label, level?.title, level?.id];
 
   for (const candidate of candidates) {
     if (candidate == null) continue;

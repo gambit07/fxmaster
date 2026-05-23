@@ -1,4 +1,4 @@
-import { FXMasterFilterEffectMixin, preprocessShader } from "./mixins/filter.js";
+import { FXMasterFilterEffectMixin, preprocessShader, normalize } from "./mixins/filter.js";
 import fragment from "./shaders/old-film.frag";
 import { MAX_EDGES } from "../../constants.js";
 import { clamp01, clampNonNeg } from "../../utils.js";
@@ -115,8 +115,8 @@ export class OldFilmFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
    * @private
    */
   _applyUniforms(opts = {}) {
-    super.applyOptions(opts);
-    const o = this.options;
+    const o = normalize({ ...(this.options ?? {}), ...(opts ?? {}) });
+    super.applyOptions(o);
 
     const s = clamp01(o.sepia);
     if (s !== undefined) this.uniforms.sepiaAmount = s;
@@ -142,8 +142,8 @@ export class OldFilmFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
    * @param {object} [options={}] - Options payload.
    */
   configure(options = {}) {
-    this._applyUniforms(options);
     super.configure(options);
+    this._applyUniforms(this.options);
   }
 
   /**
@@ -152,7 +152,6 @@ export class OldFilmFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
    */
   applyOptions(options = this.options) {
     this._applyUniforms(options);
-    super.applyOptions(options);
   }
 
   /**

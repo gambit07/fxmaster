@@ -1,4 +1,7 @@
-/** Region/scene gating, color controls, and hybrid fade to edge. */
+/**
+ * SPDX-FileCopyrightText: 2026 Gambit
+ */
+ 
 /** ---------- Precision ---------- */
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
@@ -146,7 +149,7 @@ vec3 applyBlendMode(vec3 base, vec3 blend, int mode) {
 void main(void) {
   vec4 src = texture2D(uSampler, vTextureCoord);
 
-  vec2 screenPx = outputFrame.xy + vTextureCoord * inputSize.xy;
+  vec2 screenPx = outputFrame.xy + vTextureCoord * outputFrame.zw;
   vec2 snapPx   = screenPx - camFrac;
 
   /** Region/suppression gating */

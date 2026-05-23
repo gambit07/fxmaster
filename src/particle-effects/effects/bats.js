@@ -30,6 +30,7 @@ export class BatsParticleEffect extends DefaultRectangleSpawnMixin(FXMasterParti
       belowTiles: p.belowTiles,
       soundFxEnabled: p.soundFxEnabled,
       tint: p.tint,
+      ...this.shadowParameters,
       directionalMovement: {
         label: "FXMASTER.Params.DirectionalMovement",
         type: "checkbox",

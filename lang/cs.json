@@ -24,9 +24,9 @@
       "DisableAllHint": "Zaškrtnutí zakáže efekty všem uživatelům. Přepíše volbu 'Aktivovat efekty'. Slouží hlavně jako pojistka při selhání migrace. Obvykle není potřeba ji nastavovat ručně. Po změně tohoto nastavení je třeba scénu ručně znovunačíst.",
       "ClearParticleAndFilterEffectsTitle": "Vyčistit filtry a efekty prostředí",
       "ClearParticleAndFilterEffectsContent": "<p>Opravdu chceš natrvalo smazat všechny <em>částicové efekty</em> a <em>filtry </em> z této scény?</p>",
-      "ResetPassiveParameters": "Obnovit částicové efekty a filtry?",
-      "ResetPassiveParametersHint": "Zaškrtnutí obnoví parametry částicových a filtrových efektů na jejich výchozí hodnoty.",
-      "ResetPassiveSuccess": "Parametry částicových a filtrových efektů resetovány",
+      "ResetEffectDefaults": "Reset to Defaults",
+      "ResetEffectDefaultsSuccess": "{effect} parameters reset to defaults",
+      "PowerToggleContextHint": "Left-click to toggle. Right-click for reset options.",
       "Yes": "Ano",
       "No": "Ne",
       "Enable": "Povolit",
@@ -274,6 +274,16 @@
       "Lighten": "Lighten",
       "Difference": "Difference",
       "Exclusion": "Exclusion"
+    },
+    "Tile": {
+      "RestrictsParticles": "FXMaster: Restricts Particles",
+      "RestrictsParticlesHint": "When enabled, this overhead tile hides FXMaster particles beneath it. Restricts Weather affects both Particles and Filters.",
+      "RestrictsFilters": "FXMaster: Restricts Filters",
+      "RestrictsFiltersHint": "When enabled, this overhead tile hides FXMaster filters beneath it. Restricts Weather affects both Particles and Filters."
+    },
+    "Settings": {
+      "ApplyRegionBehaviorsToOverheadLevels": "Apply Region Behaviors to Overhead Levels",
+      "ApplyRegionBehaviorsToOverheadLevelsHint": "When a Region is assigned to multiple Scene Levels, allow overhead Level overlays to display that Region's particle effects, filter effects, and scene suppression. This can have a big impact on performance on multi-level scenes."
     }
   }
 }

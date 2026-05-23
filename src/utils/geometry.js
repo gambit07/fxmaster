@@ -6,6 +6,7 @@
 
 import { ellipseSteps, snappedStageMatrix } from "./viewport.js";
 import { logger } from "../logger.js";
+import { fxmGetRegionBehaviorEventGate } from "./foundry-public.js";
 /** Circle constant (`2π`). */
 export const TAU = Math.PI * 2;
 
@@ -903,8 +904,7 @@ export function estimateRegionInradius(placeable) {
 export function getEventGate(placeable, behaviorType) {
   const fxBeh = placeable?.document?.behaviors?.find((b) => b.type === behaviorType && !b.disabled);
   if (!fxBeh) return { mode: "none", latched: false };
-  const eg = fxBeh.getFlag?.("fxmaster", "eventGate");
-  return { mode: eg?.mode ?? "none", latched: !!eg?.latched };
+  return fxmGetRegionBehaviorEventGate(fxBeh);
 }
 
 /**

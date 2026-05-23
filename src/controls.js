@@ -189,7 +189,7 @@ function getSceneControlButtons(t) {
     order: 100,
     tools,
     activeTool: "activation",
-    layer: "particleeffects",
+    layer: "specials",
   };
 
   t.effects = fxControl;

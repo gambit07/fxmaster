@@ -15,8 +15,10 @@ import { FilterEffectsLayer } from "./filter-effects/filter-effects-layer.js";
 import { FilterRegionBehaviorType } from "./filter-effects/filter-effects-region-behavior.js";
 import { FXMasterFilterEffectMixin } from "./filter-effects/filters/mixins/filter.js";
 import { SuppressSceneFiltersBehaviorType } from "./filter-effects/suppress-scene-filters-region-behavior.js";
+import { SpecialEffectsLayer } from "./special-effects/special-effects-layer.js";
 import customVertex2D from "./filter-effects/filters/shaders/custom-vertex-2d.vert";
 import { GlobalEffectsStackLayer } from "./stack/global-effects-stack-layer.js";
+import { GlobalEffectsCompositor } from "./stack/global-effects-compositor.js";
 import { regionWorldBoundsAligned, regionWorldBounds, rectFromAligned } from "./utils.js";
 import { FXMasterBaseFormV2 } from "./base-form.js";
 import { normalizeRegisteredEffectParameters } from "./common/effect-parameter-normalization.js";
@@ -34,6 +36,36 @@ CONFIG.fxmaster.FXMasterFilterEffectMixin = FXMasterFilterEffectMixin;
 CONFIG.fxmaster.regionWorldBoundsAligned = regionWorldBoundsAligned;
 CONFIG.fxmaster.regionWorldBounds = regionWorldBounds;
 CONFIG.fxmaster.rectFromAligned = rectFromAligned;
+CONFIG.fxmaster.GlobalEffectsCompositor = GlobalEffectsCompositor;
+CONFIG.fxmaster.SpecialEffectsLayer = SpecialEffectsLayer;
+CONFIG.fxmaster.getGlobalEffectsCompositor = () => GlobalEffectsCompositor.instance;
+CONFIG.fxmaster.overheadPerformance = {
+  ...(CONFIG.fxmaster.overheadPerformance ?? {}),
+  sceneSuppressionLevelIntersection: true,
+  flattenSceneLevelMasks: true,
+  regionParticleScratchComposite: true,
+  batchedSurfaceMasks: true,
+  sceneRowSelectedLevelTilesExpandCoverage:
+    CONFIG.fxmaster.overheadPerformance?.sceneRowSelectedLevelTilesExpandCoverage ?? false,
+  sceneRowUseDefinedSurfaceFootprints: CONFIG.fxmaster.overheadPerformance?.sceneRowUseDefinedSurfaceFootprints ?? true,
+  sceneRowDefinedSurfaceFootprintWindowFallback:
+    CONFIG.fxmaster.overheadPerformance?.sceneRowDefinedSurfaceFootprintWindowFallback ?? false,
+  configuredLevelImageSceneRectFallback:
+    CONFIG.fxmaster.overheadPerformance?.configuredLevelImageSceneRectFallback ?? true,
+  compositorSceneFilterSuppression: CONFIG.fxmaster.overheadPerformance?.compositorSceneFilterSuppression ?? true,
+  compositorSceneParticleSuppression: CONFIG.fxmaster.overheadPerformance?.compositorSceneParticleSuppression ?? true,
+  compositorSceneParticleSuppressionMode:
+    CONFIG.fxmaster.overheadPerformance?.compositorSceneParticleSuppressionMode ?? "always",
+  compositorSceneParticleSuppressionIdleDelayMs:
+    CONFIG.fxmaster.overheadPerformance?.compositorSceneParticleSuppressionIdleDelayMs ?? 180,
+  compositorSuppressionMaskCaching: CONFIG.fxmaster.overheadPerformance?.compositorSuppressionMaskCaching ?? true,
+  nativeLevelDynamicCoveragePresyncOnlyWhenMoving:
+    CONFIG.fxmaster.overheadPerformance?.nativeLevelDynamicCoveragePresyncOnlyWhenMoving ?? true,
+  sharedCoverageSameFrameDeduplication:
+    CONFIG.fxmaster.overheadPerformance?.sharedCoverageSameFrameDeduplication ?? true,
+  skipInitialStackBlitForSimpleHiDpiFrames:
+    CONFIG.fxmaster.overheadPerformance?.skipInitialStackBlitForSimpleHiDpiFrames ?? true,
+};
 
 /**
  * Helpers to allow particle effects to run in other renderers ie not Canvas Provides an override context on either:
@@ -56,10 +88,15 @@ CONFIG.fxmaster.getParticleTicker = function (source) {
 
 window.FXMASTER = {
   filters: FilterEffectsSceneManager.instance,
+  getGlobalEffectsCompositor: () => GlobalEffectsCompositor.instance,
+  specials: {
+    playVideo: (data) => canvas?.specials?.playVideo?.(data) ?? Promise.resolve(),
+  },
 };
 
 function registerLayers() {
   CONFIG.Canvas.layers.particleeffects = { layerClass: ParticleEffectsLayer, group: "primary" };
+  CONFIG.Canvas.layers.specials = { layerClass: SpecialEffectsLayer, group: "interface" };
   CONFIG.Canvas.layers.filtereffects = { layerClass: FilterEffectsLayer, group: "primary" };
   CONFIG.Canvas.layers.fxstack = { layerClass: GlobalEffectsStackLayer, group: "rendered" };
 }

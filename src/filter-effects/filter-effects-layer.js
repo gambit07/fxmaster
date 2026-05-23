@@ -16,6 +16,7 @@ import {
   _belowForegroundEnabled,
   traceRegionShapePath2D,
   snappedStageMatrix,
+  cameraMatrixChanged,
   mat3FromPixi,
   regionWorldBoundsAligned,
   buildPolygonEdges,
@@ -33,16 +34,22 @@ import {
   computeRegionGatePass,
   coalesceNextFrame,
   getCssViewportMetrics,
-  getSnappedCameraCss,
+  rawStageMatrix,
+  safeResolutionForCssArea,
   getSceneDarknessLevel,
+  getRegionEffectPlaceablesForCurrentView,
+  getRegionPlaceableOrDocumentAdapter,
+  getSceneRegionDocumentById,
+  regionDocumentCanApplyInCurrentView,
   isEffectActiveForSceneDarkness,
+  getRegionFilterEffectDefinitions,
+  buildBelowTokenMaskCoverageSignature,
 } from "../utils.js";
 import { BaseEffectsLayer } from "../common/base-effects-layer.js";
 import { SceneMaskManager } from "../common/base-effects-scene-manager.js";
 import { buildRegionEffectUid } from "../common/effect-stack.js";
 
 const FILTER_TYPE = `${packageId}.filterEffectsRegion`;
-
 /**
  * Track global renderer.roundPixels mutations without attaching state to the PIXI renderer object. Keyed by the renderer instance.
  * @type {WeakMap<object, {count:number, prev:boolean}>}
@@ -295,11 +302,11 @@ function _analyzeAnalyticShape(placeable) {
   return analyticFrom({ ...s, type }, 0);
 }
 
-function _regionMaxFadeFrac(placeable, behaviors) {
+function _regionMaxFadeFrac(behaviors) {
   let maxFrac = 0;
 
   for (const b of behaviors ?? []) {
-    const defs = b.getFlag(packageId, "filters");
+    const defs = getRegionFilterEffectDefinitions(b);
     if (!defs) continue;
 
     for (const [, { options }] of Object.entries(defs)) {
@@ -556,6 +563,19 @@ function normalizeRegionBehaviorDocs(behaviorDocs) {
   return Array.from(behaviorDocs);
 }
 
+function regionHasActiveSuppressionBehavior(placeable, behaviorType) {
+  return normalizeRegionBehaviorDocs(placeable?.document?.behaviors).some(
+    (behavior) => behavior?.type === behaviorType && !behavior.disabled,
+  );
+}
+
+function regionMaskResolutionForEdgeSync(placeable, behaviorType, cssW, cssH) {
+  const rendererResolution = Number(canvas?.app?.renderer?.resolution ?? 1) || 1;
+  if (rendererResolution <= 1) return undefined;
+  if (!regionHasActiveSuppressionBehavior(placeable, behaviorType)) return undefined;
+  return safeResolutionForCssArea(cssW, cssH);
+}
+
 /**
  * Select the appropriate region mask texture for a filter.
  *
@@ -572,6 +592,24 @@ function chooseRegionFilterMaskTexture(entry, belowTokens, belowTiles) {
   if (belowTokens) return entry.maskCutoutTokensRT || entry.maskCutoutCombinedRT || entry.maskRT || null;
   if (belowTiles) return entry.maskCutoutTilesRT || entry.maskCutoutCombinedRT || entry.maskRT || null;
   return entry.maskRT || null;
+}
+
+/**
+ * Compose a region mask that is below both tokens and tiles while reusing an already-built single cutout when possible.
+ *
+ * @param {PIXI.RenderTexture} baseRT
+ * @param {PIXI.RenderTexture|null} tokensRT
+ * @param {PIXI.RenderTexture|null} tilesRT
+ * @param {PIXI.RenderTexture} outRT
+ * @param {{maskCutoutTokensRT?: PIXI.RenderTexture|null, maskCutoutTilesRT?: PIXI.RenderTexture|null}|null|undefined} entry
+ * @returns {PIXI.RenderTexture|null}
+ */
+function composeFilterCombinedCutoutRT(baseRT, tokensRT, tilesRT, outRT, entry) {
+  if (entry?.maskCutoutTokensRT && tilesRT)
+    return composeMaskMinusTilesRT(entry.maskCutoutTokensRT, tilesRT, { outRT });
+  if (entry?.maskCutoutTilesRT && tokensRT)
+    return composeMaskMinusTokensRT(entry.maskCutoutTilesRT, tokensRT, { outRT });
+  return composeMaskMinusCoverageRT(baseRT, [tokensRT, tilesRT], { outRT });
 }
 
 export class FilterEffectsLayer extends BaseEffectsLayer {
@@ -592,7 +630,9 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
     this._regionBelowTokensNeeded = false;
     this._regionBelowTilesNeeded = false;
 
-    this._lastCutoutCamFrac = null;
+    this._lastCutoutCameraMatrix = null;
+    this._lastBelowTokenCoverageSignature = null;
+    this._lastRegionMaskMatrix = null;
     this._lastRegionDarknessSignatures = new Map();
     this._lastDarknessLevel = getSceneDarknessLevel();
 
@@ -648,7 +688,7 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
 
     const parts = [];
     for (const behavior of behaviors) {
-      const defs = behavior.getFlag(packageId, "filters") ?? {};
+      const defs = getRegionFilterEffectDefinitions(behavior);
       for (const [id, info] of Object.entries(defs)) {
         parts.push(
           `${regionId}:${behavior.id}:${id}:${isEffectActiveForSceneDarkness(info?.options, darknessLevel) ? 1 : 0}`,
@@ -770,10 +810,10 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
         }
         if (wantsBelowTiles && entry.maskCutoutTilesRT) {
           if (tiles) composeMaskMinusTilesRT(entry.maskRT, tiles, { outRT: entry.maskCutoutTilesRT });
-          else composeMaskMinusTiles(entry.maskRT, { outRT: entry.maskCutoutTilesRT });
+          else composeMaskMinusTiles(entry.maskRT, { outRT: entry.maskCutoutTilesRT, restrictionKind: "filters" });
         }
         if (wantsBelowTokens && wantsBelowTiles && entry.maskCutoutCombinedRT) {
-          composeMaskMinusCoverageRT(entry.maskRT, [tokens, tiles], { outRT: entry.maskCutoutCombinedRT });
+          composeFilterCombinedCutoutRT(entry.maskRT, tokens, tiles, entry.maskCutoutCombinedRT, entry);
         }
       } catch (err) {
         logger?.error?.("FXMaster: error recomposing region coverage cutout mask", err);
@@ -802,14 +842,15 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
   async _draw() {
     if (!isEnabled()) return;
 
-    for (const region of canvas.regions.placeables) {
+    for (const region of getRegionEffectPlaceablesForCurrentView(canvas?.scene ?? null)) {
       await this.drawRegionFilterEffects(region, { soft: true });
     }
 
     this._refreshEnvFilterArea();
 
     if (!this._ticker) {
-      const PRIO = PIXI.UPDATE_PRIORITY?.HIGH ?? 25;
+      const lowPriority = PIXI.UPDATE_PRIORITY?.LOW ?? -25;
+      const PRIO = lowPriority + 0.75;
       try {
         canvas.app.ticker.add(this._animate, this, PRIO);
       } catch {
@@ -844,7 +885,9 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
 
     this._lastRegionsMatrix = null;
     this._tokensDirty = false;
-    this._lastCutoutCamFrac = null;
+    this._lastCutoutCameraMatrix = null;
+    this._lastBelowTokenCoverageSignature = null;
+    this._lastRegionMaskMatrix = null;
 
     this._destroyRegionMasks();
 
@@ -896,15 +939,51 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
     const regionId = placeable.id;
     this._destroyRegionMasks(regionId);
 
+    if (!regionDocumentCanApplyInCurrentView(placeable?.document ?? null, canvas?.scene ?? null)) return;
+
     const behaviors = normalizeRegionBehaviorDocs(behaviorDocs ?? placeable?.document?.behaviors).filter(
       (behavior) => behavior.type === FILTER_TYPE && !behavior.disabled,
     );
     if (!behaviors.length) return;
 
+    const darknessLevel = getSceneDarknessLevel();
+    const activeFilterSpecs = [];
+    let anyWantsBelowTokens = false;
+    let anyWantsBelowTiles = false;
+    const activeBehaviorIds = new Set();
+    const activeBehaviors = [];
+
+    for (const behavior of behaviors) {
+      const filterDefs = getRegionFilterEffectDefinitions(behavior);
+      if (!filterDefs || Object.keys(filterDefs).length === 0) continue;
+
+      for (const [id, { type, options: rawOptions }] of Object.entries(filterDefs)) {
+        if (!isEffectActiveForSceneDarkness(rawOptions, darknessLevel)) continue;
+        activeFilterSpecs.push({ behavior, id, type, rawOptions });
+        if (!activeBehaviorIds.has(behavior.id)) {
+          activeBehaviorIds.add(behavior.id);
+          activeBehaviors.push(behavior);
+        }
+        if (_belowTokensEnabled(rawOptions?.belowTokens)) anyWantsBelowTokens = true;
+        if (_belowTilesEnabled(rawOptions?.belowTiles)) anyWantsBelowTiles = true;
+      }
+    }
+
+    if (!activeFilterSpecs.length) {
+      this._updateRegionBelowTokensNeeded();
+      return;
+    }
+
     const r = canvas.app.renderer;
     const { cssW, cssH, deviceToCss, deviceRect } = getCssViewportMetrics();
 
-    const maskRT = buildRegionMaskRT(placeable, { rtPool: this._rtPool });
+    const regionMaskResolution = regionMaskResolutionForEdgeSync(
+      placeable,
+      `${packageId}.suppressSceneFilters`,
+      cssW,
+      cssH,
+    );
+    const maskRT = buildRegionMaskRT(placeable, { rtPool: this._rtPool, resolution: regionMaskResolution });
     try {
       maskRT.baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
       maskRT.baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
@@ -925,7 +1004,7 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
     const worldPerCss = 0.5 * (Math.hypot(cssToWorld.a, cssToWorld.b) + Math.hypot(cssToWorld.c, cssToWorld.d));
 
     const analytic = _analyzeAnalyticShape(placeable);
-    const maxFadeFrac = _regionMaxFadeFrac(placeable, behaviors);
+    const maxFadeFrac = _regionMaxFadeFrac(activeBehaviors);
     const wantsEdgeFade = maxFadeFrac > 0;
     const hasHoles = _regionHasHoleShapes(placeable);
     const forceMultiSdf = hasMultipleNonHoleShapes(placeable);
@@ -1037,20 +1116,6 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       }
     }
 
-    let anyWantsBelowTokens = false;
-    let anyWantsBelowTiles = false;
-    for (const behavior of behaviors) {
-      const defs = behavior.getFlag(packageId, "filters");
-      if (!defs) continue;
-      for (const [, { options: ropts }] of Object.entries(defs)) {
-        if (!isEffectActiveForSceneDarkness(ropts, getSceneDarknessLevel())) continue;
-        if (_belowTokensEnabled(ropts?.belowTokens)) anyWantsBelowTokens = true;
-        if (_belowTilesEnabled(ropts?.belowTiles)) anyWantsBelowTiles = true;
-        if (anyWantsBelowTokens && anyWantsBelowTiles) break;
-      }
-      if (anyWantsBelowTokens && anyWantsBelowTiles) break;
-    }
-
     let maskCutoutTokensRT = null;
     let maskCutoutTilesRT = null;
     let maskCutoutCombinedRT = null;
@@ -1064,20 +1129,23 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       }
       const { tokens, tiles } = SceneMaskManager.instance.getMasks?.("filters") ?? {};
       if (anyWantsBelowTokens) {
-        const outRT = this._acquireRT(maskRT.width | 0, maskRT.height | 0, maskRT.resolution || 1);
+        const outRT = this._acquireRT(maskRT.width, maskRT.height, maskRT.resolution || 1);
         maskCutoutTokensRT = tokens
           ? composeMaskMinusTokensRT(maskRT, tokens, { outRT })
           : composeMaskMinusTokens(maskRT, { outRT });
       }
       if (anyWantsBelowTiles) {
-        const outRT = this._acquireRT(maskRT.width | 0, maskRT.height | 0, maskRT.resolution || 1);
+        const outRT = this._acquireRT(maskRT.width, maskRT.height, maskRT.resolution || 1);
         maskCutoutTilesRT = tiles
           ? composeMaskMinusTilesRT(maskRT, tiles, { outRT })
-          : composeMaskMinusTiles(maskRT, { outRT });
+          : composeMaskMinusTiles(maskRT, { outRT, restrictionKind: "filters" });
       }
       if (anyWantsBelowTokens && anyWantsBelowTiles) {
-        const outRT = this._acquireRT(maskRT.width | 0, maskRT.height | 0, maskRT.resolution || 1);
-        maskCutoutCombinedRT = composeMaskMinusCoverageRT(maskRT, [tokens, tiles], { outRT });
+        const outRT = this._acquireRT(maskRT.width, maskRT.height, maskRT.resolution || 1);
+        maskCutoutCombinedRT = composeFilterCombinedCutoutRT(maskRT, tokens, tiles, outRT, {
+          maskCutoutTokensRT,
+          maskCutoutTilesRT,
+        });
       }
       for (const rt of [maskCutoutTokensRT, maskCutoutTilesRT, maskCutoutCombinedRT]) {
         if (!rt?.baseTexture) continue;
@@ -1093,152 +1161,144 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
     const defaultSmoothK = Math.max(2.0 * worldPerCss, 1e-6);
     const appliedFilters = [];
 
-    const darknessLevel = getSceneDarknessLevel();
-
-    for (const behavior of behaviors) {
-      const filterDefs = behavior.getFlag(packageId, "filters");
-      if (!filterDefs || Object.keys(filterDefs).length === 0) continue;
-
-      for (const [id, { type, options: rawOptions }] of Object.entries(filterDefs)) {
-        if (!isEffectActiveForSceneDarkness(rawOptions, darknessLevel)) continue;
-        const FilterClass = CONFIG.fxmaster.filterEffects[type];
-        if (!FilterClass) {
-          logger.warn(game.i18n.format("FXMASTER.Filters.TypeErrors.TypeUnknown", { id, type }));
-          continue;
-        }
-
-        const options = normalize(rawOptions ?? {});
-        const filter = new FilterClass(options, id);
-        const wantBelow = _belowTokensEnabled(options?.belowTokens);
-        const wantBelowTiles = _belowTilesEnabled(options?.belowTiles);
-        const wantBelowForeground = _belowForegroundEnabled(options?.belowForeground);
-        const uid = buildRegionEffectUid("filter", regionId, behavior.id, id);
-        filter.__fxmBelowTokens = wantBelow;
-        filter.__fxmBelowTiles = wantBelowTiles;
-        filter.__fxmBelowForeground = wantBelowForeground;
-        filter.__fxmStackUid = uid;
-
-        if (filter.uniforms) {
-          const u = filter.uniforms;
-
-          u.maskSampler = chooseRegionFilterMaskTexture(
-            { maskRT, maskCutoutTokensRT, maskCutoutTilesRT, maskCutoutCombinedRT },
-            wantBelow,
-            wantBelowTiles,
-          );
-          u.hasMask = 1.0;
-          u.viewSize =
-            u.viewSize instanceof Float32Array && u.viewSize.length >= 2
-              ? ((u.viewSize[0] = cssW), (u.viewSize[1] = cssH), u.viewSize)
-              : new Float32Array([cssW, cssH]);
-          u.deviceToCss = deviceToCss;
-          u.maskReady = 1.0;
-          u.maskSoft = 0.0;
-          filter.__fxmMaskVariants = {
-            baseMaskRT: maskRT ?? null,
-            cutoutTokensRT: maskCutoutTokensRT ?? null,
-            cutoutTilesRT: maskCutoutTilesRT ?? null,
-            cutoutCombinedRT: maskCutoutCombinedRT ?? null,
-            tokensMaskRT: null,
-            cssW,
-            cssH,
-            deviceToCss,
-            maskSoft: false,
-          };
-          u.uCssToWorld = cssToWorldMat3;
-
-          const raw = Math.max(0, Number(options?.fadePercent) || 0);
-          const fadeFrac = raw > 1 ? Math.min(1, raw / 100) : Math.min(1, raw);
-          const fadeWorld = fadeFrac > 0 ? edgeFadeWorldWidth(placeable, fadeFrac) : 0;
-
-          u.uRegionShape = fadeMode;
-
-          u.uUseSdf = fadeMode === 0 && !fastPoly && sdfTex ? 1 : 0;
-
-          if (fadeMode === 0) {
-            if ("uFadePct" in u) u.uFadePct = fadeFrac;
-            if ("uUsePct" in u) u.uUsePct = 1.0;
-            if ("uFadeWorld" in u) u.uFadeWorld = 0.0;
-          } else {
-            if ("uFadePct" in u) u.uFadePct = fadeFrac;
-            if ("uFadeWorld" in u) u.uFadeWorld = fadeWorld;
-            if ("uUsePct" in u) u.uUsePct = "uFadePct" in u ? 1.0 : 0.0;
-          }
-
-          if ("uSmoothKWorld" in u) {
-            u.uSmoothKWorld = Math.max(fadeWorld > 0 ? 0.25 * fadeWorld : defaultSmoothK, 1e-6);
-          }
-
-          if (fadeMode === 1 || fadeMode === 2) {
-            u.uCenter = fadeCenter;
-            u.uHalfSize = fadeHalf;
-            u.uRotation = fadeRotation || 0.0;
-            if ("uEdges" in u) {
-              u.uEdges = uEdgesArray;
-              if ("uEdgeCount" in u) u.uEdgeCount = edgeCount;
-            }
-          } else if (fadeMode === 0) {
-            u.uSdf = sdfTex;
-            u.uUvFromWorld = uUvFromWorld;
-
-            if (u.uSdfScaleOff instanceof Float32Array && u.uSdfScaleOff.length >= 4 && uSdfScaleOff4) {
-              u.uSdfScaleOff[0] = uSdfScaleOff4[0];
-              u.uSdfScaleOff[1] = uSdfScaleOff4[1];
-              u.uSdfScaleOff[2] = uSdfScaleOff4[2];
-              u.uSdfScaleOff[3] = uSdfScaleOff4[3];
-            } else if ("uSdfScaleOff" in u) {
-              u.uSdfScaleOff = uSdfScaleOff;
-            }
-            if ("uSdfDecode" in u) u.uSdfDecode = uSdfScaleOff;
-
-            u.uSdfTexel = uSdfTexel;
-            if ("uSdfInsideMax" in u) u.uSdfInsideMax = uSdfInsideMax;
-            if ("uEdges" in u) {
-              u.uEdges = uEdgesArray;
-              if ("uEdgeCount" in u) u.uEdgeCount = edgeCount;
-            }
-          }
-        }
-
-        try {
-          if (!(filter.filterArea instanceof PIXI.Rectangle)) filter.filterArea = new PIXI.Rectangle();
-          filter.filterArea.copyFrom(deviceRect);
-          filter.autoFit = false;
-          filter.padding = 0;
-          filter.resolution = (r.resolution || 1) * capScale;
-        } catch (err) {
-          logger.debug("FXMaster:", err);
-        }
-
-        if (rbAligned && typeof filter.configure === "function") {
-          filter.configure({
-            regionMinX: rbAligned.minX,
-            regionMinY: rbAligned.minY,
-            regionMaxX: rbAligned.maxX,
-            regionMaxY: rbAligned.maxY,
-          });
-        }
-
-        try {
-          filter.play({ ...(rawOptions ?? {}), skipFading: !!soft });
-        } catch {
-          try {
-            filter.enabled = true;
-          } catch (err) {
-            logger.debug("FXMaster:", err);
-          }
-        }
-
-        try {
-          const u2 = filter.uniforms;
-          if (u2 && typeof u2.strength === "number") filter.__fxmBaseStrength = u2.strength;
-        } catch (err) {
-          logger.debug("FXMaster:", err);
-        }
-
-        appliedFilters.push(filter);
-        this.stackEntries.set(uid, { uid, filter, regionId, behaviorId: behavior.id, effectId: id });
+    for (const { behavior, id, type, rawOptions } of activeFilterSpecs) {
+      const FilterClass = CONFIG.fxmaster.filterEffects[type];
+      if (!FilterClass) {
+        logger.warn(game.i18n.format("FXMASTER.Filters.TypeErrors.TypeUnknown", { id, type }));
+        continue;
       }
+
+      const options = normalize(rawOptions ?? {});
+      const filter = new FilterClass(options, id);
+      const wantBelow = _belowTokensEnabled(options?.belowTokens);
+      const wantBelowTiles = _belowTilesEnabled(options?.belowTiles);
+      const wantBelowForeground = _belowForegroundEnabled(options?.belowForeground);
+      const uid = buildRegionEffectUid("filter", regionId, behavior.id, id);
+      filter.__fxmBelowTokens = wantBelow;
+      filter.__fxmBelowTiles = wantBelowTiles;
+      filter.__fxmBelowForeground = wantBelowForeground;
+      filter.__fxmStackUid = uid;
+
+      if (filter.uniforms) {
+        const u = filter.uniforms;
+
+        u.maskSampler = chooseRegionFilterMaskTexture(
+          { maskRT, maskCutoutTokensRT, maskCutoutTilesRT, maskCutoutCombinedRT },
+          wantBelow,
+          wantBelowTiles,
+        );
+        u.hasMask = 1.0;
+        u.viewSize =
+          u.viewSize instanceof Float32Array && u.viewSize.length >= 2
+            ? ((u.viewSize[0] = cssW), (u.viewSize[1] = cssH), u.viewSize)
+            : new Float32Array([cssW, cssH]);
+        u.deviceToCss = deviceToCss;
+        u.maskReady = 1.0;
+        u.maskSoft = 0.0;
+        filter.__fxmMaskVariants = {
+          baseMaskRT: maskRT ?? null,
+          cutoutTokensRT: maskCutoutTokensRT ?? null,
+          cutoutTilesRT: maskCutoutTilesRT ?? null,
+          cutoutCombinedRT: maskCutoutCombinedRT ?? null,
+          tokensMaskRT: null,
+          cssW,
+          cssH,
+          deviceToCss,
+          maskSoft: false,
+        };
+        u.uCssToWorld = cssToWorldMat3;
+
+        const raw = Math.max(0, Number(options?.fadePercent) || 0);
+        const fadeFrac = raw > 1 ? Math.min(1, raw / 100) : Math.min(1, raw);
+        const fadeWorld = fadeFrac > 0 ? edgeFadeWorldWidth(placeable, fadeFrac) : 0;
+
+        u.uRegionShape = fadeMode;
+
+        u.uUseSdf = fadeMode === 0 && !fastPoly && sdfTex ? 1 : 0;
+
+        if (fadeMode === 0) {
+          if ("uFadePct" in u) u.uFadePct = fadeFrac;
+          if ("uUsePct" in u) u.uUsePct = 1.0;
+          if ("uFadeWorld" in u) u.uFadeWorld = 0.0;
+        } else {
+          if ("uFadePct" in u) u.uFadePct = fadeFrac;
+          if ("uFadeWorld" in u) u.uFadeWorld = fadeWorld;
+          if ("uUsePct" in u) u.uUsePct = "uFadePct" in u ? 1.0 : 0.0;
+        }
+
+        if ("uSmoothKWorld" in u) {
+          u.uSmoothKWorld = Math.max(fadeWorld > 0 ? 0.25 * fadeWorld : defaultSmoothK, 1e-6);
+        }
+
+        if (fadeMode === 1 || fadeMode === 2) {
+          u.uCenter = fadeCenter;
+          u.uHalfSize = fadeHalf;
+          u.uRotation = fadeRotation || 0.0;
+          if ("uEdges" in u) {
+            u.uEdges = uEdgesArray;
+            if ("uEdgeCount" in u) u.uEdgeCount = edgeCount;
+          }
+        } else if (fadeMode === 0) {
+          u.uSdf = sdfTex;
+          u.uUvFromWorld = uUvFromWorld;
+
+          if (u.uSdfScaleOff instanceof Float32Array && u.uSdfScaleOff.length >= 4 && uSdfScaleOff4) {
+            u.uSdfScaleOff[0] = uSdfScaleOff4[0];
+            u.uSdfScaleOff[1] = uSdfScaleOff4[1];
+            u.uSdfScaleOff[2] = uSdfScaleOff4[2];
+            u.uSdfScaleOff[3] = uSdfScaleOff4[3];
+          } else if ("uSdfScaleOff" in u) {
+            u.uSdfScaleOff = uSdfScaleOff;
+          }
+          if ("uSdfDecode" in u) u.uSdfDecode = uSdfScaleOff;
+
+          u.uSdfTexel = uSdfTexel;
+          if ("uSdfInsideMax" in u) u.uSdfInsideMax = uSdfInsideMax;
+          if ("uEdges" in u) {
+            u.uEdges = uEdgesArray;
+            if ("uEdgeCount" in u) u.uEdgeCount = edgeCount;
+          }
+        }
+      }
+
+      try {
+        if (!(filter.filterArea instanceof PIXI.Rectangle)) filter.filterArea = new PIXI.Rectangle();
+        filter.filterArea.copyFrom(deviceRect);
+        filter.autoFit = false;
+        filter.padding = 0;
+        filter.resolution = (r.resolution || 1) * capScale;
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+
+      if (rbAligned && typeof filter.configure === "function") {
+        filter.configure({
+          regionMinX: rbAligned.minX,
+          regionMinY: rbAligned.minY,
+          regionMaxX: rbAligned.maxX,
+          regionMaxY: rbAligned.maxY,
+        });
+      }
+
+      try {
+        filter.play({ ...(rawOptions ?? {}), skipFading: !!soft });
+      } catch {
+        try {
+          filter.enabled = true;
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+      }
+
+      try {
+        const u2 = filter.uniforms;
+        if (u2 && typeof u2.strength === "number") filter.__fxmBaseStrength = u2.strength;
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+
+      appliedFilters.push(filter);
+      this.stackEntries.set(uid, { uid, filter, regionId, behaviorId: behavior.id, effectId: id });
     }
 
     if (appliedFilters.length > 0) {
@@ -1264,14 +1324,15 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
   }
 
   forceRegionMaskRefreshAll() {
-    for (const region of canvas.regions.placeables) {
+    for (const region of getRegionEffectPlaceablesForCurrentView(canvas?.scene ?? null)) {
       if (this.regionMasks.has(region.id)) this._rebuildRegionMaskFor(region);
     }
     this._refreshEnvFilterArea();
   }
 
   forceRegionMaskRefresh(regionId) {
-    const region = canvas.regions?.get(regionId);
+    const regionDoc = getSceneRegionDocumentById(regionId, canvas?.scene ?? null);
+    const region = canvas.regions?.get(regionId) ?? getRegionPlaceableOrDocumentAdapter(regionDoc);
     if (region && this.regionMasks.has(regionId)) this._rebuildRegionMaskFor(region);
     this._refreshEnvFilterArea();
   }
@@ -1428,7 +1489,13 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
 
     const { cssW, cssH, deviceToCss, deviceRect } = getCssViewportMetrics();
 
-    const newRT = buildRegionMaskRT(placeable, { rtPool: this._rtPool });
+    const regionMaskResolution = regionMaskResolutionForEdgeSync(
+      placeable,
+      `${packageId}.suppressSceneFilters`,
+      cssW,
+      cssH,
+    );
+    const newRT = buildRegionMaskRT(placeable, { rtPool: this._rtPool, resolution: regionMaskResolution });
     try {
       this._releaseRT(entry.maskRT);
     } catch (err) {
@@ -1457,10 +1524,10 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
         }
         const reuse =
           !!old &&
-          (old.width | 0) === (newRT.width | 0) &&
-          (old.height | 0) === (newRT.height | 0) &&
+          Math.abs(Number(old.width ?? 0) - Number(newRT.width ?? 0)) <= 0.001 &&
+          Math.abs(Number(old.height ?? 0) - Number(newRT.height ?? 0)) <= 0.001 &&
           (old.resolution || 1) === (newRT.resolution || 1);
-        const outRT = reuse ? old : this._acquireRT(newRT.width | 0, newRT.height | 0, newRT.resolution || 1);
+        const outRT = reuse ? old : this._acquireRT(newRT.width, newRT.height, newRT.resolution || 1);
         entry[key] = builder(outRT);
         if (old && !reuse && old !== entry[key]) this._releaseRT(old);
         try {
@@ -1475,10 +1542,12 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
         tokens ? composeMaskMinusTokensRT(newRT, tokens, { outRT }) : composeMaskMinusTokens(newRT, { outRT }),
       );
       rebuildVariant(anyWantsBelowTiles, "maskCutoutTilesRT", (outRT) =>
-        tiles ? composeMaskMinusTilesRT(newRT, tiles, { outRT }) : composeMaskMinusTiles(newRT, { outRT }),
+        tiles
+          ? composeMaskMinusTilesRT(newRT, tiles, { outRT })
+          : composeMaskMinusTiles(newRT, { outRT, restrictionKind: "filters" }),
       );
       rebuildVariant(anyWantsBelowTokens && anyWantsBelowTiles, "maskCutoutCombinedRT", (outRT) =>
-        composeMaskMinusCoverageRT(newRT, [tokens, tiles], { outRT }),
+        composeFilterCombinedCutoutRT(newRT, tokens, tiles, outRT, entry),
       );
     } else {
       for (const key of ["maskCutoutTokensRT", "maskCutoutTilesRT", "maskCutoutCombinedRT"]) {
@@ -1503,7 +1572,7 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
     const behaviors = normalizeRegionBehaviorDocs(placeable?.document?.behaviors).filter(
       (behavior) => behavior.type === FILTER_TYPE && !behavior.disabled,
     );
-    const maxFadeFrac = _regionMaxFadeFrac(placeable, behaviors);
+    const maxFadeFrac = _regionMaxFadeFrac(behaviors);
     const wantsEdgeFade = maxFadeFrac > 0;
     const hasHoles = _regionHasHoleShapes(placeable);
     const forceMultiSdf = hasMultipleNonHoleShapes(placeable);
@@ -1756,36 +1825,39 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
     }
 
     if (anyBelowTokens || anyBelowTiles) {
-      const r = canvas?.app?.renderer;
-      const res = r?.resolution || 1;
-      const { txCss, tyCss } = getSnappedCameraCss();
-      const fx = (((txCss * res) % 1) + 1) % 1;
-      const fy = (((tyCss * res) % 1) + 1) % 1;
+      const M = anyBelowTiles ? rawStageMatrix() : this._currentCameraMatrix ?? snappedStageMatrix();
+      const cameraMoved = !this._lastCutoutCameraMatrix || cameraMatrixChanged(M, this._lastCutoutCameraMatrix);
+      let tokenMotionChanged = false;
+      if (anyBelowTokens) {
+        const tokenSignature = buildBelowTokenMaskCoverageSignature();
+        tokenMotionChanged = tokenSignature !== (this._lastBelowTokenCoverageSignature ?? null);
+        this._lastBelowTokenCoverageSignature = tokenSignature;
+      } else {
+        this._lastBelowTokenCoverageSignature = null;
+      }
 
-      const prev = this._lastCutoutCamFrac;
-      /**
-       * Sub-pixel threshold: skip token mask recomposition for camera movements smaller than ~1% of a device pixel to avoid expensive per-frame work.
-       */
-      const SUB_PIXEL_THRESHOLD = 0.01;
-      const fracMoved =
-        !prev || Math.abs(prev.x - fx) > SUB_PIXEL_THRESHOLD || Math.abs(prev.y - fy) > SUB_PIXEL_THRESHOLD;
-
-      if (!this._rebuiltThisTick && (this._tokensDirty || fracMoved)) {
+      if (!this._rebuiltThisTick && (this._tokensDirty || cameraMoved || tokenMotionChanged)) {
         try {
-          this._recomposeBelowTokensCutoutsSync();
+          this._recomposeBelowTokensCutoutsSync({ refreshSharedMasks: tokenMotionChanged });
         } catch (err) {
           logger?.error?.("FXMaster: error recomposing token cutout masks", err);
         }
       }
 
       this._tokensDirty = false;
-      this._lastCutoutCamFrac = { x: fx, y: fy };
+      this._lastCutoutCameraMatrix = M ? { a: M.a, b: M.b, c: M.c, d: M.d, tx: M.tx, ty: M.ty } : null;
     } else {
       this._tokensDirty = false;
-      this._lastCutoutCamFrac = null;
+      this._lastCutoutCameraMatrix = null;
     }
 
-    for (const reg of canvas.regions.placeables) {
+    for (const regionId of Array.from(this.regionMasks.keys())) {
+      const regionDoc = getSceneRegionDocumentById(regionId, canvas?.scene ?? null);
+      if (!regionDoc || !regionDocumentCanApplyInCurrentView(regionDoc, canvas?.scene ?? null))
+        this.destroyRegionFilterEffects(regionId);
+    }
+
+    for (const reg of getRegionEffectPlaceablesForCurrentView(canvas?.scene ?? null)) {
       if (this.regionMasks.has(reg.id)) this._applyElevationGate(reg);
     }
 
@@ -1795,7 +1867,7 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       const darknessLevel = getSceneDarknessLevel();
       if (Math.abs(darknessLevel - (this._lastDarknessLevel ?? darknessLevel)) > 1e-4) {
         this._lastDarknessLevel = darknessLevel;
-        for (const region of canvas.regions?.placeables ?? []) {
+        for (const region of getRegionEffectPlaceablesForCurrentView(canvas?.scene ?? null)) {
           const signature = this._buildRegionDarknessActivationSignature(region, darknessLevel);
           if (signature !== (this._lastRegionDarknessSignatures.get(region.id) ?? "")) {
             this._lastRegionDarknessSignatures.set(region.id, signature);
@@ -1822,6 +1894,15 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
   }
 
   _onCameraChange() {
+    if (!this.regionMasks?.size) return;
+
+    const M = snappedStageMatrix();
+    if (!M) return;
+
+    if (!cameraMatrixChanged(M, this._lastRegionMaskMatrix)) return;
+
+    this._lastRegionMaskMatrix = { a: M.a, b: M.b, c: M.c, d: M.d, tx: M.tx, ty: M.ty };
+
     this._rebuiltThisTick = true;
     this.forceRegionMaskRefreshAll();
   }

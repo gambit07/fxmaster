@@ -19,6 +19,7 @@ import { registerRegionHooks } from "./region-hooks.js";
 import { registerCanvasHooks } from "./canvas-hooks.js";
 import { registerSceneHooks } from "./scene-hooks.js";
 import { registerUIHooks } from "./ui-hooks.js";
+import { registerTileConfigHooks } from "./tile-config-hooks.js";
 
 /**
  * Register all FXMaster Foundry VTT hooks.
@@ -30,6 +31,7 @@ export const registerHooks = function () {
 
   registerTokenHooks(ctx);
   registerUIHooks(ctx);
+  registerTileConfigHooks(ctx);
   registerRegionHooks(ctx);
   registerCanvasHooks(ctx);
   registerSceneHooks(ctx);

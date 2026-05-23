@@ -1,4 +1,7 @@
-
+/**
+ * SPDX-FileCopyrightText: 2026 Gambit
+ */
+ 
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
 precision highp int;
@@ -72,7 +75,7 @@ varying vec2 vTextureCoord;
 void main() {
   vec4 src = texture2D(uSampler, vTextureCoord);
 
-  vec2 screenPx = outputFrame.xy + vTextureCoord * inputSize.xy;
+  vec2 screenPx = outputFrame.xy + vTextureCoord * outputFrame.zw;
 
   float inMask = src.a;
   if (hasMask > 0.5) {

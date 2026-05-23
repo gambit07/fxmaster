@@ -187,6 +187,15 @@ export function getSnappedCameraCss() {
 }
 
 /**
+ * Return the live unsnapped stage matrix for the current CSS-space camera.
+ * @param {PIXI.Container} [stage=canvas.stage]
+ * @returns {PIXI.Matrix}
+ */
+export function rawStageMatrix(stage = canvas.stage) {
+  return stageMatrixSnapshot(stage).raw;
+}
+
+/**
  * Return a pixel-snapped stage matrix aligned to the current CSS-space camera.
  * @param {PIXI.Container} [stage=canvas.stage]
  * @returns {PIXI.Matrix}
@@ -247,12 +256,12 @@ export function getCssViewportMetrics() {
   const r = canvas?.app?.renderer;
   const res = r?.resolution || window.devicePixelRatio || 1;
 
-  const deviceW = Math.max(1, (r?.view?.width ?? r?.screen?.width ?? 1) | 0);
-  const deviceH = Math.max(1, (r?.view?.height ?? r?.screen?.height ?? 1) | 0);
+  const deviceW = Math.max(1, Math.round(Number(r?.view?.width ?? (r?.screen?.width ?? 1) * res)) || 1);
+  const deviceH = Math.max(1, Math.round(Number(r?.view?.height ?? (r?.screen?.height ?? 1) * res)) || 1);
   const deviceRect = new PIXI.Rectangle(0, 0, deviceW, deviceH);
 
-  const cssW = Math.max(1, (r?.screen?.width ?? Math.round(deviceW / res)) | 0);
-  const cssH = Math.max(1, (r?.screen?.height ?? Math.round(deviceH / res)) | 0);
+  const cssW = Math.max(1, Number(r?.screen?.width ?? deviceW / res) || 1);
+  const cssH = Math.max(1, Number(r?.screen?.height ?? deviceH / res) || 1);
   const rect = new PIXI.Rectangle(0, 0, cssW, cssH);
 
   return { cssW, cssH, deviceToCss: 1 / res, rect, deviceRect };
@@ -273,7 +282,7 @@ export function safeResolutionForCssArea(cssW, cssH) {
   const max = gl?.getParameter?.(gl.MAX_TEXTURE_SIZE) || 8192;
   const base = r.resolution || window.devicePixelRatio || 1;
 
-  const span = Math.max(1, cssW | 0, cssH | 0);
+  const span = Math.max(1, Math.ceil(Number(cssW) || 1), Math.ceil(Number(cssH) || 1));
   const texLimited = max / span;
 
   const safe = Math.max(0.5, Math.min(base, texLimited));

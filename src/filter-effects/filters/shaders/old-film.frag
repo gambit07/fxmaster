@@ -1,4 +1,7 @@
-
+/**
+ * SPDX-FileCopyrightText: 2026 Gambit
+ */
+ 
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
 precision highp int;
@@ -80,7 +83,7 @@ const vec3 SEPIA_RGB = vec3(112.0/255.0, 66.0/255.0, 20.0/255.0);
 void main(){
   vec4 src = texture2D(uSampler, vTextureCoord);
 
-  vec2 screenPx = outputFrame.xy + vTextureCoord * inputSize.xy;
+  vec2 screenPx = outputFrame.xy + vTextureCoord * outputFrame.zw;
   vec2 snapPx   = screenPx - camFrac;
 
   float inMask = src.a;

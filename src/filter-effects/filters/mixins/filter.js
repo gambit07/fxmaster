@@ -193,8 +193,8 @@ export function FXMasterFilterEffectMixin(Base) {
       if (!("srcFrame" in u)) return;
 
       const r = canvas?.app?.renderer;
-      const wCSS = r?.screen?.width | 0 || 1;
-      const hCSS = r?.screen?.height | 0 || 1;
+      const wCSS = Math.max(1, Number(r?.screen?.width) || 1);
+      const hCSS = Math.max(1, Number(r?.screen?.height) || 1);
 
       const A = filterSystem?.activeState ?? currentState;
       const sf = A?.sourceFrame;
@@ -256,8 +256,8 @@ export function FXMasterFilterEffectMixin(Base) {
         const r = canvas?.app?.renderer;
 
         const area = this.filterArea instanceof PIXI.Rectangle ? this.filterArea : r?.screen ?? { width: 1, height: 1 };
-        const wCSS = Math.max(1, area.width | 0);
-        const hCSS = Math.max(1, area.height | 0);
+        const wCSS = Math.max(1, Number(area.width) || 1);
+        const hCSS = Math.max(1, Number(area.height) || 1);
 
         const safe = safeResolutionForCssArea(wCSS, hCSS);
         if (!Number.isFinite(this.resolution) || this.resolution > safe || this.resolution <= 0) {
@@ -302,7 +302,10 @@ export function FXMasterFilterEffectMixin(Base) {
       if ("maskSoft" in options && typeof options.maskSoft === "number") u.maskSoft = options.maskSoft;
       if ("invertMask" in options && typeof options.invertMask === "number") u.invertMask = options.invertMask;
       if ("viewSize" in options && Array.isArray(options.viewSize) && options.viewSize.length === 2) {
-        u.viewSize = new Float32Array([Math.max(1, options.viewSize[0] | 0), Math.max(1, options.viewSize[1] | 0)]);
+        u.viewSize = new Float32Array([
+          Math.max(1, Number(options.viewSize[0]) || 1),
+          Math.max(1, Number(options.viewSize[1]) || 1),
+        ]);
       }
     }
 

@@ -9,7 +9,6 @@
   --fxm-switch-thumb-border: rgba(0, 0, 0, 0.65);
 }
 
-/* FXMaster overview tool uses a custom capture listener instead of Foundry native button flow. */
 #controls [data-tool="activation"],
 #controls [data-tool="activation"] *,
 #scene-controls [data-tool="activation"],
@@ -1471,4 +1470,66 @@
   .fxmaster-info-grid {
     grid-template-columns: 1fr;
   }
+}
+
+.fxmaster-toggle-context-menu {
+  position: fixed;
+  z-index: 100000;
+  min-width: 11rem;
+  padding: 0.25rem;
+  border: 1px solid var(--color-border-dark-2);
+  border-radius: var(--fxmaster-radius);
+  background: var(--background, rgba(20, 20, 20, 0.96));
+  box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.45);
+}
+
+.fxmaster-toggle-context-menu-action {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: flex-start;
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  border-radius: calc(var(--fxmaster-radius) * 0.75);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.fxmaster-toggle-context-menu-action:hover,
+.fxmaster-toggle-context-menu-action:focus {
+  background: rgba(255, 255, 255, 0.1);
+  outline: none;
+}
+
+.fxmaster-tile-restriction-controls {
+  margin-top: 0.15rem;
+}
+
+.fxmaster-tile-restriction-controls .fxmaster-tile-restriction-row {
+  align-items: center;
+  column-gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.35rem;
+}
+
+.fxmaster-tile-restriction-controls .fxmaster-tile-restriction-row > label {
+  flex: 1 1 auto;
+  width: auto;
+  max-width: none;
+  min-width: max-content;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.fxmaster-tile-restriction-controls .fxmaster-tile-restriction-row > .form-fields {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: auto;
+}
+
+.fxmaster-tile-restriction-controls .fxmaster-tile-restriction-row > .hint {
+  flex: 0 0 100%;
+  margin-left: 0;
 }

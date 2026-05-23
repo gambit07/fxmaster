@@ -25,7 +25,8 @@ export class GlobalEffectsStackLayer extends BaseEffectsLayer {
     GlobalEffectsCompositor.instance.attachLayer(this);
 
     if (!this._ticker) {
-      const priority = PIXI.UPDATE_PRIORITY?.LOW ?? -25;
+      const lowPriority = PIXI.UPDATE_PRIORITY?.LOW ?? -25;
+      const priority = lowPriority + 0.5;
       try {
         canvas.app.ticker.add(this._animate, this, priority);
       } catch {

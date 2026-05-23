@@ -24,9 +24,9 @@
       "DisableAllHint": "Setting this will disable effects for all users. It overrides the enable flag. It's mostly a safe guard to deactivate effects when migrations fail. You shouldn't need to set this yourself. After changing this setting, a manual reload is required.",
       "ClearParticleAndFilterEffectsTitle": "Clear Particle and Filter Effects",
       "ClearParticleAndFilterEffectsContent": "<p>Permanently delete all <em>Particle Effects</em> and <em>Filter Effects</em> from this Scene?</p>",
-      "ResetPassiveParameters": "Reset Particle and Filter Parameters",
-      "ResetPassiveParametersHint": "Resets Particle and Filter parameters to their default values",
-      "ResetPassiveSuccess": "Particle and Filter parameters successfully reset",
+      "ResetEffectDefaults": "Reset to Defaults",
+      "ResetEffectDefaultsSuccess": "{effect} parameters reset to defaults",
+      "PowerToggleContextHint": "Left-click to toggle. Right-click for reset options.",
       "Yes": "Yes",
       "No": "No",
       "Enable": "Enable",
@@ -238,7 +238,53 @@
       "BlendMode": "Blend Mode",
       "Levels": "Levels",
       "AllLevels": "All Levels",
-      "DarknessActivationEnabled": "Darkness Activation"
+      "DarknessActivationEnabled": "Darkness Activation",
+      "Intensity": "Intensity",
+      "AuroraMode": "Aurora Mode",
+      "AuroraModeSide": "Side View",
+      "AuroraModeTopDown": "Top Down",
+      "AuroraModeHorizon": "Horizon",
+      "AuroraPalette": {
+        "Name": "Aurora Palette",
+        "Lakeside": "Lakeside Aurora Borealis",
+        "NorthernGetaway": "Northern Getaway",
+        "NorthernLights": "Northern Lights",
+        "ForestNorthernLights": "Forest Northern Lights",
+        "PhenomenalAurora": "Phenomenal Aurora",
+        "Aurora": "Aurora",
+        "Custom": "Custom Colors"
+      },
+      "AuroraColorDepth": "Depth Color",
+      "AuroraColorLower": "Lower Curtain Color",
+      "AuroraColorCore": "Core Color",
+      "AuroraColorBright": "Bright Edge Color",
+      "AuroraColorGlow": "Glow Color",
+      "AuroraCount": "Aurora Count",
+      "AuroraRibbonWidth": "Ribbon Width",
+      "AuroraWaviness": "Waviness",
+      "AuroraSoftness": "Softness",
+      "AuroraSideVerticalPosition": "Curtain Height Position",
+      "AuroraSideCurtainHeight": "Curtain Falloff",
+      "AuroraTopDownAngle": "Path Angle",
+      "AuroraTopDownDepth": "Depth Glow",
+      "AuroraHorizonStartHeight": "Start Anchor",
+      "AuroraHorizonEndHeight": "Exit Anchor",
+      "AuroraHorizonSkyReach": "Overhead Drop",
+      "AuroraHorizonAngle": "Path Slant",
+      "BorderTop": "Top",
+      "BorderRight": "Right",
+      "BorderBottom": "Bottom",
+      "BorderLeft": "Left",
+      "AuroraHorizonStartPosition": "Start Anchor",
+      "AuroraHorizonEndPosition": "Exit Anchor",
+      "AuroraHorizonDip": "Overhead Drop",
+      "AuroraHorizonCurtainHeight": "Curtain Reach",
+      "AuroraHorizonDepth": "Overhead Depth",
+      "AuroraHorizonOverheadPosition": "Overhead Point",
+      "AuroraHorizonHazeStrength": "Haze Strength",
+      "AuroraHorizonHazeHeight": "Haze Height",
+      "AuroraTopDownHazeStrength": "Haze Strength",
+      "AuroraMixedColors": "Mixed Colors"
     },
     "ParamTooltips": {
       "Saturation": "Color intensity. 0 = grayscale; 1 = original; >1 = oversaturated.",
@@ -395,7 +441,30 @@
       "DarknessActivationMax": "Maximum scene darkness level allowed for this effect to render.",
       "BlendMode": "How the adjusted color result blends with the sampled scene color.",
       "Levels": "Limit this scene effect to the selected scene levels. Leave it on All Levels to render everywhere.",
-      "DarknessActivationEnabled": "Enable scene darkness gating for this effect. When disabled, the effect renders at all darkness levels."
+      "DarknessActivationEnabled": "Enable scene darkness gating for this effect. When disabled, the effect renders at all darkness levels.",
+      "AuroraMode": "Side View draws horizontal curtains, Top Down draws winding overhead bands, and Horizon draws a top-edge pass-overhead curtain that dips toward the viewer and exits back through the top edge.",
+      "AuroraPalette": "Preset color stops from a Northern Lights palette collection. Selecting a preset copies its defaults into the color inputs. Custom Colors loads and saves your personal custom palette.",
+      "AuroraColorDepth": "Darkest/deepest color stop used for faint structure, shadow, and atmospheric depth.",
+      "AuroraColorLower": "Lower curtain color used in dimmer folds and distant ribbons.",
+      "AuroraColorCore": "Main aurora color used through the body of the ribbons.",
+      "AuroraColorBright": "Bright edge color used for visible curtain edges and active ray structures.",
+      "AuroraColorGlow": "Highest-energy glow color used for highlights and luminous crowns.",
+      "AuroraCount": "Number of aurora ribbons or curtain sheets to draw. In Horizon mode, higher values create distinct top-anchored passes rather than simply widening one beam.",
+      "AuroraRibbonWidth": "Controls the apparent width of each ribbon. Small values are sharp beams; larger values become broad curtains.",
+      "AuroraWaviness": "Controls natural path variation.",
+      "AuroraSoftness": "Controls how diffused each ribbon edge is. Higher values create softer atmospheric glow.",
+      "AuroraSideVerticalPosition": "Sets the average height of horizontal curtains in Side View mode.",
+      "AuroraSideCurtainHeight": "Controls how far Side View curtains fall away from the main band.",
+      "AuroraTopDownAngle": "Rotates the overhead aurora path.",
+      "AuroraTopDownDepth": "Adds secondary glow and shadow to enhance depth.",
+      "AuroraHorizonAngle": "Slants the pass-overhead path so the aurora crosses the scene at an angle.",
+      "AuroraHorizonStartPosition": "Horizontal position of the small top-edge anchor where the aurora begins entering the scene.",
+      "AuroraHorizonEndPosition": "Horizontal position of the small top-edge exit point where the aurora curves back out of the scene.",
+      "AuroraHorizonDip": "How far the aurora dips down toward the viewer before curving back up to the top edge. Higher values make the overhead portion larger and closer.",
+      "AuroraHorizonHazeStrength": "Controls the strength of the broad Horizon field veil between the main aurora ribbons.",
+      "AuroraHorizonHazeHeight": "Controls how far the broad Horizon field veil extends down the scene. 1.0 reaches the full scene height; lower values keep haze closer to the aurora band.",
+      "AuroraTopDownHazeStrength": "Controls the strength of the broad Top Down haze and between-band veil.",
+      "AuroraMixedColors": "Slowly rotates the five selected aurora colors through the different color roles over time, creating gradual color-role shifts."
     },
     "Particles": {
       "Groups": {
@@ -515,7 +584,8 @@
         "Duststorm": "Duststorm",
         "Ice": "Ice",
         "Glitch": "Glitch",
-        "LightningBolts": "Lightning Bolts"
+        "LightningBolts": "Lightning Bolts",
+        "AuroraBorealis": "Aurora Borealis"
       },
       "TypeErrors": {
         "TypeUnknown": "Filter effect '{id}' is of unknown type '{type}', skipping it.",
@@ -527,7 +597,8 @@
         "ParticleEffectRegionBehaviorName": "FXMaster: Particle Effects",
         "FilterEffectRegionBehaviorName": "FXMaster: Filter Effects",
         "SuppressSceneFiltersRegionBehaviorName": "FXMaster: Suppress Scene Filters",
-        "SuppressSceneParticlesRegionBehaviorName": "FXMaster: Suppress Scene Particles"
+        "SuppressSceneParticlesRegionBehaviorName": "FXMaster: Suppress Scene Particles",
+        "SuppressSceneSoundsRegionBehaviorName": "FXMaster: Suppress Scene Sounds"
       },
       "ElevationVisibility": {
         "Label": "Elevation Constraints",
@@ -536,6 +607,9 @@
         "Targets": "Specific Tokens POV",
         "TokenTargets": "Token UUID",
         "AlwaysVisibleForGM": "Always Visible for GM"
+      },
+      "BehaviorHints": {
+        "SuppressSceneSoundsRegionBehaviorHint": "Suppress scene-level FXMaster SoundFX for listeners inside this Region."
       }
     },
     "SoundFX": {
@@ -549,6 +623,7 @@
       "Mode": "Multi-Sound Mode",
       "ModeParallel": "Parallel (all sounds play simultaneously)",
       "ModeSequential": "Sequential (one sound at a time, played in order of priority)",
+      "ModeRandom": "Random (one sound at a time, selected randomly from the list)",
       "File": "Sound File",
       "Browse": "Browse",
       "Level": "Level",
@@ -568,7 +643,7 @@
       "EffectsHint": "Select one effect for a single-effect sound rule, or select multiple effects to create a combo rule with higher priority.",
       "NoEffectsSelected": "No effects selected.",
       "PausePlaylists": "Pause Playlists",
-      "PausePlaylistsHint": "When this rule is active in Scene or Viewer scope, pause any currently playing playlist tracks on this client. Playback resumes when no matching rules with this option remain active.",
+      "PausePlaylistsHint": "When this rule is active in Scene or Viewer scope, pause any currently playing playlist tracks. Playback resumes when no matching rules with this option remain active.",
       "RegionSoundOptions": "Region Sound Options",
       "RegionRadius": "Region Radius",
       "RegionRadiusHintPct": "Region Radius is expressed as a percentage of each disconnected Regions component size (0-500%).",
@@ -615,7 +690,32 @@
       "Enabled": "Enabled",
       "Disabled": "Disabled",
       "UnnamedRule": "Unnamed Rule",
-      "CurrentMode": "Current Mode: {mode}"
+      "CurrentMode": "Current Mode: {mode}",
+      "SuppressSceneSounds": {
+        "Hint": "Suppress scene-level FXMaster SoundFX while the listener is inside this Region.",
+        "Easing": "Enable easing",
+        "EasingHint": "Gradually fade scene-level SoundFX as the listener moves from the Region edge toward its interior.",
+        "Muffled": "Enable muffling",
+        "MuffledHint": "Treat the Region boundary as a wall and apply the SoundFX rule's muffled audio effect instead of fully muting scene-level SoundFX.",
+        "FIELDS": {
+          "easing": {
+            "label": "Enable easing",
+            "hint": "Gradually fade scene-level SoundFX as the listener moves from the Region edge toward its interior."
+          },
+          "muffled": {
+            "label": "Enable muffling",
+            "hint": "Treat the Region boundary as a wall and apply the SoundFX rule's muffled audio effect instead of fully muting scene-level SoundFX."
+          },
+          "muffledEffect": {
+            "label": "Muffled effect",
+            "hint": "Audio effect applied when muffling is active."
+          },
+          "muffledIntensity": {
+            "label": "Muffled intensity",
+            "hint": "Strength of the muffled audio effect."
+          }
+        }
+      }
     },
     "Layers": {
       "Title": "Manage Layers",
@@ -628,7 +728,7 @@
       "MoveUp": "Move up",
       "MoveDown": "Move down",
       "ResetOrder": "Reset order",
-      "Empty": "No enabled particle or filter effects were found.",
+      "Empty": "No enabled FXMaster stack rows were found.",
       "KindParticle": "Particle",
       "KindFilter": "Filter",
       "SourceScene": "Scene",
@@ -637,7 +737,12 @@
       "SourceApiMacro": "API - Macro",
       "SourceRegion": "Region",
       "ScopeRegion": "Region",
-      "Level": "Level"
+      "Level": "Level",
+      "KindSuppression": "Suppression",
+      "SuppressSceneParticles": "Suppress Scene Particles",
+      "SuppressSceneFilters": "Suppress Scene Filters",
+      "SuppressWeather": "Suppress Weather",
+      "SuppressionMeta": "Scene suppression operator"
     },
     "RenderOrder": {
       "BelowTiles": "Below Tiles"
@@ -656,6 +761,12 @@
       "Difference": "Difference",
       "Exclusion": "Exclusion"
     },
+    "Tile": {
+      "RestrictsParticles": "FXMaster: Restricts Particles",
+      "RestrictsParticlesHint": "When enabled, this overhead tile hides FXMaster particles beneath it. Restricts Weather affects both Particles and Filters.",
+      "RestrictsFilters": "FXMaster: Restricts Filters",
+      "RestrictsFiltersHint": "When enabled, this overhead tile hides FXMaster filters beneath it. Restricts Weather affects both Particles and Filters."
+    },
     "Settings": {
       "TooltipDirection": "Tooltip Direction",
       "TooltipDirectionHint": "Choose where FXMaster parameter tooltips appear when hovering labels or controls.",
@@ -667,7 +778,11 @@
       },
       "EnableLogger": "Enable FXMaster Debugging",
       "EnableLoggerHint": "Write FXMaster debugging, warning, and error messages to the browser console.",
-      "PatreonSupportHint": "If you'd like to support me, Gambit! Subscribing helps support development of this and my other free modules, and also gets you access to my premium modules Gambit's FXMaster+, Gambit's Asset Previewer, and Gambit's Image Viewer!"
+      "PatreonSupportHint": "If you'd like to support me, Gambit! Subscribing helps support development of this and my other free modules, and also gets you access to my premium modules Gambit's FXMaster+, Gambit's Asset Previewer, and Gambit's Image Viewer!",
+      "ApplyRegionBehaviorsToOverheadLevels": "Apply Region Behaviors to Overhead Levels",
+      "ApplyRegionBehaviorsToOverheadLevelsHint": "When a Region is assigned to multiple Scene Levels, allow overhead Level overlays to display that Region's particle effects, filter effects, and scene suppression. 𝗧𝗵𝗶𝘀 𝗰𝗮𝗻 𝗵𝗮𝘃𝗲 𝗮 𝗹𝗮𝗿𝗴𝗲 𝗶𝗺𝗽𝗮𝗰𝘁 𝗼𝗻 𝗽𝗲𝗿𝗳𝗼𝗿𝗺𝗮𝗻𝗰𝗲 𝗼𝗻 𝗺𝘂𝗹𝘁𝗶-𝗹𝗲𝘃𝗲𝗹 𝘀𝗰𝗲𝗻𝗲𝘀, 𝘁𝗲𝘀𝘁 𝘁𝗵𝗼𝗿𝗼𝘂𝗴𝗵𝗹𝘆 𝗯𝗲𝗳𝗼𝗿𝗲 𝘂𝘀𝗶𝗻𝗴 𝗶𝗻 𝗮 𝗹𝗶𝘃𝗲 𝗴𝗮𝗺𝗲.",
+      "CompositeGridInFxStack": "Include Foundry Grid in FX Stack",
+      "CompositeGridInFxStackHint": "Render the normal Foundry grid lines into FXMaster's compositor input so scene particles and filters can appear over the grid. Grid highlights and controls remain above FXMaster."
     },
     "Macro": {
       "Saved": "Macro '{name}' has been saved in the macro directory.",

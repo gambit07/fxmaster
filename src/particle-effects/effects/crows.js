@@ -33,6 +33,7 @@ export class CrowsParticleEffect extends DefaultRectangleSpawnMixin(FXMasterPart
       belowTiles: p.belowTiles,
       soundFxEnabled: p.soundFxEnabled,
       tint: p.tint,
+      ...this.shadowParameters,
       directionalMovement: {
         label: "FXMASTER.Params.DirectionalMovement",
         type: "checkbox",

@@ -23,6 +23,9 @@
       "DisableAllHint": "開啟此項將禁用所有使用者的效果，並覆寫啟用設定。此為遷移失敗時的安全保護，通常不需手動啟用。變更後需手動重新載入。",
       "ClearParticleAndFilterEffectsTitle": "清除粒子和濾鏡效果",
       "ClearParticleAndFilterEffectsContent": "<p>要從此場景中永久刪除所有<em>粒子效果</em>和<em>濾鏡效果</em>嗎？</p>",
+      "ResetEffectDefaults": "Reset to Defaults",
+      "ResetEffectDefaultsSuccess": "{effect} parameters reset to defaults",
+      "PowerToggleContextHint": "Left-click to toggle. Right-click for reset options.",
       "Yes": "是",
       "No": "否",
       "Enable": "啟用",
@@ -278,6 +281,16 @@
       "Lighten": "Lighten",
       "Difference": "Difference",
       "Exclusion": "Exclusion"
+    },
+    "Tile": {
+      "RestrictsParticles": "FXMaster: Restricts Particles",
+      "RestrictsParticlesHint": "When enabled, this overhead tile hides FXMaster particles beneath it. Restricts Weather affects both Particles and Filters.",
+      "RestrictsFilters": "FXMaster: Restricts Filters",
+      "RestrictsFiltersHint": "When enabled, this overhead tile hides FXMaster filters beneath it. Restricts Weather affects both Particles and Filters."
+    },
+    "Settings": {
+      "ApplyRegionBehaviorsToOverheadLevels": "Apply Region Behaviors to Overhead Levels",
+      "ApplyRegionBehaviorsToOverheadLevelsHint": "When a Region is assigned to multiple Scene Levels, allow overhead Level overlays to display that Region's particle effects, filter effects, and scene suppression. This can have a big impact on performance on multi-level scenes."
     }
   }
 }

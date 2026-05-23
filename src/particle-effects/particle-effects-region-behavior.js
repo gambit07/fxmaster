@@ -1,4 +1,9 @@
-import { resetFlag, normalizeDarknessActivationRange } from "../utils.js";
+import {
+  fxmReadRegionBehaviorRuntimeState,
+  getRegionPlaceableOrDocumentAdapter,
+  resetFlag,
+  normalizeDarknessActivationRange,
+} from "../utils.js";
 import { packageId } from "../constants.js";
 import { buildRegionEffectUid, promoteEffectStackUids } from "../common/effect-stack.js";
 
@@ -305,11 +310,11 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
     const mode = this._getEventModeFromSelection();
     if (mode === "none" || mode === "exitOnly") return;
 
-    const prev = this.parent.getFlag(packageId, "eventGate") || { mode, latched: false };
+    const runtimeGate = fxmReadRegionBehaviorRuntimeState(this.parent, packageId);
+    const prev = runtimeGate.eventGate || { mode, latched: false };
 
-    const fxGateMode = this.parent.getFlag(packageId, "gateMode");
-    const rawTargets = this.parent.getFlag(packageId, "tokenTargets");
-    const targetIds = new Set(Array.isArray(rawTargets) ? rawTargets : rawTargets ? [rawTargets] : []);
+    const fxGateMode = runtimeGate.gateMode;
+    const targetIds = new Set(runtimeGate.tokenTargets ?? []);
     const tokensInRegion = Array.from(event.region?.tokens ?? []);
 
     const isTargetToken = (t) => targetIds.has(t.document.id) || targetIds.has(t.document?.uuid);
@@ -370,7 +375,7 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
   async _onDelete(options, userId) {
     const regionDoc = options?.parent ?? this.parent?.parent ?? null;
     await super._onDelete(options, userId);
-    const placeable = regionDoc?.object ?? canvas.regions.get(regionDoc?.id);
+    const placeable = getRegionPlaceableOrDocumentAdapter(regionDoc);
     const behaviorDocs = Array.from(regionDoc?.behaviors ?? []).filter((behavior) => behavior?.id !== this.id);
     if (placeable) {
       canvas.particleeffects.drawRegionParticleEffects(placeable, {

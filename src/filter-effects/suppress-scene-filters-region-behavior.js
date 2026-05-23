@@ -1,4 +1,4 @@
-import { resetFlag } from "../utils.js";
+import { fxmReadRegionBehaviorRuntimeState, resetFlag } from "../utils.js";
 import { packageId } from "../constants.js";
 
 /**
@@ -167,12 +167,12 @@ export class SuppressSceneFiltersBehaviorType extends foundry.data.regionBehavio
     const mode = this._getEventModeFromSelection();
     if (mode === "none" || mode === "exitOnly") return;
 
-    const prev = this.parent.getFlag(packageId, "eventGate") || { mode, latched: false };
+    const runtimeGate = fxmReadRegionBehaviorRuntimeState(this.parent, packageId);
+    const prev = runtimeGate.eventGate || { mode, latched: false };
     let latched = !!prev.latched;
 
-    const fxGateMode = this.parent.getFlag(packageId, "gateMode");
-    const rawTargets = this.parent.getFlag(packageId, "tokenTargets");
-    const targetIds = new Set(Array.isArray(rawTargets) ? rawTargets : rawTargets ? [rawTargets] : []);
+    const fxGateMode = runtimeGate.gateMode;
+    const targetIds = new Set(runtimeGate.tokenTargets ?? []);
     const tokensInRegion = Array.from(event.region?.tokens ?? []);
     const isTargetToken = (t) => targetIds.has(t.document.id) || targetIds.has(t.document.uuid);
 

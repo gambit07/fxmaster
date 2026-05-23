@@ -1,4 +1,5 @@
 import { packageId } from "./constants.js";
+import { fxmDocumentId } from "./utils/foundry-public.js";
 import { logger } from "./logger.js";
 
 const LEGACY_CLEANUP_VERSION = 1;
@@ -57,31 +58,26 @@ export function registerSettings() {
     requiresReload: false,
   });
 
-  game.settings.register(packageId, "resetPassives", {
-    name: "FXMASTER.Common.ResetPassiveParameters",
-    hint: "FXMASTER.Common.ResetPassiveParametersHint",
-    scope: "world",
-    config: true,
-    type: Boolean,
+  game.settings.register(packageId, "compositeGridInFxStack", {
+    name: "FXMASTER.Settings.CompositeGridInFxStack",
+    hint: "FXMASTER.Settings.CompositeGridInFxStackHint",
     default: false,
-    onChange: async (value) => {
-      if (!value) return;
-
-      game.settings.set(packageId, "passiveParticleConfig", {});
-      game.settings.set(packageId, "passiveFilterConfig", {});
-      await game.settings.set(packageId, "resetPassives", false);
-      ui.notifications.info(game.i18n.localize("FXMASTER.Common.ResetPassiveSuccess"));
-    },
+    scope: "client",
+    type: Boolean,
+    config: true,
+    requiresReload: false,
+    onChange: () => refreshCompositorGridSetting(),
   });
 
-  game.settings.register(packageId, "enableLogger", {
-    name: "FXMASTER.Settings.EnableLogger",
-    hint: "FXMASTER.Settings.EnableLoggerHint",
+  game.settings.register(packageId, "applyRegionBehaviorsToOverheadLevels", {
+    name: "FXMASTER.Settings.ApplyRegionBehaviorsToOverheadLevels",
+    hint: "FXMASTER.Settings.ApplyRegionBehaviorsToOverheadLevelsHint",
     default: false,
     scope: "world",
     type: Boolean,
     config: true,
     requiresReload: false,
+    onChange: () => refreshRegionBehaviorOverheadSetting(),
   });
 
   game.settings.register(packageId, "passiveFilterConfig", {
@@ -98,6 +94,16 @@ export function registerSettings() {
     scope: "world",
     type: Object,
     config: false,
+  });
+
+  game.settings.register(packageId, "enableLogger", {
+    name: "FXMASTER.Settings.EnableLogger",
+    hint: "FXMASTER.Settings.EnableLoggerHint",
+    default: false,
+    scope: "world",
+    type: Boolean,
+    config: true,
+    requiresReload: false,
   });
 
   game.settings.register(packageId, "disableAll", {
@@ -135,13 +141,70 @@ export function registerSettings() {
   });
 }
 
+export { applyRegionBehaviorsToOverheadLevels, compositeGridInFxStack, isEnabled } from "./settings-access.js";
+
 /**
- * Determine whether FXMaster effects are globally enabled.
+ * Refresh live Region runtimes and scene suppression masks after the overhead Region behavior setting changes. This is intentionally best-effort so the setting remains safe during early startup or canvas teardown.
  *
- * @returns {boolean} Whether the module is enabled for the current world and client.
+ * @returns {void}
+ * @private
  */
-export function isEnabled() {
-  return game.settings.get(packageId, "enable") && !game.settings.get(packageId, "disableAll");
+function refreshRegionBehaviorOverheadSetting() {
+  const scene = globalThis.canvas?.scene ?? null;
+  if (!scene || !globalThis.canvas?.ready) return;
+
+  void (async () => {
+    const particleLayer = canvas?.particleeffects ?? null;
+    const filterLayer = canvas?.filtereffects ?? null;
+
+    const particleRegionIds = Array.from(particleLayer?.regionEffects?.keys?.() ?? []);
+    for (const regionId of particleRegionIds) {
+      try {
+        particleLayer?.destroyRegionParticleEffects?.(regionId);
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    }
+
+    const filterRegionIds = Array.from(filterLayer?.regionMasks?.keys?.() ?? []);
+    for (const regionId of filterRegionIds) {
+      try {
+        filterLayer?.destroyRegionFilterEffects?.(regionId);
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    }
+
+    const { getRegionEffectPlaceablesForCurrentView } = await import("./utils/compat.js");
+    for (const region of getRegionEffectPlaceablesForCurrentView(scene)) {
+      try {
+        await particleLayer?.drawRegionParticleEffects?.(region, { soft: true });
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+      try {
+        await filterLayer?.drawRegionFilterEffects?.(region, { soft: true });
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    }
+
+    try {
+      particleLayer?.forceRegionMaskRefreshAll?.();
+      particleLayer?.applyElevationGateForAll?.();
+      filterLayer?.forceRegionMaskRefreshAll?.();
+      filterLayer?.applyElevationGateForAll?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    try {
+      const { SceneMaskManager } = await import("./common/base-effects-scene-manager.js");
+      SceneMaskManager?.instance?.refresh?.("all");
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+  })().catch((err) => logger.debug("FXMaster:", err));
 }
 
 /**
@@ -161,7 +224,7 @@ async function deleteLegacyWorldSetting(key) {
     return true;
   }
 
-  const documentId = stored.id ?? stored._id ?? null;
+  const documentId = fxmDocumentId(stored) || null;
   const SettingDocument = CONFIG?.Setting?.documentClass ?? globalThis.Setting;
   if (documentId && typeof SettingDocument?.deleteDocuments === "function") {
     await SettingDocument.deleteDocuments([documentId]);
@@ -248,5 +311,21 @@ class PatreonSupportMenu extends foundry.applications.api.HandlebarsApplicationM
   render() {
     window.open("https://www.patreon.com/GambitsLounge/membership", "_blank", "noopener,noreferrer");
     return this;
+  }
+}
+
+/**
+ * Refresh compositor output after the grid-compositing setting changes.
+ *
+ * @returns {void}
+ * @private
+ */
+function refreshCompositorGridSetting() {
+  try {
+    const compositor = CONFIG?.fxmaster?.getGlobalEffectsCompositor?.();
+    compositor?.syncGridCompositingSetting?.();
+    compositor?.renderFrame?.();
+  } catch (err) {
+    logger.debug("FXMaster:", err);
   }
 }

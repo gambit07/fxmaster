@@ -1,4 +1,7 @@
-
+/**
+ * SPDX-FileCopyrightText: 2026 Gambit
+ */
+ 
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
 precision highp int;
@@ -94,7 +97,7 @@ void main(void){
   float inMask = src.a;
 
   /** SCREEN position in CSS px (match Color) */
-  vec2 screenPx = outputFrame.xy + vTextureCoord * inputSize.xy;
+  vec2 screenPx = outputFrame.xy + vTextureCoord * outputFrame.zw;
 
   /** Region/suppression gating in CSS px */
   if (hasMask > 0.5) {

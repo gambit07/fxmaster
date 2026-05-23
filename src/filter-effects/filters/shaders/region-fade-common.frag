@@ -1,28 +1,7 @@
 /**
- * FXMaster: Shared Region Fade Infrastructure
- * ============================================
- * Common SDF, signed-distance, and fade functions used by all FXMaster fragment shaders. Injected at compile time by the filter mixin's shader-assembly step
+ * Shared Region fade infrastructure for FXMaster fragment shaders.
  *
- * Requires the following uniforms to be declared by the host shader before the include point:
- *
- *   uniform int   uRegionShape;
- *   uniform mat3  uCssToWorld;
- *   uniform vec2  uCenter;
- *   uniform vec2  uHalfSize;
- *   uniform float uRotation;
- *   uniform sampler2D uSdf;
- *   uniform mat3  uUvFromWorld;
- *   uniform vec2  uSdfScaleOff;
- *   uniform float uSdfInsideMax;
- *   uniform vec2  uSdfTexel;
- *   uniform float uFadeWorld;
- *   uniform float uFadePx;
- *   uniform float uUsePct;
- *   uniform float uFadePct;
- *   uniform float uUseSdf;
- *   uniform float uEdgeCount;
- *   uniform vec4  uEdges[MAX_EDGES];
- *   uniform float uSmoothKWorld;
+ * Common SDF, signed-distance, and fade functions are injected at compile time by the filter mixin shader-assembly step. Host shaders must declare the required Region fade uniforms before the include point.
  */
 
 /** ---- Coordinate helpers ---- */
@@ -71,13 +50,7 @@ float sdRect(vec2 pW, vec2 center, vec2 halfSize, float rot) {
 /**
  * Approximate signed distance to a rotated ellipse.
  *
- * This normalises the point into unit-circle space and scales the result by
- * the major radius. The approximation is cheap (no iteration) but its error
- * grows with aspect ratio: for a 10:1 ellipse the fade band near the narrow
- * ends can be up to ~10x wider than intended. For the typical Foundry VTT
- * use-case (region emanations with mild aspect ratios ≤ 3:1) the quality is
- * acceptable. A Newton-iteration solver (cf. Iq/Shadertoy) would give exact
- * results at a higher per-pixel cost.
+ * This normalises the point into unit-circle space and scales the result by the major radius. The approximation is cheap (no iteration) but its error grows with aspect ratio: for a 10:1 ellipse the fade band near the narrow ends can be up to ~10x wider than intended. For the typical Foundry VTT use-case (region emanations with mild aspect ratios ≤ 3:1) the quality is acceptable. A Newton-iteration solver (cf. Iq/Shadertoy) would give exact results at a higher per-pixel cost.
  */
 float sdEllipse(vec2 pW, vec2 center, vec2 halfSize, float rot) {
   vec2 p = rotateVec(pW - center, -rot);
@@ -105,8 +78,7 @@ float insideDistAt(vec2 uv) {
 }
 
 /**
- * 5-tap cross smoothing of SDF inside-distance (cheaper than 3x3 Gaussian).
- * Uses bilinear filtering for inter-texel blending.
+ * 5-tap cross smoothing of SDF inside-distance (cheaper than 3x3 Gaussian). Uses bilinear filtering for inter-texel blending.
  */
 float sdPolySmooth(vec2 pW) {
   vec2 uv = worldToSdfUV(pW);
@@ -123,8 +95,7 @@ float sdPolySmooth(vec2 pW) {
 
 
 /** ---- Absolute-width fades (world px) ----
- * Legacy helper names referenced by some FXMaster shaders.
- * Returns a fade factor in [0,1]:
+ * Legacy helper names referenced by some FXMaster shaders. Returns a fade factor in [0,1]:
  *   1.0 = fully visible deep inside the region
  *   0.0 = fully faded at/outside the boundary
  */

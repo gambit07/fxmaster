@@ -2,14 +2,18 @@ import { getDialogColors } from "./utils.js";
 import { ALL_LEVELS_SELECTION, packageId } from "./constants.js";
 import { logger } from "./logger.js";
 /**
- * An abstract FormApplication that handles functionality common to multiple FXMaster forms. In particular, it provides the following functionality: * Handling of collapsible elements * Making slider changes for range inputs update the accompanying text box immediately * Handling the disabled state of the submission button
+ * Abstract FormApplication base for shared FXMaster form behavior.
+ *
+ * - Handles collapsible elements.
+ * - Mirrors range slider changes into the adjacent text output.
+ * - Handles submit-button disabled state.
  *
  * @extends FormApplication
  * @abstract
  * @interface
  *
- * @param {Object} object                     Some object which is the target data structure to be updated by the form.
- * @param {FormApplicationOptions} [options]  Additional options which modify the rendering of the sheet.
+ * @param {Object} object Target data structure updated by the form.
+ * @param {FormApplicationOptions} [options] Additional rendering options for the sheet.
  */
 
 const Base = foundry.applications.api.HandlebarsApplicationMixin(foundry.applications.api.ApplicationV2);
@@ -225,6 +229,165 @@ export class FXMasterBaseFormV2 extends Base {
         { capture: true, signal: ac.signal },
       );
     }
+  }
+
+  /**
+   * Build a flat options object containing each parameter's authored default value.
+   *
+   * @param {object|null|undefined} effectDB
+   * @returns {object}
+   */
+  static getDefaultOptions(effectDB) {
+    const options = {};
+    for (const [key, param] of Object.entries(effectDB?.parameters ?? {})) {
+      if (!param || typeof param !== "object" || param.value === undefined) continue;
+      options[key] = foundry.utils.deepClone(param.value);
+    }
+    return options;
+  }
+
+  /**
+   * Wire a small right-click reset menu to power-toggle buttons.
+   *
+   * @param {HTMLElement|null|undefined} element
+   * @param {{ selector: string, onReset: Function, labelKey?: string }} options
+   * @returns {void}
+   */
+  wirePowerToggleResetMenu(
+    element = this.element,
+    { selector, onReset, labelKey = "FXMASTER.Common.ResetEffectDefaults" } = {},
+  ) {
+    if (!element || !selector || typeof onReset !== "function") return;
+
+    try {
+      this._fxmPowerToggleResetAbort?.abort?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    const ac = new AbortController();
+    this._fxmPowerToggleResetAbort = ac;
+
+    element.addEventListener(
+      "contextmenu",
+      (event) => {
+        const button = event.target?.closest?.(selector);
+        if (!button || !element.contains(button)) return;
+
+        const type = button.dataset?.filter;
+        if (!type) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        this._openPowerToggleResetMenu(button, {
+          labelKey,
+          onReset: async () => onReset.call(this, type, button),
+        });
+      },
+      { capture: true, signal: ac.signal },
+    );
+  }
+
+  /**
+   * Close and discard the current power-toggle context menu, if any.
+   * @returns {void}
+   */
+  _closePowerToggleResetMenu() {
+    try {
+      this._fxmPowerToggleMenuAbort?.abort?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    this._fxmPowerToggleMenuAbort = null;
+
+    try {
+      this._fxmPowerToggleContextMenu?.remove?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    this._fxmPowerToggleContextMenu = null;
+  }
+
+  /**
+   * Open a compact context menu anchored to a power-toggle button.
+   *
+   * @param {HTMLElement} button
+   * @param {{ labelKey?: string, onReset?: Function }} options
+   * @returns {void}
+   */
+  _openPowerToggleResetMenu(button, { labelKey = "FXMASTER.Common.ResetEffectDefaults", onReset = null } = {}) {
+    this._closePowerToggleResetMenu();
+
+    const menu = document.createElement("div");
+    menu.className = "fxmaster-toggle-context-menu";
+    menu.setAttribute("role", "menu");
+
+    const action = document.createElement("button");
+    action.type = "button";
+    action.className = "fxmaster-toggle-context-menu-action";
+    action.setAttribute("role", "menuitem");
+    action.innerHTML = `<i class="fa-solid fa-arrow-rotate-left"></i><span>${game.i18n.localize(labelKey)}</span>`;
+    menu.appendChild(action);
+
+    document.body.appendChild(menu);
+    this._fxmPowerToggleContextMenu = menu;
+
+    const positionMenu = () => {
+      const rect = button.getBoundingClientRect();
+      const menuRect = menu.getBoundingClientRect();
+      const margin = 6;
+      const gap = 4;
+      const maxLeft = window.innerWidth - menuRect.width - margin;
+
+      const preferredLeft = rect.right + gap;
+      const fallbackLeft = rect.left;
+      const leftSource = preferredLeft <= maxLeft ? preferredLeft : fallbackLeft;
+      const left = Math.max(margin, Math.min(leftSource, maxLeft));
+      const top = Math.max(margin, Math.min(rect.bottom + gap, window.innerHeight - menuRect.height - margin));
+      menu.style.left = `${Math.round(left)}px`;
+      menu.style.top = `${Math.round(top)}px`;
+    };
+
+    positionMenu();
+
+    const ac = new AbortController();
+    this._fxmPowerToggleMenuAbort = ac;
+
+    action.addEventListener(
+      "click",
+      async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        this._closePowerToggleResetMenu();
+        try {
+          await onReset?.();
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+      },
+      { signal: ac.signal },
+    );
+
+    requestAnimationFrame(() => {
+      if (!menu.isConnected || ac.signal.aborted) return;
+
+      document.addEventListener(
+        "pointerdown",
+        (event) => {
+          if (!menu.contains(event.target)) this._closePowerToggleResetMenu();
+        },
+        { capture: true, signal: ac.signal },
+      );
+
+      document.addEventListener(
+        "keydown",
+        (event) => {
+          if (event.key === "Escape") this._closePowerToggleResetMenu();
+        },
+        { capture: true, signal: ac.signal },
+      );
+    });
   }
 
   /**
@@ -618,7 +781,14 @@ export class FXMasterBaseFormV2 extends Base {
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
+    try {
+      this._fxmPowerToggleResetAbort?.abort?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    this._closePowerToggleResetMenu?.();
     this._fxmRangeBehaviorAbort = null;
+    this._fxmPowerToggleResetAbort = null;
     return super._onClose?.(...args);
   }
 

@@ -1,7 +1,13 @@
 import { packageId } from "../constants.js";
 import { logger } from "../logger.js";
+import { getSceneRegionDocuments } from "../utils/compat.js";
+import { fxmGetRegionBehaviorEffectDefinitions } from "../utils/foundry-public.js";
 
 const STACK_FLAG = "stack";
+const SUPPRESS_WEATHER = "suppressWeather";
+const SUPPRESS_SCENE_PARTICLES = `${packageId}.suppressSceneParticles`;
+const SUPPRESS_SCENE_FILTERS = `${packageId}.suppressSceneFilters`;
+const SUPPRESSION_LEGACY_ORDER = 2000;
 const LEGACY_SOURCE_ORDER = {
   "particle:belowDarkness": 100,
   "particle:aboveDarkness": 200,
@@ -10,6 +16,30 @@ const LEGACY_SOURCE_ORDER = {
 
 const API_PRESET_EFFECT_ID_PREFIX = "apiPreset_";
 const API_MACRO_EFFECT_ID_PREFIX = "apiMacro_";
+
+let _effectStackCacheGeneration = 0;
+const _orderedEffectRowsCache = new Map();
+const _orderedEffectRenderRowsCache = new Map();
+
+/**
+ * Invalidate cached ordered stack rows. Rendering asks for the same static row list every compositor tick, while the data only changes on scene flag or Region/behavior document updates. Hooks call this when those documents change.
+ *
+ * @returns {void}
+ */
+export function invalidateEffectStackCache() {
+  _effectStackCacheGeneration = (_effectStackCacheGeneration + 1) & 0x7fffffff;
+  _orderedEffectRowsCache.clear();
+  _orderedEffectRenderRowsCache.clear();
+}
+
+function _effectStackCacheKey(scene, purpose) {
+  if (!scene?.id) return null;
+  return `${purpose}:${scene.id}:${_effectStackCacheGeneration}`;
+}
+
+function _cloneRowsForConsumer(rows) {
+  return Array.isArray(rows) ? rows.map((row) => ({ ...row })) : [];
+}
 
 /**
  * Return the scene flag path used to persist the ordered FX stack.
@@ -94,6 +124,31 @@ export function buildRegionEffectUid(kind, regionId, behaviorId, effectId) {
 }
 
 /**
+ * Build a stable UID for a Region suppression behavior stack operator.
+ *
+ * @param {"particles"|"filters"|"all"} suppressionKind
+ * @param {string} regionId
+ * @param {string} behaviorId
+ * @returns {string}
+ */
+export function buildSuppressionEffectUid(suppressionKind, regionId, behaviorId) {
+  return `region:suppression:${suppressionKind}:${regionId}:${behaviorId}`;
+}
+
+/**
+ * Return whether a suppression stack kind affects a scene-effect pipeline.
+ *
+ * @param {string|null|undefined} suppressionKind
+ * @param {"particles"|"filters"} pipelineKind
+ * @returns {boolean}
+ */
+export function suppressionKindAffectsPipeline(suppressionKind, pipelineKind) {
+  const kind = String(suppressionKind ?? "");
+  if (kind === "all") return true;
+  return pipelineKind === "filters" ? kind === "filters" : kind === "particles";
+}
+
+/**
  * Parse a stored FX stack UID.
  *
  * @param {string} uid
@@ -105,6 +160,10 @@ export function parseEffectUid(uid) {
   if (parts[0] === "scene" && parts.length >= 3) {
     const [, kind, ...rest] = parts;
     return { scope: "scene", kind, effectId: rest.join(":") };
+  }
+  if (parts[0] === "region" && parts[1] === "suppression" && parts.length >= 5) {
+    const [, , suppressionKind, regionId, behaviorId] = parts;
+    return { scope: "region", kind: "suppression", suppressionKind, regionId, behaviorId };
   }
   if (parts[0] === "region" && parts.length >= 5) {
     const [, kind, regionId, behaviorId, ...rest] = parts;
@@ -152,6 +211,7 @@ export async function setStoredEffectStack(orderedUids, scene = canvas?.scene ??
     uid,
   }));
   await scene.setFlag(packageId, STACK_FLAG, next);
+  invalidateEffectStackCache();
 }
 
 /**
@@ -169,15 +229,23 @@ export async function promoteEffectStackUids(uids, scene = canvas?.scene ?? null
   const requested = Array.from(new Set((uids ?? []).filter((uid) => typeof uid === "string")));
   if (!requested.length) return;
 
-  const current = getNormalizedEffectStackOrder(scene);
+  const currentRows = getOrderedEnabledEffectRows(scene);
+  const current = currentRows.map((row) => row.uid).filter((uid) => typeof uid === "string");
   if (!current.length) return;
 
+  const rowByUid = new Map(currentRows.map((row) => [row.uid, row]));
   const available = new Set(current);
   const promoted = requested.filter((uid) => available.has(uid));
   if (!promoted.length) return;
 
   const promotedSet = new Set(promoted);
-  const next = [...promoted, ...current.filter((uid) => !promotedSet.has(uid))];
+  const promotedSuppression = promoted.filter((uid) => rowByUid.get(uid)?.kind === "suppression");
+  const promotedEffects = promoted.filter((uid) => rowByUid.get(uid)?.kind !== "suppression");
+  const remaining = current.filter((uid) => !promotedSet.has(uid));
+  const leadingSuppression = [];
+  while (remaining.length && rowByUid.get(remaining[0])?.kind === "suppression")
+    leadingSuppression.push(remaining.shift());
+  const next = [...promotedSuppression, ...leadingSuppression, ...promotedEffects, ...remaining];
 
   if (next.length === current.length && next.every((uid, index) => uid === current[index])) return;
   await setStoredEffectStack(next, scene);
@@ -192,10 +260,61 @@ export async function promoteEffectStackUids(uids, scene = canvas?.scene ?? null
 export async function clearStoredEffectStack(scene = canvas?.scene ?? null) {
   if (!scene) return;
   await scene.unsetFlag(packageId, STACK_FLAG);
+  invalidateEffectStackCache();
 }
 
 /**
- * Collect every enabled scene-level and region-level particle or filter effect row for the supplied scene.
+ * Return metadata for a Region behavior that acts as a scene suppression stack operator.
+ *
+ * @param {object|null|undefined} behavior
+ * @returns {{ suppressionKind: "particles"|"filters"|"all", labelKey: string, icon: string, behaviorType: string }|null}
+ */
+function getSuppressionBehaviorRowInfo(behavior) {
+  const type = String(behavior?.type ?? "");
+  if (type === SUPPRESS_SCENE_PARTICLES) {
+    return {
+      suppressionKind: "particles",
+      labelKey: "FXMASTER.Layers.SuppressSceneParticles",
+      icon: "fas fa-cloud-slash",
+      behaviorType: SUPPRESS_SCENE_PARTICLES,
+    };
+  }
+  if (type === SUPPRESS_SCENE_FILTERS) {
+    return {
+      suppressionKind: "filters",
+      labelKey: "FXMASTER.Layers.SuppressSceneFilters",
+      icon: "fas fa-ban",
+      behaviorType: SUPPRESS_SCENE_FILTERS,
+    };
+  }
+  if (type === SUPPRESS_WEATHER) {
+    return {
+      suppressionKind: "all",
+      labelKey: "FXMASTER.Layers.SuppressWeather",
+      icon: "fas fa-cloud-slash",
+      behaviorType: SUPPRESS_WEATHER,
+    };
+  }
+  return null;
+}
+
+/**
+ * Localize a suppression behavior label.
+ *
+ * @param {string} labelKey
+ * @returns {string}
+ */
+function localizeSuppressionLabel(labelKey) {
+  try {
+    return game.i18n.localize(labelKey);
+  } catch (err) {
+    logger.debug("FXMaster: failed to localize suppression label", err);
+    return String(labelKey ?? "Suppression");
+  }
+}
+
+/**
+ * Collect every enabled scene-level and region-level FX stack row for the supplied scene.
  *
  * @param {Scene|null|undefined} scene
  * @returns {Array<object>}
@@ -286,13 +405,42 @@ export function collectEnabledEffectRows(scene = canvas?.scene ?? null) {
     });
   }
 
-  const regions = scene.regions?.contents ?? [];
+  const regions = getSceneRegionDocuments(scene);
   for (const regionDoc of regions) {
     const behaviorDocs = normalizeBehaviorDocs(regionDoc.behaviors);
     for (const behavior of behaviorDocs) {
       if (!behavior || behavior.disabled) continue;
 
-      const particleDefs = behavior.getFlag?.(packageId, "particleEffects") ?? {};
+      const suppressionInfo = getSuppressionBehaviorRowInfo(behavior);
+      if (suppressionInfo) {
+        const label = localizeSuppressionLabel(suppressionInfo.labelKey);
+        pushRow({
+          uid: buildSuppressionEffectUid(suppressionInfo.suppressionKind, regionDoc.id, behavior.id),
+          kind: "suppression",
+          suppressionKind: suppressionInfo.suppressionKind,
+          behaviorType: suppressionInfo.behaviorType,
+          scope: "region",
+          source: "region",
+          sourceLabel: game.i18n.localize("FXMASTER.Layers.SourceRegion"),
+          ownerId: regionDoc.id,
+          ownerName: regionDoc.name,
+          ownerLabel: regionDoc.name,
+          behaviorId: behavior.id,
+          behaviorUuid: behavior.uuid,
+          effectId: behavior.id,
+          effectType: suppressionInfo.suppressionKind,
+          label,
+          icon: suppressionInfo.icon,
+          kindLabel: game.i18n.localize("FXMASTER.Layers.KindSuppression"),
+          effectTypeLabel: label,
+          legacyOrder: SUPPRESSION_LEGACY_ORDER,
+          discoveryIndex: discoveryIndex++,
+          layerLevel: null,
+          options: {},
+        });
+      }
+
+      const particleDefs = fxmGetRegionBehaviorEffectDefinitions(behavior, "particle");
       for (const [effectId, info] of Object.entries(particleDefs)) {
         const type = String(effectId);
         const uid = buildRegionEffectUid("particle", regionDoc.id, behavior.id, effectId);
@@ -321,7 +469,7 @@ export function collectEnabledEffectRows(scene = canvas?.scene ?? null) {
         });
       }
 
-      const filterDefs = behavior.getFlag?.(packageId, "filters") ?? {};
+      const filterDefs = fxmGetRegionBehaviorEffectDefinitions(behavior, "filter");
       for (const [effectId, info] of Object.entries(filterDefs)) {
         const type = String(info?.type ?? effectId);
         const uid = buildRegionEffectUid("filter", regionDoc.id, behavior.id, effectId);
@@ -355,7 +503,7 @@ export function collectEnabledEffectRows(scene = canvas?.scene ?? null) {
 }
 
 /**
- * Collect every enabled scene-level and region-level row needed by render-time stack consumers.
+ * Collect every enabled scene-level and region-level render stack row needed by render-time consumers.
  *
  * @param {Scene|null|undefined} scene
  * @returns {Array<object>}
@@ -410,13 +558,42 @@ export function collectEnabledEffectRenderRows(scene = canvas?.scene ?? null) {
     });
   }
 
-  const regions = scene.regions?.contents ?? [];
+  const regions = getSceneRegionDocuments(scene);
   for (const regionDoc of regions) {
     const behaviorDocs = normalizeBehaviorDocs(regionDoc.behaviors);
     for (const behavior of behaviorDocs) {
       if (!behavior || behavior.disabled) continue;
 
-      const particleDefs = behavior.getFlag?.(packageId, "particleEffects") ?? {};
+      const suppressionInfo = getSuppressionBehaviorRowInfo(behavior);
+      if (suppressionInfo) {
+        const label = localizeSuppressionLabel(suppressionInfo.labelKey);
+        pushRow({
+          uid: buildSuppressionEffectUid(suppressionInfo.suppressionKind, regionDoc.id, behavior.id),
+          kind: "suppression",
+          suppressionKind: suppressionInfo.suppressionKind,
+          behaviorType: suppressionInfo.behaviorType,
+          scope: "region",
+          source: "region",
+          sourceLabel: game.i18n.localize("FXMASTER.Layers.SourceRegion"),
+          ownerId: regionDoc.id,
+          ownerName: regionDoc.name,
+          ownerLabel: regionDoc.name,
+          behaviorId: behavior.id,
+          behaviorUuid: behavior.uuid,
+          effectId: behavior.id,
+          effectType: suppressionInfo.suppressionKind,
+          label,
+          icon: suppressionInfo.icon,
+          kindLabel: game.i18n.localize("FXMASTER.Layers.KindSuppression"),
+          effectTypeLabel: label,
+          legacyOrder: SUPPRESSION_LEGACY_ORDER,
+          discoveryIndex: discoveryIndex++,
+          layerLevel: null,
+          options: {},
+        });
+      }
+
+      const particleDefs = fxmGetRegionBehaviorEffectDefinitions(behavior, "particle");
       for (const [effectId, info] of Object.entries(particleDefs)) {
         const type = String(effectId);
         const layerLevel = getLayerLevel(type);
@@ -436,7 +613,7 @@ export function collectEnabledEffectRenderRows(scene = canvas?.scene ?? null) {
         });
       }
 
-      const filterDefs = behavior.getFlag?.(packageId, "filters") ?? {};
+      const filterDefs = fxmGetRegionBehaviorEffectDefinitions(behavior, "filter");
       for (const [effectId, info] of Object.entries(filterDefs)) {
         const type = String(info?.type ?? effectId);
         pushRow({
@@ -478,13 +655,15 @@ function sortEffectRowsInStackOrder(rows, scene = canvas?.scene ?? null) {
   }
   const maxStored = stored.length;
 
+  const defaultIndex = (row) => {
+    if (storedIndex.has(row.uid)) return storedIndex.get(row.uid);
+    if (row?.kind === "suppression") return -1000 + (row.discoveryIndex ?? 0) / 1000;
+    return maxStored + (1000 - (row.legacyOrder ?? 0)) + (row.discoveryIndex ?? 0) / 1000;
+  };
+
   return rows.sort((a, b) => {
-    const ai = storedIndex.has(a.uid)
-      ? storedIndex.get(a.uid)
-      : maxStored + (1000 - (a.legacyOrder ?? 0)) + (a.discoveryIndex ?? 0) / 1000;
-    const bi = storedIndex.has(b.uid)
-      ? storedIndex.get(b.uid)
-      : maxStored + (1000 - (b.legacyOrder ?? 0)) + (b.discoveryIndex ?? 0) / 1000;
+    const ai = defaultIndex(a);
+    const bi = defaultIndex(b);
     if (ai !== bi) return ai - bi;
     const ownerCmp = String(a.ownerLabel ?? "").localeCompare(String(b.ownerLabel ?? ""), undefined, {
       sensitivity: "base",
@@ -505,7 +684,14 @@ function sortEffectRowsInStackOrder(rows, scene = canvas?.scene ?? null) {
  * @returns {Array<object>}
  */
 export function getOrderedEnabledEffectRenderRows(scene = canvas?.scene ?? null) {
-  return sortEffectRowsInStackOrder(collectEnabledEffectRenderRows(scene), scene);
+  const cacheKey = _effectStackCacheKey(scene, "render");
+  if (cacheKey && _orderedEffectRenderRowsCache.has(cacheKey)) {
+    return _cloneRowsForConsumer(_orderedEffectRenderRowsCache.get(cacheKey));
+  }
+
+  const rows = sortEffectRowsInStackOrder(collectEnabledEffectRenderRows(scene), scene);
+  if (cacheKey) _orderedEffectRenderRowsCache.set(cacheKey, _cloneRowsForConsumer(rows));
+  return rows;
 }
 
 /**
@@ -517,7 +703,42 @@ export function getOrderedEnabledEffectRenderRows(scene = canvas?.scene ?? null)
  * @returns {Array<object>}
  */
 export function getOrderedEnabledEffectRows(scene = canvas?.scene ?? null) {
-  return sortEffectRowsInStackOrder(collectEnabledEffectRows(scene), scene);
+  const cacheKey = _effectStackCacheKey(scene, "full");
+  if (cacheKey && _orderedEffectRowsCache.has(cacheKey)) {
+    return _cloneRowsForConsumer(_orderedEffectRowsCache.get(cacheKey));
+  }
+
+  const rows = sortEffectRowsInStackOrder(collectEnabledEffectRows(scene), scene);
+  if (cacheKey) _orderedEffectRowsCache.set(cacheKey, _cloneRowsForConsumer(rows));
+  return rows;
+}
+
+/**
+ * Return whether at least one suppression operator is stacked above a compatible scene row.
+ *
+ * Suppression operators affect only scene-level particles and filters. Region-scoped particle/filter rows are ignored so suppress-scene behaviors do not suppress Region-local effects.
+ *
+ * @param {Scene|null|undefined} scene
+ * @param {"particles"|"filters"} pipelineKind
+ * @returns {boolean}
+ */
+export function hasStackedSuppressionAffectingSceneRows(scene = canvas?.scene ?? null, pipelineKind = "particles") {
+  const normalizedKind = pipelineKind === "filters" ? "filters" : "particles";
+  let activeSuppressionAbove = false;
+
+  for (const row of getOrderedEnabledEffectRenderRows(scene)) {
+    if (!row?.uid) continue;
+    if (row.kind === "suppression") {
+      if (suppressionKindAffectsPipeline(row.suppressionKind, normalizedKind)) activeSuppressionAbove = true;
+      continue;
+    }
+
+    if (!activeSuppressionAbove || row.scope !== "scene") continue;
+    if (normalizedKind === "filters" && row.kind === "filter") return true;
+    if (normalizedKind === "particles" && row.kind === "particle") return true;
+  }
+
+  return false;
 }
 
 /**

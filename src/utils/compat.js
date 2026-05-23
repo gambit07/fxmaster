@@ -6,6 +6,28 @@
 
 import { ALL_LEVELS_SELECTION, packageId } from "../constants.js";
 import { logger } from "../logger.js";
+import { applyRegionBehaviorsToOverheadLevels } from "../settings-access.js";
+import {
+  fxmGetDocumentElevationWindow,
+  fxmGetDocumentLevelIds,
+  fxmDocumentIncludedInLevel,
+  fxmDocumentId,
+  fxmGetLevelConfiguredImagePaths,
+  fxmGetLevelTexturePlan,
+  fxmClearLevelTexturePlanCache,
+  fxmGetSceneLevelById,
+  fxmGetSceneLevels as fxmGetSceneLevelsPublic,
+  fxmGetSceneSurfaces,
+  fxmReadDocumentSnapshotValue,
+  fxmLevelBottom,
+  fxmLevelIsAbove,
+  fxmLevelTop,
+  fxmResolveLevelIdsFromConfiguredSources,
+  fxmCollectComparableSourcePaths,
+  fxmLinkedPlaceableFromDisplayObject,
+  fxmGetPublicHoverFadeState,
+  fxmSceneHasSurfaces,
+} from "./foundry-public.js";
 
 /**
  * Check whether a key name is one of Foundry's legacy special keys.
@@ -25,16 +47,13 @@ let _cachedForcedDeletion;
 /**
  * Get a V14+ ForcedDeletion operator instance.
  *
- * Preserves the legacy `globalThis._del`, then falls back to Foundry's operator APIs when available.
+ * Prefers Foundry DataFieldOperator APIs when available.
  *
  * @returns {foundry.data.operators.ForcedDeletion|null}
  */
 export function getForcedDeletionOperator() {
   const ForcedDeletion = foundry?.data?.operators?.ForcedDeletion;
   if (!ForcedDeletion) return null;
-
-  const del = globalThis?._del;
-  if (del) return del;
 
   if (_cachedForcedDeletion !== undefined) return _cachedForcedDeletion;
 
@@ -60,7 +79,7 @@ let _cachedReplacementFactory;
 /**
  * Get a V14+ ForcedReplacement operator for a replacement value.
  *
- * Preserves the legacy `globalThis._replace` shim, then falls back to Foundry's `ForcedReplacement.create` factory when available.
+ * Prefers Foundry DataFieldOperator APIs when available.
  *
  * @param {*} replacement
  * @returns {foundry.data.operators.ForcedReplacement|null}
@@ -68,13 +87,6 @@ let _cachedReplacementFactory;
 export function getForcedReplacementOperator(replacement) {
   const ForcedReplacement = foundry?.data?.operators?.ForcedReplacement;
   if (!ForcedReplacement) return null;
-
-  const rep = globalThis?._replace;
-  if (typeof rep === "function") {
-    try {
-      return rep(replacement);
-    } catch {}
-  }
 
   if (_cachedReplacementFactory === undefined) {
     if (typeof ForcedReplacement.create === "function") {
@@ -87,9 +99,7 @@ export function getForcedReplacementOperator(replacement) {
   if (typeof _cachedReplacementFactory === "function") {
     try {
       return _cachedReplacementFactory(replacement);
-    } catch {
-      return null;
-    }
+    } catch {}
   }
 
   return null;
@@ -174,6 +184,414 @@ export function getCanvasLevel() {
 }
 
 /**
+ * Return a normalized bottom elevation for a native Scene Level.
+ *
+ * @param {foundry.documents.Level|null|undefined} level
+ * @returns {number}
+ * @private
+ */
+function _fxmLevelBottom(level) {
+  const value = fxmLevelBottom(level);
+  return Number.isFinite(value) ? value : Number(level?.elevation?.bottom ?? level?.bottom ?? Number.NaN);
+}
+
+/**
+ * Return a normalized top elevation for a native Scene Level.
+ *
+ * @param {foundry.documents.Level|null|undefined} level
+ * @returns {number}
+ * @private
+ */
+function _fxmLevelTop(level) {
+  const value = fxmLevelTop(level);
+  return Number.isFinite(value) ? value : Number(level?.elevation?.top ?? level?.top ?? Number.NaN);
+}
+
+/**
+ * Return whether one native Scene Level sits above another.
+ *
+ * @param {foundry.documents.Level|null|undefined} candidate
+ * @param {foundry.documents.Level|null|undefined} target
+ * @returns {boolean}
+ * @private
+ */
+function _fxmLevelIsAbove(candidate, target) {
+  if (fxmLevelIsAbove(candidate, target)) return true;
+  if (!candidate || !target) return false;
+
+  const candidateBottom = _fxmLevelBottom(candidate);
+  const targetBottom = _fxmLevelBottom(target);
+  if (Number.isFinite(candidateBottom) && Number.isFinite(targetBottom)) return candidateBottom > targetBottom + 1e-4;
+
+  const candidateTop = _fxmLevelTop(candidate);
+  const targetTop = _fxmLevelTop(target);
+  if (Number.isFinite(candidateTop) && Number.isFinite(targetTop)) return candidateTop > targetTop + 1e-4;
+
+  return false;
+}
+
+/**
+ * Return collection values without assuming whether Foundry exposed an Array, Collection, Map, Set, or iterable-like object.
+ *
+ * @param {*} value
+ * @returns {Array}
+ * @private
+ */
+function _fxmCollectionValues(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value?.values === "function") {
+    try {
+      return Array.from(value.values());
+    } catch (_err) {
+      return [];
+    }
+  }
+  try {
+    return Array.from(value);
+  } catch (_err) {
+    return [];
+  }
+}
+
+/**
+ * Return whether a display object currently contributes visible pixels.
+ *
+ * @param {PIXI.DisplayObject|null|undefined} object
+ * @returns {boolean}
+ * @private
+ */
+function _fxmDisplayObjectContributesVisiblePixels(object) {
+  if (!object || object.destroyed) return false;
+  if (object.visible === false || object.renderable === false) return false;
+  const alpha = Number(object.worldAlpha ?? object.alpha ?? 1);
+  return !(Number.isFinite(alpha) && alpha <= 0.001);
+}
+
+/**
+ * Prefer the live placeable-backed display object for a native Level surface.
+ *
+ * @param {PIXI.DisplayObject|null|undefined} primaryObject
+ * @param {object|null|undefined} linkedObject
+ * @returns {PIXI.DisplayObject|null}
+ * @private
+ */
+function _fxmResolveLiveSurfaceDisplayObject(primaryObject, linkedObject) {
+  return (
+    linkedObject?.mesh ?? linkedObject?.primaryMesh ?? linkedObject?.sprite ?? primaryObject ?? linkedObject ?? null
+  );
+}
+
+/**
+ * Return whether an arbitrary level-like value resolves to a specific Level id.
+ *
+ * @param {*} value
+ * @param {string} levelId
+ * @returns {boolean}
+ * @private
+ */
+function _fxmValueTargetsLevelId(value, levelId) {
+  if (!value || !levelId) return false;
+  const id = fxmDocumentId(value) || fxmDocumentId(value?.document);
+  if (id === levelId) return true;
+
+  const levels = getDocumentLevelsSet(value?.document ?? value ?? null);
+  return !!levels?.has(levelId);
+}
+
+/**
+ * Collect texture/source paths from a PIXI object, document, or nested texture.
+ *
+ * @param {*} value
+ * @param {Set<string>} output
+ * @param {Set<object>} [seen]
+ * @returns {void}
+ * @private
+ */
+function _fxmCollectComparableSourcePaths(value, output) {
+  fxmCollectComparableSourcePaths(value, output);
+}
+
+/**
+ * Resolve Level ids by matching a live surface's texture source against native Level background/foreground artwork.
+ *
+ * @param {{ mesh?: object|null, object?: object|null, document?: foundry.abstract.Document|null, level?: object|null }} surface
+ * @returns {Set<string>}
+ * @private
+ */
+function _fxmResolveSurfaceConfiguredLevelIds({ mesh = null, object = null, document = null, level = null } = {}) {
+  const surfacePaths = new Set();
+  for (const value of [mesh, object, document, level]) _fxmCollectComparableSourcePaths(value, surfacePaths);
+  if (!surfacePaths.size) return new Set();
+  return fxmResolveLevelIdsFromConfiguredSources(surfacePaths, {
+    scene: canvas?.scene ?? document?.parent ?? object?.document?.parent ?? level?.parent ?? null,
+  });
+}
+
+/**
+ * Return whether a live canvas surface can be associated with a specific native Level id.
+ *
+ * @param {{ mesh?: object|null, object?: object|null, document?: foundry.abstract.Document|null, level?: object|null, elevation?: number }} surface
+ * @param {string} levelId
+ * @returns {boolean}
+ * @private
+ */
+function _fxmLiveSurfaceTargetsLevelId(
+  { mesh = null, object = null, document = null, level = null, elevation = Number.NaN } = {},
+  levelId,
+) {
+  if (!levelId) return false;
+
+  const configuredIds = _fxmResolveSurfaceConfiguredLevelIds({ mesh, object, document, level });
+  if (configuredIds.size) return configuredIds.has(levelId);
+
+  const directCandidates = [
+    level,
+    mesh?.level ?? null,
+    mesh?.object?.level ?? null,
+    object?.level ?? null,
+    object?.document?.level ?? null,
+    document?.level ?? null,
+  ];
+  for (const candidate of directCandidates) if (_fxmValueTargetsLevelId(candidate, levelId)) return true;
+
+  const documentCandidates = [
+    document,
+    object?.document ?? null,
+    object,
+    mesh?.document ?? null,
+    mesh?.object?.document ?? null,
+    mesh?.object ?? null,
+  ];
+
+  const sceneLevel = fxmGetSceneLevelById(
+    levelId,
+    document?.parent ?? object?.document?.parent ?? canvas?.scene ?? null,
+  );
+  if (sceneLevel) {
+    for (const candidate of documentCandidates) {
+      const included = fxmDocumentIncludedInLevel(candidate, sceneLevel);
+      if (included !== null) return included;
+    }
+  }
+
+  for (const candidate of documentCandidates) {
+    const levels = getDocumentLevelsSet(candidate);
+    if (levels?.has(levelId)) return true;
+  }
+
+  const inferred = inferVisibleLevelForDocument(document ?? object?.document ?? object ?? level ?? null, elevation);
+  return inferred?.id === levelId;
+}
+
+/**
+ * Return whether a native Level has any live visible primary surface in the current canvas view.
+ *
+ * Level documents are not always marked isVisible while their V14 overlay meshes are still rendered/hoverable. Scene and Region runtimes need to stay alive for those live surfaces, but this check stays intentionally cheap and only samples the primary Level/tile collections.
+ *
+ * @param {foundry.documents.Level|null|undefined} level
+ * @returns {boolean}
+ * @private
+ */
+function _fxmLevelHasLiveVisibleCanvasSurface(level) {
+  const levelId = fxmDocumentId(level);
+  if (!levelId || !canvas?.primary) return false;
+
+  for (const mesh of _fxmCollectionValues(canvas.primary.levelTextures ?? [])) {
+    const object = mesh?.object ?? null;
+    const liveObject = _fxmResolveLiveSurfaceDisplayObject(mesh, object);
+    const captureObject = _fxmDisplayObjectContributesVisiblePixels(mesh)
+      ? mesh
+      : _fxmDisplayObjectContributesVisiblePixels(liveObject)
+      ? liveObject
+      : null;
+    if (!captureObject) continue;
+
+    const document = mesh?.level?.document ?? mesh?.level ?? object?.document ?? object ?? null;
+    const surfaceLevel = mesh?.level ?? object?.level ?? document?.level ?? null;
+    const elevation = Number(
+      mesh?.elevation ??
+        document?.elevation?.bottom ??
+        document?.elevation ??
+        object?.document?.elevation?.bottom ??
+        object?.document?.elevation ??
+        Number.NaN,
+    );
+    if (_fxmLiveSurfaceTargetsLevelId({ mesh, object, document, level: surfaceLevel, elevation }, levelId)) return true;
+  }
+
+  for (const mesh of _fxmCollectionValues(canvas.primary.tiles ?? [])) {
+    const tileObject = fxmLinkedPlaceableFromDisplayObject(mesh);
+    const document = tileObject?.document ?? null;
+    if (document?.hidden) continue;
+
+    const liveObject = _fxmResolveLiveSurfaceDisplayObject(mesh, tileObject);
+    const captureObject = _fxmDisplayObjectContributesVisiblePixels(mesh)
+      ? mesh
+      : _fxmDisplayObjectContributesVisiblePixels(liveObject)
+      ? liveObject
+      : null;
+    if (!captureObject) continue;
+
+    const elevation = Number(mesh?.elevation ?? document?.elevation ?? tileObject?.elevation ?? Number.NaN);
+    const surfaceLevel = mesh?.level ?? tileObject?.level ?? document?.level ?? null;
+    if (
+      _fxmLiveSurfaceTargetsLevelId(
+        { mesh, object: tileObject, document: document ?? tileObject ?? null, level: surfaceLevel, elevation },
+        levelId,
+      )
+    )
+      return true;
+  }
+
+  return false;
+}
+
+/**
+ * Return the Region documents attached to a Scene in a Collection-safe way.
+ *
+ * @param {foundry.documents.Scene|null|undefined} scene
+ * @returns {foundry.documents.Region[]}
+ * @private
+ */
+function _fxmSceneRegionDocuments(scene) {
+  const regions = scene?.regions ?? null;
+  if (!regions) return [];
+  if (Array.isArray(regions?.contents)) return regions.contents.filter(Boolean);
+  if (Array.isArray(regions)) return regions.filter(Boolean);
+  if (typeof regions?.toArray === "function") return regions.toArray().filter(Boolean);
+  if (typeof regions?.values === "function") return Array.from(regions.values()).filter(Boolean);
+  try {
+    return Array.from(regions).filter(Boolean);
+  } catch (_err) {
+    return [];
+  }
+}
+
+/**
+ * Build a lightweight Region placeable adapter for Region documents whose live PlaceableObject is not currently materialized by the canvas Level view.
+ *
+ * The FXMaster region mask/effect code only needs `id` and `document`; live canvas Region placeables are still preferred whenever Foundry exposes them.
+ *
+ * @param {foundry.documents.Region|null|undefined} document
+ * @returns {{id:string, document: foundry.documents.Region, _fxmDocumentRegionAdapter: true}|null}
+ * @private
+ */
+function _fxmRegionDocumentAdapter(document) {
+  const id = fxmDocumentId(document) || null;
+  if (!id) return null;
+  return { id, document, _fxmDocumentRegionAdapter: true };
+}
+
+/**
+ * Resolve a Region document to a live placeable when possible, otherwise to a lightweight adapter that can still be used for document-shape masks.
+ *
+ * @param {foundry.documents.Region|null|undefined} document
+ * @returns {PlaceableObject|{id:string, document: foundry.documents.Region, _fxmDocumentRegionAdapter: true}|null}
+ */
+export function getRegionPlaceableOrDocumentAdapter(document) {
+  if (!document) return null;
+  const live = document?.object ?? canvas?.regions?.get?.(fxmDocumentId(document)) ?? null;
+  if (live) return live;
+  return _fxmRegionDocumentAdapter(document);
+}
+
+/**
+ * Return whether a Region document is assigned only to non-current upper Levels that can still contribute visible/hoverable overlay surfaces in this view.
+ *
+ * @param {foundry.documents.Region|null|undefined} document
+ * @param {foundry.documents.Scene|null|undefined} scene
+ * @returns {boolean}
+ * @private
+ */
+function _fxmRegionTargetsNonCurrentVisibleUpperLevel(document, scene) {
+  if (!document || !canvas?.level) return false;
+
+  const currentLevel = getCanvasLevel();
+  if (!currentLevel?.id) return false;
+
+  const assigned = getDocumentAssignedLevelIds(document, scene ?? document?.parent ?? canvas?.scene ?? null);
+  if (!(assigned?.size > 0)) return false;
+  if (assigned.has(currentLevel.id)) return false;
+
+  const levels = getSceneLevels(scene ?? document?.parent ?? canvas?.scene ?? null);
+  for (const levelId of assigned) {
+    const level = levels.find((candidate) => candidate?.id === levelId);
+    if (!level) continue;
+    if (_fxmLevelIsAbove(level, currentLevel)) return true;
+  }
+
+  return false;
+}
+
+/**
+ * Return whether a Region document is assigned to the currently viewed native Scene Level, or has no explicit native Level assignment. Unassigned Regions keep the pre-Level behavior and are treated as current-view effects.
+ *
+ * @param {foundry.documents.Region|null|undefined} document
+ * @returns {boolean}
+ */
+export function regionDocumentTargetsCurrentCanvasLevel(document) {
+  if (!document || !canvas?.level) return true;
+
+  const currentLevel = getCanvasLevel();
+  if (!currentLevel?.id) return true;
+
+  const assigned = getDocumentAssignedLevelIds(document, document?.parent ?? canvas?.scene ?? null);
+  if (assigned?.size) return assigned.has(currentLevel.id);
+
+  return true;
+}
+
+/**
+ * Return whether a Region document should contribute visual FXMaster Region behaviors in the current native Level view. The current Level is always allowed; non-current overhead Levels are allowed only by the world setting.
+ *
+ * @param {foundry.documents.Region|null|undefined} document
+ * @param {foundry.documents.Scene|null|undefined} scene
+ * @returns {boolean}
+ */
+export function regionDocumentCanApplyInCurrentView(document, scene = canvas?.scene ?? null) {
+  if (!document || !canvas?.level) return true;
+  if (regionDocumentTargetsCurrentCanvasLevel(document)) return true;
+  if (!applyRegionBehaviorsToOverheadLevels()) return false;
+  return _fxmRegionTargetsNonCurrentVisibleUpperLevel(document, scene ?? document?.parent ?? canvas?.scene ?? null);
+}
+
+/**
+ * Return live Region placeables plus document adapters for Regions assigned to non-current upper Levels that are still visible/hoverable in the active native Level view.
+ *
+ * Foundry V14 may not materialize a Region placeable for a Region assigned only to an upper Level while the viewed Level is lower. FXMaster still needs those Region definitions so their particles, filters, and suppression can affect the visible upper-Level overlay surface.
+ *
+ * @param {foundry.documents.Scene|null|undefined} [scene=canvas?.scene ?? null]
+ * @returns {Array<PlaceableObject|{id:string, document: foundry.documents.Region, _fxmDocumentRegionAdapter: true}>}
+ */
+export function getRegionEffectPlaceablesForCurrentView(scene = canvas?.scene ?? null) {
+  const out = [];
+  const seen = new Set();
+
+  const push = (placeable) => {
+    const id = fxmDocumentId(placeable) || fxmDocumentId(placeable?.document) || null;
+    if (!id || seen.has(id)) return;
+    if (!regionDocumentCanApplyInCurrentView(placeable?.document ?? null, scene)) return;
+    seen.add(id);
+    out.push(placeable);
+  };
+
+  for (const placeable of canvas?.regions?.placeables ?? []) push(placeable);
+
+  if (!scene || !canvas?.level) return out;
+
+  for (const document of _fxmSceneRegionDocuments(scene)) {
+    const id = fxmDocumentId(document) || null;
+    if (!id || seen.has(id)) continue;
+    if (!regionDocumentCanApplyInCurrentView(document, scene)) continue;
+    const adapter = getRegionPlaceableOrDocumentAdapter(document);
+    if (adapter) push(adapter);
+  }
+
+  return out;
+}
+
+/**
  * Resolve the scene foreground threshold without touching deprecated Scene#foregroundElevation accessors.
  *
  * Foundry V14+ replaces the foreground elevation concept with the currently viewed Level document. For scenes without native Levels, the source foreground elevation is read directly from document source data to avoid compatibility warnings.
@@ -185,8 +603,19 @@ export function getSceneForegroundElevation(scene = canvas?.scene ?? null) {
   const activeLevelTop = Number(getCanvasLevel()?.elevation?.top ?? Number.NaN);
   if (Number.isFinite(activeLevelTop)) return activeLevelTop;
 
-  const sourceValue = Number(scene?._source?.foregroundElevation ?? Number.NaN);
-  if (Number.isFinite(sourceValue)) return sourceValue;
+  const firstLevelTop = Number(scene?.firstLevel?.elevation?.top ?? Number.NaN);
+  if (Number.isFinite(firstLevelTop)) return firstLevelTop;
+
+  const foundryGeneration = Number(
+    globalThis.game?.release?.generation ?? String(globalThis.game?.version ?? "").split(".")[0],
+  );
+  if (!Number.isFinite(foundryGeneration) || foundryGeneration < 14) {
+    const legacyValue = Number(scene?.foregroundElevation ?? Number.NaN);
+    if (Number.isFinite(legacyValue)) return legacyValue;
+  }
+
+  const snapshotValue = Number(fxmReadDocumentSnapshotValue(scene, "foregroundElevation") ?? Number.NaN);
+  if (Number.isFinite(snapshotValue)) return snapshotValue;
 
   return Number.NaN;
 }
@@ -202,11 +631,18 @@ export function getTileOcclusionModes(tileOrDoc) {
   const modes = doc?.occlusion?.modes;
   if (modes !== undefined) return modes;
 
-  const legacyDocMode = doc?.occlusion?.mode ?? tileOrDoc?.occlusion?.mode;
-  if (legacyDocMode !== undefined) return legacyDocMode;
+  const foundryGeneration = Number(
+    globalThis.game?.release?.generation ?? String(globalThis.game?.version ?? "").split(".")[0],
+  );
+  if (!Number.isFinite(foundryGeneration) || foundryGeneration < 14) {
+    const legacyDocMode = doc?.occlusion?.mode ?? tileOrDoc?.occlusion?.mode;
+    if (legacyDocMode !== undefined) return legacyDocMode;
+  }
 
-  const legacySourceMode = doc?._source?.occlusion?.mode ?? tileOrDoc?._source?.occlusion?.mode;
-  if (legacySourceMode !== undefined) return legacySourceMode;
+  const snapshotMode =
+    fxmReadDocumentSnapshotValue(doc, ["occlusion", "mode"]) ??
+    fxmReadDocumentSnapshotValue(tileOrDoc, ["occlusion", "mode"]);
+  if (snapshotMode !== undefined) return snapshotMode;
 
   const legacyMode = doc?.occlusionMode ?? tileOrDoc?.occlusionMode;
   if (legacyMode !== undefined) return legacyMode;
@@ -264,7 +700,8 @@ export function isTileOverhead(tileOrDoc) {
   const doc = tileOrDoc?.document ?? tileOrDoc ?? null;
   if (!doc) return false;
 
-  const sourceOverhead = doc?._source?.overhead ?? tileOrDoc?._source?.overhead;
+  const sourceOverhead =
+    fxmReadDocumentSnapshotValue(doc, "overhead") ?? fxmReadDocumentSnapshotValue(tileOrDoc, "overhead");
   if (sourceOverhead !== undefined) return sourceOverhead === true;
 
   const tileElevation = Number(doc?.elevation ?? tileOrDoc?.elevation ?? Number.NaN);
@@ -277,13 +714,66 @@ export function isTileOverhead(tileOrDoc) {
 }
 
 /**
+ * Build a cached public-field Level texture plan.
+ *
+ * @param {foundry.documents.Scene|null|undefined} [scene=canvas?.scene ?? null]
+ * @returns {object}
+ */
+export function getSceneLevelTexturePlan(scene = canvas?.scene ?? null) {
+  return fxmGetLevelTexturePlan(scene);
+}
+
+/** @returns {void} */
+export function clearSceneLevelTexturePlanCache() {
+  fxmClearLevelTexturePlanCache();
+}
+
+/**
+ * Return configured public background/foreground image paths for a Level.
+ *
+ * @param {foundry.documents.Level|null|undefined} level
+ * @param {{foregroundOnly?:boolean,scene?:foundry.documents.Scene|null}} [options]
+ * @returns {Set<string>}
+ */
+export function getConfiguredLevelImagePaths(level, options = {}) {
+  return fxmGetLevelConfiguredImagePaths(level, options);
+}
+
+/**
+ * Add configured public background/foreground image paths for a Level.
+ *
+ * @param {foundry.documents.Level|null|undefined} level
+ * @param {Set<string>} output
+ * @param {{foregroundOnly?:boolean,scene?:foundry.documents.Scene|null}} [options]
+ * @returns {void}
+ */
+export function addConfiguredLevelImagePaths(level, output, options = {}) {
+  if (!(output instanceof Set)) return;
+  for (const path of getConfiguredLevelImagePaths(level, options)) output.add(path);
+}
+
+/**
+ * Resolve Level ids by matching source paths against the cached public-field Level texture plan.
+ *
+ * @param {Set<string>} sourcePaths
+ * @param {{foregroundOnly?:boolean,scene?:foundry.documents.Scene|null}} [options]
+ * @returns {Set<string>}
+ */
+export function getLevelIdsForConfiguredImagePaths(sourcePaths, options = {}) {
+  return fxmResolveLevelIdsFromConfiguredSources(sourcePaths, options);
+}
+
+/**
  * Normalize a document levels collection into a Set of Level ids.
  *
  * @param {foundry.abstract.Document|null|undefined} document
  * @returns {Set<string>|null}
  */
 export function getDocumentLevelsSet(document) {
-  const raw = document?.levels ?? document?._source?.levels ?? null;
+  const publicIds = fxmGetDocumentLevelIds(document);
+  if (publicIds?.size) return publicIds;
+
+  const raw = document?.levels ?? fxmReadDocumentSnapshotValue(document, "levels") ?? null;
   if (!raw) return null;
   if (raw instanceof Set) return raw;
   if (Array.isArray(raw)) return new Set(raw.filter((id) => typeof id === "string" && id.length));
@@ -295,6 +785,151 @@ export function getDocumentLevelsSet(document) {
     }
   }
   return null;
+}
+
+/**
+ * Return whether a document is included in a specific native Level, preferring Foundry's public document ownership API when available.
+ *
+ * @param {foundry.abstract.Document|null|undefined} document
+ * @param {foundry.documents.Level|null|undefined} level
+ * @returns {boolean|null}
+ */
+export function documentIncludedInLevel(document, level) {
+  return fxmDocumentIncludedInLevel(document, level);
+}
+
+/**
+ * Resolve Level ids using Foundry's public document ownership method.
+ *
+ * @param {foundry.abstract.Document|null|undefined} document
+ * @param {foundry.documents.Scene|null|undefined} [scene=canvas?.scene ?? null]
+ * @returns {Set<string>|null}
+ * @private
+ */
+function getDocumentIncludedLevelIds(document, scene = canvas?.scene ?? null) {
+  const ids = new Set();
+  let sawAnswer = false;
+  const levels = getSceneLevels(scene ?? document?.parent ?? canvas?.scene ?? null);
+  for (const level of levels) {
+    const levelId = fxmDocumentId(level).trim();
+    if (!levelId) continue;
+    const included = documentIncludedInLevel(document, level);
+    if (included !== null) sawAnswer = true;
+    if (included === true) ids.add(levelId);
+  }
+  if (!ids.size) return sawAnswer ? new Set() : null;
+  return ids.size < levels.length ? ids : null;
+}
+
+/**
+ * Public wrapper for Foundry Scene#getSurfaces. This is intended for Region-defined surfaces; Level artwork pixels still use FXMaster masks.
+ *
+ * @param {foundry.documents.Scene|null|undefined} [scene=canvas?.scene ?? null]
+ * @param {object} [options={}]
+ * @returns {Array}
+ */
+export function getSceneSurfaces(scene = canvas?.scene ?? null, options = {}) {
+  return fxmGetSceneSurfaces(scene, options);
+}
+
+/**
+ * Return whether the scene has public Region-defined surfaces matching options.
+ *
+ * @param {foundry.documents.Scene|null|undefined} [scene=canvas?.scene ?? null]
+ * @param {object} [options={}]
+ * @returns {boolean}
+ */
+export function sceneHasSurfaces(scene = canvas?.scene ?? null, options = {}) {
+  return fxmSceneHasSurfaces(scene, options);
+}
+
+/**
+ * Return Region documents attached to a Scene in a Collection-safe way.
+ *
+ * @param {foundry.documents.Scene|null|undefined} [scene=canvas?.scene ?? null]
+ * @returns {foundry.documents.Region[]}
+ */
+export function getSceneRegionDocuments(scene = canvas?.scene ?? null) {
+  return _fxmSceneRegionDocuments(scene);
+}
+
+/**
+ * Resolve a Region document by id across live canvas placeables and Scene embedded Region collections. Foundry versions expose embedded collections through slightly different helpers, so Region-level gates should not rely on only Collection#get.
+ *
+ * @param {string|null|undefined} regionId
+ * @param {foundry.documents.Scene|null|undefined} [scene=canvas?.scene ?? null]
+ * @returns {foundry.documents.Region|null}
+ */
+export function getSceneRegionDocumentById(regionId, scene = canvas?.scene ?? null) {
+  const id = String(regionId ?? "").trim();
+  if (!id) return null;
+
+  try {
+    const live = canvas?.regions?.get?.(id) ?? null;
+    if (live?.document) return live.document;
+  } catch (_err) {
+    /** Canvas Regions may be unavailable during setup/teardown. */
+  }
+
+  const collection = scene?.regions ?? null;
+  try {
+    const direct = collection?.get?.(id) ?? null;
+    if (direct) return direct?.document ?? direct;
+  } catch (_err) {
+    /** Some collection-like accessors do not implement get(id). */
+  }
+
+  for (const document of _fxmSceneRegionDocuments(scene)) {
+    if (fxmDocumentId(document) === id) return document;
+  }
+
+  return null;
+}
+
+/**
+ * Return native Scene Level ids that a document effectively targets. Explicit Level assignments are preferred; when Foundry stores Region assignment as an elevation window instead of a levels array, infer the matching Level ids from that window. A null result means the document is not level-limited.
+ *
+ * @param {foundry.abstract.Document|null|undefined} document
+ * @param {foundry.documents.Scene|null|undefined} [scene=canvas?.scene ?? null]
+ * @returns {Set<string>|null}
+ */
+export function getDocumentAssignedLevelIds(document, scene = canvas?.scene ?? null) {
+  const explicit = getDocumentLevelsSet(document);
+  if (explicit?.size) return explicit;
+
+  const included = getDocumentIncludedLevelIds(document, scene);
+  if (included?.size) return included;
+
+  const window = getDocumentElevationWindow(document);
+  if (!window) return null;
+
+  const ids = new Set();
+  for (const level of getSceneLevels(scene ?? document?.parent ?? canvas?.scene ?? null)) {
+    const levelId = fxmDocumentId(level).trim();
+    if (!levelId) continue;
+
+    const bottom = _fxmLevelBottom(level);
+    const top = _fxmLevelTop(level);
+    const windowMin = Number.isFinite(Number(window.min)) ? Number(window.min) : Number.NEGATIVE_INFINITY;
+    const windowMax = Number.isFinite(Number(window.max)) ? Number(window.max) : Number.POSITIVE_INFINITY;
+    const levelMin = Number.isFinite(bottom) ? bottom : Number.NEGATIVE_INFINITY;
+    const levelMax = Number.isFinite(top) ? top : Number.POSITIVE_INFINITY;
+    const overlapMin = Math.max(windowMin, levelMin);
+    const overlapMax = Math.min(windowMax, levelMax);
+    if (overlapMax - overlapMin > 1e-4) ids.add(levelId);
+  }
+
+  if (!ids.size) {
+    const inferredElevation = Number.isFinite(Number(window.min))
+      ? Number(window.min)
+      : Number.isFinite(Number(window.max))
+      ? Number(window.max)
+      : Number.NaN;
+    const inferred = inferVisibleLevelForDocument(document, inferredElevation);
+    if (inferred?.id) ids.add(inferred.id);
+  }
+
+  return ids.size ? ids : null;
 }
 
 /**
@@ -331,6 +966,9 @@ export function isDocumentOnCurrentCanvasLevel(document, elevation) {
   const currentLevel = getCanvasLevel();
   if (!currentLevel) return true;
 
+  const included = documentIncludedInLevel(document, currentLevel);
+  if (included !== null) return included;
+
   const levels = getDocumentLevelsSet(document);
   if (levels?.size) return levels.has(currentLevel.id);
 
@@ -351,12 +989,15 @@ const OCCLUSION_EPSILON = 1e-4;
  * @returns {{min:number,max:number}|null}
  */
 function getDocumentElevationWindow(document) {
-  const sourceElevation = document?.elevation ?? document?._source?.elevation ?? null;
+  const publicWindow = fxmGetDocumentElevationWindow(document);
+  if (publicWindow) return publicWindow;
+
+  const sourceElevation = document?.elevation ?? fxmReadDocumentSnapshotValue(document, "elevation") ?? null;
   const scalarElevation = Number(sourceElevation);
   if (Number.isFinite(scalarElevation)) return { min: scalarElevation, max: scalarElevation };
 
-  const bottom = sourceElevation?.bottom ?? document?._source?.elevation?.bottom;
-  const top = sourceElevation?.top ?? document?._source?.elevation?.top;
+  const bottom = sourceElevation?.bottom ?? fxmReadDocumentSnapshotValue(document, ["elevation", "bottom"]);
+  const top = sourceElevation?.top ?? fxmReadDocumentSnapshotValue(document, ["elevation", "top"]);
   const hasBottom = bottom !== undefined && bottom !== null && String(bottom).trim() !== "";
   const hasTop = top !== undefined && top !== null && String(top).trim() !== "";
   if (!hasBottom && !hasTop) return null;
@@ -403,12 +1044,15 @@ function resolveOcclusionElevationFromWindow(window) {
  * @returns {foundry.documents.Level[]}
  */
 export function getSceneLevels(scene) {
+  const publicLevels = fxmGetSceneLevelsPublic(scene);
+  if (publicLevels.length) return publicLevels;
+
   const levels = [];
   const seen = new Set();
 
   const push = (level) => {
     if (!level) return;
-    const id = String(level?.id ?? level?._id ?? "").trim();
+    const id = fxmDocumentId(level).trim();
     const looksLikeLevel =
       !!id || "elevation" in Object(level) || "isView" in Object(level) || "isVisible" in Object(level);
     if (!looksLikeLevel) return;
@@ -467,7 +1111,7 @@ export function getSceneLevels(scene) {
 
 function getSceneLevelIds(scene = canvas?.scene ?? null) {
   const ids = getSceneLevels(scene)
-    .map((level) => String(level?.id ?? level?._id ?? "").trim())
+    .map((level) => fxmDocumentId(level).trim())
     .filter(Boolean);
   return Array.from(new Set(ids));
 }
@@ -475,8 +1119,7 @@ function getSceneLevelIds(scene = canvas?.scene ?? null) {
 /**
  * Return the implicit native Level id for scenes that contain exactly one Level.
  *
- * Single-level scenes do not need an explicit stored level selector: an empty selector already means "all levels", which maps to the scene's current native level in Foundry V14. This helper is retained for compatibility with older
- * imports but intentionally returns an empty selection.
+ * Single-level scenes do not need an explicit stored level selector: an empty selector already means "all levels", which maps to the scene's current native level in Foundry V14. This helper is retained for compatibility with older imports but intentionally returns an empty selection.
  *
  * @param {Scene|null|undefined} [_scene=canvas?.scene ?? null]
  * @returns {string[]}
@@ -591,7 +1234,8 @@ export function isEffectActiveForCurrentCanvasLevel(options, scene = canvas?.sce
 function isSceneLevelVisibleOverlayForCurrentView(level, currentLevel) {
   if (!level) return false;
   if (level.id && currentLevel?.id && level.id === currentLevel.id) return true;
-  return !!(level.isVisible || level.isView);
+  if (level.isVisible || level.isView) return true;
+  return _fxmLevelHasLiveVisibleCanvasSurface(level);
 }
 
 export function isEffectActiveForCurrentOrVisibleCanvasLevel(options, scene = canvas?.scene ?? null) {
@@ -646,11 +1290,11 @@ export function resolveDocumentOcclusionElevation(document, { fallback = Infinit
     if (!levelDoc && document) {
       const representativeElevation = Number(
         document?.elevation?.top ??
-          document?._source?.elevation?.top ??
+          fxmReadDocumentSnapshotValue(document, ["elevation", "top"]) ??
           document?.elevation?.bottom ??
-          document?._source?.elevation?.bottom ??
+          fxmReadDocumentSnapshotValue(document, ["elevation", "bottom"]) ??
           document?.elevation ??
-          document?._source?.elevation ??
+          fxmReadDocumentSnapshotValue(document, "elevation") ??
           Number.NaN,
       );
       levelDoc = inferVisibleLevelForDocument(document, representativeElevation) ?? null;
@@ -687,6 +1331,42 @@ function sameSurfaceElevation(a, b) {
 }
 
 /**
+ * Return Foundry's active primary hover-fade elevation without triggering the deprecated V14 PrimaryCanvasGroup#hoverFadeElevation compatibility path. V14 returns the current Level base elevation from that getter, so this helper reads the same public Level value directly.
+ *
+ * @returns {number}
+ */
+export function getCanvasPrimaryHoverFadeElevation() {
+  const primary = canvas?.primary ?? null;
+  if (!primary) return Number.NaN;
+
+  const releaseGeneration = Number(globalThis.game?.release?.generation ?? 0);
+  if (releaseGeneration >= 14) {
+    const base = Number(
+      canvas?.level?.elevation?.base ?? canvas?.level?.elevation?.bottom ?? canvas?.level?.bottom ?? 0,
+    );
+    return Number.isFinite(base) ? base : Number.NaN;
+  }
+
+  const hoverFade = fxmGetPublicHoverFadeState(primary);
+  const hoverFadeLevel = primary.hoverFadeLevel ?? primary.hoverFade?.level ?? null;
+  const candidates = [
+    primary.hoverFadeElevation,
+    hoverFade?.elevation,
+    primary.hoverFade?.elevation,
+    primary.hoverFadeState?.elevation,
+    hoverFadeLevel?.elevation?.bottom,
+    hoverFadeLevel?.bottom,
+  ];
+
+  for (const candidate of candidates) {
+    const value = Number(candidate);
+    if (Number.isFinite(value)) return value;
+  }
+
+  return Number.NaN;
+}
+
+/**
  * Return the token center point used for live surface reveal checks.
  *
  * @param {Token|null|undefined} token
@@ -715,7 +1395,7 @@ function resolveTilePlaceableFromLevelSurfaceCandidate(candidate) {
 
   if (candidate?.constructor?.name === "Tile") return candidate;
 
-  const linked = candidate?.object ?? candidate?.placeable ?? candidate?._object ?? candidate?.sourceElement ?? null;
+  const linked = fxmLinkedPlaceableFromDisplayObject(candidate);
   if (linked?.constructor?.name === "Tile") return linked;
 
   const directDocName = candidate?.constructor?.documentName ?? candidate?.documentName ?? null;
@@ -918,9 +1598,7 @@ export function getCanvasLiveLevelSurfaceRevealState(
           Number.NaN,
       );
   const hoverFadeState =
-    testMeshes
-      .map((candidate) => candidate?._hoverFadeState ?? candidate?.hoverFadeState ?? null)
-      .find((state) => !!state) ??
+    testMeshes.map((candidate) => fxmGetPublicHoverFadeState(candidate)).find((state) => !!state) ??
     tileObject?.hoverFadeState ??
     null;
   const fadeOcclusion = Number(
@@ -940,7 +1618,7 @@ export function getCanvasLiveLevelSurfaceRevealState(
       tileObject?.document?.alpha ??
       1,
   );
-  const hoverFadeElevation = Number(canvas?.primary?.hoverFadeElevation ?? Number.NaN);
+  const hoverFadeElevation = getCanvasPrimaryHoverFadeElevation();
   const allowMouseHoverReveal = liveLevelSurfaceAllowsMouseHoverReveal(
     tileObject ?? object ?? null,
     document ?? tileObject?.document ?? null,
@@ -957,7 +1635,9 @@ export function getCanvasLiveLevelSurfaceRevealState(
     sameSurfaceElevation(surfaceElevation, hoverFadeElevation) &&
     (hoverFadeState?.hovered === true || !!tileObject) &&
     testMeshes.some((candidate) => liveSurfaceBoundsContainMousePoint(candidate));
-  const hovered = hoveredByHitTest || hoveredByElevation;
+  const hoveredByState =
+    hoverFadeState?.hovered === true && testMeshes.some((candidate) => liveSurfaceBoundsContainMousePoint(candidate));
+  const hovered = hoveredByHitTest || hoveredByElevation || hoveredByState;
   const explicit = testMeshes.some((candidate) =>
     liveSurfaceIsExplicitlyRevealedByControlledToken(candidate, { tileObject, elevation: surfaceElevation }),
   );
@@ -1019,7 +1699,7 @@ export function syncCanvasLiveLevelSurfaceState() {
  * @private
  */
 function resolveLiveLevelSurfaceMembers({ mesh = null, object = null } = {}) {
-  const linkedObject = object ?? mesh?.object ?? mesh?.placeable ?? mesh?._object ?? mesh?.sourceElement ?? null;
+  const linkedObject = object ?? fxmLinkedPlaceableFromDisplayObject(mesh);
   const linkedMesh = linkedObject?.mesh ?? linkedObject?.primaryMesh ?? linkedObject?.sprite ?? null;
   const displayObject = linkedMesh ?? mesh ?? linkedObject ?? null;
   return { mesh: displayObject, linkedObject };
@@ -1109,14 +1789,7 @@ function liveLevelSurfaceContainsRevealMousePoint(
  * @private
  */
 function getLiveLevelSurfaceHoverFadeState(mesh, linkedObject) {
-  return (
-    mesh?._hoverFadeState ??
-    mesh?.hoverFadeState ??
-    linkedObject?.hoverFadeState ??
-    linkedObject?.mesh?._hoverFadeState ??
-    linkedObject?.mesh?.hoverFadeState ??
-    null
-  );
+  return fxmGetPublicHoverFadeState(mesh, linkedObject, linkedObject?.mesh);
 }
 
 /**
@@ -1154,7 +1827,7 @@ function getLiveLevelSurfaceElevation({
   level = null,
   elevation = Number.NaN,
 } = {}) {
-  const linkedObject = object ?? mesh?.object ?? mesh?.placeable ?? mesh?._object ?? mesh?.sourceElement ?? null;
+  const linkedObject = object ?? fxmLinkedPlaceableFromDisplayObject(mesh);
   return Number(
     elevation ??
       mesh?.elevation ??
@@ -1189,7 +1862,7 @@ export function isLiveLevelSurfaceRevealActive({
   if (displayObject.visible === false || displayObject.renderable === false) return false;
 
   const hoverFadeState = getLiveLevelSurfaceHoverFadeState(displayObject, linkedObject);
-  if (hoverFadeState?.faded || hoverFadeState?.fading) return true;
+  if (hoverFadeState?.faded) return true;
 
   const surfaceDocument = linkedObject?.document ?? object?.document ?? document ?? null;
   const allowMouseHoverReveal = liveLevelSurfaceAllowsMouseHoverReveal(linkedObject, surfaceDocument, hoverFadeState);
@@ -1259,7 +1932,7 @@ export function getCanvasLiveLevelSurfaceState(scene = canvas?.scene ?? null, { 
   const parts = [];
   let forceRefresh = false;
   const currentLevel = getCanvasLevel();
-  const hoverFadeElevation = Number(canvas?.primary?.hoverFadeElevation ?? Number.NaN);
+  const hoverFadeElevation = getCanvasPrimaryHoverFadeElevation();
   const hoverKey = Number.isFinite(hoverFadeElevation) ? hoverFadeElevation.toFixed(3) : "NaN";
   parts.push(`scene:${scene?.id ?? ""}`);
   parts.push(`current:${currentLevel?.id ?? ""}`);
@@ -1335,7 +2008,6 @@ export function getCanvasLiveLevelSurfaceState(scene = canvas?.scene ?? null, { 
       level,
       elevation,
     });
-    if (revealState.fading) forceRefresh = true;
     const levelId =
       mesh?.level?.id ??
       mesh?.level?.document?.id ??
@@ -1368,7 +2040,7 @@ export function getCanvasLiveLevelSurfaceState(scene = canvas?.scene ?? null, { 
     parts.push(
       `lt:${levelId}:${textureId}:${visible}:${renderable}:${alphaKey}:${fadeKey}:${revealState.revealed ? 1 : 0}:${
         revealState.hovered ? 1 : 0
-      }:${revealState.explicit ? 1 : 0}`,
+      }:${revealState.explicit ? 1 : 0}:${revealState.faded ? 1 : 0}`,
     );
   }
 
@@ -1378,7 +2050,7 @@ export function getCanvasLiveLevelSurfaceState(scene = canvas?.scene ?? null, { 
       : Array.from(canvas?.primary?.tiles ?? []);
   for (const [index, mesh] of tileMeshes.entries()) {
     if (!mesh) continue;
-    const tileObject = mesh?.object ?? mesh?.placeable ?? mesh?._object ?? mesh?.sourceElement ?? null;
+    const tileObject = fxmLinkedPlaceableFromDisplayObject(mesh);
     const liveMesh = tileObject?.mesh ?? mesh;
     const document = tileObject?.document ?? tileObject ?? null;
     const elevation = Number(mesh?.elevation ?? document?.elevation ?? tileObject?.elevation ?? Number.NaN);
@@ -1390,7 +2062,6 @@ export function getCanvasLiveLevelSurfaceState(scene = canvas?.scene ?? null, { 
       level,
       elevation,
     });
-    if (revealState.fading) forceRefresh = true;
     const tileId = tileObject?.document?.id ?? tileObject?.id ?? index;
     const levelId = mesh?.level?.id ?? tileObject?.level?.id ?? tileObject?.document?.level?.id ?? "";
     const alpha = Number(
@@ -1417,7 +2088,7 @@ export function getCanvasLiveLevelSurfaceState(scene = canvas?.scene ?? null, { 
     parts.push(
       `tile:${tileId}:${levelId}:${visible}:${renderable}:${alphaKey}:${fadeKey}:${revealState.revealed ? 1 : 0}:${
         revealState.hovered ? 1 : 0
-      }:${revealState.explicit ? 1 : 0}`,
+      }:${revealState.explicit ? 1 : 0}:${revealState.faded ? 1 : 0}`,
     );
   }
 

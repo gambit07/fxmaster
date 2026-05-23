@@ -8,8 +8,17 @@
 
 import { packageId } from "../constants.js";
 import { logger } from "../logger.js";
-import { coalesceNextFrame, onSwitchParticleEffects, onUpdateParticleEffects } from "../utils.js";
+import {
+  coalesceNextFrame,
+  getRegionPlaceableOrDocumentAdapter,
+  getSceneRegionDocumentById,
+  regionDocumentCanApplyInCurrentView,
+  onSwitchParticleEffects,
+  onUpdateParticleEffects,
+  fxmDocumentId,
+} from "../utils.js";
 import { isEnabled } from "../settings.js";
+import { invalidateEffectStackCache } from "../common/effect-stack.js";
 
 const PARTICLE_TYPE = `${packageId}.particleEffectsRegion`;
 const FILTER_TYPE = `${packageId}.filterEffectsRegion`;
@@ -45,12 +54,12 @@ function buildBehaviorHookSnapshot(regionDoc, behaviorDoc, { deleted = false } =
   const byId = new Map();
 
   for (const doc of docs) {
-    const id = doc?.id ?? doc?._id ?? null;
+    const id = fxmDocumentId(doc) || null;
     if (id != null) byId.set(String(id), doc);
     else byId.set(Symbol("behavior"), doc);
   }
 
-  const hookId = behaviorDoc?.id ?? behaviorDoc?._id ?? null;
+  const hookId = fxmDocumentId(behaviorDoc) || null;
   if (hookId != null) {
     if (deleted) byId.delete(String(hookId));
     else byId.set(String(hookId), behaviorDoc);
@@ -73,8 +82,24 @@ function buildBehaviorHookSnapshot(regionDoc, behaviorDoc, { deleted = false } =
 function refreshRegionEffects(placeable) {
   if (!placeable) return;
 
+  if (!regionDocumentCanApplyInCurrentView(placeable?.document ?? null, canvas?.scene ?? null)) {
+    try {
+      canvas.particleeffects?.destroyRegionParticleEffects?.(placeable.id);
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    try {
+      canvas.filtereffects?.destroyRegionFilterEffects?.(placeable.id);
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    return;
+  }
+
   try {
-    canvas.particleeffects?.forceRegionMaskRefresh?.(placeable.id);
+    const layer = canvas.particleeffects;
+    if (typeof layer?.requestRegionMaskRefresh === "function") layer.requestRegionMaskRefresh(placeable.id);
+    else layer?.forceRegionMaskRefresh?.(placeable.id);
   } catch (err) {
     logger.debug("FXMaster:", err);
   }
@@ -86,10 +111,27 @@ function refreshRegionEffects(placeable) {
   }
 
   try {
-    canvas.filtereffects?.forceRegionMaskRefresh?.(placeable.id);
+    const layer = canvas.filtereffects;
+    if (typeof layer?.requestRegionMaskRefresh === "function") layer.requestRegionMaskRefresh(placeable.id);
+    else layer?.forceRegionMaskRefresh?.(placeable.id);
   } catch (err) {
     logger.debug("FXMaster:", err);
   }
+}
+
+/**
+ * Normalize a Region-local sync request into particle/filter booleans.
+ *
+ * @param {{ particles?: boolean, filters?: boolean }|null|undefined} kinds
+ * @returns {{ particles: boolean, filters: boolean }}
+ * @private
+ */
+function normalizeRegionScopedSyncKinds(kinds = null) {
+  if (!kinds) return { particles: true, filters: true };
+  return {
+    particles: kinds.particles !== false,
+    filters: kinds.filters !== false,
+  };
 }
 
 /**
@@ -101,10 +143,31 @@ function refreshRegionEffects(placeable) {
  * @returns {void}
  * @private
  */
-function syncRegionScopedEffects(regionDoc, { behaviorDocs = null } = {}) {
+function syncRegionScopedEffects(regionDoc, { behaviorDocs = null, kinds = null } = {}) {
   if (regionDoc?.parent !== canvas.scene) return;
 
-  const placeable = regionDoc?.object ?? canvas.regions.get(regionDoc?.id);
+  const syncKinds = normalizeRegionScopedSyncKinds(kinds);
+  if (!syncKinds.particles && !syncKinds.filters) return;
+
+  if (!regionDocumentCanApplyInCurrentView(regionDoc, canvas?.scene ?? null)) {
+    if (syncKinds.particles) {
+      try {
+        canvas.particleeffects?.destroyRegionParticleEffects?.(regionDoc?.id);
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    }
+    if (syncKinds.filters) {
+      try {
+        canvas.filtereffects?.destroyRegionFilterEffects?.(regionDoc?.id);
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    }
+    return;
+  }
+
+  const placeable = getRegionPlaceableOrDocumentAdapter(regionDoc);
   if (!placeable) return;
 
   const snapshot = normalizeRegionBehaviorDocs(behaviorDocs ?? regionDoc?.behaviors);
@@ -112,12 +175,12 @@ function syncRegionScopedEffects(regionDoc, { behaviorDocs = null } = {}) {
   const hasParticleBehavior = snapshot.some((behavior) => behavior?.type === PARTICLE_TYPE && !behavior?.disabled);
   const hasFilterBehavior = snapshot.some((behavior) => behavior?.type === FILTER_TYPE && !behavior?.disabled);
 
-  if (enabled && hasParticleBehavior) {
+  if (syncKinds.particles && enabled && hasParticleBehavior) {
     canvas.particleeffects?.drawRegionParticleEffects?.(placeable, {
       soft: false,
       behaviorDocs: snapshot,
     });
-  } else {
+  } else if (syncKinds.particles) {
     try {
       canvas.particleeffects?.destroyRegionParticleEffects?.(regionDoc.id);
     } catch (err) {
@@ -125,12 +188,12 @@ function syncRegionScopedEffects(regionDoc, { behaviorDocs = null } = {}) {
     }
   }
 
-  if (enabled && hasFilterBehavior) {
+  if (syncKinds.filters && enabled && hasFilterBehavior) {
     canvas.filtereffects?.drawRegionFilterEffects?.(placeable, {
       soft: false,
       behaviorDocs: snapshot,
     });
-  } else {
+  } else if (syncKinds.filters) {
     try {
       canvas.filtereffects?.destroyRegionFilterEffects?.(regionDoc.id);
     } catch (err) {
@@ -154,6 +217,21 @@ function isFxmasterBehaviorDrivenRegionUpdate(changed = {}) {
 
   const pkgFlags = changed?.flags?.[packageId];
   return !!pkgFlags && typeof pkgFlags === "object";
+}
+
+/**
+ * Return whether a Region document update requires rebuilding Region-local particle/filter instances instead of just refreshing masks and gates. Shape edits are handled by mask refreshes; Level/elevation ownership changes need a rebuild so stack-row Level metadata is current.
+ *
+ * @param {object} [changed]
+ * @returns {boolean}
+ * @private
+ */
+function regionUpdateRequiresRegionEffectRebuild(changed = {}) {
+  if (!changed || typeof changed !== "object") return false;
+  for (const key of ["levels", "level", "elevation", "shapes"]) {
+    if (Object.prototype.hasOwnProperty.call(changed, key)) return true;
+  }
+  return false;
 }
 
 /**
@@ -182,6 +260,55 @@ function refreshSuppressionForBehavior(type, ctx, { deferred = false } = {}) {
 }
 
 /**
+ * Determine which scene-suppression pipelines can be affected by a Region's enabled behaviors.
+ *
+ * @param {foundry.documents.RegionDocument|object|null} regionDoc
+ * @param {{ behaviorDocs?: Iterable<object>|object[]|null }} [options]
+ * @returns {{ particles: boolean, filters: boolean }}
+ * @private
+ */
+function getRegionSuppressionRefreshKinds(regionDoc, { behaviorDocs = null } = {}) {
+  const kinds = { particles: false, filters: false };
+  const behaviors = normalizeRegionBehaviorDocs(behaviorDocs ?? regionDoc?.behaviors);
+
+  for (const behavior of behaviors) {
+    if (!behavior || behavior.disabled) continue;
+    if (behavior.type === SUPPRESS_WEATHER) {
+      kinds.particles = true;
+      kinds.filters = true;
+    } else if (behavior.type === SUPPRESS_SCENE_PARTICLES) {
+      kinds.particles = true;
+    } else if (behavior.type === SUPPRESS_SCENE_FILTERS) {
+      kinds.filters = true;
+    }
+
+    if (kinds.particles && kinds.filters) break;
+  }
+
+  return kinds;
+}
+
+/**
+ * Refresh only the scene-suppression pipelines touched by a Region document.
+ *
+ * @param {foundry.documents.RegionDocument|object|null} regionDoc
+ * @param {object} ctx
+ * @param {{ deferred?: boolean, behaviorDocs?: Iterable<object>|object[]|null }} [options]
+ * @returns {void}
+ * @private
+ */
+function refreshSuppressionForRegion(regionDoc, ctx, { deferred = false, behaviorDocs = null } = {}) {
+  const kinds = getRegionSuppressionRefreshKinds(regionDoc, { behaviorDocs });
+  const requestParticles = deferred
+    ? ctx.requestDeferredSceneParticlesSuppressionRefresh
+    : ctx.requestSceneParticlesSuppressionRefresh;
+  const requestFilters = deferred ? ctx.requestDeferredFilterSuppressionRefresh : ctx.requestFilterSuppressionRefresh;
+
+  if (kinds.particles) requestParticles?.();
+  if (kinds.filters) requestFilters?.();
+}
+
+/**
  * Register region and behavior lifecycle hooks.
  *
  * @param {object} ctx - Shared hook context from {@link createHookContext}.
@@ -192,22 +319,39 @@ export function registerRegionHooks(ctx) {
 
   const requestDeferredRegionScopedEffectsSync = (() => {
     const pendingRegionIds = new Set();
+    const pendingBehaviorSnapshots = new Map();
+    const pendingSyncKinds = new Map();
     const run = coalesceNextFrame(
       () => {
         const ids = [...pendingRegionIds];
+        const snapshots = new Map(pendingBehaviorSnapshots);
+        const kindsByRegion = new Map(pendingSyncKinds);
         pendingRegionIds.clear();
+        pendingBehaviorSnapshots.clear();
+        pendingSyncKinds.clear();
 
         for (const regionId of ids) {
-          const regionDoc = canvas.scene?.regions?.get?.(regionId) ?? canvas.regions?.get?.(regionId)?.document ?? null;
-          if (regionDoc) syncRegionScopedEffects(regionDoc);
+          const regionDoc = getSceneRegionDocumentById(regionId, canvas?.scene ?? null);
+          if (!regionDoc) continue;
+          const behaviorDocs = snapshots.has(regionId) ? snapshots.get(regionId) : null;
+          const kinds = kindsByRegion.get(regionId) ?? null;
+          syncRegionScopedEffects(regionDoc, { behaviorDocs, kinds });
         }
       },
       { key: "fxm:deferredRegionScopedEffectsSync" },
     );
 
-    return (regionId) => {
+    return (regionId, behaviorDocs = null, kinds = null) => {
       if (!regionId) return;
       pendingRegionIds.add(regionId);
+      if (behaviorDocs !== null) pendingBehaviorSnapshots.set(regionId, normalizeRegionBehaviorDocs(behaviorDocs));
+      if (kinds) {
+        const prev = pendingSyncKinds.get(regionId) ?? { particles: false, filters: false };
+        pendingSyncKinds.set(regionId, {
+          particles: !!prev.particles || kinds.particles !== false,
+          filters: !!prev.filters || kinds.filters !== false,
+        });
+      }
       run();
     };
   })();
@@ -228,15 +372,16 @@ export function registerRegionHooks(ctx) {
   Hooks.on("createRegion", (regionDoc) => {
     if (regionDoc?.parent !== canvas.scene) return;
 
+    invalidateEffectStackCache();
     syncRegionScopedEffects(regionDoc);
-    ctx.requestSceneParticlesSuppressionRefresh();
-    ctx.requestFilterSuppressionRefresh();
+    refreshSuppressionForRegion(regionDoc, ctx);
     ctx.scheduleOpenWindowsRefresh();
   });
 
   Hooks.on("deleteRegion", (regionDoc) => {
     if (regionDoc?.parent !== canvas.scene) return;
 
+    invalidateEffectStackCache();
     try {
       canvas.particleeffects?.destroyRegionParticleEffects?.(regionDoc.id);
     } catch (err) {
@@ -248,14 +393,15 @@ export function registerRegionHooks(ctx) {
       logger.debug("FXMaster:", err);
     }
 
-    ctx.requestSceneParticlesSuppressionRefresh();
-    ctx.requestFilterSuppressionRefresh();
+    refreshSuppressionForRegion(regionDoc, ctx);
     ctx.scheduleOpenWindowsRefresh();
   });
 
   Hooks.on("updateRegion", (regionDoc, changed) => {
     if (regionDoc?.parent !== canvas.scene) return;
     if (isFxmasterBehaviorDrivenRegionUpdate(changed)) return;
+
+    invalidateEffectStackCache();
 
     if (!isEnabled()) {
       try {
@@ -268,12 +414,14 @@ export function registerRegionHooks(ctx) {
       } catch (err) {
         logger.debug("FXMaster:", err);
       }
-    } else {
+    } else if (regionUpdateRequiresRegionEffectRebuild(changed)) {
       syncRegionScopedEffects(regionDoc);
+    } else {
+      const placeable = canvas?.regions?.get?.(regionDoc.id) ?? getRegionPlaceableOrDocumentAdapter(regionDoc);
+      refreshRegionEffects(placeable);
     }
 
-    ctx.requestSceneParticlesSuppressionRefresh();
-    ctx.requestFilterSuppressionRefresh();
+    refreshSuppressionForRegion(regionDoc, ctx);
     ctx.scheduleOpenWindowsRefresh();
   });
 
@@ -287,12 +435,15 @@ export function registerRegionHooks(ctx) {
     const regionDoc = behaviorDoc?.parent;
     if (!type || regionDoc?.parent !== canvas.scene) return;
 
+    invalidateEffectStackCache();
     refreshSuppressionForBehavior(type, ctx, { deferred: true });
 
     if (type === PARTICLE_TYPE || type === FILTER_TYPE) {
       const behaviorDocs = buildBehaviorHookSnapshot(regionDoc, behaviorDoc);
-      syncRegionScopedEffects(regionDoc, { behaviorDocs });
-      requestDeferredRegionScopedEffectsSync(regionDoc.id);
+      requestDeferredRegionScopedEffectsSync(regionDoc.id, behaviorDocs, {
+        particles: type === PARTICLE_TYPE,
+        filters: type === FILTER_TYPE,
+      });
       ctx.scheduleOpenWindowsRefresh();
     }
   });
@@ -302,12 +453,15 @@ export function registerRegionHooks(ctx) {
     const regionDoc = behaviorDoc?.parent;
     if (!type || regionDoc?.parent !== canvas.scene) return;
 
+    invalidateEffectStackCache();
     refreshSuppressionForBehavior(type, ctx, { deferred: true });
 
     if (type === PARTICLE_TYPE || type === FILTER_TYPE) {
       const behaviorDocs = buildBehaviorHookSnapshot(regionDoc, behaviorDoc);
-      syncRegionScopedEffects(regionDoc, { behaviorDocs });
-      requestDeferredRegionScopedEffectsSync(regionDoc.id);
+      requestDeferredRegionScopedEffectsSync(regionDoc.id, behaviorDocs, {
+        particles: type === PARTICLE_TYPE,
+        filters: type === FILTER_TYPE,
+      });
       ctx.scheduleOpenWindowsRefresh();
     }
   });
@@ -317,12 +471,15 @@ export function registerRegionHooks(ctx) {
     const regionDoc = behaviorDoc?.parent;
     if (!type || regionDoc?.parent !== canvas.scene) return;
 
+    invalidateEffectStackCache();
     refreshSuppressionForBehavior(type, ctx, { deferred: true });
 
     if (type === PARTICLE_TYPE || type === FILTER_TYPE) {
       const behaviorDocs = buildBehaviorHookSnapshot(regionDoc, behaviorDoc, { deleted: true });
-      syncRegionScopedEffects(regionDoc, { behaviorDocs });
-      requestDeferredRegionScopedEffectsSync(regionDoc.id);
+      requestDeferredRegionScopedEffectsSync(regionDoc.id, behaviorDocs, {
+        particles: type === PARTICLE_TYPE,
+        filters: type === FILTER_TYPE,
+      });
       ctx.scheduleOpenWindowsRefresh();
     }
   });

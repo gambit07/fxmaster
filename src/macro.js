@@ -133,9 +133,7 @@ function getMacroEffectEntries(scene, particleEffectFlags, filterFlags) {
 /**
  * Build a macro command that replays the saved effects through the API-effect path.
  *
- * The `effects` array is saved in the current FX stack order, top-to-bottom.
- * `play` remains the default macro action and includes a commented stop example using static ids assigned to the saved macro payload.
- * `toggle` receives a stable key so the saved macro can address the same effect group on later runs.
+ * The `effects` array is saved in the current FX stack order, top-to-bottom. `play` remains the default macro action and includes a commented stop example using static ids assigned to the saved macro payload. `toggle` receives a stable key so the saved macro can address the same effect group on later runs.
  *
  * @param {Array<object>} macroEffects
  * @param {{name?: string, action?: "play"|"toggle", skipFading?: boolean}} [options]

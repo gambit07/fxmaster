@@ -186,9 +186,9 @@ This module also provides ways to easily configure these effects.
     - [API Effects UI Manager](#api-effects-ui-manager)
     - [Save Particle and Filter Effects as a Macro](#save-particle-and-filter-effects-as-a-macro)&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/floppy-disk-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/floppy-disk-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/floppy-disk-dark.svg" alt="Save Particle and Filter Effects as a Macro Icon" height="20" width="20" style="vertical-align:middle;"></picture>
     - [Clear Particle and Filter Effects](#clear-particle-and-filter-effects)&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/trash-light.svg" media="(prefers-color-scheme: dark)"> <source srcset="./media/font-awesome/trash-dark.svg" media="(prefers-color-scheme: light)"> <img src="./media/font-awesome/trash-dark.svg" alt="Clear Particle and Filter Effects Icon" height="20" width="20" style="vertical-align:middle;"></picture>
-  - [Levels](#levels)
+  - [Levels](#levels)&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/clone-light.svg" media="(prefers-color-scheme: dark)"><source srcset="./media/font-awesome/clone-dark.svg" media="(prefers-color-scheme: light)"><img src="./media/font-awesome/clone-dark.svg" alt="" aria-hidden="true" role="presentation" height="20" width="20" style="vertical-align:middle;"></picture>
     - [Using Levels with Scene Effects](#using-levels-with-scene-effects)
-  - [Layers](#layers)
+  - [Layers](#layers)&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/clone-light.svg" media="(prefers-color-scheme: dark)"><source srcset="./media/font-awesome/clone-dark.svg" media="(prefers-color-scheme: light)"><img src="./media/font-awesome/clone-dark.svg" alt="" aria-hidden="true" role="presentation" height="20" width="20" style="vertical-align:middle;"></picture>
     - [Manage Layers Window](#manage-layers-window)
   - [Developer API](#developer-api)
     - [Presets API](#presets-api)
@@ -794,6 +794,10 @@ Core FXMaster currently registers these filter types:
 
 `bloom`, `color`, `fog`, `lightning`, `oldfilm`, `predator`, `underwater`
 
+FXMaster+ registers additional filter effect types:
+
+`water`, `lightningbolts`, `ice`, `sunlight`, `duststorm`, `glitch`, `wind`, `auroraborealis`
+
 You can inspect the currently registered filter types in a running world with:
 
 ```js
@@ -808,7 +812,9 @@ Core FXMaster currently registers these particle types:
 
 `autumnleaves`, `bats`, `birds`, `bubbles`, `clouds`, `crows`, `eagles`, `embers`, `fog`, `hail`, `rain`, `rats`, `snow`, `snowstorm`, `spiders`, `stars`
 
-FXMaster+ may register additional particle effect types.
+FXMaster+ registers additional particle effect types:
+
+`sakurabloom`, `sakurablossom`, `magiccrystals`, `fireflies`, `ghosts`, `sandstorm`, `fish`, `windwisps`
 
 You can inspect the currently registered particle types in a running world with:
 

@@ -1,6 +1,10 @@
 import { isSoundFxParameterVisible } from "../handlebars-helpers.js";
 import { logger } from "../logger.js";
-import { resolveDarknessActivationEnabled } from "../utils.js";
+import { packageId } from "../constants.js";
+import { invalidateEffectStackCache } from "./effect-stack.js";
+import { FilterEffectsSceneManager } from "../filter-effects/filter-effects-scene-manager.js";
+import { refreshSceneParticlesSuppressionMasks } from "../particle-effects/particle-effects-scene-manager.js";
+import { getRegionPlaceableOrDocumentAdapter, resolveDarknessActivationEnabled } from "../utils.js";
 export class CommonRegionBehaviorConfig extends foundry.applications.sheets.RegionBehaviorConfig {
   static PARTS = foundry.utils.mergeObject(super.PARTS, { form: { scrollable: [""] } }, { inplace: false });
 
@@ -19,6 +23,7 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
 
     this._wireElevationGateVisibility(rendered.form);
     this._wireFxmasterConditionalVisibility(rendered.form);
+    this._wireLivePreview(rendered.form);
 
     const legendKey = this.constructor.FIELDSET_LEGEND_I18N;
     if (!legendKey) return rendered;
@@ -31,6 +36,225 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
 
     this._groupByEnabled(fieldset);
     return rendered;
+  }
+
+  /**
+   * Resolve the containing sheet form from a rendered form part.
+   * @param {HTMLElement|HTMLFormElement|null} formPart
+   * @returns {HTMLFormElement|null}
+   */
+  _resolveLivePreviewForm(formPart) {
+    const isForm = (candidate) => {
+      return (
+        candidate instanceof HTMLFormElement &&
+        candidate.elements &&
+        typeof candidate.elements[Symbol.iterator] === "function"
+      );
+    };
+
+    if (isForm(formPart)) return formPart;
+    if (isForm(this.form)) return this.form;
+
+    const closest = formPart?.closest?.("form");
+    if (isForm(closest)) return closest;
+
+    const nested = formPart?.querySelector?.("form");
+    if (isForm(nested)) return nested;
+
+    const applicationForm = this.element?.querySelector?.("form");
+    if (isForm(applicationForm)) return applicationForm;
+
+    return null;
+  }
+
+  /**
+   * Collect form data using Foundry's ApplicationV2 form parser.
+   * @param {HTMLElement|HTMLFormElement|null} formPart
+   * @returns {object|null}
+   */
+  _readLivePreviewSubmitData(formPart) {
+    const FormDataExtended = foundry?.applications?.ux?.FormDataExtended;
+    const form = this._resolveLivePreviewForm(formPart);
+    if (!form || !FormDataExtended) return null;
+
+    try {
+      const formData = new FormDataExtended(form);
+      return this._prepareSubmitData(null, form, formData);
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+      return null;
+    }
+  }
+
+  /**
+   * Store the authoritative source data before temporary live-preview edits.
+   * @returns {void}
+   */
+  _ensureLivePreviewSource() {
+    if (this._fxmLivePreviewSource) return;
+    const source = this.document?._source ?? this.document?.toObject?.(false) ?? {};
+    this._fxmLivePreviewSource = foundry.utils.deepClone(source);
+  }
+
+  /**
+   * Restore the original behavior source after an uncommitted live preview.
+   * @param {{ refresh?: boolean }} [options]
+   * @returns {void}
+   */
+  _restoreLivePreviewSource({ refresh = true } = {}) {
+    if (!this._fxmLivePreviewSource || !this.document) return;
+    try {
+      this.document.__fxmLivePreview = false;
+      this.document.updateSource(this._fxmLivePreviewSource);
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    const snapshot = this._fxmLivePreviewSource;
+    this._fxmLivePreviewSource = null;
+    if (refresh) this._refreshLivePreviewRegion({ soft: false, reason: "restore", source: snapshot });
+  }
+
+  /**
+   * Refresh affected Region, scene suppression, and stack visuals after a preview change.
+   * @param {{ soft?: boolean, reason?: string, source?: object|null }} [options]
+   * @returns {void}
+   */
+  _refreshLivePreviewRegion({ soft = true, reason = "preview", source = null } = {}) {
+    const behavior = this.document;
+    const regionDoc = behavior?.parent ?? null;
+    if (!regionDoc || regionDoc?.parent !== canvas?.scene) return;
+
+    const placeable = getRegionPlaceableOrDocumentAdapter(regionDoc);
+    if (!placeable) return;
+
+    const type = String(behavior.type ?? source?.type ?? "");
+    const behaviors = Array.from(regionDoc.behaviors ?? []);
+
+    try {
+      invalidateEffectStackCache();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    if (type === `${packageId}.filterEffectsRegion`) {
+      canvas.filtereffects?.drawRegionFilterEffects?.(placeable, { soft, behaviorDocs: behaviors });
+    } else if (type === `${packageId}.particleEffectsRegion`) {
+      canvas.particleeffects?.drawRegionParticleEffects?.(placeable, { soft, behaviorDocs: behaviors });
+    }
+
+    if (type === `${packageId}.suppressSceneFilters` || type === "suppressWeather") {
+      try {
+        FilterEffectsSceneManager.instance.refreshSceneFilterSuppressionMasks();
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    }
+
+    if (type === `${packageId}.suppressSceneParticles` || type === "suppressWeather") {
+      try {
+        refreshSceneParticlesSuppressionMasks({ sync: true });
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    }
+
+    if (reason === "preview") {
+      try {
+        canvas.filtereffects?.forceRegionMaskRefresh?.(regionDoc.id);
+        canvas.particleeffects?.forceRegionMaskRefresh?.(regionDoc.id);
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    }
+  }
+
+  /**
+   * Apply the current form state to the local behavior document without persisting it.
+   * @param {HTMLFormElement} form
+   * @returns {void}
+   */
+  _applyLivePreview(form) {
+    const data = this._readLivePreviewSubmitData(form);
+    if (!data) return;
+
+    this._ensureLivePreviewSource();
+    try {
+      this.document.__fxmLivePreview = true;
+      this.document.updateSource(data);
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+      return;
+    }
+
+    this._refreshLivePreviewRegion({ soft: true, reason: "preview" });
+  }
+
+  /**
+   * Queue live-preview updates while the Region behavior form is edited.
+   * @param {HTMLFormElement} form
+   * @returns {void}
+   */
+  _scheduleLivePreview(form) {
+    if (this._fxmLivePreviewTimer != null) return;
+    this._fxmLivePreviewTimer = window.setTimeout(() => {
+      this._fxmLivePreviewTimer = null;
+      this._applyLivePreview(form);
+    }, 60);
+  }
+
+  /**
+   * Wire live-preview Region behavior updates.
+   * @param {HTMLFormElement} form
+   * @returns {void}
+   */
+  _wireLivePreview(form) {
+    if (!form || !game.user?.isGM) return;
+    this._fxmLivePreviewCommitted = false;
+
+    try {
+      this._fxmLivePreviewAbort?.abort?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    const ac = new AbortController();
+    this._fxmLivePreviewAbort = ac;
+    const schedule = () => this._scheduleLivePreview(form);
+
+    form.addEventListener("input", schedule, { signal: ac.signal, capture: true });
+    form.addEventListener("change", schedule, { signal: ac.signal, capture: true });
+  }
+
+  /** @inheritdoc */
+  async _processSubmitData(event, form, submitData, options = {}) {
+    this._fxmLivePreviewCommitted = true;
+    try {
+      this._fxmLivePreviewAbort?.abort?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    if (this._fxmLivePreviewTimer != null) {
+      clearTimeout(this._fxmLivePreviewTimer);
+      this._fxmLivePreviewTimer = null;
+    }
+    this._restoreLivePreviewSource({ refresh: false });
+    await super._processSubmitData(event, form, submitData, options);
+    this._refreshLivePreviewRegion({ soft: false, reason: "commit" });
+  }
+
+  /** @inheritdoc */
+  _onClose(options) {
+    try {
+      this._fxmLivePreviewAbort?.abort?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    if (this._fxmLivePreviewTimer != null) {
+      clearTimeout(this._fxmLivePreviewTimer);
+      this._fxmLivePreviewTimer = null;
+    }
+    if (!this._fxmLivePreviewCommitted) this._restoreLivePreviewSource({ refresh: true });
+    super._onClose(options);
   }
 
   _configureDarknessActivationInputs(form) {
@@ -78,8 +302,7 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
   _primeDarknessActivationToggles(form) {
     if (!form) return;
 
-    const sourceSystem =
-      this.document?._source?.system ?? this.object?._source?.system ?? this.object?.toObject?.()?.system ?? {};
+    const sourceSystem = this.document?.system ?? this.object?.system ?? this.object?.toObject?.()?.system ?? {};
 
     for (const checkbox of form.querySelectorAll(
       'input[type="checkbox"][name^="system."][name$="_darknessActivationEnabled"]',

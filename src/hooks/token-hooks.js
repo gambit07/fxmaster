@@ -38,9 +38,23 @@ export function registerTokenHooks(ctx) {
     ctx.requestTokenMaskRefresh();
   });
 
-  Hooks.on("createTile", () => ctx.requestTokenMaskRefresh());
-  Hooks.on("updateTile", () => ctx.requestTokenMaskRefresh());
-  Hooks.on("deleteTile", () => ctx.requestTokenMaskRefresh());
+  Hooks.on("createTile", (tileDoc) => {
+    if (tileDoc?.parent !== canvas.scene) return;
+    if (!isEnabled()) return;
+    ctx.requestTokenMaskRefresh();
+  });
+
+  Hooks.on("updateTile", (tileDoc) => {
+    if (tileDoc?.parent !== canvas.scene) return;
+    if (!isEnabled()) return;
+    ctx.requestTokenMaskRefresh();
+  });
+
+  Hooks.on("deleteTile", (tileDoc) => {
+    if (tileDoc?.parent !== canvas.scene) return;
+    if (!isEnabled()) return;
+    ctx.requestTokenMaskRefresh();
+  });
   Hooks.on("refreshTile", (placeable) => {
     if (placeable?.document?.parent !== canvas.scene) return;
     if (!isEnabled()) return;

@@ -8,7 +8,13 @@
 
 import { packageId } from "../constants.js";
 import { logger } from "../logger.js";
-import { _belowTilesEnabled, _belowTokensEnabled, coalesceNextFrame, getCssViewportMetrics } from "../utils.js";
+import {
+  _belowTilesEnabled,
+  _belowTokensEnabled,
+  coalesceNextFrame,
+  getCssViewportMetrics,
+  getRegionEffectPlaceablesForCurrentView,
+} from "../utils.js";
 import { isEnabled } from "../settings.js";
 import { refreshSceneParticlesSuppressionMasks } from "../particle-effects/particle-effects-scene-manager.js";
 import { FilterEffectsSceneManager } from "../filter-effects/filter-effects-scene-manager.js";
@@ -271,7 +277,9 @@ export function createHookContext() {
   const requestRegionMaskRefreshAll = () => {
     if (!isEnabled()) return;
     try {
-      canvas.filtereffects?.forceRegionMaskRefreshAll?.();
+      const layer = canvas.filtereffects;
+      if (typeof layer?.requestRegionMaskRefreshAll === "function") layer.requestRegionMaskRefreshAll();
+      else layer?.forceRegionMaskRefreshAll?.();
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
@@ -427,7 +435,7 @@ export function createHookContext() {
     function requestRedrawAllRegionParticles() {
       if (!isEnabled()) return;
       try {
-        for (const reg of canvas.regions.placeables) {
+        for (const reg of getRegionEffectPlaceablesForCurrentView(canvas?.scene ?? null)) {
           canvas.particleeffects?.drawRegionParticleEffects?.(reg, { soft: false });
         }
       } catch (err) {

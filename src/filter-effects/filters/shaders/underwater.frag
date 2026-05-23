@@ -1,4 +1,7 @@
-
+/**
+ * SPDX-FileCopyrightText: 2026 Gambit
+ */
+ 
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
 precision highp int;
@@ -80,7 +83,7 @@ void main(void) {
   vec4 src = texture2D(uSampler, vTextureCoord);
 
   /** SCREEN position in CSS px (match Color) */
-  vec2 screenPx = outputFrame.xy + vTextureCoord * inputSize.xy;
+  vec2 screenPx = outputFrame.xy + vTextureCoord * outputFrame.zw;
 
   /** ---- Region/suppression mask ---- */
   float inMask = src.a;
