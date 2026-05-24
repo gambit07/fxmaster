@@ -24,9 +24,9 @@
       "DisableAllHint": "Ustawienie tej opcji spowoduje wyłączenie efektów dla wszystkich użytkowników. Nadpisuje flagę włączenia. To zabezpieczenie na wypadek niepowodzenia migracji. Zwykle nie musisz tego zmieniać. Po zmianie wymagane jest ręczne odświeżenie.",
       "ClearParticleAndFilterEffectsTitle": "Wyczyść efekty cząsteczkowe i filtry",
       "ClearParticleAndFilterEffectsContent": "<p>Trwale usunąć wszystkie <em>efekty cząsteczkowe</em> i <em>efekty filtrów</em> z tej sceny?</p>",
-      "ResetEffectDefaults": "Reset to Defaults",
-      "ResetEffectDefaultsSuccess": "{effect} parameters reset to defaults",
-      "PowerToggleContextHint": "Left-click to toggle. Right-click for reset options.",
+      "ResetEffectDefaults": "Przywróć ustawienia domyślne",
+      "ResetEffectDefaultsSuccess": "Parametry {effect} zostały przywrócone do wartości domyślnych",
+      "PowerToggleContextHint": "Kliknij lewym przyciskiem myszy, aby włączyć/wyłączyć. Kliknij prawym przyciskiem myszy, aby wyświetlić opcje resetowania.",
       "Yes": "Tak",
       "No": "Nie",
       "Enable": "Włącz",
@@ -194,7 +194,7 @@
       "TopDownBoltsVariable": "Zmienna liczba gromów",
       "TriggerChance": "Szansa na wyzwolenie",
       "FrostStrength": "Siła mrozu",
-      "Depth": "Głębokość",
+      "Depth": "Głębia",
       "VeinStrength": "Siła żyłek",
       "SheenStrength": "Siła połysku",
       "SheenTint": "Barwa połysku",
@@ -238,7 +238,53 @@
       "BlendMode": "Tryb mieszania",
       "Levels": "Poziomy",
       "AllLevels": "Wszystkie poziomy",
-      "DarknessActivationEnabled": "Aktywacja ciemności"
+      "DarknessActivationEnabled": "Aktywacja ciemności",
+      "Intensity": "Intensywność",
+      "AuroraMode": "Tryb zorzy",
+      "AuroraModeSide": "Widok z boku",
+      "AuroraModeTopDown": "Od góry do dołu",
+      "AuroraModeHorizon": "Horyzont",
+      "AuroraPalette": {
+        "Name": "Paleta zorzy",
+        "Lakeside": "Zorza polarna nad jeziorem",
+        "NorthernGetaway": "Wypoczynek na północy",
+        "NorthernLights": "Zorza polarna",
+        "ForestNorthernLights": "Leśna zorza polarna",
+        "PhenomenalAurora": "Niesamowita zorza polarna",
+        "Aurora": "Zorza",
+        "Custom": "Niestandardowe kolory"
+      },
+      "AuroraColorDepth": "Głębia koloru",
+      "AuroraColorLower": "Kolor dolnej zasłony",
+      "AuroraColorCore": "Kolor bazowy",
+      "AuroraColorBright": "Wyrazisty kolor krawędzi",
+      "AuroraColorGlow": "Kolor połysku",
+      "AuroraCount": "Liczba zorz",
+      "AuroraRibbonWidth": "Szerokość wstęgi",
+      "AuroraWaviness": "Falistość",
+      "AuroraSoftness": "Miękkość",
+      "AuroraSideVerticalPosition": "Pozycja wysokości zasłony",
+      "AuroraSideCurtainHeight": "Opadanie zasłony",
+      "AuroraTopDownAngle": "Kąt ścieżki",
+      "AuroraTopDownDepth": "Głębia połysku",
+      "AuroraHorizonStartHeight": "Punkt początkowy",
+      "AuroraHorizonEndHeight": "Punkt końcowy",
+      "AuroraHorizonSkyReach": "Spadek z góry",
+      "AuroraHorizonAngle": "Nachylenie ścieżki",
+      "BorderTop": "Góra",
+      "BorderRight": "Prawo",
+      "BorderBottom": "Dół",
+      "BorderLeft": "Lewo",
+      "AuroraHorizonStartPosition": "Punkt początkowy",
+      "AuroraHorizonEndPosition": "Punkt końcowy",
+      "AuroraHorizonDip": "Spadek z góry",
+      "AuroraHorizonCurtainHeight": "Zasięg zasłony",
+      "AuroraHorizonDepth": "Głębia z góry",
+      "AuroraHorizonOverheadPosition": "Punkt nad głową",
+      "AuroraHorizonHazeStrength": "Intensywność zamglenia",
+      "AuroraHorizonHazeHeight": "Wysokość mgły",
+      "AuroraTopDownHazeStrength": "Intensywność zamglenia",
+      "AuroraMixedColors": "Różne kolory"
     },
     "ParamTooltips": {
       "Saturation": "Intensywność koloru. 0 = skala szarości; 1 = oryginał; >1 = przesycone.",
@@ -395,7 +441,30 @@
       "DarknessActivationMax": "Maksymalny poziom zaciemnienia sceny dopuszczalny do wyświetlenia tego efektu.",
       "BlendMode": "W jaki sposób skorygowany kolor komponuje się z kolorem sceny, z której pobrano próbkę.",
       "Levels": "Ogranicz działanie tego efektu sceny do wybranych poziomów sceny. Pozostaw opcję „Wszystkie poziomy”, aby efekt został zastosowany wszędzie.",
-      "DarknessActivationEnabled": "Włącz opcję ograniczenia ciemności sceny dla tego efektu. Gdy opcja jest wyłączona, efekt jest renderowany przy każdym poziomie ciemności."
+      "DarknessActivationEnabled": "Włącz opcję ograniczenia ciemności sceny dla tego efektu. Gdy opcja jest wyłączona, efekt jest renderowany przy każdym poziomie ciemności.",
+      "AuroraMode": "W trybie Widok boczny zasłony opuszczają się poziomo, w trybie Od góry w dół – zwijają się w pasy nad głową, a w trybie Horyzont – zasłona przechodzi nad górną krawędzią, opada w kierunku widza i wychodzi z powrotem przez górną krawędź.",
+      "AuroraPalette": "Gotowe punkty kolorystyczne z kolekcji palet Zorza Polarna. Wybranie gotowego zestawu powoduje skopiowanie jego domyślnych ustawień do pól wprowadzania kolorów. Opcja „Kolory niestandardowe” służy do wczytywania i zapisywania własnych palet.",
+      "AuroraColorDepth": "Najciemniejszy/najgłębszy odcień stosowany do oddania subtelnych struktur, cieni i głębi atmosferycznej.",
+      "AuroraColorLower": "W dolnej części zasłony zastosowano kolor użyty w cieńszych fałdach i odległych pasach.",
+      "AuroraColorCore": "Główny kolor zorzy zastosowany na całej długości wstęg.",
+      "AuroraColorBright": "Wyrazisty kolor krawędzi stosowany do widocznych krawędzi zasłon i struktur promieni aktywnych.",
+      "AuroraColorGlow": "Najbardziej intensywny odcień używany do podkreślania i nadania blasku koronom.",
+      "AuroraCount": "Liczba wstęg lub zasłon zorzy polarnej do wygenerowania. W trybie Horyzontu wyższe wartości powodują tworzenie wyraźnych pasm przymocowanych u góry, a nie tylko poszerzanie jednej smugi.",
+      "AuroraRibbonWidth": "Reguluje widoczną szerokość każdej wstęgi. Małe wartości dają wąskie wiązki światła, a większe – szerokie zasłony.",
+      "AuroraWaviness": "Ogranicza naturalną zmienność trasy.",
+      "AuroraSoftness": "Określa stopień rozmycia krawędzi każdej wstęgi. Wyższe wartości dają bardziej delikatny, nastrojowy blask.",
+      "AuroraSideVerticalPosition": "Ustawia średnią wysokość zasłon poziomych w trybie widoku z boku.",
+      "AuroraSideCurtainHeight": "Określa, jak daleko zasłony widoku bocznego odchylają się od głównej wstęgi.",
+      "AuroraTopDownAngle": "Obraca trajektorię zorzy polarnej nad głową.",
+      "AuroraTopDownDepth": "Dodaje dodatkowy blask i cień, aby wzmocnić wrażenie głębi.",
+      "AuroraHorizonAngle": "Zmienia kąt przebiegu pasa świetlnego tak, by zorza polarna przecinała kadr pod kątem.",
+      "AuroraHorizonStartPosition": "Pozycja pozioma małego punktu mocowania na górnej krawędzi, w którym zorza polarna zaczyna pojawiać się w kadrze.",
+      "AuroraHorizonEndPosition": "Pozycja w płaszczyźnie poziomej małego punktu wyjścia na górnej krawędzi, w którym zorza polarna zawraca i znika z kadru.",
+      "AuroraHorizonDip": "O ile zorzę polarna opada w kierunku widza, zanim ponownie wygina się w górę, w kierunku górnej krawędzi. Wyższe wartości powodują, że część znajdująca się nad głową staje się większa i znajduje się bliżej.",
+      "AuroraHorizonHazeStrength": "Reguluje intensywność rozległej zasłony pola horyzontu pomiędzy głównymi wstęgami zorzy polarnej.",
+      "AuroraHorizonHazeHeight": "Określa, jak daleko w dół sceny rozciąga się szeroka zasłona pola horyzontu. Wartość 1,0 obejmuje całą wysokość sceny; niższe wartości sprawiają, że zamglenie pozostaje bliżej pasma zorzy polarnej.",
+      "AuroraTopDownHazeStrength": "Reguluje intensywność rozległej mgły Od góry do dołu oraz zasłony między pasmami.",
+      "AuroraMixedColors": "Pięć wybranych kolorów zorzy polarnej zmienia się powoli, przechodząc z czasem przez różne role kolorystyczne, co powoduje stopniowe zmiany w rozkładzie kolorów."
     },
     "Particles": {
       "Groups": {
@@ -515,7 +584,8 @@
         "Duststorm": "Burza pyłowa",
         "Ice": "Lód",
         "Glitch": "Zakłócenie",
-        "LightningBolts": "Błyskawice"
+        "LightningBolts": "Błyskawice",
+        "AuroraBorealis": "Zorza polarna"
       },
       "TypeErrors": {
         "TypeUnknown": "Efekt filtru „{id}” jest nieznanego typu „{type}”, pomijam.",
@@ -527,7 +597,8 @@
         "ParticleEffectRegionBehaviorName": "FXMaster: Efekty cząsteczkowe",
         "FilterEffectRegionBehaviorName": "FXMaster: Efekty filtrów",
         "SuppressSceneFiltersRegionBehaviorName": "FXMaster: Tłumienie filtrów sceny",
-        "SuppressSceneParticlesRegionBehaviorName": "FXMaster: Tłumienie cząsteczek w scenie"
+        "SuppressSceneParticlesRegionBehaviorName": "FXMaster: Tłumienie cząsteczek w scenie",
+        "SuppressSceneSoundsRegionBehaviorName": "FXMaster: Tłumienie dźwięków sceny"
       },
       "ElevationVisibility": {
         "Label": "Ograniczenia wysokości",
@@ -536,6 +607,9 @@
         "Targets": "Widok wybranych tokenów",
         "TokenTargets": "UUID tokena",
         "AlwaysVisibleForGM": "Zawsze widoczne dla MG"
+      },
+      "BehaviorHints": {
+        "SuppressSceneSoundsRegionBehaviorHint": "Wyłącz efekty dźwiękowe FXMaster na poziomie sceny dla słuchaczy znajdujących się w tej strefie."
       }
     },
     "SoundFX": {
@@ -549,6 +623,7 @@
       "Mode": "Tryb wielu dźwięków",
       "ModeParallel": "Równoległe (wszystkie dźwięki odtwarzane są jednocześnie)",
       "ModeSequential": "Sekwencyjny (jeden dźwięk na raz, odtwarzany według priorytetu)",
+      "ModeRandom": "Losowo (po jednym dźwięku na raz, wybieranym losowo z listy)",
       "File": "Plik dźwiękowy",
       "Browse": "Przeglądaj",
       "Level": "Poziom",
@@ -568,7 +643,7 @@
       "EffectsHint": "Wybierz jeden efekt dla reguły dźwiękowej z jednym efektem lub wybierz wiele efektów, aby utworzyć regułę kombinowaną o wyższym priorytecie.",
       "NoEffectsSelected": "Nie wybrano żadnych efektów.",
       "PausePlaylists": "Wstrzymaj listy odtwarzania",
-      "PausePlaylistsHint": "Gdy ta reguła jest aktywna w zakresie sceny lub widoku, wstrzymaj odtwarzanie wszystkich utworów z listy odtwarzania na tym kliencie. Odtwarzanie zostanie wznowione, gdy żadna z reguł pasujących do tej opcji nie będzie już aktywna.",
+      "PausePlaylistsHint": "Gdy ta reguła jest aktywna w zakresie sceny lub widoku, wstrzymaj odtwarzanie wszystkich utworów z listy odtwarzania. Odtwarzanie zostanie wznowione, gdy żadna z reguł pasujących do tej opcji nie będzie już aktywna.",
       "RegionSoundOptions": "Opcje dźwięku stref",
       "RegionRadius": "Promień strefy",
       "RegionRadiusHintPct": "Promień strefy jest wyrażony jako procent wielkości każdego odłączonego elementu strefy (0–500%).",
@@ -615,7 +690,32 @@
       "Enabled": "Włączone",
       "Disabled": "Wyłączony",
       "UnnamedRule": "Nieznana reguła",
-      "CurrentMode": "Tryb bieżący: {mode}"
+      "CurrentMode": "Tryb bieżący: {mode}",
+      "SuppressSceneSounds": {
+        "Hint": "Wycisz efekty dźwiękowe FXMaster na poziomie sceny, gdy słuchacz znajduje się w tej strefie.",
+        "Easing": "Włącz wyciszanie",
+        "EasingHint": "Stopniowo wyciszaj efekty dźwiękowe na poziomie sceny, gdy słuchacz przemieszcza się od krawędzi strefy do jej wnętrza.",
+        "Muffled": "Włącz tłumienie",
+        "MuffledHint": "Traktuj granicę strefy jako ścianę i zastosuj efekt stłumionego dźwięku z reguły SoundFX zamiast całkowicie wyciszać efekty dźwiękowe na poziomie sceny.",
+        "FIELDS": {
+          "easing": {
+            "label": "Włącz wyciszanie",
+            "hint": "Stopniowo wyciszaj efekty dźwiękowe na poziomie sceny, gdy słuchacz przemieszcza się od krawędzi strefy do jej wnętrza."
+          },
+          "muffled": {
+            "label": "Włącz tłumienie",
+            "hint": "Traktuj granicę strefy jako ścianę i zastosuj efekt stłumionego dźwięku z reguły SoundFX zamiast całkowicie wyciszać efekty dźwiękowe na poziomie sceny."
+          },
+          "muffledEffect": {
+            "label": "Efekt tłumienia",
+            "hint": "Efekt dźwiękowy stosowany przy włączonej funkcji tłumienia."
+          },
+          "muffledIntensity": {
+            "label": "Intensywność tłumienia",
+            "hint": "Siła efektu stłumionego dźwięku."
+          }
+        }
+      }
     },
     "Layers": {
       "Title": "Zarządzaj warstwami",
@@ -628,7 +728,7 @@
       "MoveUp": "Przejdź w górę",
       "MoveDown": "Przejdź w dół",
       "ResetOrder": "Zresetuj kolejność",
-      "Empty": "Nie znaleziono żadnych włączonych efektów cząsteczkowych ani filtrów.",
+      "Empty": "Nie znaleziono żadnych wierszy stosu FXMaster z włączoną obsługą.",
       "KindParticle": "Cząsteczkowy",
       "KindFilter": "Filtr",
       "SourceScene": "Scena",
@@ -637,7 +737,12 @@
       "SourceApiMacro": "API - Makro",
       "SourceRegion": "Strefa",
       "ScopeRegion": "Strefa",
-      "Level": "Poziom"
+      "Level": "Poziom",
+      "KindSuppression": "Tłumienie",
+      "SuppressSceneParticles": "Tłumienie cząsteczek w scenie",
+      "SuppressSceneFilters": "Tłumienie filtrów sceny",
+      "SuppressWeather": "Tłumienie pogody",
+      "SuppressionMeta": "Operator tłumienia scen"
     },
     "RenderOrder": {
       "BelowTiles": "Poniżej kafelków"
@@ -656,6 +761,12 @@
       "Difference": "Różnica",
       "Exclusion": "Wykluczenie"
     },
+    "Tile": {
+      "RestrictsParticles": "FXMaster: Ograniczenie cząsteczek",
+      "RestrictsParticlesHint": "Po włączeniu ten kafelek ukrywa znajdujące się pod nim cząsteczki FXMaster. Ograniczenie pogody dotyczy zarówno cząsteczek, jak i filtrów.",
+      "RestrictsFilters": "FXMaster: Ograniczenie filtrów",
+      "RestrictsFiltersHint": "Po włączeniu ten kafelek ukrywa znajdujące się pod nim filtry FXMaster. Ograniczenie pogody dotyczy zarówno cząsteczek, jak i filtrów."
+    },
     "Settings": {
       "TooltipDirection": "Kierunek podpowiedzi",
       "TooltipDirectionHint": "Wybierz, gdzie mają pojawiać się podpowiedzi dotyczące parametrów FXMaster po najechaniu kursorem na etykiety lub elementy sterujące.",
@@ -667,7 +778,11 @@
       },
       "EnableLogger": "Włącz debugowanie FXMaster",
       "EnableLoggerHint": "Wyświetlaj komunikaty dotyczące debugowania, ostrzeżenia i błędy programu FXMaster w konsoli przeglądarki.",
-      "PatreonSupportHint": "Jeśli chcesz mnie wesprzeć, Gambit! Subskrypcja pomaga w rozwoju tego i innych moich darmowych modułów, a ponadto zapewnia dostęp do moich modułów premium: Gambit's FXMaster+, Gambit's Asset Previewer oraz Gambit's Image Viewer!"
+      "PatreonSupportHint": "Jeśli chcesz mnie wesprzeć, Gambit! Subskrypcja pomaga w rozwoju tego i innych moich darmowych modułów, a ponadto zapewnia dostęp do moich modułów premium: Gambit's FXMaster+, Gambit's Asset Previewer oraz Gambit's Image Viewer!",
+      "ApplyRegionBehaviorsToOverheadLevels": "Zastosuj zachowania strefy do górnych poziomów",
+      "ApplyRegionBehaviorsToOverheadLevelsHint": "Gdy strefa jest przypisana do wielu poziomów sceny, należy umożliwić wyświetlanie w nakładkach poziomów efektów cząsteczkowych, efektów filtrowania oraz tłumienia sceny dla tej strefy. Może to mieć duży wpływ na wydajność w scenach wielopoziomowych; dokładnie przetestuj przed użyciem podczas właściwej sesji gry.",
+      "CompositeGridInFxStack": "Dodaj siatkę Foundry do stosu efektów",
+      "CompositeGridInFxStackHint": "Przekaż standardowe linie siatki programu Foundry do modułu kompozycji programu FXMaster, aby cząsteczki sceny i filtry mogły wyświetlać się na tle siatki. Podświetlenie siatki i elementy sterujące pozostają widoczne nad programem FXMaster."
     },
     "Macro": {
       "Saved": "Makro „{name}” zostało zapisane w katalogu makr.",
