@@ -69,7 +69,7 @@
       "Scale": "Escala",
       "ScaleHint": "Escala do Vídeo",
       "Blur": "Desfoque",
-      "Bloom": "Incandescência",
+      "Bloom": "Bloom",
       "Sepia": "Sépia",
       "Threshold": "Limite",
       "Period": "Período",
@@ -169,7 +169,7 @@
       "FishAnimations": {
         "Glide": "Deslizar",
         "Swim": "Nadar",
-        "Mixed": "Misturado"
+        "Mixed": "Misto"
       },
       "RotationStrength": "Força da Rotação",
       "Trail": "Rastro",
@@ -184,7 +184,7 @@
       "Spread": "Ângulo de Dispersão",
       "LightningMode": "Modo do Relâmpago",
       "LightningModeHorizontal": "Horizontal",
-      "LightningModeMixed": "Misturado",
+      "LightningModeMixed": "Misto",
       "BoltFrequency": "Frequência do Raio",
       "BoltLength": "Comprimento do Raio",
       "Branchiness": "Ramificação",
@@ -235,7 +235,7 @@
       "BelowForeground": "Abaixo do Primeiro Plano",
       "DarknessActivationMin": "Ativação Mín. da Escuridão",
       "DarknessActivationMax": "Ativação Máx. da Escuridão",
-      "BlendMode": "Modo de Mistura",
+      "BlendMode": "Modo Misto",
       "Levels": "Níveis",
       "AllLevels": "Todos os Níveis",
       "DarknessActivationEnabled": "Ativação da Escuridão",
@@ -284,7 +284,7 @@
       "AuroraHorizonHazeStrength": "Força da Bruma",
       "AuroraHorizonHazeHeight": "Altura da Bruma",
       "AuroraTopDownHazeStrength": "Força da Bruma",
-      "AuroraMixedColors": "Cores Misturadas"
+      "AuroraMixedColors": "Cores Mistas"
     },
     "ParamTooltips": {
       "Saturation": "Intensidade da cor. 0 = tons de cinza; 1 = original; >1 = supersaturado.",
@@ -299,7 +299,7 @@
       "Sepia": "Intensidade da tonalidade sépia. Maior = aspecto vintage mais forte.",
       "Threshold": "Limiar de brilho. Quanto menor, mais pixels são capturados.",
       "Period": "Período de ciclo para repetição da animação, em milissegundos. Menor = ciclos mais rápidos.",
-      "Duration": "Duração de um efeito ou transição (fade ou playback), em segundos.",
+      "Duration": "Duração de um efeito ou transição (fade ou reprodução), em segundos.",
       "Speed": "Velocidade de movimento/animação. Maior = movimento ou mudança mais rápida.",
       "Lifetime": "Tempo médio de vida das partículas e frequência relacionada. Maior = mais vida útil.",
       "Density": "Quantas partículas são geradas por área. Maior = efeito mais denso. NOTA: Densidades mais altas terão um impacto maior no desempenho.",
@@ -328,7 +328,7 @@
       "Gain": "Multiplicador de intensidade.",
       "Lacunarity": "Fator de espaçamento para raios fractais. Maior = detalhes mais densos.",
       "BeamLength": "Comprimento máximo visível dos feixes/raios.",
-      "FadePercent": "Suaviza as bordas da região nessa porcentagem para uma transição mais suave. Maior = mais fade.",
+      "FadePercent": "Suaviza as bordas da região nessa porcentagem para uma transição mais suave. Maior = mais suavização.",
       "Rainbow": "Substitui a Tonalidade e ativa um efeito de arco-íris aleatório e cíclico nas partículas.",
       "Shadow": "Habilita a sombra projetada para os sprites de partículas.",
       "ShadowRotation": "Ângulo da sombra em graus.",
@@ -496,7 +496,7 @@
         "MagicCrystals": "Cristais Mágicos",
         "Ghosts": "Fantasmas",
         "Sandstorm": "Tempestade de Areia",
-        "Fish": "Peixe",
+        "Fish": "Peixes",
         "BatsWeatherEffectsConfig": "Morcegos (FXMaster)",
         "BirdsWeatherEffectsConfig": "Aves (FXMaster)",
         "BubblesWeatherEffectsConfig": "Bolhas (FXMaster)",
@@ -572,7 +572,7 @@
     },
     "Filters": {
       "Effects": {
-        "Bloom": "Incandescência",
+        "Bloom": "Bloom",
         "Color": "Cor",
         "Fog": "Névoa",
         "Lightning": "Relâmpago",
