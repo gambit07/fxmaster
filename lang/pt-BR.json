@@ -75,7 +75,7 @@
       "Period": "Período",
       "Duration": "Duração",
       "Speed": "Velocidade",
-      "Lifetime": "Duração",
+      "Lifetime": "Tempo de Vida",
       "Density": "Densidade",
       "Direction": "Direção",
       "LineWidth": "Largura da Linha",
@@ -143,7 +143,7 @@
       "SliceBlueY": "Fatia Azul Y",
       "MatrixGlyphs": "Habilitar Glifos",
       "GlyphDirection": "Direção do Glifo",
-      "GlyphColor": "Matiz do Glifo",
+      "GlyphColor": "Tonalidade do Glifo",
       "GlyphIntensity": "Intensidade do Glifo",
       "GlyphCellSize": "Tamanho da Célula do Glifo",
       "GlyphMoveSpeed": "Velocidade de Movimento do Glifo",
@@ -369,7 +369,7 @@
       "MatrixGlyphs": "Padrão de Glifo sobreposto.",
       "GlyphDirection": "Direção (graus) em que o campo de Glifo está orientado.",
       "MatrixDirection": "Direção (em graus) da orientação do campo de Glifos.",
-      "GlyphColor": "Aplique a cor de matiz aos Glifos. Desative a opção Aplicar para usar o modo arco-íris.",
+      "GlyphColor": "Aplique a cor de tonalidade aos Glifos. Desative a opção Aplicar para usar o modo arco-íris.",
       "GlyphIntensity": "Brilho da sobreposição de glifos. 0 desativa a visibilidade dos glifos.",
       "GlyphCellSize": "Tamanho em pixels de cada célula do glifo.",
       "GlyphMoveSpeed": "Velocidade da simulação de movimento do Glifo. 0 desativa o movimento.",
@@ -390,9 +390,9 @@
       "Jitter": "Quão irregular é a trajetória do raio. Valores mais altos criam arcos e ramificações mais caóticos.",
       "DirectionalMovement": "Reproduzir efeito em uma direção específica",
       "Spread": "Determine o ângulo de dispersão em relação à direção, em graus",
-      "LightningMode": "Escolha como os raios serão gerados: listras horizontais, raios de cima para baixo ou uma combinação de ambos.",
+      "LightningMode": "Escolha como os raios serão gerados: listras horizontais, raios de vista superior ou uma combinação de ambos.",
       "BoltFrequency": "Com que frequência um raio surge em média. Valores mais altos resultam em raios surgindo com mais frequência.",
-      "BoltLength": "Controla o comprimento total do raio. No modo de Cima para Baixo, define a profundidade de impacto reduzida.",
+      "BoltLength": "Controla o comprimento total do raio. No modo de Vista Superior, define a profundidade de impacto reduzida.",
       "Branchiness": "Controla a intensidade com que o raio se ramifica e quantos sub-ramos ele pode formar.",
       "SyncFlash": "Quando ativado, os Relâmpagos acionarão clarões do filtro de Raios base e suprimirá seu clarão autônomo, de modo que os clarões ocorram apenas quando raios forem gerados.",
       "TopDownScale": "Dimensiona o tamanho dos raios de Vista Superior (feixe e clarão de origem). Não afeta raios horizontais.",
@@ -442,7 +442,7 @@
       "BlendMode": "Como o resultado da cor ajustada se mistura com a cor da cena amostrada.",
       "Levels": "Limite este efeito de cena aos níveis de cena selecionados. Deixe em Todos os Níveis para renderizar em todos os lugares.",
       "DarknessActivationEnabled": "Habilite o controle de escuridão da cena para este efeito. Quando desabilitado, o efeito será renderizado em todos os níveis de escuridão.",
-      "AuroraMode": "Vista Lateral cria cortinas horizontais, Cima para Baixo cria faixas sinuosas suspensas e Horizonte cria uma cortina superior que se estende em direção ao observador e retorna pela borda superior.",
+      "AuroraMode": "Vista Lateral cria cortinas horizontais, Vista Superior cria faixas sinuosas suspensas e Horizonte cria uma cortina superior que se estende em direção ao observador e retorna pela borda superior.",
       "AuroraPalette": "Defina as cores predefinidas de uma coleção de paletas da Aurora Boreal. Selecionar uma predefinição copia seus valores padrão para as entradas de cor. A opção Cores Personalizadas carrega e salva sua paleta personalizada.",
       "AuroraColorDepth": "Parada de cor mais escura/profunda utilizada para estruturas sutis, sombras e profundidade atmosférica.",
       "AuroraColorLower": "Cor da cortina inferior utilizada em dobras mais escuras e faixas distantes.",
@@ -822,7 +822,7 @@
       "Sections": {
         "Particles": {
           "Title": "Efeitos de Partícula",
-          "Text": "Adicione efeitos de ambiente para toda a cena, como chuva, neve, névoa, nuvens, brasas, estrelas, pássaros, morcegos, aranhas e outros efeitos climáticos ou de criaturas. Cada efeito vem com vários parâmetros para personalizar sua aparência: densidade, escala, velocidade, matiz e muito mais."
+          "Text": "Adicione efeitos de ambiente para toda a cena, como chuva, neve, névoa, nuvens, brasas, estrelas, pássaros, morcegos, aranhas e outros efeitos climáticos ou de criaturas. Cada efeito vem com vários parâmetros para personalizar sua aparência: densidade, escala, velocidade, tonalidade e muito mais."
         },
         "Filters": {
           "Title": "Efeitos de Filtro",
