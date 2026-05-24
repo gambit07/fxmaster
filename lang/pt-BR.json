@@ -26,7 +26,7 @@
       "ClearParticleAndFilterEffectsContent": "<p>Excluir permanentemente todos os <em>Efeitos de Partículas</em> e <em>Efeitos de Filtro</em> desta cena?</p>",
       "ResetEffectDefaults": "Restaurar Padrões",
       "ResetEffectDefaultsSuccess": "Os parâmetros de {effect} foram restaurados para os padrões",
-      "PowerToggleContextHint": "Clique-esquerdo para alternar. Clique-direito para opções de redefinição.",
+      "PowerToggleContextHint": "Clique esquerdo para alternar. Clique direito para opções de redefinição.",
       "Yes": "Sim",
       "No": "Não",
       "Enable": "Habilitar",
@@ -228,14 +228,14 @@
       "VortexDirection": "Direção do Redemoinho",
       "VortexStrength": "Força do Redemoinho",
       "VortexClockwise": "Rotação no Sentido Horário",
-      "BelowTiles": "Abaixo das Peças",
+      "BelowTiles": "Abaixo dos Tiles",
       "DarknessActivationRange": "Alcance de Ativação da Escuridão",
       "DarknessActivationMinimum": "Escuridão Mínima",
       "DarknessActivationMaximum": "Escuridão Máxima",
       "BelowForeground": "Abaixo do Primeiro Plano",
       "DarknessActivationMin": "Ativação Mín. da Escuridão",
       "DarknessActivationMax": "Ativação Máx. da Escuridão",
-      "BlendMode": "Modo Misto",
+      "BlendMode": "Modo de Mistura",
       "Levels": "Níveis",
       "AllLevels": "Todos os Níveis",
       "DarknessActivationEnabled": "Ativação da Escuridão",
@@ -434,7 +434,7 @@
       "VortexDirection": "Direção em graus usada para orientar o fluxo do redemoinho.",
       "VortexStrength": "Intensidade da deformação e vórtice do redemoinho. Maior = atração rotacional mais forte.",
       "VortexClockwise": "Define a direção de rotação do redemoinho. Habilitado = horário; desabilitado = anti-horário.",
-      "BelowTiles": "Renderiza visualmente os efeitos abaixo das peças.",
+      "BelowTiles": "Renderiza visualmente os efeitos abaixo dos tiles.",
       "DarknessActivationRange": "Renderiza este efeito somente quando o nível de escuridão da cena atual estiver dentro da faixa selecionada.",
       "BelowForeground": "Renderiza visualmente os efeitos abaixo da imagem ativa em primeiro plano.",
       "DarknessActivationMin": "Nível mínimo de escuridão da cena necessário para que este efeito seja renderizado.",
@@ -745,7 +745,7 @@
       "SuppressionMeta": "Operador de Supressão de Cena"
     },
     "RenderOrder": {
-      "BelowTiles": "Abaixo das Peças"
+      "BelowTiles": "Abaixo dos Tiles"
     },
     "BlendModes": {
       "Normal": "Normal",
