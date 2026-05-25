@@ -13,8 +13,20 @@
 <hr/>
 <p>Welcome to the official release of FXMaster V8! This release brings brand new handling for V14 Scene Levels, new Manage Layers functionality to order particle and filter effects, new macro API with improved flexibility, and more! Hope everyone enjoys!</p>
 
-**<p>Any support via the <a href="https://www.patreon.com/GambitsLounge" target="_blank" rel="nofollow noopener">Patreon</a> or <a href="https://ko-fi.com/gambit07" target="_blank" rel="nofollow noopener">Ko-fi</a> is greatly appreciated! If you are a Patreon subscriber you will receive access to the FXMaster+ module. FXMaster+ can be accessed from Patreon, and it's where I will be adding new particle effects and filters moving forward. For the month of April, it will get you access to the ⚪Wind, ⚪Wind Wisp, 🔵Water, 🟡Lightning Bolts, 🔵Fish, 🟢Glitch, 🔵Ice, 🟤Duststorm, 🟤Sandstorm, 🟢Ghosts, 🟡Sunlight, 🟢Magic Crystals, 🟡Fireflies, 🌸Sakura Bloom, and 🌸Sakura Blossoms Effects - Effects are previewed below:</p>**
+**<p>Any support via the <a href="https://www.patreon.com/GambitsLounge" target="_blank" rel="nofollow noopener">Patreon</a> or <a href="https://ko-fi.com/gambit07" target="_blank" rel="nofollow noopener">Ko-fi</a> is greatly appreciated! If you are a Patreon subscriber you will receive access to the FXMaster+ module. FXMaster+ can be accessed from Patreon, and it's where I will be adding new particle effects and filters moving forward. For the month of April, it will get you access to the 🟢Aurora Borealis, ⚪Wind, ⚪Wind Wisp, 🔵Water, 🟡Lightning Bolts, 🔵Fish, 🟢Glitch, 🔵Ice, 🟤Duststorm, 🟤Sandstorm, 🟢Ghosts, 🟡Sunlight, 🟢Magic Crystals, 🟡Fireflies, 🌸Sakura Bloom, and 🌸Sakura Blossoms Effects - Effects are previewed below:</p>**
 
+
+  <video
+    autoplay
+    muted
+    playsinline
+    loop
+    preload="auto"
+    src="https://github.com/user-attachments/assets/b65e2a90-6e46-4f8d-a857-40773ffc2ad0">
+  </video>
+
+<details>
+  <summary>Wind (click to expand)</summary>
   <video
     autoplay
     muted
@@ -23,6 +35,7 @@
     preload="auto"
     src="https://github.com/user-attachments/assets/1cafe9e1-2763-40a6-b47e-7c5d03de5fbf">
   </video>
+</details>
 
 <details>
   <summary>Water (click to expand)</summary>
