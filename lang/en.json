@@ -742,7 +742,9 @@
       "SuppressSceneParticles": "Suppress Scene Particles",
       "SuppressSceneFilters": "Suppress Scene Filters",
       "SuppressWeather": "Suppress Weather",
-      "SuppressionMeta": "Scene suppression operator"
+      "SuppressionMeta": "Scene suppression operator",
+      "KindGrid": "Grid",
+      "FoundryGrid": "Foundry Grid"
     },
     "RenderOrder": {
       "BelowTiles": "Below Tiles"

@@ -1048,7 +1048,7 @@ export const API_EFFECTS = {
               direction: 75,
               speed: 2.5,
               lifetime: 2.5,
-              density: 5,
+              density: 3.5,
               alpha: 1,
               soundFxEnabled: false,
             },

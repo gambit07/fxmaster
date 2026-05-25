@@ -1,5 +1,6 @@
 import { packageId } from "../constants.js";
 import { logger } from "../logger.js";
+import { compositeGridInFxStack } from "../settings-access.js";
 import { getSceneRegionDocuments } from "../utils/compat.js";
 import { fxmGetRegionBehaviorEffectDefinitions } from "../utils/foundry-public.js";
 
@@ -8,6 +9,7 @@ const SUPPRESS_WEATHER = "suppressWeather";
 const SUPPRESS_SCENE_PARTICLES = `${packageId}.suppressSceneParticles`;
 const SUPPRESS_SCENE_FILTERS = `${packageId}.suppressSceneFilters`;
 const SUPPRESSION_LEGACY_ORDER = 2000;
+export const FOUNDRY_GRID_STACK_UID = "scene:grid:foundry";
 const LEGACY_SOURCE_ORDER = {
   "particle:belowDarkness": 100,
   "particle:aboveDarkness": 200,
@@ -133,6 +135,43 @@ export function buildRegionEffectUid(kind, regionId, behaviorId, effectId) {
  */
 export function buildSuppressionEffectUid(suppressionKind, regionId, behaviorId) {
   return `region:suppression:${suppressionKind}:${regionId}:${behaviorId}`;
+}
+
+/**
+ * Return a display/render row for the native Foundry grid stack position.
+ *
+ * @param {Scene|null|undefined} scene
+ * @param {boolean} [full=true]
+ * @returns {object}
+ */
+function buildFoundryGridStackRow(scene, full = true) {
+  const label = game.i18n.localize("FXMASTER.Layers.FoundryGrid");
+  const row = {
+    uid: FOUNDRY_GRID_STACK_UID,
+    kind: "grid",
+    scope: "scene",
+    source: "scene",
+    sourceLabel: game.i18n.localize("FXMASTER.Layers.SourceScene"),
+    ownerId: scene?.id ?? null,
+    effectId: "foundry-grid",
+    effectType: "grid",
+    legacyOrder: -10000,
+    discoveryIndex: Number.MAX_SAFE_INTEGER,
+    layerLevel: null,
+    options: {},
+  };
+
+  if (!full) return row;
+
+  return {
+    ...row,
+    ownerName: scene?.name ?? "",
+    ownerLabel: scene?.name ?? game.i18n.localize("FXMASTER.Common.Unknown"),
+    label,
+    icon: "fas fa-border-all",
+    kindLabel: game.i18n.localize("FXMASTER.Layers.KindGrid"),
+    effectTypeLabel: label,
+  };
 }
 
 /**
@@ -499,6 +538,8 @@ export function collectEnabledEffectRows(scene = canvas?.scene ?? null) {
     }
   }
 
+  if (compositeGridInFxStack()) pushRow(buildFoundryGridStackRow(scene, true));
+
   return rows;
 }
 
@@ -633,6 +674,8 @@ export function collectEnabledEffectRenderRows(scene = canvas?.scene ?? null) {
       }
     }
   }
+
+  if (compositeGridInFxStack()) pushRow(buildFoundryGridStackRow(scene, false));
 
   return rows;
 }

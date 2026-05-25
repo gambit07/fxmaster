@@ -1517,20 +1517,30 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
 
       const rebuildVariant = (want, key, builder) => {
         const old = entry[key];
+        const oldBase = old?.baseTexture ?? null;
+        const oldValid = !!oldBase && !oldBase.destroyed && !old?.destroyed;
         if (!want) {
           if (old) this._releaseRT(old);
           entry[key] = null;
           return;
         }
+        const oldWidth = oldValid ? Number(oldBase.width ?? old.orig?.width ?? 0) : 0;
+        const oldHeight = oldValid ? Number(oldBase.height ?? old.orig?.height ?? 0) : 0;
+        const oldResolution = oldValid ? Number(oldBase.resolution ?? old.resolution ?? 1) : 1;
+        const newWidth = Number(newRT?.baseTexture?.width ?? newRT?.orig?.width ?? 0);
+        const newHeight = Number(newRT?.baseTexture?.height ?? newRT?.orig?.height ?? 0);
+        const newResolution = Number(newRT?.baseTexture?.resolution ?? newRT?.resolution ?? 1);
         const reuse =
-          !!old &&
-          Math.abs(Number(old.width ?? 0) - Number(newRT.width ?? 0)) <= 0.001 &&
-          Math.abs(Number(old.height ?? 0) - Number(newRT.height ?? 0)) <= 0.001 &&
-          (old.resolution || 1) === (newRT.resolution || 1);
-        const outRT = reuse ? old : this._acquireRT(newRT.width, newRT.height, newRT.resolution || 1);
-        entry[key] = builder(outRT);
-        if (old && !reuse && old !== entry[key]) this._releaseRT(old);
+          oldValid &&
+          Math.abs(oldWidth - newWidth) <= 0.001 &&
+          Math.abs(oldHeight - newHeight) <= 0.001 &&
+          oldResolution === newResolution;
+        const outRT = reuse ? old : this._acquireRT(newWidth || 1, newHeight || 1, newResolution || 1);
+        const built = builder(outRT);
+        entry[key] = built?.baseTexture && !built.baseTexture.destroyed ? built : null;
+        if (old && (!reuse || !entry[key]) && old !== entry[key]) this._releaseRT(old);
         try {
+          if (!entry[key]?.baseTexture) return;
           entry[key].baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
           entry[key].baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
         } catch (err) {

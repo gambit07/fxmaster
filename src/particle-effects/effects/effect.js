@@ -541,10 +541,86 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
     config.frequency *= factor;
   }
 
+  static normalizeParticleEmitterColor(value, fallback = null) {
+    if (value == null) return fallback;
+
+    if (typeof value === "string") {
+      let hex = value.trim();
+      if (!hex) return fallback;
+      if (hex.startsWith("#")) hex = hex.slice(1);
+      if (/^0x/i.test(hex)) hex = hex.slice(2);
+      if (hex.length === 3)
+        hex = hex
+          .split("")
+          .map((ch) => ch + ch)
+          .join("");
+      return /^[0-9a-fA-F]{6}$/.test(hex) ? `#${hex.toLowerCase()}` : fallback;
+    }
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return `#${((value >>> 0) & 0xffffff).toString(16).padStart(6, "0")}`;
+    }
+
+    if (Array.isArray(value) && value.length >= 3) {
+      const channels = value.slice(0, 3).map((channel) => Number(channel));
+      if (!channels.every((channel) => Number.isFinite(channel))) return fallback;
+      const scale = channels.every((channel) => channel >= 0 && channel <= 1) ? 255 : 1;
+      const packed = channels
+        .map((channel) => Math.clamp(Math.round(channel * scale), 0, 255))
+        .reduce((acc, channel) => (acc << 8) | channel, 0);
+      return `#${packed.toString(16).padStart(6, "0")}`;
+    }
+
+    if (typeof value === "object") {
+      if ("value" in value) return this.normalizeParticleEmitterColor(value.value, fallback);
+      if ("color" in value) return this.normalizeParticleEmitterColor(value.color, fallback);
+
+      const r = value.r ?? value.red;
+      const g = value.g ?? value.green;
+      const b = value.b ?? value.blue;
+      if ([r, g, b].every((channel) => Number.isFinite(Number(channel)))) {
+        return this.normalizeParticleEmitterColor([r, g, b], fallback);
+      }
+    }
+
+    return fallback;
+  }
+
+  static sanitizeParticleEmitterColorBehaviors(config) {
+    for (const behavior of config?.behaviors ?? []) {
+      if (behavior?.type === "colorStatic") {
+        behavior.config ??= {};
+        behavior.config.color = this.normalizeParticleEmitterColor(behavior.config.color, "#ffffff");
+        continue;
+      }
+
+      if (behavior?.type !== "color") continue;
+      const colorConfig = behavior.config?.color;
+      if (Array.isArray(colorConfig?.list)) {
+        for (const entry of colorConfig.list) {
+          if (entry && "value" in entry) entry.value = this.normalizeParticleEmitterColor(entry.value, "#ffffff");
+        }
+      } else if (colorConfig && typeof colorConfig === "object") {
+        if ("start" in colorConfig)
+          colorConfig.start = this.normalizeParticleEmitterColor(colorConfig.start, "#ffffff");
+        if ("end" in colorConfig) colorConfig.end = this.normalizeParticleEmitterColor(colorConfig.end, "#ffffff");
+      }
+    }
+  }
+
+  _resolveTintOption(options) {
+    const tint = options?.tint;
+    const payload = tint?.value && typeof tint.value === "object" ? tint.value : tint;
+    const apply = !!(payload?.apply ?? tint?.apply);
+    if (!apply) return null;
+
+    return this.constructor.normalizeParticleEmitterColor(payload?.value ?? tint?.value ?? tint, null);
+  }
+
   /** Apply a solid tint by replacing color behaviors when requested. */
   _applyTintToConfig(options, config) {
-    if (!options.tint?.value.apply) return;
-    const value = options.tint.value.value;
+    const value = this._resolveTintOption(options);
+    if (!value) return;
     config.behaviors = config.behaviors
       .filter(({ type }) => type !== "color" && type !== "colorStatic")
       .concat({ type: "colorStatic", config: { color: value } });

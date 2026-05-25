@@ -1,4 +1,4 @@
-import { getOrderedEnabledEffectRenderRows } from "../common/effect-stack.js";
+import { FOUNDRY_GRID_STACK_UID, getOrderedEnabledEffectRenderRows } from "../common/effect-stack.js";
 import { FilterEffectsSceneManager } from "../filter-effects/filter-effects-scene-manager.js";
 import { SceneMaskManager } from "../common/base-effects-scene-manager.js";
 import { applyRegionBehaviorsToOverheadLevels, compositeGridInFxStack, isEnabled } from "../settings-access.js";
@@ -676,7 +676,6 @@ export class GlobalEffectsCompositor {
             this.#hideOutput();
             return;
           }
-          this.#captureGridIntoBaseFrame(this._baseRT);
         } finally {
           this.#restoreDisplayOutput(previousDisplayState);
         }
@@ -695,6 +694,10 @@ export class GlobalEffectsCompositor {
       for (let rowIndex = rows.length - 1; rowIndex >= 0; rowIndex--) {
         const row = rows[rowIndex];
         if (this.#rowIsSuppressionOperator(row)) continue;
+        if (this.#rowIsFoundryGrid(row)) {
+          this.#captureGridIntoStackFrame(current);
+          continue;
+        }
         let applied = false;
         let outputInCurrent = false;
         const rowScope = this.#getRowScope(row);
@@ -1039,7 +1042,7 @@ export class GlobalEffectsCompositor {
 
     let renderableRows = 0;
     for (const row of rows ?? []) {
-      if (!row || this.#rowIsSuppressionOperator(row)) continue;
+      if (!row || this.#rowIsSuppressionOperator(row) || this.#rowIsFoundryGrid(row)) continue;
       if (row.kind !== "filter" && row.kind !== "particle") return false;
       if (this.#getRowScope(row) !== "scene") return false;
       if (this.#rowUsesSelectedLevelSurfaceMask(row)) return false;
@@ -1179,6 +1182,7 @@ export class GlobalEffectsCompositor {
   #rowHasRenderableRuntime(row) {
     if (!row?.uid) return false;
     if (this.#rowIsSuppressionOperator(row)) return true;
+    if (this.#rowIsFoundryGrid(row)) return this.#gridCompositingEnabled();
     if (!this.#rowPassesRegionGate(row)) return false;
 
     if (row.kind === "filter") return this.#filterRuntimeCanRender(this.#resolveFilter(row.uid));
@@ -1519,6 +1523,16 @@ export class GlobalEffectsCompositor {
    */
   #rowIsSuppressionOperator(row) {
     return row?.kind === "suppression";
+  }
+
+  /**
+   * Return whether a row renders the native Foundry grid inside the FX stack.
+   *
+   * @param {object|null|undefined} row
+   * @returns {boolean}
+   */
+  #rowIsFoundryGrid(row) {
+    return row?.kind === "grid" || row?.uid === FOUNDRY_GRID_STACK_UID;
   }
 
   /**
@@ -2848,7 +2862,7 @@ export class GlobalEffectsCompositor {
     };
 
     for (const row of rows) {
-      if (this.#rowIsSuppressionOperator(row)) continue;
+      if (this.#rowIsSuppressionOperator(row) || this.#rowIsFoundryGrid(row)) continue;
       const rowScope = this.#getRowScope(row);
       const usesSelectedLevelSurfaceMask = this.#rowUsesSelectedLevelSurfaceMask(row);
       const hasLevelLimitedOutput = this.#rowHasLevelLimitedOutput(row);
@@ -9402,7 +9416,7 @@ export class GlobalEffectsCompositor {
    * @param {PIXI.RenderTexture|null|undefined} renderTexture
    * @returns {boolean}
    */
-  #captureGridIntoBaseFrame(renderTexture) {
+  #captureGridIntoStackFrame(renderTexture) {
     if (!this.#gridCompositingEnabled()) {
       this.#restoreLiveGridMeshVisibility();
       return false;

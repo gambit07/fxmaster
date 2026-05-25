@@ -1,4 +1,5 @@
 import { packageId } from "./constants.js";
+import { invalidateEffectStackCache } from "./common/effect-stack.js";
 import { fxmDocumentId } from "./utils/foundry-public.js";
 import { logger } from "./logger.js";
 
@@ -322,6 +323,7 @@ class PatreonSupportMenu extends foundry.applications.api.HandlebarsApplicationM
  */
 function refreshCompositorGridSetting() {
   try {
+    invalidateEffectStackCache();
     const compositor = CONFIG?.fxmaster?.getGlobalEffectsCompositor?.();
     compositor?.syncGridCompositingSetting?.();
     compositor?.renderFrame?.();

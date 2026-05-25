@@ -29,6 +29,10 @@ import "../css/fx-layers.css";
 
 CONFIG.fxmaster = CONFIG.fxmaster || {};
 CONFIG.fxmaster.FXMasterParticleEffect = FXMasterParticleEffect;
+CONFIG.fxmaster.normalizeParticleEmitterColor =
+  FXMasterParticleEffect.normalizeParticleEmitterColor.bind(FXMasterParticleEffect);
+CONFIG.fxmaster.sanitizeParticleEmitterColorBehaviors =
+  FXMasterParticleEffect.sanitizeParticleEmitterColorBehaviors.bind(FXMasterParticleEffect);
 CONFIG.fxmaster.FXMasterBaseFormV2 = FXMasterBaseFormV2;
 CONFIG.fxmaster.DefaultRectangleSpawnMixin = DefaultRectangleSpawnMixin;
 CONFIG.fxmaster.customVertex2D = customVertex2D;
