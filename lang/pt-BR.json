@@ -742,7 +742,9 @@
       "SuppressSceneParticles": "Suprimir Partículas da Cena",
       "SuppressSceneFilters": "Suprimir Filtros da Cena",
       "SuppressWeather": "Suprimir Clima",
-      "SuppressionMeta": "Operador de Supressão de Cena"
+      "SuppressionMeta": "Operador de Supressão de Cena",
+      "KindGrid": "Grade",
+      "FoundryGrid": "Grade do Foundry"
     },
     "RenderOrder": {
       "BelowTiles": "Abaixo dos Tiles"
