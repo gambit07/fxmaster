@@ -26,7 +26,7 @@
   </video>
 
 <details>
-  <summary>Wind (click to expand)</summary>
+  <summary>Wind (click to expand - Map: <a href="https://angelamaps.com/" target="_blank" rel="nofollow noopener">Angela's Maps</a>)</summary>
   <video
     autoplay
     muted
@@ -38,7 +38,7 @@
 </details>
 
 <details>
-  <summary>Water (click to expand)</summary>
+  <summary>Water (click to expand - Map: <a href="https://angelamaps.com/" target="_blank" rel="nofollow noopener">Angela's Maps</a>)</summary>
   <video
     autoplay
     muted
@@ -50,7 +50,7 @@
 </details>
 
 <details>
-  <summary>Lightning Bolts (click to expand)</summary>
+  <summary>Lightning Bolts (click to expand - Map: <a href="https://angelamaps.com/" target="_blank" rel="nofollow noopener">Angela's Maps</a>)</summary>
   <video
     autoplay
     muted
@@ -62,7 +62,7 @@
 </details>
 
 <details>
-  <summary>Fish (click to expand)</summary>
+  <summary>Fish (click to expand - Map: <a href="https://moonlight-maps.com/" target="_blank" rel="nofollow noopener">Moonlight Maps</a>)</summary>
   <video
     autoplay
     muted
@@ -74,7 +74,7 @@
 </details>
 
 <details>
-  <summary>Glitch (click to expand)</summary>
+  <summary>Glitch (click to expand - Map: <a href="https://www.czepeku.com/" target="_blank" rel="nofollow noopener">Cze & Peku</a>)</summary>
   <video
     autoplay
     muted
@@ -86,7 +86,7 @@
 </details>
 
 <details>
-  <summary>Ice (click to expand)</summary>
+  <summary>Ice (click to expand - Map: <a href="https://www.czepeku.com/" target="_blank" rel="nofollow noopener">Cze & Peku</a>)</summary>
   <video
     autoplay
     muted
@@ -98,7 +98,7 @@
 </details>
 
 <details>
-  <summary>Duststorm + Sandstorm (click to expand)</summary>
+  <summary>Duststorm + Sandstorm (click to expand - Map: <a href="https://www.czepeku.com/" target="_blank" rel="nofollow noopener">Cze & Peku</a>)</summary>
   <video
     autoplay
     muted
@@ -110,7 +110,7 @@
 </details>
 
 <details>
-  <summary>Ghosts (click to expand)</summary>
+  <summary>Ghosts (click to expand - Map: <a href="https://angelamaps.com/" target="_blank" rel="nofollow noopener">Angela's Maps</a>)</summary>
   <video
     autoplay
     muted
@@ -134,7 +134,7 @@
 </details>
   
 <details>
-  <summary>Magic Crystals (click to expand)</summary>
+  <summary>Magic Crystals (click to expand - Map: <a href="https://www.patreon.com/zachmoeller" target="_blank" rel="nofollow noopener">Zach Moeller</a>)</summary>
 
   <video
     autoplay
