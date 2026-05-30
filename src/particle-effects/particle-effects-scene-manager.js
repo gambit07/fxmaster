@@ -17,29 +17,30 @@ import { _belowTilesEnabled, _belowTokensEnabled, coalesceNextFrame, getSelected
 /** ------------------------------------------------------------------ */
 
 /**
- * Gather all live and dying scene-level particle effects from a layer.
+ * Return live and dying scene-level particle effects using a layer-owned scratch array.
  *
- * @param {object} layer - The ParticleEffectsLayer instance.
- * @returns {{liveFx: object[], dyingFx: object[]}}
+ * @param {object} layer - ParticleEffectsLayer instance.
+ * @returns {object[]}
  * @private
  */
-function _collectEffects(layer) {
-  const liveFx = [];
+function _collectAllEffectsScratch(layer) {
+  const allFx = layer ? (layer._fxmSceneParticleRuntimeScratch ??= []) : [];
+  allFx.length = 0;
+
   try {
     const map = layer?.particleEffects;
-    if (map?.values) for (const fx of map.values()) liveFx.push(fx);
+    if (map?.values) for (const fx of map.values()) if (fx) allFx.push(fx);
   } catch (err) {
     logger.debug("FXMaster:", err);
   }
 
-  const dyingFx = [];
   try {
-    for (const fx of layer?._dyingSceneEffects ?? []) dyingFx.push(fx);
+    for (const fx of layer?._dyingSceneEffects ?? []) if (fx) allFx.push(fx);
   } catch (err) {
     logger.debug("FXMaster:", err);
   }
 
-  return { liveFx, dyingFx };
+  return allFx;
 }
 
 /**
@@ -222,8 +223,7 @@ function _sceneParticleSuppressionCanUseCompositor(
  * @returns {boolean}
  */
 export function sceneParticlesHaveRelevantSuppressionRegions(layer) {
-  const { liveFx, dyingFx } = _collectEffects(layer);
-  const allFx = [...liveFx, ...dyingFx];
+  const allFx = _collectAllEffectsScratch(layer);
   if (!allFx.length) return false;
 
   const anyBelow = _anyBelowTokens(allFx);
@@ -251,8 +251,8 @@ export function sceneParticlesHaveRelevantSuppressionRegions(layer) {
  * @private
  */
 function _applySuppressionMasks(layer, { syncRefresh = true } = {}) {
-  const { liveFx, dyingFx } = _collectEffects(layer);
-  const hasAny = liveFx.length > 0 || dyingFx.length > 0;
+  const allFx = _collectAllEffectsScratch(layer);
+  const hasAny = allFx.length > 0;
 
   if (!hasAny) {
     try {
@@ -275,7 +275,6 @@ function _applySuppressionMasks(layer, { syncRefresh = true } = {}) {
     return { needsMasking: false, anyBelow: false };
   }
 
-  const allFx = [...liveFx, ...dyingFx];
   const anyBelow = _anyBelowTokens(allFx);
   const anyBelowTiles = _anyBelowTiles(allFx);
   const hasSuppression = _hasRelevantSuppressionForSceneParticles(allFx);

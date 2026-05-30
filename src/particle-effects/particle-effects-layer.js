@@ -2013,7 +2013,11 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       cssW,
       cssH,
     );
-    shared.base = buildRegionMaskRT(placeable, { rtPool: this._rtPool, resolution: regionMaskResolution });
+    shared.base = buildRegionMaskRT(placeable, {
+      rtPool: this._rtPool,
+      resolution: regionMaskResolution,
+      reuseRT: oldBase,
+    });
     shared.cutoutTokens = null;
     shared.cutoutTiles = null;
     shared.cutoutCombined = null;
@@ -2536,15 +2540,20 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       cssH,
     );
 
-    const newBase = buildRegionMaskRT(placeable, { rtPool: this._rtPool, resolution: regionMaskResolution });
     let shared = this._regionMaskRTs.get(regionId) || {
       base: null,
       cutoutTokens: null,
       cutoutTiles: null,
       cutoutCombined: null,
     };
-    const oldBase = shared.base;
+    const oldBase = shared.base ?? null;
+    const newBase = buildRegionMaskRT(placeable, {
+      rtPool: this._rtPool,
+      resolution: regionMaskResolution,
+      reuseRT: oldBase,
+    });
     shared.base = newBase;
+    if (!newBase) return;
 
     const anyBelowTokens = entries.some((e) => !!e?.fx?.__fxmBelowTokens);
     const anyBelowTiles = entries.some((e) => !!e?.fx?.__fxmBelowTiles);
@@ -3121,6 +3130,9 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
 
     try {
       const darknessLevel = getSceneDarknessLevel();
+      const previousDarknessLevel = this._lastDarknessLevel;
+      const darknessChanged =
+        !Number.isFinite(previousDarknessLevel) || Math.abs(darknessLevel - previousDarknessLevel) > 1e-4;
       this._lastDarknessLevel = darknessLevel;
 
       const sceneSignature = this._buildSceneDarknessActivationSignature(darknessLevel);
@@ -3129,11 +3141,13 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         void this.drawParticleEffects({ soft: true });
       }
 
-      for (const region of getRegionEffectPlaceablesForCurrentView(canvas?.scene ?? null)) {
-        const signature = this._buildRegionDarknessActivationSignature(region, darknessLevel);
-        if (signature !== (this._lastRegionDarknessSignatures.get(region.id) ?? "")) {
-          this._lastRegionDarknessSignatures.set(region.id, signature);
-          void this.drawRegionParticleEffects(region, { soft: true });
+      if (darknessChanged) {
+        for (const region of getRegionEffectPlaceablesForCurrentView(canvas?.scene ?? null)) {
+          const signature = this._buildRegionDarknessActivationSignature(region, darknessLevel);
+          if (signature !== (this._lastRegionDarknessSignatures.get(region.id) ?? "")) {
+            this._lastRegionDarknessSignatures.set(region.id, signature);
+            void this.drawRegionParticleEffects(region, { soft: true });
+          }
         }
       }
     } catch (err) {
@@ -3168,7 +3182,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     }
 
     try {
-      for (const [regionId] of Array.from(this.regionEffects.entries())) {
+      for (const [regionId] of this.regionEffects.entries()) {
         const regionDoc = getSceneRegionDocumentById(regionId, canvas?.scene ?? null);
         if (!regionDoc || !regionDocumentCanApplyInCurrentView(regionDoc, canvas?.scene ?? null)) {
           this.destroyRegionParticleEffects(regionId);
@@ -3184,7 +3198,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
 
   applyElevationGateForAll() {
     try {
-      for (const [regionId] of Array.from(this.regionEffects.entries())) {
+      for (const [regionId] of this.regionEffects.entries()) {
         const regionDoc = getSceneRegionDocumentById(regionId, canvas?.scene ?? null);
         if (!regionDoc || !regionDocumentCanApplyInCurrentView(regionDoc, canvas?.scene ?? null)) {
           this.destroyRegionParticleEffects(regionId);
@@ -3465,9 +3479,19 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     try {
       const { anyBelowTokens, anyBelowTiles } = this._collectBelowObjectCoverageNeeds();
       if (anyBelowTokens || anyBelowTiles) {
+        const coverageMatrix = anyBelowTiles ? rawStageMatrix() : M;
         SceneMaskManager.instance.refreshTokensSync?.();
         this._tokensDirty = true;
-        this._lastBelowObjectCoverageMatrix = M ? { a: M.a, b: M.b, c: M.c, d: M.d, tx: M.tx, ty: M.ty } : null;
+        this._lastBelowObjectCoverageMatrix = coverageMatrix
+          ? {
+              a: coverageMatrix.a,
+              b: coverageMatrix.b,
+              c: coverageMatrix.c,
+              d: coverageMatrix.d,
+              tx: coverageMatrix.tx,
+              ty: coverageMatrix.ty,
+            }
+          : null;
       } else {
         this._lastBelowObjectCoverageMatrix = null;
       }

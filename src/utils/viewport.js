@@ -45,6 +45,8 @@ function currentStageMatrix(stage = canvas.stage) {
  * @private
  */
 let _stageFrameMatrixCache = { key: null, raw: null, snapped: null };
+let _cssViewportMetricsCache = null;
+const _maxTextureSizeCache = new WeakMap();
 
 /**
  * Build a cache key for the current main-stage camera frame.
@@ -258,13 +260,34 @@ export function getCssViewportMetrics() {
 
   const deviceW = Math.max(1, Math.round(Number(r?.view?.width ?? (r?.screen?.width ?? 1) * res)) || 1);
   const deviceH = Math.max(1, Math.round(Number(r?.view?.height ?? (r?.screen?.height ?? 1) * res)) || 1);
-  const deviceRect = new PIXI.Rectangle(0, 0, deviceW, deviceH);
-
   const cssW = Math.max(1, Number(r?.screen?.width ?? deviceW / res) || 1);
   const cssH = Math.max(1, Number(r?.screen?.height ?? deviceH / res) || 1);
-  const rect = new PIXI.Rectangle(0, 0, cssW, cssH);
+  const key = `${deviceW}|${deviceH}|${cssW}|${cssH}|${res}`;
 
-  return { cssW, cssH, deviceToCss: 1 / res, rect, deviceRect };
+  if (!_cssViewportMetricsCache || _cssViewportMetricsCache.key !== key) {
+    _cssViewportMetricsCache = {
+      key,
+      cssW,
+      cssH,
+      deviceToCss: 1 / res,
+      rect: new PIXI.Rectangle(0, 0, cssW, cssH),
+      deviceRect: new PIXI.Rectangle(0, 0, deviceW, deviceH),
+    };
+  } else {
+    _cssViewportMetricsCache.cssW = cssW;
+    _cssViewportMetricsCache.cssH = cssH;
+    _cssViewportMetricsCache.deviceToCss = 1 / res;
+    _cssViewportMetricsCache.rect.x = 0;
+    _cssViewportMetricsCache.rect.y = 0;
+    _cssViewportMetricsCache.rect.width = cssW;
+    _cssViewportMetricsCache.rect.height = cssH;
+    _cssViewportMetricsCache.deviceRect.x = 0;
+    _cssViewportMetricsCache.deviceRect.y = 0;
+    _cssViewportMetricsCache.deviceRect.width = deviceW;
+    _cssViewportMetricsCache.deviceRect.height = deviceH;
+  }
+
+  return _cssViewportMetricsCache;
 }
 
 /**
@@ -274,12 +297,28 @@ export function getCssViewportMetrics() {
  * @param {number} cssH
  * @returns {number}
  */
+export function getRendererMaxTextureSize(renderer = canvas?.app?.renderer) {
+  const gl = renderer?.gl;
+  if (!gl) return 8192;
+
+  const cached = _maxTextureSizeCache.get(gl);
+  if (Number.isFinite(cached) && cached > 0) return cached;
+
+  let max = 8192;
+  try {
+    max = gl?.getParameter?.(gl.MAX_TEXTURE_SIZE) || 8192;
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+  }
+  _maxTextureSizeCache.set(gl, max);
+  return max;
+}
+
 export function safeResolutionForCssArea(cssW, cssH) {
   const r = canvas?.app?.renderer;
   if (!r) return 1;
 
-  const gl = r.gl;
-  const max = gl?.getParameter?.(gl.MAX_TEXTURE_SIZE) || 8192;
+  const max = getRendererMaxTextureSize(r);
   const base = r.resolution || window.devicePixelRatio || 1;
 
   const span = Math.max(1, Math.ceil(Number(cssW) || 1), Math.ceil(Number(cssH) || 1));

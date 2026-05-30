@@ -34,6 +34,7 @@ import {
   computeRegionGatePass,
   coalesceNextFrame,
   getCssViewportMetrics,
+  getRendererMaxTextureSize,
   rawStageMatrix,
   safeResolutionForCssArea,
   getSceneDarknessLevel,
@@ -436,8 +437,7 @@ function _buildRegionSDF_FromBinary(placeable, worldBounds, { maxDistWorld = nul
   const devW = Math.max(1, view.width | 0);
   const devH = Math.max(1, view.height | 0);
 
-  const gl = r.gl;
-  const maxTex = gl?.getParameter?.(gl.MAX_TEXTURE_SIZE) || 8192;
+  const maxTex = getRendererMaxTextureSize(r);
 
   /** Base resolution: one SDF texel roughly corresponds to one renderer output pixel in world units. */
   let wpt = Math.max(safeBounds.width / devW, safeBounds.height / devH);
@@ -974,7 +974,6 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       return;
     }
 
-    const r = canvas.app.renderer;
     const { cssW, cssH, deviceToCss, deviceRect } = getCssViewportMetrics();
 
     const regionMaskResolution = regionMaskResolutionForEdgeSync(
@@ -991,11 +990,7 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       logger.debug("FXMaster:", err);
     }
 
-    const gl = r.gl;
-    const MAX_GL = gl?.getParameter?.(gl.MAX_TEXTURE_SIZE) || 8192;
-    const devW = Math.max(1, deviceRect.width | 0);
-    const devH = Math.max(1, deviceRect.height | 0);
-    const capScale = Math.min(1, MAX_GL / Math.max(devW, devH));
+    const filterResolution = safeResolutionForCssArea(cssW, cssH);
 
     const rbAligned = regionWorldBoundsAligned(placeable);
     const Ms = snappedStageMatrix();
@@ -1266,7 +1261,7 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
         filter.filterArea.copyFrom(deviceRect);
         filter.autoFit = false;
         filter.padding = 0;
-        filter.resolution = (r.resolution || 1) * capScale;
+        filter.resolution = filterResolution;
       } catch (err) {
         logger.debug("FXMaster:", err);
       }
@@ -1485,8 +1480,6 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
     const entry = this.regionMasks.get(regionId);
     if (!entry) return;
 
-    const r = canvas.app.renderer;
-
     const { cssW, cssH, deviceToCss, deviceRect } = getCssViewportMetrics();
 
     const regionMaskResolution = regionMaskResolutionForEdgeSync(
@@ -1495,13 +1488,21 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       cssW,
       cssH,
     );
-    const newRT = buildRegionMaskRT(placeable, { rtPool: this._rtPool, resolution: regionMaskResolution });
-    try {
-      this._releaseRT(entry.maskRT);
-    } catch (err) {
-      logger.debug("FXMaster:", err);
+    const oldMaskRT = entry.maskRT ?? null;
+    const newRT = buildRegionMaskRT(placeable, {
+      rtPool: this._rtPool,
+      resolution: regionMaskResolution,
+      reuseRT: oldMaskRT,
+    });
+    if (oldMaskRT && oldMaskRT !== newRT) {
+      try {
+        this._releaseRT(oldMaskRT);
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
     }
     entry.maskRT = newRT;
+    if (!newRT) return;
 
     const anyWantsBelowTokens = (entry.filters || []).some((f) => !!f.__fxmBelowTokens);
     const anyWantsBelowTiles = (entry.filters || []).some((f) => !!f.__fxmBelowTiles);
@@ -1566,11 +1567,7 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       }
     }
 
-    const devW = Math.max(1, deviceRect.width | 0);
-    const devH = Math.max(1, deviceRect.height | 0);
-    const gl = r.gl;
-    const MAX_GL = gl?.getParameter?.(gl.MAX_TEXTURE_SIZE) || 8192;
-    const capScale = Math.min(1, MAX_GL / Math.max(devW, devH));
+    const filterResolution = safeResolutionForCssArea(cssW, cssH);
 
     const rbAligned = regionWorldBoundsAligned(placeable);
 
@@ -1730,7 +1727,7 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
         f.filterArea.copyFrom(deviceRect);
         f.autoFit = false;
         f.padding = 0;
-        f.resolution = (r.resolution || 1) * capScale;
+        f.resolution = filterResolution;
       } catch (err) {
         logger.debug("FXMaster:", err);
       }
@@ -1861,7 +1858,7 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       this._lastCutoutCameraMatrix = null;
     }
 
-    for (const regionId of Array.from(this.regionMasks.keys())) {
+    for (const regionId of this.regionMasks.keys()) {
       const regionDoc = getSceneRegionDocumentById(regionId, canvas?.scene ?? null);
       if (!regionDoc || !regionDocumentCanApplyInCurrentView(regionDoc, canvas?.scene ?? null))
         this.destroyRegionFilterEffects(regionId);

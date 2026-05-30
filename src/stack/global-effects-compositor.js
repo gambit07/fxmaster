@@ -308,6 +308,7 @@ export class GlobalEffectsCompositor {
     this._sceneClipMask = null;
     this._weatherOcclusionFilter = null;
     this._dynamicCoverageSignature = null;
+    this._dynamicCoverageContentSignature = null;
     this._renderFrameSerial = 0;
     this._sceneLevelsFrameSerial = -1;
     this._sceneLevelsFrameValue = null;
@@ -384,6 +385,21 @@ export class GlobalEffectsCompositor {
     this._selectedLevelViewportMovingFrame = false;
     this._levelSurfaceSignatureFrameSerial = -1;
     this._levelSurfaceSignatureFrameValue = null;
+    this._displayParentStructureDirtyFrame = -1;
+    this._displayOutputWidth = 0;
+    this._displayOutputHeight = 0;
+    this._viewportMetricsKey = null;
+    this._viewportMetricsValue = null;
+    this._singleFilterList = [null];
+    this._captureViewportArea = null;
+    this._gridFilterArea = null;
+    this._tmpPointA = null;
+    this._tmpPointB = null;
+    this._tmpPointC = null;
+    this._tmpPointD = null;
+    this._regionLocalPassFrameCache = new Map();
+    this._collectRenderableRowsKnownFrameSet = new Set();
+    this._transientRowsFrame = [];
     void this.#suppressionRegionAffectsRow;
     void this.#tokenRevealApertureIntersectsSuppressionRegionBounds;
     void this.#surfaceTargetsLevelIds;
@@ -421,6 +437,8 @@ export class GlobalEffectsCompositor {
 
     this.#syncCompositedSceneParticleSources([], false);
 
+    const previousDisplayParent = this._displayContainer?.parent ?? null;
+
     try {
       if (this._displaySprite) this._displaySprite.mask = null;
     } catch (err) {
@@ -445,6 +463,8 @@ export class GlobalEffectsCompositor {
       logger.debug("FXMaster:", err);
     }
 
+    this.#markDisplayParentRenderDirty({ parent: previousDisplayParent, structural: true });
+
     this.layer = null;
     this.#restoreLiveGridMeshVisibility();
     this.#destroyRenderTextures();
@@ -456,6 +476,7 @@ export class GlobalEffectsCompositor {
     }
     this._weatherOcclusionFilter = null;
     this._dynamicCoverageSignature = null;
+    this._dynamicCoverageContentSignature = null;
     this._sceneLevelsFrameSerial = -1;
     this._sceneLevelsFrameValue = null;
     this._sceneLevelByIdFrameSerial = -1;
@@ -555,7 +576,7 @@ export class GlobalEffectsCompositor {
       return;
     }
 
-    this._regionGatePassFrameCache = new Map();
+    this.#clearFrameMapProperty("_regionGatePassFrameCache");
 
     const rows = this.#collectRenderableRows(canvas.scene);
     if (!rows.length) {
@@ -579,52 +600,7 @@ export class GlobalEffectsCompositor {
       this._sceneLevelsFrameValue = null;
       this._sceneLevelByIdFrameSerial = -1;
       this._sceneLevelByIdFrameMap = null;
-      this._upperSurfaceObjectsFrameCache = new Map();
-      this._visibleOverlayLevelIdsFrameCache = new Map();
-      this._visibleOverlayLevelsFrameCache = new Map();
-      this._rowAllowedLevelIdsFrameCache = new Map();
-      this._rowFlagsFrameCache = new Map();
-      this._stackRowsFrame = rows;
-      this._stackRowsIndexFrameCache = new Map();
-      for (let i = 0; i < rows.length; i++) if (rows[i]?.uid) this._stackRowsIndexFrameCache.set(rows[i].uid, i);
-      this._rowActiveSuppressionRegionsFrameCache = new Map();
-      if (!(this._regionGatePassFrameCache instanceof Map)) this._regionGatePassFrameCache = new Map();
-      this._regionShapeKeyFrameCache = new WeakMap();
-      this._displayObjectViewportHitFrameCache = new WeakMap();
-      this._tileActiveFrameCache = new WeakMap();
-      this._primaryLevelTexturesFrameCache = null;
-      this._primaryTileMeshesFrameCache = null;
-      this._primaryTileMeshesByTileIdFrameCache = null;
-      this._rowVisualBlockerLevelIdsFrameCache = new Map();
-      this._suppressionRegionsFrameCache = new Map();
-      this._directSuppressionFallbackTokenCandidatesFrameCache = null;
-      this._visibleSceneLevelIdsFrameSerial = -1;
-      this._visibleSceneLevelIdsFrameValue = null;
-      this._selectedLevelViewportMatrixKeyFrameSerial = -1;
-      this._selectedLevelViewportMatrixKeyFrameValue = null;
-      this._surfaceSourcePathsFrameCache = new WeakMap();
-      this._surfaceConfiguredLevelIdsFrameCache = new WeakMap();
-      this._levelConfiguredImagePathsFrameCache = new Map();
-      this._levelForegroundImagePathsFrameCache = new Map();
-      this._protectedLevelImagePathsFrameCache = new Map();
-      this._visibleSurfaceObjectsFrameCache = new Map();
-      this._visibleForegroundSurfaceObjectsFrameCache = new Map();
-      this._visualBlockerSurfaceObjectsFrameCache = new Map();
-      this._selectedLevelCompositeSegmentsFrameCache = new Map();
-      this._foregroundSurfaceCandidatesFrameCache = new Map();
-      this._selectedLevelNonTileCoverageFrameCache = new Map();
-      this._levelDefinedSurfaceFootprintRegionsFrameCache = new Map();
-      this._configuredLevelTextureObjectsFrameCache = new Map();
-      this._sceneSuppressionMaskStats = {
-        regionStableHits: 0,
-        regionStableMisses: 0,
-        regionDynamicHits: 0,
-        regionDynamicMisses: 0,
-        combinedStableHits: 0,
-        combinedStableMisses: 0,
-        combinedDynamicHits: 0,
-        combinedDynamicMisses: 0,
-      };
+      this.#resetPerFrameCaches(rows);
       const frameInfo = this.#analyzeRowsForFrame(rows);
       this._hasSelectedLevelParticleRowsFrame = frameInfo.hasSelectedLevelParticleRows;
       this._hasSceneFilterRowsFrame = frameInfo.hasSceneFilterRows;
@@ -671,13 +647,15 @@ export class GlobalEffectsCompositor {
         }
       } else {
         const previousDisplayState = this.#suspendDisplayOutput();
+        let capturedBase = false;
         try {
-          if (!this.#captureEnvironment(this._baseRT)) {
-            this.#hideOutput();
-            return;
-          }
+          capturedBase = this.#captureEnvironment(this._baseRT);
         } finally {
-          this.#restoreDisplayOutput(previousDisplayState);
+          if (capturedBase) this.#restoreDisplayOutput(previousDisplayState);
+        }
+        if (!capturedBase) {
+          this.#hideOutput();
+          return;
         }
 
         if (this.#canUseCapturedBaseAsInitialFrame(rows)) {
@@ -689,7 +667,7 @@ export class GlobalEffectsCompositor {
       }
 
       const needsOutputSceneMask = frameInfo.needsOutputSceneMask;
-      const regionLocalPassCache = new Map();
+      const regionLocalPassCache = this.#clearFrameMapProperty("_regionLocalPassFrameCache");
 
       for (let rowIndex = rows.length - 1; rowIndex >= 0; rowIndex--) {
         const row = rows[rowIndex];
@@ -1009,9 +987,9 @@ export class GlobalEffectsCompositor {
   }
 
   /**
-   * Force the live stage transform chain to current world state before the compositor captures the environment or renders attached FX subtrees into off-screen textures.
+   * Synchronize the live stage transform chain before off-screen compositor captures.
    *
-   * FX rows are rendered while still attached to the canvas graph. Updating only the subtree root can leave ancestor world transforms one pan-step behind, which shows up most clearly on plain scene particles as a moving hard edge at the scene bounds.
+   * Stale ancestor transforms can expose a hard scene-bounds edge during pan.
    *
    * @returns {void}
    */
@@ -1026,6 +1004,99 @@ export class GlobalEffectsCompositor {
         logger.debug("FXMaster:", err);
       }
     }
+  }
+
+  /**
+   * Clear and reuse a Map-backed per-frame cache property.
+   *
+   * @param {string} property
+   * @returns {Map}
+   */
+  #clearFrameMapProperty(property) {
+    const cache = this[property];
+    if (cache instanceof Map) {
+      cache.clear();
+      return cache;
+    }
+
+    const next = new Map();
+    this[property] = next;
+    return next;
+  }
+
+  /**
+   * Clear and reuse a Set-backed per-frame scratch property.
+   *
+   * @param {string} property
+   * @returns {Set}
+   */
+  #clearFrameSetProperty(property) {
+    const cache = this[property];
+    if (cache instanceof Set) {
+      cache.clear();
+      return cache;
+    }
+
+    const next = new Set();
+    this[property] = next;
+    return next;
+  }
+
+  /**
+   * Reset the scratch caches used only for the current compositor frame.
+   *
+   * @param {Array<object>} rows
+   * @returns {void}
+   */
+  #resetPerFrameCaches(rows) {
+    this.#clearFrameMapProperty("_upperSurfaceObjectsFrameCache");
+    this.#clearFrameMapProperty("_visibleOverlayLevelIdsFrameCache");
+    this.#clearFrameMapProperty("_visibleOverlayLevelsFrameCache");
+    this.#clearFrameMapProperty("_rowAllowedLevelIdsFrameCache");
+    this.#clearFrameMapProperty("_rowFlagsFrameCache");
+
+    this._stackRowsFrame = rows;
+    const indexCache = this.#clearFrameMapProperty("_stackRowsIndexFrameCache");
+    for (let i = 0; i < rows.length; i++) if (rows[i]?.uid) indexCache.set(rows[i].uid, i);
+
+    this.#clearFrameMapProperty("_rowActiveSuppressionRegionsFrameCache");
+    if (!(this._regionGatePassFrameCache instanceof Map)) this._regionGatePassFrameCache = new Map();
+    this._regionShapeKeyFrameCache = new WeakMap();
+    this._displayObjectViewportHitFrameCache = new WeakMap();
+    this._tileActiveFrameCache = new WeakMap();
+    this._primaryLevelTexturesFrameCache = null;
+    this._primaryTileMeshesFrameCache = null;
+    this._primaryTileMeshesByTileIdFrameCache = null;
+    this.#clearFrameMapProperty("_rowVisualBlockerLevelIdsFrameCache");
+    this.#clearFrameMapProperty("_suppressionRegionsFrameCache");
+    this._directSuppressionFallbackTokenCandidatesFrameCache = null;
+    this._visibleSceneLevelIdsFrameSerial = -1;
+    this._visibleSceneLevelIdsFrameValue = null;
+    this._selectedLevelViewportMatrixKeyFrameSerial = -1;
+    this._selectedLevelViewportMatrixKeyFrameValue = null;
+    this._surfaceSourcePathsFrameCache = new WeakMap();
+    this._surfaceConfiguredLevelIdsFrameCache = new WeakMap();
+    this.#clearFrameMapProperty("_levelConfiguredImagePathsFrameCache");
+    this.#clearFrameMapProperty("_levelForegroundImagePathsFrameCache");
+    this.#clearFrameMapProperty("_protectedLevelImagePathsFrameCache");
+    this.#clearFrameMapProperty("_visibleSurfaceObjectsFrameCache");
+    this.#clearFrameMapProperty("_visibleForegroundSurfaceObjectsFrameCache");
+    this.#clearFrameMapProperty("_visualBlockerSurfaceObjectsFrameCache");
+    this.#clearFrameMapProperty("_selectedLevelCompositeSegmentsFrameCache");
+    this.#clearFrameMapProperty("_foregroundSurfaceCandidatesFrameCache");
+    this.#clearFrameMapProperty("_selectedLevelNonTileCoverageFrameCache");
+    this.#clearFrameMapProperty("_levelDefinedSurfaceFootprintRegionsFrameCache");
+    this.#clearFrameMapProperty("_configuredLevelTextureObjectsFrameCache");
+
+    const stats = this._sceneSuppressionMaskStats ?? (this._sceneSuppressionMaskStats = {});
+    stats.regionStableHits = 0;
+    stats.regionStableMisses = 0;
+    stats.regionDynamicHits = 0;
+    stats.regionDynamicMisses = 0;
+    stats.combinedStableHits = 0;
+    stats.combinedStableMisses = 0;
+    stats.combinedDynamicHits = 0;
+    stats.combinedDynamicMisses = 0;
   }
 
   /**
@@ -2619,11 +2690,11 @@ export class GlobalEffectsCompositor {
     });
     this.#pruneRenderTextureEntryCache(this._sceneSuppressionRegionMaskDynamicRTCache, {
       maxEntries: 8,
-      maxAgeFrames: 2,
+      maxAgeFrames: 90,
     });
     this.#pruneRenderTextureEntryCache(this._sceneSuppressionCombinedMaskDynamicRTCache, {
       maxEntries: 8,
-      maxAgeFrames: 2,
+      maxAgeFrames: 90,
     });
   }
 
@@ -3546,8 +3617,14 @@ export class GlobalEffectsCompositor {
     const x1 = x0 + (Number(sceneRect.width) || 0);
     const y1 = y0 + (Number(sceneRect.height) || 0);
 
-    const p0 = stageMatrix.apply(new PIXI.Point(x0, y0), new PIXI.Point());
-    const p1 = stageMatrix.apply(new PIXI.Point(x1, y1), new PIXI.Point());
+    const in0 = this._tmpPointA ?? (this._tmpPointA = new PIXI.Point());
+    const in1 = this._tmpPointB ?? (this._tmpPointB = new PIXI.Point());
+    const p0 = this._tmpPointC ?? (this._tmpPointC = new PIXI.Point());
+    const p1 = this._tmpPointD ?? (this._tmpPointD = new PIXI.Point());
+    in0.set(x0, y0);
+    in1.set(x1, y1);
+    stageMatrix.apply(in0, p0);
+    stageMatrix.apply(in1, p1);
 
     const left = Math.min(p0.x, p1.x);
     const top = Math.min(p0.y, p1.y);
@@ -5618,7 +5695,9 @@ export class GlobalEffectsCompositor {
       return this._selectedLevelViewportMatrixKeyFrameValue;
     }
 
-    const matrix = currentWorldMatrix(canvas?.stage, { snapStage: false });
+    const matrix = this.#useSnappedCompositorTransforms()
+      ? snappedStageMatrix(canvas?.stage)
+      : currentWorldMatrix(canvas?.stage, { snapStage: false });
     const key = [matrix?.a, matrix?.b, matrix?.c, matrix?.d, matrix?.tx, matrix?.ty]
       .map((value) => (Number.isFinite(Number(value)) ? Number(value).toFixed(3) : ""))
       .join(",");
@@ -8262,7 +8341,9 @@ export class GlobalEffectsCompositor {
 
     const { cssW, cssH, deviceToCss, rect: cssFA } = getCssViewportMetrics();
     try {
-      applyMaskUniformsToFilters([filter], {
+      const filterList = this._singleFilterList ?? (this._singleFilterList = [null]);
+      filterList[0] = filter;
+      applyMaskUniformsToFilters(filterList, {
         baseMaskRT: bundle.base,
         cutoutTokensRT: belowTokens ? bundle.cutoutTokens : null,
         cutoutTilesRT: belowTiles ? bundle.cutoutTiles : null,
@@ -8473,7 +8554,9 @@ export class GlobalEffectsCompositor {
     sprite.scale.set(1, 1);
     sprite.width = width;
     sprite.height = height;
-    sprite.filters = [filter];
+    const filterList = this._singleFilterList ?? (this._singleFilterList = [null]);
+    filterList[0] = filter;
+    sprite.filters = filterList;
 
     container.position.set(0, 0);
     container.scale.set(1, 1);
@@ -8502,6 +8585,7 @@ export class GlobalEffectsCompositor {
       return false;
     } finally {
       sprite.filters = null;
+      if (this._singleFilterList) this._singleFilterList[0] = null;
       try {
         sprite.mask = priorMask ?? null;
       } catch (err) {
@@ -8787,10 +8871,12 @@ export class GlobalEffectsCompositor {
   }
 
   /**
-   * Return a lightweight signature describing the current viewport and visible token/tile state that affects dynamic mask coverage.
+   * Return the current viewport and visible token/tile signature for dynamic mask coverage.
+   *
+   * The content key excludes pure camera translation to identify pan-only refreshes.
    *
    * @param {{ includeTokens?: boolean, includeTiles?: boolean }} [options]
-   * @returns {{ key: string|null, forceRefresh: boolean }}
+   * @returns {{ key: string|null, contentKey: string|null, forceRefresh: boolean }}
    */
   #buildDynamicCoverageSignature({ includeTokens = false, includeTiles = false } = {}) {
     const stage = canvas?.stage ?? null;
@@ -8804,34 +8890,43 @@ export class GlobalEffectsCompositor {
     const cameraTy = Number(cameraMatrix?.ty ?? stage?.worldTransform?.ty ?? 0) || 0;
     const cameraA = Number(cameraMatrix?.a ?? scaleX) || 1;
     const cameraD = Number(cameraMatrix?.d ?? scaleY) || 1;
-    const parts = [
-      `vp:${metrics.cssW}:${metrics.cssH}:${pivotX.toFixed(3)}:${pivotY.toFixed(3)}:${scaleX.toFixed(
-        6,
-      )}:${scaleY.toFixed(6)}:${cameraA.toFixed(6)}:${cameraD.toFixed(6)}:${cameraTx.toFixed(3)}:${cameraTy.toFixed(
-        3,
-      )}`,
-    ];
+
+    const viewportContentKey = `view:${metrics.cssW}:${metrics.cssH}:${scaleX.toFixed(6)}:${scaleY.toFixed(6)}`;
+    const cameraKey = `cam:${pivotX.toFixed(3)}:${pivotY.toFixed(3)}:${cameraA.toFixed(6)}:${cameraD.toFixed(
+      6,
+    )}:${cameraTx.toFixed(3)}:${cameraTy.toFixed(3)}`;
+
+    const parts = [viewportContentKey, cameraKey];
+    const contentParts = [viewportContentKey];
+    const pushContentPart = (part, contentPart = part) => {
+      parts.push(part);
+      contentParts.push(contentPart);
+    };
+    const fmt = (value, digits = 2) => {
+      const n = Number(value);
+      return Number.isFinite(n) ? n.toFixed(digits) : "";
+    };
 
     if (canvas?.level) {
       try {
         const surfaceState = getCanvasLiveLevelSurfaceState(canvas?.scene ?? null, { presynced: true });
-        parts.push(`surface:${surfaceState?.key ?? ""}`);
-        if (surfaceState?.forceRefresh) return { key: null, forceRefresh: true };
+        pushContentPart(`surface:${surfaceState?.key ?? ""}`);
+        if (surfaceState?.forceRefresh) return { key: null, contentKey: null, forceRefresh: true };
       } catch (err) {
         logger.debug("FXMaster:", err);
       }
     }
 
-    parts.push(`regions:${this.#buildRegionBehaviorSignature()}`);
+    pushContentPart(`regions:${this.#buildRegionBehaviorSignature()}`);
 
     if (includeTokens) {
-      if (this.#hasVisibleDynamicRings()) return { key: null, forceRefresh: true };
+      if (this.#hasVisibleDynamicRings()) return { key: null, contentKey: null, forceRefresh: true };
 
       if (canvas?.level) {
         const levelDocs = this.#getSceneLevels();
         for (const level of levelDocs) {
           if (!level?.id) continue;
-          parts.push(`lvl:${level.id}:${level.isView ? 1 : 0}:${level.isVisible ? 1 : 0}`);
+          pushContentPart(`lvl:${level.id}:${level.isView ? 1 : 0}:${level.isVisible ? 1 : 0}`);
         }
       }
 
@@ -8878,12 +8973,24 @@ export class GlobalEffectsCompositor {
         const hoveredUpperLevelReveal = revealedByHoveredUpperLevel ? 1 : 0;
         const explicitlyVisible = explicitlyRevealed ? 1 : 0;
         const directlyHoveredFlag = directlyHovered ? 1 : 0;
-        parts.push(
-          `tok:${tokenId}:${transformId}:${worldAlpha}:${bx.toFixed(2)}:${by.toFixed(2)}:${bw.toFixed(2)}:${bh.toFixed(
+        const tokenContentTransformId = [
+          fmt(bx),
+          fmt(by),
+          fmt(bw),
+          fmt(bh),
+          fmt(token?.document?.rotation ?? token?.rotation ?? 0, 3),
+          fmt(token?.elevation ?? token?.document?.elevation ?? 0, 3),
+          fmt(mesh?.scale?.x ?? 1, 4),
+          fmt(mesh?.scale?.y ?? 1, 4),
+        ].join(",");
+        const tokenStateTail = `${worldAlpha}:${token?.occluded ? 1 : 0}:${
+          onCurrentLevel ? 1 : 0
+        }:${maskFlag}:${hoveredUpperLevelReveal}:${explicitlyVisible}:${directlyHoveredFlag}`;
+        pushContentPart(
+          `tok:${tokenId}:${transformId}:${bx.toFixed(2)}:${by.toFixed(2)}:${bw.toFixed(2)}:${bh.toFixed(
             2,
-          )}:${token?.occluded ? 1 : 0}:${
-            onCurrentLevel ? 1 : 0
-          }:${maskFlag}:${hoveredUpperLevelReveal}:${explicitlyVisible}:${directlyHoveredFlag}`,
+          )}:${tokenStateTail}`,
+          `tok:${tokenId}:${tokenContentTransformId}:${tokenStateTail}`,
         );
       }
     }
@@ -8907,17 +9014,29 @@ export class GlobalEffectsCompositor {
         const occlusionMode = getTileOcclusionModes(tile?.document ?? tile ?? null);
         const restrictsParticles = tileDocumentRestrictsParticles(tile) ? 1 : 0;
         const restrictsFilters = tileDocumentRestrictsFilters(tile) ? 1 : 0;
-        parts.push(
-          `tile:${tileId}:${transformId}:${visibleAlpha}:${fadeOcclusion}:${bx.toFixed(2)}:${by.toFixed(
+        const tileContentTransformId = [
+          fmt(bx),
+          fmt(by),
+          fmt(bw),
+          fmt(bh),
+          fmt(tile?.document?.rotation ?? tile?.rotation ?? 0, 3),
+          fmt(tile?.document?.elevation ?? tile?.elevation ?? 0, 3),
+          fmt(mesh?.scale?.x ?? 1, 4),
+          fmt(mesh?.scale?.y ?? 1, 4),
+        ].join(",");
+        const tileStateTail = `${visibleAlpha}:${fadeOcclusion}:${tile?.occluded ? 1 : 0}:${
+          hoverFade?.faded ? 1 : 0
+        }:${restrictsParticles}:${restrictsFilters}:1:${String(occlusionMode)}`;
+        pushContentPart(
+          `tile:${tileId}:${transformId}:${bx.toFixed(2)}:${by.toFixed(2)}:${bw.toFixed(2)}:${bh.toFixed(
             2,
-          )}:${bw.toFixed(2)}:${bh.toFixed(2)}:${tile?.occluded ? 1 : 0}:${
-            hoverFade?.faded ? 1 : 0
-          }:${restrictsParticles}:${restrictsFilters}:1:${String(occlusionMode)}`,
+          )}:${tileStateTail}`,
+          `tile:${tileId}:${tileContentTransformId}:${tileStateTail}`,
         );
       }
     }
 
-    return { key: parts.join("|"), forceRefresh: false };
+    return { key: parts.join("|"), contentKey: contentParts.join("|"), forceRefresh: false };
   }
 
   /**
@@ -8993,6 +9112,7 @@ export class GlobalEffectsCompositor {
 
     if (!needsDynamicCoverage) {
       this._dynamicCoverageSignature = null;
+      this._dynamicCoverageContentSignature = null;
       return;
     }
 
@@ -9004,26 +9124,28 @@ export class GlobalEffectsCompositor {
 
     let dynamicState = buildDynamicState();
     let dynamicCoverageChanged = dynamicState.forceRefresh || dynamicState.key !== this._dynamicCoverageSignature;
+    let dynamicContentChanged =
+      dynamicState.forceRefresh || dynamicState.contentKey !== (this._dynamicCoverageContentSignature ?? null);
 
     if (
       canvas?.level &&
       CONFIG?.fxmaster?.overheadPerformance?.nativeLevelDynamicCoveragePresyncOnlyWhenMoving === false
     ) {
       dynamicCoverageChanged = true;
+      dynamicContentChanged = true;
     }
 
     let presyncedDynamicCoverage = false;
-    if (dynamicCoverageChanged) {
+    if (dynamicCoverageChanged && dynamicContentChanged) {
       this.#syncLivePrimaryStateForDynamicCoverage();
       presyncedDynamicCoverage = true;
 
-      /**
-       * Native V14 Levels may materialize hover-reveal and upper-surface state during the primary refresh. Re-key after the one allowed sync so steady frames reuse the settled signature instead of treating canvas.level as a perpetual dirty bit.
-       */
       if (canvas?.level && !dynamicState.forceRefresh) {
         const syncedState = buildDynamicState();
         if (syncedState.forceRefresh || syncedState.key !== dynamicState.key) dynamicState = syncedState;
       }
+    } else if (dynamicCoverageChanged) {
+      presyncedDynamicCoverage = true;
     }
 
     if (dynamicCoverageChanged) {
@@ -9050,6 +9172,7 @@ export class GlobalEffectsCompositor {
       }
 
       this._dynamicCoverageSignature = dynamicState.forceRefresh ? null : dynamicState.key;
+      this._dynamicCoverageContentSignature = dynamicState.forceRefresh ? null : dynamicState.contentKey ?? null;
     } else if (needsDynamicSuppressionPreservation) {
       /**
        * Below-token/tile coverage may be stable while a Level-scoped suppression aperture changes due to direct lower-token hover. Re-check the compact suppression-preservation signature even when the generic coverage key is unchanged. The manager only rebuilds the base masks when that signature actually changes.
@@ -9069,13 +9192,16 @@ export class GlobalEffectsCompositor {
    * @returns {Array<object>}
    */
   #collectRenderableRows(scene) {
-    const rows = getOrderedEnabledEffectRenderRows(scene).filter((row) => this.#rowHasRenderableRuntime(row));
-    const known = new Set();
+    const rows = getOrderedEnabledEffectRenderRows(scene, { clone: false }).filter((row) =>
+      this.#rowHasRenderableRuntime(row),
+    );
+    const known = this.#clearFrameSetProperty("_collectRenderableRowsKnownFrameSet");
     for (const row of rows) {
       if (row?.uid) known.add(row.uid);
     }
 
-    const transientRows = [];
+    const transientRows = this._transientRowsFrame ?? (this._transientRowsFrame = []);
+    transientRows.length = 0;
     const collectTransientRows = (sourceRows) => {
       for (const row of sourceRows ?? []) {
         if (row?.uid && !known.has(row.uid) && this.#rowHasRenderableRuntime(row)) transientRows.push(row);
@@ -9164,9 +9290,13 @@ export class GlobalEffectsCompositor {
     sprite.scale.set(1, 1);
     sprite.width = width;
     sprite.height = height;
-    sprite.filters = [filter];
+    const filterList = this._singleFilterList ?? (this._singleFilterList = [null]);
+    filterList[0] = filter;
+    sprite.filters = filterList;
 
-    const targetMatrix = currentWorldMatrix(canvas.environment);
+    const targetMatrix = currentWorldMatrix(this.#getBaseCaptureTarget() ?? canvas.environment, {
+      snapStage: this.#useSnappedCompositorTransforms(),
+    });
     filter.__fxmTargetWorldTransform = targetMatrix;
 
     try {
@@ -9177,6 +9307,7 @@ export class GlobalEffectsCompositor {
       });
     } finally {
       sprite.filters = null;
+      if (this._singleFilterList) this._singleFilterList[0] = null;
       try {
         delete filter.__fxmTargetWorldTransform;
       } catch (err) {
@@ -9226,7 +9357,9 @@ export class GlobalEffectsCompositor {
     const priorMask = sprite.mask ?? null;
     sprite.mask = sceneClip;
 
-    const targetMatrix = currentWorldMatrix(canvas.environment);
+    const targetMatrix = currentWorldMatrix(this.#getBaseCaptureTarget() ?? canvas.environment, {
+      snapStage: this.#useSnappedCompositorTransforms(),
+    });
     filter.__fxmTargetWorldTransform = targetMatrix;
 
     try {
@@ -9263,6 +9396,10 @@ export class GlobalEffectsCompositor {
     this.#attachDisplayContainer();
 
     const { width, height } = this.#getViewportMetrics();
+    const structureDirty = this._displayOutputWidth !== width || this._displayOutputHeight !== height;
+    this._displayOutputWidth = width;
+    this._displayOutputHeight = height;
+
     sprite.texture = texture ?? PIXI.Texture.EMPTY;
     sprite.position.set(0, 0);
     sprite.scale.set(1, 1);
@@ -9296,6 +9433,43 @@ export class GlobalEffectsCompositor {
       this._displayContainer.visible = true;
       this._displayContainer.renderable = true;
     }
+
+    this.#markDisplayParentRenderDirty({ structural: structureDirty });
+  }
+
+  /**
+   * Mark the cached display parent dirty after output texture or counter-transform changes.
+   *
+   * Structural refreshes are reserved for attach, reorder, and resize events.
+   *
+   * @param {{ parent?: PIXI.Container|null, structural?: boolean }} [options]
+   * @returns {void}
+   */
+  #markDisplayParentRenderDirty({ parent = null, structural = false } = {}) {
+    parent ??= this._displayContainer?.parent ?? null;
+    if (!parent || parent.destroyed) return;
+
+    try {
+      if ("renderDirty" in parent) parent.renderDirty = true;
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    if (!structural) return;
+    if (this._displayParentStructureDirtyFrame === this._renderFrameSerial) return;
+    this._displayParentStructureDirtyFrame = this._renderFrameSerial;
+
+    try {
+      if (parent === canvas?.primary) parent.update?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    try {
+      parent.refreshPrimarySpriteMesh?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
 
   /**
@@ -9323,6 +9497,8 @@ export class GlobalEffectsCompositor {
       this._displayContainer.visible = false;
       this._displayContainer.renderable = false;
     }
+
+    this.#markDisplayParentRenderDirty();
   }
 
   /**
@@ -9437,7 +9613,12 @@ export class GlobalEffectsCompositor {
     try {
       mesh.visible = true;
       mesh.renderable = true;
-      mesh.filterArea = new PIXI.Rectangle(0, 0, width, height);
+      const filterArea = this._gridFilterArea ?? (this._gridFilterArea = new PIXI.Rectangle());
+      filterArea.x = 0;
+      filterArea.y = 0;
+      filterArea.width = width;
+      filterArea.height = height;
+      mesh.filterArea = filterArea;
       mesh.updateTransform?.();
       renderer.render(mesh, {
         renderTexture,
@@ -9486,6 +9667,7 @@ export class GlobalEffectsCompositor {
       this._displayContainer.renderable = false;
     }
 
+    this.#markDisplayParentRenderDirty();
     return state;
   }
 
@@ -9510,34 +9692,52 @@ export class GlobalEffectsCompositor {
   }
 
   /**
-   * Capture the current environment output into the supplied render texture using live world transforms.
+   * Return the scene graph object used as the base image for FX stack composition.
+   *
+   * Primary-group output requires primary-group capture so darkness is not pre-baked into the stack input.
+   *
+   * @returns {PIXI.DisplayObject|null}
+   */
+  #getBaseCaptureTarget() {
+    const primary = canvas?.primary ?? null;
+    if (primary && !primary.destroyed) return primary;
+    const environment = canvas?.environment ?? null;
+    return environment && !environment.destroyed ? environment : null;
+  }
+
+  /**
+   * Capture the current primary/environment output into the supplied render texture using live world transforms.
    *
    * @param {PIXI.RenderTexture} renderTexture
    * @returns {boolean}
    */
   #captureEnvironment(renderTexture) {
     const renderer = canvas?.app?.renderer;
-    const environment = canvas?.environment;
-    if (!renderer || !environment || !renderTexture) return false;
+    const target = this.#getBaseCaptureTarget();
+    if (!renderer || !target || !renderTexture) return false;
 
     const { width, height } = this.#getViewportMetrics();
-    const previousFilterArea = environment.filterArea ?? null;
-    const viewportArea = new PIXI.Rectangle(0, 0, width, height);
+    const previousFilterArea = target.filterArea ?? null;
+    const viewportArea = this._captureViewportArea ?? (this._captureViewportArea = new PIXI.Rectangle());
+    viewportArea.x = 0;
+    viewportArea.y = 0;
+    viewportArea.width = width;
+    viewportArea.height = height;
 
     try {
-      environment.filterArea = viewportArea;
+      target.filterArea = viewportArea;
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
 
     try {
-      fxmUpdateDisplayObjectWorldTransform(environment);
+      fxmUpdateDisplayObjectWorldTransform(target);
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
 
     try {
-      environment.updateTransform?.();
+      target.updateTransform?.();
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
@@ -9545,7 +9745,7 @@ export class GlobalEffectsCompositor {
     if (!this.#clearRenderTexture(renderTexture)) return false;
 
     try {
-      renderer.render(environment, {
+      renderer.render(target, {
         renderTexture,
         clear: false,
         skipUpdateTransform: true,
@@ -9556,7 +9756,7 @@ export class GlobalEffectsCompositor {
       return false;
     } finally {
       try {
-        environment.filterArea = previousFilterArea;
+        target.filterArea = previousFilterArea;
       } catch (err) {
         logger.debug("FXMaster:", err);
       }
@@ -9720,14 +9920,13 @@ export class GlobalEffectsCompositor {
    * @returns {PIXI.Container}
    */
   #createDisplayContainer() {
-    const UnboundContainer = foundry?.canvas?.containers?.UnboundContainer;
-    return UnboundContainer ? new UnboundContainer() : new PIXI.Container();
+    return new PIXI.Container();
   }
 
   /**
    * Return the preferred live scene mask for compositor output.
    *
-   * Plain scene particles already lock correctly in world space. The remaining moving hard edge at scene bounds comes from the compositor using its own reconstructed screen-space clip rectangle instead of the same live scene mask Foundry applies to native scene-bound layers. Prefer the native scene mask directly whenever it exists, and keep the generated graphics clip only as a fallback.
+   * Native scene masks are preferred over reconstructed screen-space clip rectangles.
    *
    * @returns {PIXI.DisplayObject|null}
    */
@@ -9766,15 +9965,26 @@ export class GlobalEffectsCompositor {
   }
 
   /**
-   * Return the rendered-group sibling the compositor output should follow.
+   * Return the primary group that should own the visible compositor output when available.
    *
-   * The composited result replaces the environment output while preserving later visibility and interface passes.
+   * Primary-group presentation allows Foundry darkness effects to process FX pixels.
+   *
+   * @returns {PIXI.Container|null}
+   */
+  #getPrimaryDisplayParent() {
+    const primary = canvas?.primary ?? null;
+    return primary && !primary.destroyed ? primary : null;
+  }
+
+  /**
+   * Return the rendered-group sibling for the legacy environment fallback.
    *
    * @param {PIXI.Container|null} parent
    * @returns {PIXI.DisplayObject|null}
    */
   #getInsertionTarget(parent) {
     if (!parent) return null;
+    if (parent === this.#getPrimaryDisplayParent()) return null;
     const environment = canvas?.environment ?? null;
     if (environment?.parent === parent) return environment;
     return null;
@@ -9783,16 +9993,14 @@ export class GlobalEffectsCompositor {
   /**
    * Return the preferred visible parent for the compositor output container.
    *
-   * The container is inserted into the rendered group as a screen-space sibling immediately after the environment pass.
-   *
    * @returns {PIXI.Container|null}
    */
   #getDisplayParent() {
-    return canvas?.rendered ?? this.layer ?? null;
+    return this.#getPrimaryDisplayParent() ?? canvas?.rendered ?? this.layer ?? null;
   }
 
   /**
-   * Attach the visible output container to the rendered canvas group at the correct draw position.
+   * Attach the visible output container to the canvas group at the correct draw position.
    *
    * @returns {void}
    */
@@ -9817,6 +10025,7 @@ export class GlobalEffectsCompositor {
       } else {
         parent.addChild(container);
       }
+      this.#markDisplayParentRenderDirty({ structural: true });
       return;
     }
 
@@ -9831,6 +10040,7 @@ export class GlobalEffectsCompositor {
 
     try {
       parent.setChildIndex(container, boundedIndex);
+      this.#markDisplayParentRenderDirty({ structural: true });
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
@@ -9855,11 +10065,79 @@ export class GlobalEffectsCompositor {
   }
 
   /**
+   * Return whether Foundry is currently using its Low canvas performance mode.
+   *
+   * @returns {boolean}
+   */
+  #isLowCanvasPerformanceMode() {
+    try {
+      const PM = globalThis.CONST?.CANVAS_PERFORMANCE_MODES ?? null;
+      const mode = canvas?.performance?.mode ?? game?.settings?.get?.("core", "performanceMode");
+      if (PM && mode === PM.LOW) return true;
+      if (String(mode).toLowerCase() === "low") return true;
+      return Number(mode) === 0;
+    } catch (_err) {
+      return false;
+    }
+  }
+
+  /**
+   * Return whether compositor transforms should follow Foundry's pixel-snapped camera snapshot.
+   *
+   * Snapped transforms reduce polygon darkness edge disagreement in Low performance mode.
+   *
+   * @returns {boolean}
+   */
+  #useSnappedCompositorTransforms() {
+    const performance = canvas?.performance ?? null;
+    if (canvas?.forceSnapVertices === true) return true;
+    if (performance?.msaa === false && performance?.smaa === false) return true;
+    return this.#isLowCanvasPerformanceMode();
+  }
+
+  /**
+   * Lock the visible output container to CSS viewport coordinates under transformed canvas groups.
+   *
+   * @returns {void}
+   */
+  #syncOutputContainerTransform() {
+    const container = this._displayContainer;
+    if (!container) return;
+
+    container.roundPixels = false;
+
+    const parent = container.parent ?? this.#getDisplayParent();
+    if (!parent) {
+      container.transform.setFromMatrix(PIXI.Matrix.IDENTITY);
+      return;
+    }
+
+    let inverseParentMatrix = null;
+    try {
+      const parentMatrix = currentWorldMatrix(parent, { snapStage: this.#useSnappedCompositorTransforms() });
+      inverseParentMatrix = parentMatrix?.clone ? parentMatrix.clone() : null;
+      inverseParentMatrix?.invert?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+      inverseParentMatrix = null;
+    }
+
+    try {
+      container.transform.setFromMatrix(inverseParentMatrix ?? PIXI.Matrix.IDENTITY);
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+      container.transform.setFromMatrix(PIXI.Matrix.IDENTITY);
+    }
+  }
+
+  /**
    * Reset the visible output sprite transform.
    *
    * @returns {void}
    */
   #syncOutputSpriteTransform() {
+    this.#syncOutputContainerTransform();
+
     const sprite = this._displaySprite;
     if (!sprite) return;
 
@@ -9874,6 +10152,8 @@ export class GlobalEffectsCompositor {
    */
   #currentLiveStageMatrix() {
     const stage = canvas?.stage ?? null;
+    if (this.#useSnappedCompositorTransforms()) return snappedStageMatrix(stage);
+
     const tr = stage?.transform ?? null;
 
     try {
@@ -9905,8 +10185,14 @@ export class GlobalEffectsCompositor {
     const x1 = x0 + (Number(sceneRect.width) || 0);
     const y1 = y0 + (Number(sceneRect.height) || 0);
 
-    const p0 = stageMatrix.apply(new PIXI.Point(x0, y0), new PIXI.Point());
-    const p1 = stageMatrix.apply(new PIXI.Point(x1, y1), new PIXI.Point());
+    const in0 = this._tmpPointA ?? (this._tmpPointA = new PIXI.Point());
+    const in1 = this._tmpPointB ?? (this._tmpPointB = new PIXI.Point());
+    const p0 = this._tmpPointC ?? (this._tmpPointC = new PIXI.Point());
+    const p1 = this._tmpPointD ?? (this._tmpPointD = new PIXI.Point());
+    in0.set(x0, y0);
+    in1.set(x1, y1);
+    stageMatrix.apply(in0, p0);
+    stageMatrix.apply(in1, p1);
 
     const left = Math.min(p0.x, p1.x);
     const top = Math.min(p0.y, p1.y);
@@ -9943,10 +10229,9 @@ export class GlobalEffectsCompositor {
     if (this.#bindPreferredSceneMask()) return;
 
     const { cssW, cssH } = getCssViewportMetrics();
-    /**
-     * Match the clip bounds to the same live camera transform used by the environment capture. Using a snapped stage matrix here makes the final compositor output clip one transform behind the captured scene during pan, which shows up most obviously as particles appearing to slide at the scene edges even when the particle render itself is correct.
-     */
-    const stageMatrix = currentWorldMatrix(canvas?.stage, { snapStage: false });
+    const stageMatrix = this.#useSnappedCompositorTransforms()
+      ? snappedStageMatrix(canvas?.stage)
+      : currentWorldMatrix(canvas?.stage, { snapStage: false });
     const sceneRect = dimensions.sceneRect;
 
     const x0 = Number(sceneRect.x) || 0;
@@ -9954,8 +10239,14 @@ export class GlobalEffectsCompositor {
     const x1 = x0 + (Number(sceneRect.width) || 0);
     const y1 = y0 + (Number(sceneRect.height) || 0);
 
-    const p0 = stageMatrix.apply(new PIXI.Point(x0, y0), new PIXI.Point());
-    const p1 = stageMatrix.apply(new PIXI.Point(x1, y1), new PIXI.Point());
+    const in0 = this._tmpPointA ?? (this._tmpPointA = new PIXI.Point());
+    const in1 = this._tmpPointB ?? (this._tmpPointB = new PIXI.Point());
+    const p0 = this._tmpPointC ?? (this._tmpPointC = new PIXI.Point());
+    const p1 = this._tmpPointD ?? (this._tmpPointD = new PIXI.Point());
+    in0.set(x0, y0);
+    in1.set(x1, y1);
+    stageMatrix.apply(in0, p0);
+    stageMatrix.apply(in1, p1);
 
     const left = Math.floor(Math.min(p0.x, p1.x));
     const top = Math.floor(Math.min(p0.y, p1.y));
@@ -9995,7 +10286,17 @@ export class GlobalEffectsCompositor {
     const width = Math.max(1, Number(cssW) || 1);
     const height = Math.max(1, Number(cssH) || 1);
     const resolution = safeResolutionForCssArea(width, height);
-    return { width, height, resolution };
+    const key = `${width}|${height}|${Number(resolution || 1).toFixed(4)}`;
+    const cached = this._viewportMetricsValue;
+    if (this._viewportMetricsKey === key && cached) return cached;
+
+    const value = cached ?? { width, height, resolution };
+    value.width = width;
+    value.height = height;
+    value.resolution = resolution;
+    this._viewportMetricsKey = key;
+    this._viewportMetricsValue = value;
+    return value;
   }
 
   /**

@@ -154,6 +154,7 @@ export class FilterEffectsSceneManager {
     this._lastSuppressionOverlaySignature = "";
     this._lastSceneSuppressionNeedsMasking = false;
     this._lastDarknessLevel = getSceneDarknessLevel();
+    this._runtimeFilterScratch = [];
 
     /** @type {Function|null} */
     this._coalescedBindSceneMask = null;
@@ -358,9 +359,9 @@ export class FilterEffectsSceneManager {
   refreshSceneFilterSuppressionMasks() {
     const r = canvas?.app?.renderer;
     const hiDpi = (r?.resolution ?? window.devicePixelRatio ?? 1) !== 1;
-    const filtersArr = [...Object.values(this.filters), ...this._dyingFilters];
-    const anyBelow = this.#anyBelowTokens();
-    const anyBelowTiles = this.#anyBelowTiles();
+    const filtersArr = this.#collectRuntimeFiltersScratch();
+    const anyBelow = filtersArr.some((f) => isBelowTokensFilter(f));
+    const anyBelowTiles = filtersArr.some((f) => isBelowTilesFilter(f));
     const hasRelevantSuppression = filtersArr.length ? _hasRelevantSuppressionForSceneFilters(filtersArr) : false;
     const compositorHandlesSuppression = _sceneFilterSuppressionCanUseCompositor(filtersArr, {
       anyBelow,
@@ -482,7 +483,7 @@ export class FilterEffectsSceneManager {
    * @private
    */
   #clearSuppressMaskUniforms() {
-    const filtersArr = [...Object.values(this.filters), ...this._dyingFilters];
+    const filtersArr = this.#collectRuntimeFiltersScratch();
     if (!filtersArr.length) return;
 
     try {
@@ -517,7 +518,7 @@ export class FilterEffectsSceneManager {
    * @private
    */
   #bindSuppressMaskUniforms() {
-    const filtersArr = [...Object.values(this.filters), ...this._dyingFilters];
+    const filtersArr = this.#collectRuntimeFiltersScratch();
     if (!filtersArr.length) return;
 
     const anyBelow = filtersArr.some((f) => isBelowTokensFilter(f));
@@ -574,7 +575,7 @@ export class FilterEffectsSceneManager {
    * @private
    */
   #applySuppressMaskToFilters(sync = false) {
-    const filtersArr = [...Object.values(this.filters), ...this._dyingFilters];
+    const filtersArr = this.#collectRuntimeFiltersScratch();
     const hasAny = filtersArr.length > 0;
     const anyBelow = hasAny ? filtersArr.some((f) => isBelowTokensFilter(f)) : false;
     const anyBelowTiles = hasAny ? filtersArr.some((f) => isBelowTilesFilter(f)) : false;
@@ -651,20 +652,45 @@ export class FilterEffectsSceneManager {
     env.filters = env.filters.filter((f) => !set.has(f));
   }
 
+  /**
+   * Return live and fading scene-filter runtimes using a reusable scratch array.
+   *
+   * @returns {PIXI.Filter[]}
+   */
+  #collectRuntimeFiltersScratch() {
+    const out = this._runtimeFilterScratch ?? (this._runtimeFilterScratch = []);
+    out.length = 0;
+
+    for (const key in this.filters) {
+      if (!Object.prototype.hasOwnProperty.call(this.filters, key)) continue;
+      const filter = this.filters[key];
+      if (filter) out.push(filter);
+    }
+    for (const filter of this._dyingFilters ?? []) {
+      if (filter) out.push(filter);
+    }
+
+    return out;
+  }
+
   #anyBelowTokens() {
-    return [...Object.values(this.filters), ...this._dyingFilters].some((f) => isBelowTokensFilter(f));
+    return this.#collectRuntimeFiltersScratch().some((f) => isBelowTokensFilter(f));
   }
 
   #anyBelowTiles() {
-    return [...Object.values(this.filters), ...this._dyingFilters].some((f) => isBelowTilesFilter(f));
+    return this.#collectRuntimeFiltersScratch().some((f) => isBelowTilesFilter(f));
   }
 
   #animate() {
-    for (const f of Object.values(this.filters)) f.step?.();
+    for (const key in this.filters) {
+      if (!Object.prototype.hasOwnProperty.call(this.filters, key)) continue;
+      this.filters[key]?.step?.();
+    }
+
+    const filtersArr = this.#collectRuntimeFiltersScratch();
 
     try {
-      const all = [...Object.values(this.filters), ...this._dyingFilters];
-      for (const f of all) {
+      for (const f of filtersArr) {
         if (typeof f?.lockViewport === "function") {
           f.lockViewport({ setDeviceToCss: false, setCamFrac: true });
         }
@@ -690,7 +716,6 @@ export class FilterEffectsSceneManager {
 
     const L = this._lastRegionsMatrix;
     const changed = cameraMatrixChanged(M, L);
-    const filtersArr = [...Object.values(this.filters), ...this._dyingFilters];
     const hasAny = filtersArr.length > 0;
     const anyBelowTokens = hasAny ? filtersArr.some((f) => isBelowTokensFilter(f)) : false;
     const anyBelowTiles = hasAny ? filtersArr.some((f) => isBelowTilesFilter(f)) : false;

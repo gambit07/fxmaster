@@ -4534,12 +4534,16 @@ function _renderSceneSuppressionHardRegion(rt, region, stageMatrix) {
  * @param {PlaceableObject} region
  * @param {object} [opts]
  * @param {RTPool} [opts.rtPool]
+ * @param {PIXI.RenderTexture|null} [opts.reuseRT] - Existing render texture to repaint in-place when dimensions match.
  * @param {number} [opts.resolution]
  * @param {number} [opts.edgeFadePercent=0] - Inward edge fade percentage in [0..1].
  * @param {number} [opts.featherPx=0] - Inward edge feather width in CSS pixels.
  * @returns {PIXI.RenderTexture|null}
  */
-export function buildRegionMaskRT(region, { rtPool, resolution, edgeFadePercent = 0, featherPx = 0 } = {}) {
+export function buildRegionMaskRT(
+  region,
+  { rtPool, resolution, edgeFadePercent = 0, featherPx = 0, reuseRT = null } = {},
+) {
   const r = canvas?.app?.renderer;
   if (!r) return null;
 
@@ -4548,8 +4552,17 @@ export function buildRegionMaskRT(region, { rtPool, resolution, edgeFadePercent 
   const VH = Math.max(1, Number(cssH) || 1);
 
   const res = resolution ?? safeMaskResolutionForCssArea(VW, VH, 1);
+  const canReuse =
+    !!reuseRT &&
+    !reuseRT.destroyed &&
+    !reuseRT.baseTexture?.destroyed &&
+    Math.abs(Number(reuseRT.width ?? 0) - VW) <= 0.001 &&
+    Math.abs(Number(reuseRT.height ?? 0) - VH) <= 0.001 &&
+    Math.abs(Number(reuseRT.resolution || 1) - Number(res || 1)) <= 0.0001;
 
-  const rt = rtPool
+  const rt = canReuse
+    ? reuseRT
+    : rtPool
     ? rtPool.acquire(VW, VH, res)
     : PIXI.RenderTexture.create({ width: VW, height: VH, resolution: res });
 

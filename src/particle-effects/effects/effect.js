@@ -1053,13 +1053,30 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
 
     if (!globalThis.Hooks?.on || !globalThis.canvas) return;
 
-    this._fxmCanvasPanHookId = Hooks.on("canvasPan", (_canvas, position) => {
+    const resolveOwnerPosition = (position = null) => {
       const d = CONFIG.fxmaster.getParticleDimensions?.(this) ?? canvas.dimensions;
+      if (!d) return null;
       const px = position?.x ?? canvas.stage?.pivot?.x ?? 0;
       const py = position?.y ?? canvas.stage?.pivot?.y ?? 0;
+      return {
+        x: px - d.sceneX - d.sceneWidth / 2,
+        y: py - d.sceneY - d.sceneHeight / 2,
+      };
+    };
+
+    this._fxmLastCanvasPanOwnerPos = resolveOwnerPosition();
+
+    this._fxmCanvasPanHookId = Hooks.on("canvasPan", (_canvas, position) => {
+      const owner = resolveOwnerPosition(position);
+      if (!owner) return;
+
+      const last = this._fxmLastCanvasPanOwnerPos;
+      if (last && Math.abs(owner.x - last.x) < 0.001 && Math.abs(owner.y - last.y) < 0.001) return;
+      this._fxmLastCanvasPanOwnerPos = owner;
+
       for (const e of this.emitters ?? []) {
         try {
-          e.updateOwnerPos(px - d.sceneX - d.sceneWidth / 2, py - d.sceneY - d.sceneHeight / 2);
+          e.updateOwnerPos(owner.x, owner.y);
         } catch (err) {
           logger.debug("FXMaster:", err);
         }
@@ -1076,6 +1093,7 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
       Hooks.off("canvasPan", this._fxmCanvasPanHookId);
       this._fxmCanvasPanHookId = undefined;
     }
+    this._fxmLastCanvasPanOwnerPos = null;
   }
 
   /** Optionally pre-warm emitters before playing. */

@@ -39,8 +39,10 @@ function _effectStackCacheKey(scene, purpose) {
   return `${purpose}:${scene.id}:${_effectStackCacheGeneration}`;
 }
 
-function _cloneRowsForConsumer(rows) {
-  return Array.isArray(rows) ? rows.map((row) => ({ ...row })) : [];
+function _cloneRowsForConsumer(rows, { cloneObjects = true } = {}) {
+  if (!Array.isArray(rows)) return [];
+  if (!cloneObjects) return rows.slice();
+  return rows.map((row) => ({ ...row }));
 }
 
 /**
@@ -724,17 +726,18 @@ function sortEffectRowsInStackOrder(rows, scene = canvas?.scene ?? null) {
  * Return lightweight currently enabled rows in top-to-bottom stack order.
  *
  * @param {Scene|null|undefined} scene
+ * @param {{clone?: boolean}} [options]
  * @returns {Array<object>}
  */
-export function getOrderedEnabledEffectRenderRows(scene = canvas?.scene ?? null) {
+export function getOrderedEnabledEffectRenderRows(scene = canvas?.scene ?? null, { clone = true } = {}) {
   const cacheKey = _effectStackCacheKey(scene, "render");
   if (cacheKey && _orderedEffectRenderRowsCache.has(cacheKey)) {
-    return _cloneRowsForConsumer(_orderedEffectRenderRowsCache.get(cacheKey));
+    return _cloneRowsForConsumer(_orderedEffectRenderRowsCache.get(cacheKey), { cloneObjects: clone });
   }
 
   const rows = sortEffectRowsInStackOrder(collectEnabledEffectRenderRows(scene), scene);
-  if (cacheKey) _orderedEffectRenderRowsCache.set(cacheKey, _cloneRowsForConsumer(rows));
-  return rows;
+  if (cacheKey) _orderedEffectRenderRowsCache.set(cacheKey, _cloneRowsForConsumer(rows, { cloneObjects: true }));
+  return clone ? _cloneRowsForConsumer(rows, { cloneObjects: true }) : rows;
 }
 
 /**

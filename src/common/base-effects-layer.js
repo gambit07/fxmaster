@@ -107,7 +107,15 @@ export class BaseEffectsLayer extends CONFIG.fxmaster.FullCanvasObjectMixinNS(CO
 
     if (cameraMatrixChanged(M, this._lastRegionsMatrix)) {
       this._onCameraChange();
-      this._lastRegionsMatrix = { a: M.a, b: M.b, c: M.c, d: M.d, tx: M.tx, ty: M.ty };
+      if (!this._lastRegionsMatrix) this._lastRegionsMatrix = { a: M.a, b: M.b, c: M.c, d: M.d, tx: M.tx, ty: M.ty };
+      else {
+        this._lastRegionsMatrix.a = M.a;
+        this._lastRegionsMatrix.b = M.b;
+        this._lastRegionsMatrix.c = M.c;
+        this._lastRegionsMatrix.d = M.d;
+        this._lastRegionsMatrix.tx = M.tx;
+        this._lastRegionsMatrix.ty = M.ty;
+      }
     }
   }
 

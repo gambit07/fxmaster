@@ -140,6 +140,7 @@ export {
   mat3FromPixi,
   ellipseSteps,
   getCssViewportMetrics,
+  getRendererMaxTextureSize,
   safeResolutionForCssArea,
   safeMaskResolutionForCssArea,
 } from "./viewport.js";
