@@ -1,5 +1,10 @@
 # Changelog
 
+## [v8.1.2] - 2026-05-30
+- Resolved effects appearing over-top of Foundry Darkness, and in concert resolved some mask sliding inconcistencies surrounding Adjust Darkness Level behaviors
+- Tweaked and improved some scene hooks and compositor behavior to improve performance and frame time consistency
+- Updated pt-br localizations, thanks Kharmans!
+
 ## [v8.1.1] - 2026-05-24
 Welcome to FXMaster V8.1! I highly recommend updating to this version if you previously updated to FXMaster V8.0. Many improvements and bugfixes were implemented in relation to FXMaster's new layers compositor that should resolve a number of performance regressions and visual oddities on canvas.
 - Many many... many tweaks to the new V8 compositor for effects, specifically around improving performance and frame-time consistency
