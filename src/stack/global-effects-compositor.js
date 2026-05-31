@@ -275,6 +275,8 @@ export class GlobalEffectsCompositor {
     this._maskIntersectionRT = null;
     this._feedbackCopyRT = null;
     this._surfaceMaskRenderList = null;
+    this._primaryCaptureRenderList = null;
+    this._primaryCaptureObjects = [];
     this._surfaceMaskThresholdSprite = null;
     this._sceneFilterSuppressionRegionRT = null;
     this._sceneSuppressionRegionMaskRTCache = new Map();
@@ -9706,6 +9708,108 @@ export class GlobalEffectsCompositor {
   }
 
   /**
+   * Return a reusable renderer for raw primary children.
+   *
+   * @returns {PIXI.Container}
+   */
+  #getPrimaryCaptureRenderList() {
+    if (!this._primaryCaptureRenderList || this._primaryCaptureRenderList.destroyed) {
+      const renderList = new PIXI.Container();
+      renderList.name = "fxmasterPrimaryBaseCaptureRenderer";
+      renderList.eventMode = "none";
+      renderList.sortableChildren = false;
+      renderList.__fxmObjects = [];
+      renderList.render = function fxmRenderPrimaryBaseCapture(renderer) {
+        for (const object of this.__fxmObjects ?? []) {
+          if (!object || object.destroyed || object.visible === false || object.renderable === false) continue;
+          try {
+            object.render?.(renderer);
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
+        }
+      };
+      renderList.updateTransform = function fxmNoopPrimaryBaseCaptureTransform() {};
+      this._primaryCaptureRenderList = renderList;
+    }
+
+    return this._primaryCaptureRenderList;
+  }
+
+  /**
+   * Return primary children that can be rendered into the FX base capture.
+   *
+   * @param {PIXI.Container|null|undefined} primary
+   * @returns {PIXI.DisplayObject[]}
+   */
+  #collectPrimaryBaseCaptureObjects(primary) {
+    const objects = this._primaryCaptureObjects ?? (this._primaryCaptureObjects = []);
+    objects.length = 0;
+    if (!primary || primary.destroyed) return objects;
+
+    try {
+      primary.sortChildren?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    const primarySprite = primary.sprite ?? null;
+    for (const child of primary.children ?? []) {
+      if (!child || child.destroyed) continue;
+      if (child === this._displayContainer || child === this._displaySprite || child === primarySprite) continue;
+      if (child.visible === false || child.renderable === false) continue;
+      objects.push(child);
+    }
+
+    return objects;
+  }
+
+  /**
+   * Capture raw primary children without sampling the primary display shader.
+   *
+   * @param {PIXI.Container} primary
+   * @param {PIXI.RenderTexture} renderTexture
+   * @returns {boolean}
+   */
+  #capturePrimaryBase(primary, renderTexture) {
+    const renderer = canvas?.app?.renderer;
+    if (!renderer || !primary || !renderTexture) return false;
+    if (!this.#clearRenderTexture(renderTexture)) return false;
+
+    try {
+      fxmUpdateDisplayObjectWorldTransform(primary);
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    try {
+      primary.updateTransform?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    const renderList = this.#getPrimaryCaptureRenderList();
+    const objects = this.#collectPrimaryBaseCaptureObjects(primary);
+    if (!objects.length) return true;
+
+    renderList.__fxmObjects = objects;
+
+    try {
+      renderer.render(renderList, {
+        renderTexture,
+        clear: false,
+        skipUpdateTransform: true,
+      });
+      return true;
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+      return false;
+    } finally {
+      renderList.__fxmObjects.length = 0;
+    }
+  }
+
+  /**
    * Capture the current primary/environment output into the supplied render texture using live world transforms.
    *
    * @param {PIXI.RenderTexture} renderTexture
@@ -9715,6 +9819,8 @@ export class GlobalEffectsCompositor {
     const renderer = canvas?.app?.renderer;
     const target = this.#getBaseCaptureTarget();
     if (!renderer || !target || !renderTexture) return false;
+
+    if (target === canvas?.primary) return this.#capturePrimaryBase(target, renderTexture);
 
     const { width, height } = this.#getViewportMetrics();
     const previousFilterArea = target.filterArea ?? null;

@@ -1,3 +1,1 @@
-- Resolved effects appearing over-top of Foundry Darkness, and in concert resolved some mask sliding inconcistencies surrounding Adjust Darkness Level behaviors
-- Tweaked and improved some scene hooks and compositor behavior to improve performance and frame time consistency
-- Updated pt-br localizations, thanks Kharmans!
+- Resolved token vision becoming black and white while effects were active
