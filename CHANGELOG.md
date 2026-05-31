@@ -1,5 +1,8 @@
 # Changelog
 
+## [v8.1.3] - 2026-05-31
+- Resolved token vision becoming black and white while effects were active
+
 ## [v8.1.2] - 2026-05-30
 - Resolved effects appearing over-top of Foundry Darkness, and in concert resolved some mask sliding inconcistencies surrounding Adjust Darkness Level behaviors
 - Tweaked and improved some scene hooks and compositor behavior to improve performance and frame time consistency
