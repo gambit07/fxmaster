@@ -1,5 +1,8 @@
 # Changelog
 
+## [v8.1.4] - 2026-06-01
+- Resolved an edge case bug where a region with no shape data could cause a scene crash under certain circumstances
+
 ## [v8.1.3] - 2026-05-31
 - Resolved token vision becoming black and white while effects were active
 
