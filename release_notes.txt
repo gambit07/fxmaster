@@ -1,1 +1,1 @@
-- Resolved token vision becoming black and white while effects were active
+- Resolved an edge case bug where a region with no shape data could cause a scene crash under certain circumstances

@@ -18,6 +18,7 @@ import {
   snappedStageMatrix,
   cameraMatrixChanged,
   mat3FromPixi,
+  regionWorldBounds,
   regionWorldBoundsAligned,
   buildPolygonEdges,
   hasMultipleNonHoleShapes,
@@ -29,7 +30,6 @@ import {
   composeMaskMinusTilesRT,
   composeMaskMinusCoverageRT,
   rectFromAligned,
-  rectFromShapes,
   buildRegionMaskRT,
   computeRegionGatePass,
   coalesceNextFrame,
@@ -133,6 +133,35 @@ function _geomKeyFromShapes(shapes) {
 
 function _regionHasHoleShapes(placeable) {
   return (placeable?.document?.shapes ?? []).some((s) => !!s?.hole);
+}
+
+function _isUsableRegionBounds(bounds) {
+  return (
+    !!bounds &&
+    [bounds.minX, bounds.minY, bounds.maxX, bounds.maxY].every(Number.isFinite) &&
+    bounds.maxX > bounds.minX &&
+    bounds.maxY > bounds.minY
+  );
+}
+
+function _regionWorldBoundsContext(placeable) {
+  let rbAligned = null;
+  try {
+    rbAligned = regionWorldBoundsAligned(placeable);
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+  }
+  if (_isUsableRegionBounds(rbAligned)) return { rbAligned, worldBoundsRect: rectFromAligned(rbAligned) };
+
+  let rb = null;
+  try {
+    rb = regionWorldBounds(placeable);
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+  }
+  if (_isUsableRegionBounds(rb)) return { rbAligned: null, worldBoundsRect: rectFromAligned(rb) };
+
+  return null;
 }
 
 function _analyzeAnalyticShape(placeable) {
@@ -974,6 +1003,13 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       return;
     }
 
+    const boundsContext = _regionWorldBoundsContext(placeable);
+    if (!boundsContext) {
+      this._updateRegionBelowTokensNeeded();
+      return;
+    }
+    const { rbAligned, worldBoundsRect } = boundsContext;
+
     const { cssW, cssH, deviceToCss, deviceRect } = getCssViewportMetrics();
 
     const regionMaskResolution = regionMaskResolutionForEdgeSync(
@@ -992,7 +1028,6 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
 
     const filterResolution = safeResolutionForCssArea(cssW, cssH);
 
-    const rbAligned = regionWorldBoundsAligned(placeable);
     const Ms = snappedStageMatrix();
     const cssToWorld = Ms.clone().invert();
     const cssToWorldMat3 = mat3FromPixi(cssToWorld);
@@ -1004,18 +1039,6 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
     const hasHoles = _regionHasHoleShapes(placeable);
     const forceMultiSdf = hasMultipleNonHoleShapes(placeable);
     const forceComplexFade = forceMultiSdf || (wantsEdgeFade && hasHoles);
-
-    let worldBoundsRect;
-    try {
-      if (rbAligned && [rbAligned.minX, rbAligned.minY, rbAligned.maxX, rbAligned.maxY].every(Number.isFinite)) {
-        worldBoundsRect = rectFromAligned(rbAligned);
-      } else {
-        worldBoundsRect = rectFromShapes(placeable?.document?.shapes ?? []);
-      }
-    } catch (e) {
-      logger?.error?.("FXMaster: failed to compute region world bounds for SDF.", e);
-      throw e;
-    }
 
     /** Polygon edge lists are only needed when doing polygon-based edge fading (uRegionShape=0). For the common single-shape analytic cases (rect/circle/ellipse) skip computing edges entirely for performance. */
     let edgeCount = 0;
@@ -1481,6 +1504,12 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
     if (!entry) return;
 
     const { cssW, cssH, deviceToCss, deviceRect } = getCssViewportMetrics();
+    const boundsContext = _regionWorldBoundsContext(placeable);
+    if (!boundsContext) {
+      this.destroyRegionFilterEffects(regionId);
+      return;
+    }
+    const { rbAligned } = boundsContext;
 
     const regionMaskResolution = regionMaskResolutionForEdgeSync(
       placeable,
@@ -1569,8 +1598,6 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
 
     const filterResolution = safeResolutionForCssArea(cssW, cssH);
 
-    const rbAligned = regionWorldBoundsAligned(placeable);
-
     const Ms = snappedStageMatrix();
     const cssToWorld = Ms.clone().invert();
     const cssToWorldMat3 = mat3FromPixi(cssToWorld);
@@ -1636,13 +1663,7 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       if (mode === 0) {
         const insideMax = estimateRegionInradius(placeable);
 
-        let worldBoundsRect;
-        const rb = rbAligned ?? regionWorldBoundsAligned(placeable);
-        if (rb && [rb.minX, rb.minY, rb.maxX, rb.maxY].every(Number.isFinite)) {
-          worldBoundsRect = rectFromAligned(rb);
-        } else {
-          worldBoundsRect = rectFromShapes(placeable?.document?.shapes ?? []);
-        }
+        const worldBoundsRect = boundsContext.worldBoundsRect;
         let sdfTex = PIXI.Texture.WHITE;
         let uUvFromWorld = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
         let uSdfScaleOff = new Float32Array([1, 0]);
