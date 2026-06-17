@@ -742,7 +742,9 @@
       "SuppressSceneParticles": "Tłumienie cząsteczek w scenie",
       "SuppressSceneFilters": "Tłumienie filtrów sceny",
       "SuppressWeather": "Tłumienie pogody",
-      "SuppressionMeta": "Operator tłumienia scen"
+      "SuppressionMeta": "Operator tłumienia scen",
+      "KindGrid": "Siatka",
+      "FoundryGrid": "Siatka Foundry"
     },
     "RenderOrder": {
       "BelowTiles": "Poniżej kafelków"
