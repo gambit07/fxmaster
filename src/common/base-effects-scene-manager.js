@@ -29,6 +29,7 @@ import {
   getEventGate,
   getRegionEffectPlaceablesForCurrentView,
   regionDocumentCanApplyInCurrentView,
+  regionMaskGeometrySignature,
   getSceneLevels as getSceneLevelDocuments,
   getRegionElevationWindow,
   inferVisibleLevelForDocument,
@@ -116,6 +117,7 @@ function suppressionRegionPresenceSignature(region) {
     doc.elevation?.top ?? "",
     window?.min ?? "",
     window?.max ?? "",
+    regionMaskGeometrySignature(region),
     behaviorSig,
   ].join("|");
 }
@@ -3054,13 +3056,10 @@ export class SceneMaskManager {
    * @private
    */
   _destroySharedCoverageTexture(key) {
-    if (!this[key]) return;
-    try {
-      this[key].destroy(true);
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
+    const texture = this[key] ?? null;
+    if (!texture) return;
     this[key] = null;
+    destroyRenderTextureDeferred(texture);
     if (key === "_tokensRT") this._belowTokenCoverageSignature = null;
     this._sharedCoverageRefreshFrameKey = null;
   }
@@ -3233,20 +3232,12 @@ export class SceneMaskManager {
 
     if (!next) {
       if (kind === "particles") {
-        try {
-          this._baseParticlesRT?.destroy(true);
-        } catch (err) {
-          logger.debug("FXMaster:", err);
-        }
+        destroyRenderTextureDeferred(this._baseParticlesRT);
         this._baseParticlesRT = null;
         this._baseParticlesSoft = false;
 
         for (const key of ["_cutoutParticlesTokensRT", "_cutoutParticlesTilesRT", "_cutoutParticlesCombinedRT"]) {
-          try {
-            this[key]?.destroy(true);
-          } catch (err) {
-            logger.debug("FXMaster:", err);
-          }
+          destroyRenderTextureDeferred(this[key]);
           this[key] = null;
         }
       } else {
@@ -3275,22 +3266,14 @@ export class SceneMaskManager {
       const needTiles = this._belowTilesNeeded.particles || this._belowTilesNeeded.filters;
 
       if (!needTokens && this._tokensRT) {
-        try {
-          this._tokensRT.destroy(true);
-        } catch (err) {
-          logger.debug("FXMaster:", err);
-        }
+        destroyRenderTextureDeferred(this._tokensRT);
         this._tokensRT = null;
       }
 
       if (!needTiles) {
         for (const key of ["_tilesRT", "_tilesFiltersRT", "_tilesVisibleRT"]) {
           if (!this[key]) continue;
-          try {
-            this[key].destroy(true);
-          } catch (err) {
-            logger.debug("FXMaster:", err);
-          }
+          destroyRenderTextureDeferred(this[key]);
           this[key] = null;
         }
       }
@@ -3354,21 +3337,13 @@ export class SceneMaskManager {
       for (const key of kind === "particles"
         ? ["_cutoutParticlesTokensRT", "_cutoutParticlesCombinedRT"]
         : ["_cutoutFiltersTokensRT", "_cutoutFiltersCombinedRT"]) {
-        try {
-          this[key]?.destroy(true);
-        } catch (err) {
-          logger.debug("FXMaster:", err);
-        }
+        destroyRenderTextureDeferred(this[key]);
         this[key] = null;
       }
 
       const needTokens = this._belowTokensNeeded.particles || this._belowTokensNeeded.filters;
       if (!needTokens && this._tokensRT) {
-        try {
-          this._tokensRT.destroy(true);
-        } catch (err) {
-          logger.debug("FXMaster:", err);
-        }
+        destroyRenderTextureDeferred(this._tokensRT);
         this._tokensRT = null;
       }
 
@@ -3412,11 +3387,7 @@ export class SceneMaskManager {
       for (const key of kind === "particles"
         ? ["_cutoutParticlesTilesRT", "_cutoutParticlesCombinedRT"]
         : ["_cutoutFiltersTilesRT", "_cutoutFiltersCombinedRT"]) {
-        try {
-          this[key]?.destroy(true);
-        } catch (err) {
-          logger.debug("FXMaster:", err);
-        }
+        destroyRenderTextureDeferred(this[key]);
         this[key] = null;
       }
 
@@ -3714,20 +3685,12 @@ export class SceneMaskManager {
 
     if (kinds.includes("particles")) {
       if (!this._kindActive.particles) {
-        try {
-          this._baseParticlesRT?.destroy(true);
-        } catch (err) {
-          logger.debug("FXMaster:", err);
-        }
+        destroyRenderTextureDeferred(this._baseParticlesRT);
         this._baseParticlesRT = null;
         this._baseParticlesSoft = false;
 
         for (const key of ["_cutoutParticlesTokensRT", "_cutoutParticlesTilesRT", "_cutoutParticlesCombinedRT"]) {
-          try {
-            this[key]?.destroy(true);
-          } catch (err) {
-            logger.debug("FXMaster:", err);
-          }
+          destroyRenderTextureDeferred(this[key]);
           this[key] = null;
         }
       } else {
@@ -3786,11 +3749,7 @@ export class SceneMaskManager {
           this._cutoutParticlesTokensRT,
         );
       } else if (this._cutoutParticlesTokensRT) {
-        try {
-          this._cutoutParticlesTokensRT.destroy(true);
-        } catch (err) {
-          logger.debug("FXMaster:", err);
-        }
+        destroyRenderTextureDeferred(this._cutoutParticlesTokensRT);
         this._cutoutParticlesTokensRT = null;
       }
 
@@ -3802,11 +3761,7 @@ export class SceneMaskManager {
           this._cutoutParticlesTilesRT,
         );
       } else if (this._cutoutParticlesTilesRT) {
-        try {
-          this._cutoutParticlesTilesRT.destroy(true);
-        } catch (err) {
-          logger.debug("FXMaster:", err);
-        }
+        destroyRenderTextureDeferred(this._cutoutParticlesTilesRT);
         this._cutoutParticlesTilesRT = null;
       }
 
@@ -3826,11 +3781,7 @@ export class SceneMaskManager {
           { tokensCutoutRT: this._cutoutParticlesTokensRT, tilesCutoutRT: this._cutoutParticlesTilesRT },
         );
       } else if (this._cutoutParticlesCombinedRT) {
-        try {
-          this._cutoutParticlesCombinedRT.destroy(true);
-        } catch (err) {
-          logger.debug("FXMaster:", err);
-        }
+        destroyRenderTextureDeferred(this._cutoutParticlesCombinedRT);
         this._cutoutParticlesCombinedRT = null;
       }
     }

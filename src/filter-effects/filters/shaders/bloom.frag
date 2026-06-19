@@ -18,6 +18,8 @@ uniform vec2  viewSize;
 uniform vec4  inputSize;   /** xy: input size in CSS px; zw: 1/size */
 uniform vec4  outputFrame; /** CSS px: (x,y,w,h) area spanned by vTextureCoord */
 
+uniform vec2  camFrac;
+
 uniform float hasMask;
 uniform float maskReady;
 uniform float invertMask;
@@ -77,6 +79,7 @@ void main(void) {
   vec4 src = texture2D(uSampler, vTextureCoord);
 
   vec2 screenPx = outputFrame.xy + vTextureCoord * outputFrame.zw;
+  vec2 snapPx   = screenPx - camFrac;
 
   float inMask = src.a;
   if (hasMask > 0.5) {
@@ -84,17 +87,20 @@ void main(void) {
                       (viewSize.x >= 1.0) &&
                       (viewSize.y >= 1.0);
     if (maskUsable) {
-      vec2 maskUV = screenPx / viewSize;
-      float aRaw  = texture2D(maskSampler, maskUV).r;
-      float a     = clamp(aRaw, 0.0, 1.0);
-      float m     = (maskSoft > 0.5) ? a : smoothstep(0.48, 0.52, a);
+      vec2 samplePx = (uRegionShape < 0) ? screenPx : snapPx;
+
+      vec2 maskPx = floor(samplePx) + 0.5;
+      vec2 maskUV = clamp(maskPx / max(viewSize, vec2(1.0)), 0.0, 1.0);
+      float a     = clamp(texture2D(maskSampler, maskUV).r, 0.0, 1.0);
+
+      float m     = (maskSoft > 0.5) ? a : ((uRegionShape < 0) ? step(0.5, a) : smoothstep(0.48, 0.52, a));
       if (invertMask > 0.5) m = 1.0 - m;
       inMask *= m;
     }
   }
 
   float fadeEdge = 1.0;
-  vec2  pW       = applyCssToWorld(screenPx);
+  vec2  pW       = applyCssToWorld((uRegionShape < 0) ? screenPx : snapPx);
 
   if (uUsePct > 0.5) {
     float pct = clamp(uFadePct, 0.0, 1.0);

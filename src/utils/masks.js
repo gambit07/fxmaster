@@ -11,6 +11,8 @@ import { logger } from "../logger.js";
 import {
   traceRegionShapePIXI,
   traceRegionShapePath2D,
+  regionMaskTraceShapes,
+  regionMaskGeometrySignature,
   estimateRegionInradius,
   getEventGate,
   getRegionElevationWindow,
@@ -38,7 +40,6 @@ import {
   fxmGetPlaceableTargetAlphaCompat,
   fxmUpdateDisplayObjectWorldTransform,
   fxmDisplayObjectTransformSignature,
-  fxmReadDocumentShapes,
 } from "./foundry-public.js";
 import {
   getCanvasLevel,
@@ -56,6 +57,12 @@ let _tmpRTCopySprite = null;
 let _tmpTokensEraseSprite = null;
 let _tmpTileMaskClearContainer = null;
 let _tmpTileMaskSpriteContainer = null;
+let _tmpTileRadialRevealTileRT = null;
+let _tmpTileRadialRevealShapeRT = null;
+let _tmpTileRadialRevealShapeContainer = null;
+let _tmpTileRadialRevealGraphics = null;
+let _tmpTileRadialRevealSprite = null;
+let _tmpTileRadialRevealFilter = null;
 let _tmpTokenMaskContainer = null;
 let _tmpComposeTilesCoverageRT = null;
 let _tmpUpperLevelCoverageRT = null;
@@ -1512,6 +1519,119 @@ export function buildBelowTokenMaskCoverageSignature() {
 }
 
 /**
+ * Build a compact signature for the token subjects represented by Foundry's tile occlusion mask.
+ *
+ * @returns {string}
+ * @private
+ */
+function _buildTileOcclusionSubjectSignature() {
+  const parts = [];
+  const tokens = collectTileRadialOcclusionTokens();
+
+  for (const token of tokens) {
+    const tokenId = token?.document?.uuid ?? token?.document?.id ?? token?.id ?? "";
+    const center = getTokenRadialOcclusionCenter(token);
+    const radius = getTokenRadialOcclusionRadius(token);
+    const losPoints = token?.vision?.los?.points;
+    const pointCount = Number(losPoints?.length ?? 0) || 0;
+    let losHash = 2166136261;
+    for (let index = 0; index < pointCount; index += 1) {
+      const value = Math.round((Number(losPoints[index]) || 0) * 100);
+      losHash = Math.imul(losHash ^ value, 16777619);
+    }
+    const losKey = `${pointCount}:${losHash >>> 0}`;
+
+    parts.push(
+      [
+        tokenId,
+        token?.document?.hidden ? 1 : 0,
+        token?.visible === false ? 0 : 1,
+        token?.interactive === false ? 0 : 1,
+        token?.controlled ? 1 : 0,
+        canvas?.tokens?.hover === token ? 1 : 0,
+        Number(center?.x ?? 0).toFixed(2),
+        Number(center?.y ?? 0).toFixed(2),
+        Number(radius ?? 0).toFixed(2),
+        Number(token?.document?.elevation ?? token?.elevation ?? 0).toFixed(3),
+        token?.vision?.active ? 1 : 0,
+        pointCount,
+        losKey,
+      ].join(":"),
+    );
+  }
+
+  return parts.sort().join("|");
+}
+
+/**
+ * Build a compact signature for visible tile coverage used by below-tiles masks.
+ *
+ * @returns {string}
+ */
+export function buildBelowTileMaskCoverageSignature() {
+  const mask = canvas?.masks?.occlusion ?? null;
+  const parts = [
+    `mask:${mask?.renderDirty ? 1 : 0}:${mask?.vision ? 1 : 0}`,
+    `tokens:${Number(canvas?.tokens?.occlusionMode ?? 0)}:${canvas?.tokens?.highlightObjects ? 1 : 0}`,
+    `subjects:${_buildTileOcclusionSubjectSignature()}`,
+  ];
+  const tileParts = [];
+
+  for (const candidate of getTileMaskCandidates()) {
+    const tile = _getTileMaskCandidateTile(candidate);
+    const mesh = _getTileMaskCandidateMesh(candidate);
+    if (!tile) continue;
+
+    const hoverFade = fxmGetPublicHoverFadeState(mesh, tile, candidate);
+    const occlusionState = mesh?._occlusionState ?? null;
+    const bounds = tile?.bounds ?? tile?.document?.bounds ?? null;
+    let transformKey = "";
+    try {
+      const matrix = stageLocalMatrixOf(mesh ?? tile);
+      transformKey = [matrix.a, matrix.b, matrix.c, matrix.d, matrix.tx, matrix.ty]
+        .map((value) => Number(value || 0).toFixed(4))
+        .join(",");
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    let maskOccluded = false;
+    try {
+      maskOccluded = !!mesh && typeof mask?.occluded?.has === "function" && mask.occluded.has(mesh);
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    tileParts.push(
+      [
+        tile?.document?.uuid ?? tile?.document?.id ?? tile?.id ?? "",
+        transformKey,
+        [bounds?.x, bounds?.y, bounds?.width, bounds?.height].map((value) => Number(value || 0).toFixed(3)).join(","),
+        mesh?.visible === false ? 0 : 1,
+        mesh?.renderable === false ? 0 : 1,
+        Number(mesh?.worldAlpha ?? mesh?.alpha ?? tile?.alpha ?? tile?.document?.alpha ?? 0).toFixed(4),
+        Number(getTileVisibleMaskAlpha(candidate)).toFixed(4),
+        mesh?.occluded || tile?.occluded || maskOccluded ? 1 : 0,
+        hoverFade?.hovered ? 1 : 0,
+        hoverFade?.faded ? 1 : 0,
+        hoverFade?.fading ? 1 : 0,
+        Number(hoverFade?.occlusion ?? 0).toFixed(4),
+        Number(occlusionState?.fade ?? 0).toFixed(4),
+        Number(occlusionState?.radial ?? 0).toFixed(4),
+        Number(occlusionState?.vision ?? 0).toFixed(4),
+        Number(occlusionState?.surface ?? 0).toFixed(4),
+        String(getTileOcclusionModes(tile?.document ?? tile ?? null)),
+        tileDocumentRestrictsParticles(candidate) ? 1 : 0,
+        tileDocumentRestrictsFilters(candidate) ? 1 : 0,
+      ].join(":"),
+    );
+  }
+
+  parts.push(`tiles:${tileParts.sort().join("|")}`);
+  return parts.join("#");
+}
+
+/**
  * Return sprites to the token pool for reuse, reducing allocation churn during frequent mask repaints.
  * @param {PIXI.Sprite[]} sprites
  */
@@ -1838,9 +1958,9 @@ function getTileUnoccludedAlpha(candidate) {
 }
 
 /**
- * Resolve the current full-tile fade/hover occlusion amount.
+ * Resolve the current full-tile fade or hover occlusion amount.
  *
- * Foundry's occludable tile rendering tracks this as `fadeOcclusion`, while newer hover fade state also exposes a normalized `occlusion` amount. Either value represents the current blend factor between the unoccluded and occluded tile alpha states.
+ * Foundry V13 and V14 store the rendered fade amount on the primary mesh occlusion state. Public and shader-level fields remain compatibility fallbacks.
  *
  * @param {{ tile?: Tile|null, mesh?: PIXI.DisplayObject|null }|Tile|null|undefined} candidate
  * @returns {number|null}
@@ -1848,21 +1968,24 @@ function getTileUnoccludedAlpha(candidate) {
 function getTileFadeOcclusionAmount(candidate) {
   const tile = _getTileMaskCandidateTile(candidate);
   const mesh = _getTileMaskCandidateMesh(candidate);
+  const hoverFadeState = fxmGetPublicHoverFadeState(mesh, tile, candidate);
   const candidates = [
-    mesh?.hoverFadeState?.occlusion,
-    tile?.hoverFadeState?.occlusion,
+    mesh?._occlusionState?.fade,
+    hoverFadeState?.occlusion,
     mesh?.fadeOcclusion,
     mesh?.shader?.uniforms?.fadeOcclusion,
     mesh?.occlusionFilter?.uniforms?.fadeOcclusion,
     mesh?.filters?.find?.((f) => Number.isFinite(f?.uniforms?.fadeOcclusion))?.uniforms?.fadeOcclusion,
   ];
 
+  let amount = null;
   for (const valueCandidate of candidates) {
     const value = Number(valueCandidate);
-    if (Number.isFinite(value)) return Math.max(0, Math.min(1, value));
+    if (!Number.isFinite(value)) continue;
+    amount = Math.max(amount ?? 0, Math.max(0, Math.min(1, value)));
   }
 
-  return null;
+  return amount;
 }
 
 /**
@@ -1952,6 +2075,189 @@ function getTileWeatherRevealMaskAlpha(candidate, { restrictionKind = "weather" 
   const visibleAlpha = getTileVisibleMaskAlpha(candidate);
   const revealAlpha = Math.max(0, Math.min(1, 1 - visibleAlpha));
   return revealAlpha > 0.001 ? revealAlpha : 0;
+}
+
+function tileOcclusionModesInclude(modes, mode) {
+  const target = Number(mode);
+  if (!Number.isFinite(target) || target <= 0) return false;
+
+  const hasMode = (value) => {
+    const n = Number(value);
+    return Number.isFinite(n) && (n & target) !== 0;
+  };
+
+  if (typeof modes === "number" || typeof modes === "string") return hasMode(modes);
+  if (Array.isArray(modes)) return modes.some(hasMode);
+
+  if (typeof modes?.has === "function") {
+    try {
+      if (modes.has(mode) || modes.has(target)) return true;
+      for (const value of modes) if (hasMode(value)) return true;
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  if (modes && typeof modes[Symbol.iterator] === "function") {
+    try {
+      for (const value of modes) if (hasMode(value)) return true;
+    } catch {
+      return false;
+    }
+  }
+
+  return hasMode(modes);
+}
+
+function tileHasSpatialOcclusionMode(candidate) {
+  const tile = _getTileMaskCandidateTile(candidate);
+  const modes = getTileOcclusionModes(tile?.document ?? tile ?? null);
+  const M = CONST?.OCCLUSION_MODES ?? CONST?.TILE_OCCLUSION_MODES ?? {};
+  return (
+    tileOcclusionModesInclude(modes, M.SURFACE) ||
+    tileOcclusionModesInclude(modes, M.RADIAL) ||
+    tileOcclusionModesInclude(modes, M.VISION)
+  );
+}
+
+function tileHasSpatialOcclusionReveal(candidate) {
+  if (!tileHasSpatialOcclusionMode(candidate)) return false;
+
+  const tile = _getTileMaskCandidateTile(candidate);
+  const mesh = _getTileMaskCandidateMesh(candidate);
+  if (tile?.occluded === true || mesh?.occluded === true) return true;
+
+  const occluded = canvas?.masks?.occlusion?.occluded;
+  if (typeof occluded?.has === "function") {
+    try {
+      if (mesh && occluded.has(mesh)) return true;
+      if (tile && occluded.has(tile)) return true;
+    } catch {}
+  }
+
+  return _tileIsExplicitlyRevealedByControlledToken(tile);
+}
+
+function tileHasRadialOcclusionMode(candidate) {
+  const tile = _getTileMaskCandidateTile(candidate);
+  const modes = getTileOcclusionModes(tile?.document ?? tile ?? null);
+  const M = CONST?.OCCLUSION_MODES ?? CONST?.TILE_OCCLUSION_MODES ?? {};
+  return tileOcclusionModesInclude(modes, M.RADIAL);
+}
+
+function tileHasNonRadialSpatialOcclusionReveal(candidate) {
+  if (!tileHasSpatialOcclusionReveal(candidate)) return false;
+
+  const tile = _getTileMaskCandidateTile(candidate);
+  const modes = getTileOcclusionModes(tile?.document ?? tile ?? null);
+  const M = CONST?.OCCLUSION_MODES ?? CONST?.TILE_OCCLUSION_MODES ?? {};
+  return tileOcclusionModesInclude(modes, M.SURFACE) || tileOcclusionModesInclude(modes, M.VISION);
+}
+
+function getTileRadialRevealMaskAlpha(candidate) {
+  const visibleAlpha = getTileUnoccludedAlpha(candidate) * getTileOcclusionAlpha(candidate);
+  const alpha = 1 - Math.max(0, Math.min(1, Number.isFinite(visibleAlpha) ? visibleAlpha : 1));
+  return alpha > 0.001 ? alpha : 0;
+}
+
+function collectTileRadialOcclusionTokens() {
+  const layer = canvas?.tokens ?? null;
+  if (!layer) return [];
+
+  if (typeof layer._getOccludableTokens === "function") {
+    try {
+      return layer._getOccludableTokens().filter((token) => token && !token.destroyed && !token?.document?.hidden);
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+  }
+
+  const tokens = new Set();
+  for (const token of layer.controlled ?? []) tokens.add(token);
+  if (layer.hover) tokens.add(layer.hover);
+  for (const token of layer.ownedTokens ?? []) tokens.add(token);
+  return Array.from(tokens).filter((token) => token && !token.destroyed && !token?.document?.hidden);
+}
+
+function getTokenRadialOcclusionCenter(token) {
+  const center = token?.center ?? token?.bounds?.center ?? null;
+  if (Number.isFinite(Number(center?.x)) && Number.isFinite(Number(center?.y))) return center;
+
+  const bounds = token?.bounds ?? null;
+  const x = Number(bounds?.x);
+  const y = Number(bounds?.y);
+  const width = Number(bounds?.width);
+  const height = Number(bounds?.height);
+  if ([x, y, width, height].every(Number.isFinite)) return new PIXI.Point(x + width / 2, y + height / 2);
+  return null;
+}
+
+function getTokenRadialOcclusionRadius(token) {
+  const configuredRadius = Number(token?.document?.occludable?.radius ?? 0);
+  let lightRadius = Number.NaN;
+  try {
+    lightRadius =
+      typeof token?.getLightRadius === "function" ? Number(token.getLightRadius(configuredRadius)) : configuredRadius;
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+  }
+
+  const bounds = token?.bounds ?? null;
+  const fallbackRadius = Math.max(Number(bounds?.width ?? 0), Number(bounds?.height ?? 0)) / 2;
+  return Math.max(
+    0,
+    ...[token?.externalRadius, lightRadius, configuredRadius, fallbackRadius].map(Number).filter(Number.isFinite),
+  );
+}
+
+function circleIntersectsWorldBounds(center, radius, bounds) {
+  if (!bounds) return true;
+
+  const left = Number(bounds.left ?? bounds.x);
+  const top = Number(bounds.top ?? bounds.y);
+  const right = Number(
+    bounds.right ?? (Number.isFinite(Number(bounds.width)) ? left + Number(bounds.width) : Number.NaN),
+  );
+  const bottom = Number(
+    bounds.bottom ?? (Number.isFinite(Number(bounds.height)) ? top + Number(bounds.height) : Number.NaN),
+  );
+  if (![left, top, right, bottom].every(Number.isFinite)) return true;
+
+  const x = Number(center?.x);
+  const y = Number(center?.y);
+  const r = Math.max(0, Number(radius) || 0);
+  if (![x, y].every(Number.isFinite)) return false;
+
+  const closestX = Math.max(left, Math.min(x, right));
+  const closestY = Math.max(top, Math.min(y, bottom));
+  const dx = x - closestX;
+  const dy = y - closestY;
+  return dx * dx + dy * dy <= r * r;
+}
+
+function collectRadialOcclusionTokensForTile(candidate, occludableTokens = collectTileRadialOcclusionTokens()) {
+  const tile = _getTileMaskCandidateTile(candidate);
+  const mesh = _getTileMaskCandidateMesh(candidate);
+  const tileElevation = Number(mesh?.elevation ?? tile?.document?.elevation ?? tile?.elevation ?? Number.NaN);
+  const tileBounds = tile?.bounds ?? tile?.document?.bounds ?? null;
+  const out = [];
+
+  for (const token of occludableTokens) {
+    const tokenElevation = Number(token?.document?.elevation ?? token?.elevation ?? Number.NaN);
+    if (Number.isFinite(tileElevation) && Number.isFinite(tokenElevation) && tokenElevation >= tileElevation) continue;
+
+    const center = getTokenRadialOcclusionCenter(token);
+    if (!center) continue;
+
+    const radius = getTokenRadialOcclusionRadius(token);
+    if (!(radius > 0.001)) continue;
+    if (!circleIntersectsWorldBounds(center, radius, tileBounds)) continue;
+
+    out.push({ center, radius });
+  }
+
+  return out;
 }
 
 /**
@@ -2062,6 +2368,158 @@ function renderTileSpritesIntoRT(outRT, sprites, { clear = true, blendMode = PIX
   } catch (err) {
     logger.debug("FXMaster:", err);
   }
+  return rendered;
+}
+
+function renderRadialOcclusionShapesIntoRT(outRT, circles, { clear = true } = {}) {
+  const r = canvas?.app?.renderer;
+  if (!r || !outRT) return false;
+  if (!Array.isArray(circles) || !circles.length) {
+    if (clear) clearTileMaskRenderTexture(outRT);
+    return false;
+  }
+
+  const cont = (_tmpTileRadialRevealShapeContainer ??= new PIXI.Container());
+  const gfx = (_tmpTileRadialRevealGraphics ??= new PIXI.Graphics());
+
+  try {
+    cont.removeChildren();
+    gfx.clear();
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+  }
+
+  cont.transform.setFromMatrix(_tileMaskStageMatrix());
+  cont.roundPixels = false;
+  gfx.roundPixels = false;
+
+  try {
+    gfx.beginFill(0xffffff, 1);
+    for (const { center, radius } of circles) {
+      if (!Number.isFinite(Number(center?.x)) || !Number.isFinite(Number(center?.y))) continue;
+      if (!(Number(radius) > 0.001)) continue;
+      gfx.drawCircle(Number(center.x), Number(center.y), Number(radius));
+    }
+    gfx.endFill();
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+    try {
+      gfx.clear();
+    } catch {}
+    if (clear) clearTileMaskRenderTexture(outRT);
+    return false;
+  }
+
+  cont.addChild(gfx);
+
+  let rendered = false;
+  try {
+    r.render(cont, { renderTexture: outRT, clear, skipUpdateTransform: false });
+    rendered = true;
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+  } finally {
+    try {
+      cont.removeChildren();
+      gfx.clear();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+  }
+
+  return rendered;
+}
+
+function getTileRadialRevealIntersectionFilter() {
+  if (_tmpTileRadialRevealFilter && !_tmpTileRadialRevealFilter.destroyed) return _tmpTileRadialRevealFilter;
+
+  try {
+    _tmpTileRadialRevealFilter = new PIXI.Filter(
+      undefined,
+      `
+      varying vec2 vTextureCoord;
+      uniform sampler2D uSampler;
+      uniform sampler2D clipSampler;
+      void main() {
+        float tileA = texture2D(uSampler, vTextureCoord).a;
+        float clipA = texture2D(clipSampler, vTextureCoord).a;
+        float a = tileA * clipA;
+        gl_FragColor = vec4(a, a, a, a);
+      }
+    `,
+      {
+        clipSampler: PIXI.Texture.EMPTY,
+      },
+    );
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+    _tmpTileRadialRevealFilter = null;
+  }
+
+  return _tmpTileRadialRevealFilter;
+}
+
+function renderRadialTileRevealsIntoRT(
+  outRT,
+  candidates,
+  { clear = true, blendMode = PIXI.BLEND_MODES.NORMAL, restrictionKind = "weather" } = {},
+) {
+  const r = canvas?.app?.renderer;
+  if (!r || !outRT || !Array.isArray(candidates) || !candidates.length) {
+    if (clear) clearTileMaskRenderTexture(outRT);
+    return false;
+  }
+
+  _tmpTileRadialRevealTileRT = _ensureScratchRTLike(_tmpTileRadialRevealTileRT, outRT);
+  _tmpTileRadialRevealShapeRT = _ensureScratchRTLike(_tmpTileRadialRevealShapeRT, outRT);
+  const tileRT = _tmpTileRadialRevealTileRT;
+  const shapeRT = _tmpTileRadialRevealShapeRT;
+  const filter = getTileRadialRevealIntersectionFilter();
+  if (!tileRT || !shapeRT || !filter) {
+    if (clear) clearTileMaskRenderTexture(outRT);
+    return false;
+  }
+
+  const sprite = (_tmpTileRadialRevealSprite ??= new PIXI.Sprite(PIXI.Texture.EMPTY));
+  const occludableTokens = collectTileRadialOcclusionTokens();
+  let rendered = false;
+
+  for (const candidate of candidates) {
+    const alpha = getTileRadialRevealMaskAlpha(candidate);
+    if (!(alpha > 0.001)) continue;
+
+    const circles = collectRadialOcclusionTokensForTile(candidate, occludableTokens);
+    if (!circles.length) continue;
+
+    const tileSprites = collectTileAlphaSpritesFromCandidates([candidate], {
+      mode: "solid",
+      restrictionKind,
+    });
+    for (const tileSprite of tileSprites) tileSprite.alpha *= alpha;
+
+    if (!renderTileSpritesIntoRT(tileRT, tileSprites, { clear: true })) continue;
+    if (!renderRadialOcclusionShapesIntoRT(shapeRT, circles, { clear: true })) continue;
+
+    try {
+      sprite.texture = tileRT;
+      sprite.blendMode = blendMode;
+      sprite.filters = [filter];
+      filter.uniforms.clipSampler = shapeRT;
+      r.render(sprite, {
+        renderTexture: outRT,
+        clear: clear && !rendered,
+        skipUpdateTransform: false,
+      });
+      rendered = true;
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    } finally {
+      sprite.filters = null;
+      sprite.texture = PIXI.Texture.EMPTY;
+    }
+  }
+
+  if (!rendered && clear) clearTileMaskRenderTexture(outRT);
   return rendered;
 }
 
@@ -3578,22 +4036,27 @@ export function repaintTilesMaskInto(
   }
 
   if (mode === "weatherReveal") {
-    /**
-     * Restricts Weather restoration must follow the tile's actual transparent pixels, including token-driven occlusion holes and full-tile hover fade. Build that mask as: solid tile silhouette
-     * - live currently visible tile pixels
-     *
-     * This preserves source texture alpha while matching the live mesh reveal shape whenever a primary tile mesh is available. Candidates without a renderable live mesh fall back to the inferred visible-alpha sprite path.
-     */
     const revealPredicate = combineTilePredicate(shouldIncludeTile, weatherRestrictedOnly);
     const revealCandidates = getTileMaskCandidates({ includeBackground, shouldIncludeTile: revealPredicate });
-    const liveRevealCandidates = revealCandidates.filter((candidate) => tileCandidateHasRenderableLiveMesh(candidate));
-    const fallbackRevealCandidates = revealCandidates.filter(
+    const radialRevealCandidates = revealCandidates.filter(tileHasRadialOcclusionMode);
+    const radialRevealSet = new Set(radialRevealCandidates);
+    const nonRadialSpatialRevealSet = new Set(revealCandidates.filter(tileHasNonRadialSpatialOcclusionReveal));
+    const baseRevealCandidates = revealCandidates.filter(
+      (candidate) => !radialRevealSet.has(candidate) || nonRadialSpatialRevealSet.has(candidate),
+    );
+    const dynamicRevealCandidates = revealCandidates.filter(
+      (candidate) => !radialRevealSet.has(candidate) && !nonRadialSpatialRevealSet.has(candidate),
+    );
+    const liveRevealCandidates = dynamicRevealCandidates.filter((candidate) =>
+      tileCandidateHasRenderableLiveMesh(candidate),
+    );
+    const fallbackRevealCandidates = dynamicRevealCandidates.filter(
       (candidate) => !tileCandidateHasRenderableLiveMesh(candidate),
     );
 
-    renderTileSpritesIntoRT(
+    let rendered = renderTileSpritesIntoRT(
       outRT,
-      collectTileAlphaSpritesFromCandidates(revealCandidates, {
+      collectTileAlphaSpritesFromCandidates(baseRevealCandidates, {
         mode: "solid",
         restrictionKind: resolvedRestrictionKind,
       }),
@@ -3609,6 +4072,7 @@ export function repaintTilesMaskInto(
         blendMode: PIXI.BLEND_MODES.ERASE,
         mode: "visible",
       });
+      rendered = true;
     }
 
     if (fallbackRevealCandidates.length) {
@@ -3623,7 +4087,27 @@ export function repaintTilesMaskInto(
           blendMode: PIXI.BLEND_MODES.ERASE,
         },
       );
+      rendered = true;
     }
+
+    if (radialRevealCandidates.length) {
+      rendered =
+        renderTileSpritesIntoRT(
+          outRT,
+          collectTileAlphaSpritesFromCandidates(radialRevealCandidates, {
+            mode: "weatherReveal",
+            restrictionKind: resolvedRestrictionKind,
+          }),
+          { clear: !rendered },
+        ) || rendered;
+      rendered =
+        renderRadialTileRevealsIntoRT(outRT, radialRevealCandidates, {
+          clear: !rendered,
+          restrictionKind: resolvedRestrictionKind,
+        }) || rendered;
+    }
+
+    if (!rendered) clearTileMaskRenderTexture(outRT);
     return;
   }
 
@@ -3679,7 +4163,7 @@ function _renderBinaryRegionMaskRT(rt, region, stageMatrix) {
   solidsGfx.transform.setFromMatrix(stageMatrix);
   holesGfx.transform.setFromMatrix(stageMatrix);
 
-  const shapes = region?.document?.shapes ?? [];
+  const shapes = regionMaskTraceShapes(region);
 
   solidsGfx.beginFill(0xffffff, 1.0);
   for (const s of shapes) {
@@ -3839,7 +4323,7 @@ function _rasterizeRegionBinaryCanvas(region, bounds, stageMatrix, resolution) {
   );
   ctx.imageSmoothingEnabled = false;
 
-  const shapes = region?.document?.shapes ?? [];
+  const shapes = regionMaskTraceShapes(region);
 
   ctx.globalCompositeOperation = "source-over";
   ctx.fillStyle = "#ffffff";
@@ -4132,7 +4616,7 @@ function _rasterizeRegionBinaryCanvasWorld(region, boundsWorld, pixelsPerWorld) 
   ctx.setTransform(ppw, 0, 0, ppw, -boundsWorld.x * ppw, -boundsWorld.y * ppw);
   ctx.imageSmoothingEnabled = false;
 
-  const shapes = region?.document?.shapes ?? [];
+  const shapes = regionMaskTraceShapes(region);
 
   ctx.globalCompositeOperation = "source-over";
   ctx.fillStyle = "#ffffff";
@@ -4281,13 +4765,13 @@ function _getSceneSuppressionSoftMaskEntry(region, stageMatrix, edgeFadePercent)
   if (!(boundsWorld.width > 0 && boundsWorld.height > 0)) return null;
 
   const key = `${sceneId}:${regionId}:${Math.round(edgeFadePercent * 1000000)}`;
-  const shapesRef = fxmReadDocumentShapes(region?.document);
+  const geometrySig = regionMaskGeometrySignature(region);
   const boundsSig = `${boundsWorld.x}|${boundsWorld.y}|${boundsWorld.width}|${boundsWorld.height}`;
 
   const cached = _sceneSuppressionSoftCache.get(key) ?? null;
   if (
     cached &&
-    cached.shapesRef === shapesRef &&
+    cached.geometrySig === geometrySig &&
     cached.boundsSig === boundsSig &&
     Math.abs((cached.fadeWorld ?? 0) - fadeWorld) <= 1e-6 &&
     Math.abs((cached.pixelsPerWorld ?? 0) - targetPixelsPerWorld) <= 1e-6
@@ -4333,7 +4817,7 @@ function _getSceneSuppressionSoftMaskEntry(region, stageMatrix, edgeFadePercent)
   const entry = {
     sceneId,
     regionId,
-    shapesRef,
+    geometrySig,
     boundsSig,
     fadeWorld,
     boundsWorld,
@@ -4831,7 +5315,7 @@ function _sceneSuppressionEntryCacheKey(entry) {
     logger.debug("FXMaster:", err);
   }
 
-  const shapes = fxmReadDocumentShapes(region?.document);
+  const geometrySig = regionMaskGeometrySignature(region);
   const preserveObjects = Array.isArray(entry?.preserveObjects) ? entry.preserveObjects : [];
   const preserveShapes = Array.isArray(entry?.preserveShapes) ? entry.preserveShapes : [];
   const suppressObjects = Array.isArray(entry?.suppressObjects) ? entry.suppressObjects : [];
@@ -4839,7 +5323,7 @@ function _sceneSuppressionEntryCacheKey(entry) {
     region?.document?.id ?? region?.id ?? "",
     region?.document?.uuid ?? "",
     boundsKey,
-    _shapeDataCacheKey(shapes),
+    geometrySig,
     _numberCacheKey(entry?.edgeFadePercent ?? 0, 4),
     entry?.suppressOnlyObjects ? 1 : 0,
     preserveObjects.map((object, index) => _preserveObjectCacheKey(object, index)).join(";"),

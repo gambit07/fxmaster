@@ -71,10 +71,16 @@ export class LightningFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
     };
 
     const audio = {
-      audioAware: { label: "FXMASTER.Params.ThunderAware", type: "checkbox", value: false },
+      audioAware: {
+        label: "FXMASTER.Params.AudioAware",
+        type: "checkbox",
+        value: false,
+        tooltip: "FXMASTER.ParamTooltips.AudioAware",
+      },
       audioChannels: {
-        label: "FXMASTER.Params.ThunderChannels",
+        label: "FXMASTER.Params.AudioChannels",
         type: "multi-select",
+        tooltip: "FXMASTER.ParamTooltips.AudioChannels",
         options: {
           music: "FXMASTER.Common.Music",
           environment: "FXMASTER.Common.Environment",
@@ -84,8 +90,9 @@ export class LightningFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
         showWhen: { audioAware: true },
       },
       audioBassThreshold: {
-        label: "FXMASTER.Params.ThunderBassThreshold",
+        label: "FXMASTER.Params.AudioBassThreshold",
         type: "range",
+        tooltip: "FXMASTER.ParamTooltips.AudioBassThreshold",
         max: 1.0,
         min: 0.0,
         step: 0.01,

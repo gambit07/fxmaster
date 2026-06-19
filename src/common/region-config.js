@@ -5,6 +5,7 @@ import { invalidateEffectStackCache } from "./effect-stack.js";
 import { FilterEffectsSceneManager } from "../filter-effects/filter-effects-scene-manager.js";
 import { refreshSceneParticlesSuppressionMasks } from "../particle-effects/particle-effects-scene-manager.js";
 import { getRegionPlaceableOrDocumentAdapter, resolveDarknessActivationEnabled } from "../utils.js";
+import { configureNormalizedRegionRangeInputs } from "../utils/region-schema.js";
 export class CommonRegionBehaviorConfig extends foundry.applications.sheets.RegionBehaviorConfig {
   static PARTS = foundry.utils.mergeObject(super.PARTS, { form: { scrollable: [""] } }, { inplace: false });
 
@@ -18,8 +19,10 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
   async _renderHTML(context, options) {
     const rendered = await super._renderHTML(context, options);
     rendered.form.classList.add("scrollable");
+    this._configureNormalizedRangeInputs(rendered.form);
     this._configureDarknessActivationInputs(rendered.form);
     this._primeDarknessActivationToggles(rendered.form);
+    this._configureParticleActionInputs(rendered.form);
 
     this._wireElevationGateVisibility(rendered.form);
     this._wireFxmasterConditionalVisibility(rendered.form);
@@ -233,6 +236,11 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
+    try {
+      this._fxmParticleActionAbort?.abort?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
     if (this._fxmLivePreviewTimer != null) {
       clearTimeout(this._fxmLivePreviewTimer);
       this._fxmLivePreviewTimer = null;
@@ -249,12 +257,317 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
+    try {
+      this._fxmParticleActionAbort?.abort?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    try {
+      this._notifyRegionParticleActionClose();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
     if (this._fxmLivePreviewTimer != null) {
       clearTimeout(this._fxmLivePreviewTimer);
       this._fxmLivePreviewTimer = null;
     }
     if (!this._fxmLivePreviewCommitted) this._restoreLivePreviewSource({ refresh: true });
     super._onClose(options);
+  }
+
+  _notifyRegionParticleActionClose() {
+    if (String(this.document?.type ?? "") !== `${packageId}.particleEffectsRegion`) return;
+
+    const context = {
+      app: this,
+      scene: canvas?.scene ?? null,
+      region: this.document?.parent ?? null,
+      behavior: this.document ?? null,
+    };
+
+    for (const [type, effectDef] of Object.entries(CONFIG?.fxmaster?.particleEffects ?? {})) {
+      if (typeof effectDef?.handleRegionConfigClose !== "function") continue;
+      try {
+        effectDef.handleRegionConfigClose({ ...context, type });
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    }
+  }
+
+  _configureNormalizedRangeInputs(form) {
+    const type = String(this.document?.type ?? "");
+    if (type === `${packageId}.particleEffectsRegion`) {
+      configureNormalizedRegionRangeInputs(form, CONFIG?.fxmaster?.particleEffects);
+    } else if (type === `${packageId}.filterEffectsRegion`) {
+      configureNormalizedRegionRangeInputs(form, CONFIG?.fxmaster?.filterEffects);
+    }
+  }
+
+  _configureParticleActionInputs(form) {
+    if (!form || String(this.document?.type ?? "") !== `${packageId}.particleEffectsRegion`) return;
+
+    try {
+      this._fxmParticleActionAbort?.abort?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    const ac = new AbortController();
+    this._fxmParticleActionAbort = ac;
+
+    for (const [type, effectDef] of Object.entries(CONFIG?.fxmaster?.particleEffects ?? {})) {
+      for (const [paramName, paramCfg] of Object.entries(effectDef?.parameters ?? {})) {
+        if (paramCfg?.type !== "particle-actions") continue;
+        const name = `system.${type}_${paramName}`;
+        const input = form.querySelector(`[name="${name}"]`);
+        if (!input) continue;
+
+        const group = input.closest?.(".form-group") ?? null;
+        if (group) group.dataset.effectType = type;
+
+        const fields = input.closest?.(".form-fields") ?? input.parentElement;
+        const actions = this._renderParticleActionControls(type, paramCfg, name);
+        if (fields) fields.replaceChildren(actions);
+        else input.replaceWith(actions);
+      }
+    }
+
+    form.addEventListener(
+      "click",
+      (event) => {
+        const button = event.target?.closest?.(".fxmaster-particle-action[data-effect-action]");
+        if (!button || !form.contains(button)) return;
+        void this._handleRegionParticleAction(event, button, form);
+      },
+      { signal: ac.signal, capture: true },
+    );
+  }
+
+  _renderParticleActionControls(type, parameterConfig, name) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "fxmaster-particle-actions";
+    wrapper.dataset.effectType = type;
+
+    const hidden = document.createElement("input");
+    hidden.type = "hidden";
+    hidden.name = name;
+    hidden.value = "";
+    wrapper.appendChild(hidden);
+
+    for (const action of Array.isArray(parameterConfig?.actions) ? parameterConfig.actions : []) {
+      const actionId = String(action?.action ?? "");
+      if (!actionId) continue;
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "fxmaster-particle-action";
+      button.dataset.effectAction = actionId;
+      button.dataset.effectType = type;
+
+      const iconClass = String(action?.icon ?? "");
+      if (iconClass) {
+        const icon = document.createElement("i");
+        icon.className = iconClass;
+        icon.setAttribute("aria-hidden", "true");
+        button.appendChild(icon);
+      }
+
+      const span = document.createElement("span");
+      const labelKey = String(action?.label ?? actionId);
+      span.textContent = game.i18n?.localize?.(labelKey) ?? labelKey;
+      button.appendChild(span);
+
+      const tooltipKey = String(action?.tooltip ?? "");
+      if (tooltipKey) {
+        button.dataset.tooltip = game.i18n?.localize?.(tooltipKey) ?? tooltipKey;
+        button.dataset.tooltipDirection = String(game?.settings?.get?.(packageId, "tooltipDirection") ?? "UP");
+      }
+
+      wrapper.appendChild(button);
+    }
+
+    return wrapper;
+  }
+
+  async _handleRegionParticleAction(event, button, form) {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+
+    const type = button?.dataset?.effectType;
+    const action = button?.dataset?.effectAction;
+    if (!type || !action) return;
+
+    const effectDef = CONFIG.fxmaster?.particleEffects?.[type];
+    if (!effectDef) return;
+
+    const parameterActions = Object.values(effectDef.parameters ?? {}).flatMap((parameter) =>
+      Array.isArray(parameter?.actions) ? parameter.actions : [],
+    );
+    const actions = [
+      ...(Array.isArray(effectDef.managementActions) ? effectDef.managementActions : []),
+      ...(Array.isArray(effectDef.particleActions) ? effectDef.particleActions : []),
+      ...parameterActions,
+    ];
+    const actionDef = actions.find((entry) => entry?.action === action);
+    if (!actionDef) return;
+
+    const getOptions = () => this._collectRegionParticleOptions(effectDef, type, form);
+
+    if (action === "toggle-placement" || action === "toggle-delete-placement") {
+      this._applyLivePreview(form);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+
+    const context = {
+      app: this,
+      scene: canvas?.scene ?? null,
+      region: this.document?.parent ?? null,
+      behavior: this.document ?? null,
+      type,
+      action,
+      actionDef,
+      button,
+      event,
+      form,
+      getOptions,
+      options: getOptions(),
+    };
+
+    try {
+      if (typeof actionDef.handler === "string" && typeof effectDef[actionDef.handler] === "function") {
+        await effectDef[actionDef.handler](context);
+      } else if (typeof effectDef.handleManagementAction === "function") {
+        await effectDef.handleManagementAction(action, context);
+      } else if (typeof actionDef.onClick === "function") {
+        await actionDef.onClick(context);
+      }
+    } catch (err) {
+      logger.error("FXMaster | Particle effect action failed", err);
+    }
+  }
+
+  _collectRegionParticleOptions(effectDef, type, form) {
+    const options = {};
+    for (const [key, param] of Object.entries(effectDef?.parameters ?? {})) {
+      const base = `system.${type}_${key}`;
+      if (param.type === "range-dual") {
+        const minInput = form.querySelector(`[name="${base}_min"]`);
+        const maxInput = form.querySelector(`[name="${base}_max"]`);
+        if (!minInput && !maxInput) continue;
+        const fallbackMin = Number(param.value?.min ?? param.min ?? 0);
+        const fallbackMax = Number(param.value?.max ?? param.max ?? 1);
+        const min = Number.parseFloat(minInput?.value ?? `${fallbackMin}`);
+        const max = Number.parseFloat(maxInput?.value ?? `${fallbackMax}`);
+        options[key] = {
+          min: Number.isFinite(min) ? min : fallbackMin,
+          max: Number.isFinite(max) ? max : fallbackMax,
+        };
+        continue;
+      }
+
+      const control = form.querySelector(`[name="${base}"]`) ?? form.querySelector(`[data-edit="${base}"]`);
+      if (!control) continue;
+
+      if (param.type === "color") {
+        const apply = form.querySelector(`[name="${base}_apply"]`);
+        options[key] = {
+          apply: Boolean(apply?.checked),
+          value: control.value ?? control.getAttribute?.("value") ?? param.value?.value ?? "#000000",
+        };
+        continue;
+      }
+
+      if (param.type === "multi-select" || param.type === "scene-levels") {
+        const values = this._readRegionMultiSelectValues(form, base, param);
+        options[key] = values;
+        continue;
+      }
+
+      if (param.type === "checkbox" || param.type === "boolean") {
+        options[key] = Boolean(control.checked);
+        continue;
+      }
+
+      if (control instanceof HTMLInputElement && (control.type === "number" || control.type === "range")) {
+        const value = Number.parseFloat(control.value);
+        options[key] = Number.isFinite(value) ? value : param.value;
+        continue;
+      }
+
+      if (param.type === "range" || param.type === "number") {
+        const value = Number.parseFloat(control.value);
+        options[key] = Number.isFinite(value) ? value : param.value;
+        continue;
+      }
+
+      options[key] = control.value ?? control.getAttribute?.("value") ?? param.value;
+    }
+    return options;
+  }
+
+  _readRegionMultiSelectValues(form, name, parameterConfig) {
+    const values = [];
+    const add = (value) => {
+      const normalized = String(value ?? "").trim();
+      if (normalized && !values.includes(normalized)) values.push(normalized);
+    };
+
+    const controls = [
+      form.querySelector(`multi-select[name="${name}"]`),
+      form.querySelector(`multi-select[data-name="${name}"]`),
+      form.querySelector(`select[name="${name}"][multiple]`),
+    ].filter(Boolean);
+
+    for (const control of controls) {
+      const select = control instanceof HTMLSelectElement ? control : control.querySelector?.("select[multiple]");
+      if (select?.multiple) {
+        for (const option of Array.from(select.selectedOptions ?? [])) add(option.value);
+      }
+
+      for (const option of Array.from(control.querySelectorAll?.("option:checked") ?? [])) add(option.value);
+      for (const tag of Array.from(
+        control.querySelectorAll?.(
+          ".tag[data-key], .tag[data-value], .tag[data-id], .tag[data-tag], .tag[data-option]",
+        ) ?? [],
+      )) {
+        add(tag.dataset.key ?? tag.dataset.value ?? tag.dataset.id ?? tag.dataset.tag ?? tag.dataset.option);
+      }
+
+      const rawValue = control.value ?? control.getAttribute?.("value");
+      if (rawValue instanceof Set) for (const value of rawValue) add(value);
+      else if (Array.isArray(rawValue)) for (const value of rawValue) add(value);
+      else if (typeof rawValue === "string" && rawValue.trim()) {
+        try {
+          const parsed = JSON.parse(rawValue);
+          if (Array.isArray(parsed)) for (const value of parsed) add(value);
+          else for (const value of rawValue.split(",")) add(value);
+        } catch {
+          for (const value of rawValue.split(",")) add(value);
+        }
+      }
+    }
+
+    for (const input of Array.from(
+      form.querySelectorAll(`input[type="hidden"][name="${name}"], input[type="hidden"][name="${name}[]"]`) ?? [],
+    )) {
+      const raw = input.value;
+      if (typeof raw !== "string" || !raw.trim()) continue;
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) for (const value of parsed) add(value);
+        else add(raw);
+      } catch {
+        for (const value of raw.split(",")) add(value);
+      }
+    }
+
+    if (!values.length && parameterConfig?.allowEmpty !== true) {
+      const fallback = Array.isArray(parameterConfig?.value) ? parameterConfig.value : [parameterConfig?.value];
+      for (const value of fallback) add(value);
+    }
+
+    return values;
   }
 
   _configureDarknessActivationInputs(form) {

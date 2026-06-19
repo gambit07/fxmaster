@@ -1,15 +1,14 @@
-import { packageId } from "./constants.js";
-import { FilterEffectsSceneManager } from "./filter-effects/filter-effects-scene-manager.js";
 import { ParticleEffectsManagement } from "./particle-effects/applications/particle-effects-management.js";
 import { FilterEffectsManagement } from "./filter-effects/applications/filter-effects-management.js";
 import { ApiEffectsManagement } from "./api-effects/applications/api-effects-management.js";
 import { saveParticleAndFilterEffectsAsMacro } from "./macro.js";
 import { FxLayersManagement } from "./stack/fx-layers-management.js";
 import { FxMasterInfo } from "./applications/fxmaster-info.js";
-import { clearStoredEffectStack } from "./common/effect-stack.js";
+import { stopRegionEffects, stopSceneEffects } from "./api.js";
 import { updateSceneControlHighlights } from "./utils.js";
 
 let fxMasterInfoClickListenerRegistered = false;
+let clearFxContextMenuListenerRegistered = false;
 
 /**
  * Determine whether a Scene Controls tool change should open an application or run an action.
@@ -23,6 +22,83 @@ function shouldHandleToolActivation(active) {
 
 function getSceneControlsElement() {
   return ui.controls?.element?.[0] ?? ui.controls?.element ?? document.querySelector("#controls");
+}
+
+function renderEffectsConfirmationDialog({ id, titleKey, contentKey, callback }) {
+  const dialog = new foundry.applications.api.DialogV2({
+    window: {
+      title: game.i18n.localize(titleKey),
+      id,
+      minimizable: false,
+    },
+    content: game.i18n.localize(contentKey),
+    buttons: [
+      {
+        action: "yes",
+        label: game.i18n.localize("FXMASTER.Common.Yes"),
+        icon: "fas fa-check",
+        callback: async () => {
+          if (!canvas.scene) return;
+          await callback(canvas.scene);
+          updateSceneControlHighlights();
+        },
+        default: true,
+      },
+      {
+        action: "no",
+        label: game.i18n.localize("FXMASTER.Common.No"),
+        icon: "fas fa-times",
+        callback: () => false,
+      },
+    ],
+    close: () => {},
+    rejectClose: false,
+  });
+
+  return dialog.render(true);
+}
+
+function renderStopSceneEffectsDialog() {
+  return renderEffectsConfirmationDialog({
+    id: "clearFx",
+    titleKey: "FXMASTER.Common.ClearParticleAndFilterEffectsTitle",
+    contentKey: "FXMASTER.Common.ClearParticleAndFilterEffectsContent",
+    callback: (scene) => stopSceneEffects({ scene, skipFading: true }),
+  });
+}
+
+function renderStopRegionEffectsDialog() {
+  return renderEffectsConfirmationDialog({
+    id: "disableRegionFx",
+    titleKey: "FXMASTER.Common.DisableRegionEffectsTitle",
+    contentKey: "FXMASTER.Common.DisableRegionEffectsContent",
+    callback: (scene) => stopRegionEffects({ scene }),
+  });
+}
+
+function registerClearFxContextMenuListener() {
+  if (clearFxContextMenuListenerRegistered) return;
+  clearFxContextMenuListenerRegistered = true;
+
+  document.addEventListener(
+    "contextmenu",
+    (event) => {
+      if (!game.user?.isGM) return;
+
+      const target = event?.target;
+      const toolButton = target?.closest?.('[data-tool="clearfx"]');
+      if (!toolButton) return;
+
+      const controlsElement = getSceneControlsElement();
+      if (controlsElement && !controlsElement.contains(toolButton)) return;
+
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+      event?.stopImmediatePropagation?.();
+      void renderStopRegionEffectsDialog();
+    },
+    true,
+  );
 }
 
 function registerFxMasterInfoClickListener() {
@@ -53,6 +129,7 @@ function registerFxMasterInfoClickListener() {
 export function registerGetSceneControlButtonsHook() {
   Hooks.on("getSceneControlButtons", getSceneControlButtons);
   registerFxMasterInfoClickListener();
+  registerClearFxContextMenuListener();
 }
 
 function getSceneControlButtons(t) {
@@ -138,43 +215,7 @@ function getSceneControlButtons(t) {
       button: true,
       [onEvent]: (_event, active) => {
         if (!shouldHandleToolActivation(active)) return;
-
-        const clearFxDialog = new foundry.applications.api.DialogV2({
-          window: {
-            title: game.i18n.localize("FXMASTER.Common.ClearParticleAndFilterEffectsTitle"),
-            id: "clearFx",
-            minimizable: false,
-          },
-          content: game.i18n.localize("FXMASTER.Common.ClearParticleAndFilterEffectsContent"),
-          buttons: [
-            {
-              action: "yes",
-              label: game.i18n.localize("FXMASTER.Common.Yes"),
-              icon: "fas fa-check",
-              callback: async () => {
-                if (!canvas.scene) return;
-
-                await FilterEffectsSceneManager.instance.removeAll();
-                await canvas.scene.unsetFlag(packageId, "effects");
-                await clearStoredEffectStack(canvas.scene);
-                updateSceneControlHighlights();
-              },
-              default: true,
-            },
-            {
-              action: "no",
-              label: game.i18n.localize("FXMASTER.Common.No"),
-              icon: "fas fa-times",
-              callback: () => {
-                return false;
-              },
-            },
-          ],
-          close: () => {},
-          rejectClose: false,
-        });
-
-        return clearFxDialog.render(true);
+        return renderStopSceneEffectsDialog();
       },
       visible: game.user.isGM,
     },

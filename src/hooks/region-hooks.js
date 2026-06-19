@@ -11,6 +11,7 @@ import { logger } from "../logger.js";
 import {
   coalesceNextFrame,
   getRegionPlaceableOrDocumentAdapter,
+  getRegionEffectPlaceablesForCurrentView,
   getSceneRegionDocumentById,
   regionDocumentCanApplyInCurrentView,
   onSwitchParticleEffects,
@@ -18,28 +19,13 @@ import {
   fxmDocumentId,
 } from "../utils.js";
 import { isEnabled } from "../settings.js";
-import { invalidateEffectStackCache } from "../common/effect-stack.js";
+import { invalidateEffectStackCache, normalizeBehaviorDocs } from "../common/effect-stack.js";
 
 const PARTICLE_TYPE = `${packageId}.particleEffectsRegion`;
 const FILTER_TYPE = `${packageId}.filterEffectsRegion`;
 const SUPPRESS_SCENE_FILTERS = `${packageId}.suppressSceneFilters`;
 const SUPPRESS_SCENE_PARTICLES = `${packageId}.suppressSceneParticles`;
 const SUPPRESS_WEATHER = "suppressWeather";
-
-/**
- * Convert a region behavior collection into a plain array of behavior documents.
- * @param {Iterable<object>|{contents?: object[]}|null|undefined} behaviorDocs
- * @returns {object[]}
- * @private
- */
-function normalizeRegionBehaviorDocs(behaviorDocs) {
-  if (!behaviorDocs) return [];
-  if (Array.isArray(behaviorDocs)) return behaviorDocs;
-  if (Array.isArray(behaviorDocs.contents)) return behaviorDocs.contents;
-  if (typeof behaviorDocs.toArray === "function") return behaviorDocs.toArray();
-  if (typeof behaviorDocs.values === "function") return Array.from(behaviorDocs.values());
-  return Array.from(behaviorDocs);
-}
 
 /**
  * Build an authoritative region-behavior snapshot for behavior CRUD hooks.
@@ -50,7 +36,7 @@ function normalizeRegionBehaviorDocs(behaviorDocs) {
  * @private
  */
 function buildBehaviorHookSnapshot(regionDoc, behaviorDoc, { deleted = false } = {}) {
-  const docs = normalizeRegionBehaviorDocs(regionDoc?.behaviors);
+  const docs = normalizeBehaviorDocs(regionDoc?.behaviors);
   const byId = new Map();
 
   for (const doc of docs) {
@@ -170,7 +156,7 @@ function syncRegionScopedEffects(regionDoc, { behaviorDocs = null, kinds = null 
   const placeable = getRegionPlaceableOrDocumentAdapter(regionDoc);
   if (!placeable) return;
 
-  const snapshot = normalizeRegionBehaviorDocs(behaviorDocs ?? regionDoc?.behaviors);
+  const snapshot = normalizeBehaviorDocs(behaviorDocs ?? regionDoc?.behaviors);
   const enabled = isEnabled();
   const hasParticleBehavior = snapshot.some((behavior) => behavior?.type === PARTICLE_TYPE && !behavior?.disabled);
   const hasFilterBehavior = snapshot.some((behavior) => behavior?.type === FILTER_TYPE && !behavior?.disabled);
@@ -228,7 +214,7 @@ function isFxmasterBehaviorDrivenRegionUpdate(changed = {}) {
  */
 function regionUpdateRequiresRegionEffectRebuild(changed = {}) {
   if (!changed || typeof changed !== "object") return false;
-  for (const key of ["levels", "level", "elevation", "shapes"]) {
+  for (const key of ["levels", "level", "elevation", "shapes", "restriction", "_shapeConstraints"]) {
     if (Object.prototype.hasOwnProperty.call(changed, key)) return true;
   }
   return false;
@@ -269,7 +255,7 @@ function refreshSuppressionForBehavior(type, ctx, { deferred = false } = {}) {
  */
 function getRegionSuppressionRefreshKinds(regionDoc, { behaviorDocs = null } = {}) {
   const kinds = { particles: false, filters: false };
-  const behaviors = normalizeRegionBehaviorDocs(behaviorDocs ?? regionDoc?.behaviors);
+  const behaviors = normalizeBehaviorDocs(behaviorDocs ?? regionDoc?.behaviors);
 
   for (const behavior of behaviors) {
     if (!behavior || behavior.disabled) continue;
@@ -317,6 +303,32 @@ export function registerRegionHooks(ctx) {
   Hooks.on(`${packageId}.switchParticleEffect`, onSwitchParticleEffects);
   Hooks.on(`${packageId}.updateParticleEffects`, onUpdateParticleEffects);
 
+  const requestDeferredRestrictedRegionWallSync = coalesceNextFrame(
+    () => {
+      if (!isEnabled()) return;
+      const scene = canvas?.scene ?? null;
+      if (!scene) return;
+
+      const regions = getRegionEffectPlaceablesForCurrentView(scene).filter(
+        (region) => !!region?.document?.restriction?.enabled,
+      );
+      if (!regions.length) return;
+
+      const restrictionTypes = new Set(regions.map((region) => region?.document?.restriction?.type).filter(Boolean));
+      try {
+        scene.updateRegionShapeConstraints?.(restrictionTypes);
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+
+      invalidateEffectStackCache();
+      for (const region of regions) syncRegionScopedEffects(region.document);
+      ctx.requestDeferredSceneParticlesSuppressionRefresh?.();
+      ctx.requestDeferredFilterSuppressionRefresh?.();
+    },
+    { key: "fxm:restrictedRegionWallSync" },
+  );
+
   const requestDeferredRegionScopedEffectsSync = (() => {
     const pendingRegionIds = new Set();
     const pendingBehaviorSnapshots = new Map();
@@ -344,7 +356,7 @@ export function registerRegionHooks(ctx) {
     return (regionId, behaviorDocs = null, kinds = null) => {
       if (!regionId) return;
       pendingRegionIds.add(regionId);
-      if (behaviorDocs !== null) pendingBehaviorSnapshots.set(regionId, normalizeRegionBehaviorDocs(behaviorDocs));
+      if (behaviorDocs !== null) pendingBehaviorSnapshots.set(regionId, normalizeBehaviorDocs(behaviorDocs));
       if (kinds) {
         const prev = pendingSyncKinds.get(regionId) ?? { particles: false, filters: false };
         pendingSyncKinds.set(regionId, {
@@ -355,6 +367,13 @@ export function registerRegionHooks(ctx) {
       run();
     };
   })();
+
+  for (const hookName of ["createWall", "updateWall", "deleteWall"]) {
+    Hooks.on(hookName, (wallDoc) => {
+      if (wallDoc?.parent !== canvas?.scene) return;
+      requestDeferredRestrictedRegionWallSync();
+    });
+  }
 
   Hooks.on("preDeleteRegion", (regionDoc) => {
     try {

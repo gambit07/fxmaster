@@ -256,19 +256,19 @@ function _applySuppressionMasks(layer, { syncRefresh = true } = {}) {
 
   if (!hasAny) {
     try {
-      SceneMaskManager.instance.setBelowTokensNeeded?.("particles", false);
-      SceneMaskManager.instance.setBelowTilesNeeded?.("particles", false);
-      SceneMaskManager.instance.setKindActive?.("particles", false);
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
-    try {
       layer.setSceneMaskTextures?.({
         base: null,
         cutoutTokens: null,
         cutoutTiles: null,
         cutoutCombined: null,
       });
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    try {
+      SceneMaskManager.instance.setBelowTokensNeeded?.("particles", false);
+      SceneMaskManager.instance.setBelowTilesNeeded?.("particles", false);
+      SceneMaskManager.instance.setKindActive?.("particles", false);
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
@@ -294,19 +294,19 @@ function _applySuppressionMasks(layer, { syncRefresh = true } = {}) {
 
   if (!needsMasking) {
     try {
-      SceneMaskManager.instance.setBelowTokensNeeded?.("particles", false);
-      SceneMaskManager.instance.setBelowTilesNeeded?.("particles", false);
-      SceneMaskManager.instance.setKindActive?.("particles", false);
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
-    try {
       layer.setSceneMaskTextures?.({
         base: null,
         cutoutTokens: null,
         cutoutTiles: null,
         cutoutCombined: null,
       });
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    try {
+      SceneMaskManager.instance.setBelowTokensNeeded?.("particles", false);
+      SceneMaskManager.instance.setBelowTilesNeeded?.("particles", false);
+      SceneMaskManager.instance.setKindActive?.("particles", false);
     } catch (err) {
       logger.debug("FXMaster:", err);
     }

@@ -5,6 +5,7 @@
  *
  * Module breakdown:
  * - {@link module:compat}        - V13/V14+ flag operator abstraction
+ * - {@link module:object}        - Object, property, and collection helpers
  * - {@link module:math}          - Numeric rounding, clamping, coercion
  * - {@link module:color}         - CSS variable resolution, color format conversion
  * - {@link module:viewport}      - Camera snapping, stage matrix, resolution safety
@@ -13,6 +14,8 @@
  * - {@link module:coalesce}      - Animation-frame call coalescing
  * - {@link module:scene-effects} - Scene-level effect toggling and UI highlights
  */
+
+export { isPlainObject, hasOwn, collectionValues } from "./object.js";
 
 export {
   addDeletionKey,
@@ -126,6 +129,11 @@ export {
   clampMin,
   num,
   asFloat3,
+  normalizeDirectionDegrees,
+  legacyClockwiseDirectionToGeometric,
+  geometricDirectionToScreenDegrees,
+  geometricDirectionToScreenRadians,
+  geometricDirectionToCanvasVector,
 } from "./math.js";
 
 export { getDialogColors, getCssVarValue, addAlphaToRgb } from "./color.js";
@@ -153,6 +161,11 @@ export {
   ellipseToPolygon,
   traceRegionShapePIXI,
   traceRegionShapePath2D,
+  regionHasRestrictedGeometry,
+  regionConstrainedPolygons,
+  regionContainsPoint,
+  regionMaskTraceShapes,
+  regionMaskGeometrySignature,
   regionWorldBounds,
   regionWorldBoundsAligned,
   rectFromAligned,
@@ -177,6 +190,7 @@ export {
   collectTokenAlphaSprites,
   collectBelowTokenMaskTokens,
   buildBelowTokenMaskCoverageSignature,
+  buildBelowTileMaskCoverageSignature,
   collectTileAlphaSprites,
   stageLocalMatrixOf,
   tileDocumentRestrictsWeather,
@@ -224,4 +238,5 @@ export {
   cleanupRegionFilterEffects,
   cleanupRegionParticleEffects,
   updateSceneControlHighlights,
+  prepareFilterOptionsForSceneStorage,
 } from "./scene-effects.js";

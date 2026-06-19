@@ -115,3 +115,22 @@ export function updateSceneControlHighlights() {
 
   CONFIG.fxmaster.FXMasterBaseFormV2.setSceneEffectsControlHighlight(hasAnyEffects);
 }
+
+/**
+ * Prepare filter options for scene storage when a filter class exposes a storage hook.
+ *
+ * @param {string} type
+ * @param {object} options
+ * @param {object} [context={}]
+ * @returns {object}
+ */
+export function prepareFilterOptionsForSceneStorage(type, options = {}, context = {}) {
+  try {
+    const cls = CONFIG?.fxmaster?.filterEffects?.[type];
+    if (typeof cls?.prepareSceneOptions !== "function") return options;
+    return cls.prepareSceneOptions(options, context);
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+    return options;
+  }
+}

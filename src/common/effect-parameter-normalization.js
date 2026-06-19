@@ -1,8 +1,299 @@
 import { logger } from "../logger.js";
+import { clampRange } from "../utils/math.js";
+import { hasOwn, isPlainObject } from "../utils/object.js";
 
 /**
- * Normalize effect parameter definitions so core and extension effects expose a consistent render-order control set.
+ * Normalize effect parameter definitions so core and extension effects expose consistent render-order controls and public scalar ranges.
  */
+
+const NORMALIZED_RANGE_KEYS = new Set([
+  "branches",
+  "density",
+  "dimensions",
+  "glyphSpeed",
+  "glow",
+  "height",
+  "intensity",
+  "lacunarity",
+  "length",
+  "lifetime",
+  "noiseSize",
+  "pathInfluence",
+  "reflectionFresnel",
+  "ribbonWidth",
+  "scale",
+  "scrollSpeed",
+  "spin",
+  "speed",
+  "wobbleFrequency",
+]);
+
+const NORMALIZED_RANGE_SUFFIXES = ["Intensity", "Scale", "Speed", "Strength"];
+
+/**
+ * Return whether a value is a finite number.
+ *
+ * @param {unknown} value
+ * @returns {value is number}
+ */
+function isFiniteNumber(value) {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+/**
+ * Round a number to a fixed display precision while preserving numeric type.
+ *
+ * @param {number} value
+ * @param {number} decimals
+ * @returns {number}
+ */
+function round(value, decimals = 3) {
+  if (!Number.isFinite(value)) return value;
+  const d = Math.max(0, Math.min(6, Number(decimals) || 0));
+  return Number(value.toFixed(d));
+}
+
+/**
+ * Return the normalized UI minimum that best communicates the internal range precision.
+ *
+ * @param {number} internalMin
+ * @returns {0|0.001|0.01|0.1}
+ */
+function normalizedUiMinForInternalMin(internalMin) {
+  if (!(internalMin > 0)) return 0;
+  if (internalMin < 0.01) return 0.001;
+  if (internalMin < 0.1) return 0.01;
+  return 0.1;
+}
+
+/**
+ * Return the step and precision for a normalized UI range.
+ *
+ * @param {number} uiMin
+ * @returns {{step:number, decimals:number}}
+ */
+function normalizedUiStep(uiMin) {
+  if (uiMin === 0.001) return { step: 0.001, decimals: 3 };
+  return { step: 0.01, decimals: 2 };
+}
+
+/**
+ * Determine whether a range parameter should use a normalized public scale.
+ *
+ * @param {string} key
+ * @param {object|null|undefined} parameter
+ * @returns {boolean}
+ */
+function shouldNormalizeRangeParameter(key, parameter) {
+  if (!parameter || parameter.type !== "range") return false;
+  if (!NORMALIZED_RANGE_KEYS.has(key) && !NORMALIZED_RANGE_SUFFIXES.some((suffix) => key.endsWith(suffix)))
+    return false;
+
+  const min = Number(parameter.min);
+  const max = Number(parameter.max);
+  const value = Number(parameter.value);
+  if (![min, max, value].every(Number.isFinite)) return false;
+  if (!(max > min)) return false;
+
+  return Math.abs(max - 1) > 1e-9;
+}
+
+/**
+ * Convert an internal effect value to its normalized UI value.
+ *
+ * @param {object|null|undefined} parameter
+ * @param {number} value
+ * @returns {number}
+ */
+export function compressNormalizedRangeValue(parameter, value) {
+  const range = parameter?.__fxmInternalRange;
+  const raw = Number(value);
+  if (!range || !Number.isFinite(raw)) return raw;
+
+  const uiMin = Number(parameter.min ?? 0);
+  const uiMax = Number(parameter.max ?? 1);
+  const internalMin = Number(range.min);
+  const internalMax = Number(range.max);
+  if (![uiMin, uiMax, internalMin, internalMax].every(Number.isFinite) || internalMax <= internalMin) return raw;
+
+  if (raw === 0 && internalMin > 0) return 0;
+
+  const t = (clampRange(raw, internalMin, internalMax, internalMin) - internalMin) / (internalMax - internalMin);
+  const decimals = Number(parameter.decimals ?? 3);
+  return round(uiMin + t * (uiMax - uiMin), decimals);
+}
+
+/**
+ * Convert a normalized UI value to the internal effect value.
+ *
+ * @param {object|null|undefined} parameter
+ * @param {number} value
+ * @returns {number}
+ */
+export function expandNormalizedRangeValue(parameter, value) {
+  const range = parameter?.__fxmInternalRange;
+  const raw = Number(value);
+  if (!range || !Number.isFinite(raw)) return raw;
+
+  const uiMin = Number(parameter.min ?? 0);
+  const uiMax = Number(parameter.max ?? 1);
+  const internalMin = Number(range.min);
+  const internalMax = Number(range.max);
+  if (![uiMin, uiMax, internalMin, internalMax].every(Number.isFinite) || internalMax <= internalMin) return raw;
+
+  if (raw === 0 && internalMin > 0) return 0;
+  if (raw > uiMax && raw <= internalMax) return raw;
+
+  const t = (clampRange(raw, uiMin, uiMax, uiMin) - uiMin) / (uiMax - uiMin || 1);
+  return internalMin + t * (internalMax - internalMin);
+}
+
+/**
+ * Clone and normalize a range parameter for public UI display.
+ *
+ * @param {string} key
+ * @param {object} parameter
+ * @returns {object}
+ */
+function normalizeRangeParameter(key, parameter) {
+  if (!shouldNormalizeRangeParameter(key, parameter)) return parameter;
+
+  const internalMin = Number(parameter.min);
+  const internalMax = Number(parameter.max);
+  const internalValue = Number(parameter.value);
+  const uiMin = normalizedUiMinForInternalMin(internalMin);
+  const uiMax = 1;
+  const { step, decimals } = normalizedUiStep(uiMin);
+
+  const normalized = {
+    ...parameter,
+    min: uiMin,
+    max: uiMax,
+    step,
+    decimals,
+    __fxmInternalRange: {
+      min: internalMin,
+      max: internalMax,
+      value: internalValue,
+      step: Number(parameter.step),
+      decimals: Number(parameter.decimals),
+    },
+  };
+
+  normalized.value = compressNormalizedRangeValue(normalized, internalValue);
+  return normalized;
+}
+
+/**
+ * Read a parameter's authored value from either a raw option or a wrapped option.
+ *
+ * @param {unknown} value
+ * @returns {{wrapped:boolean, value:any, source:any}}
+ */
+function unwrapOptionValue(value) {
+  if (!isPlainObject(value) || !hasOwn(value, "value")) return { wrapped: false, value, source: value };
+  let source = value;
+  let current = value.value;
+  let wrapped = true;
+  while (isPlainObject(current) && hasOwn(current, "value") && typeof current.apply !== "boolean") {
+    source = current;
+    current = current.value;
+  }
+  return { wrapped, value: current, source };
+}
+
+/**
+ * Return the parameter map for an effect definition.
+ *
+ * @param {object|null|undefined} effectDefinition
+ * @returns {object}
+ */
+function getEffectParameters(effectDefinition) {
+  try {
+    return effectDefinition?.parameters ?? {};
+  } catch (err) {
+    logger.debug("FXMaster: failed to read effect parameters", err);
+    return {};
+  }
+}
+
+/**
+ * Convert normalized stored options to runtime values expected by effect code.
+ *
+ * @param {object|null|undefined} effectDefinition
+ * @param {object|null|undefined} options
+ * @returns {object}
+ */
+export function normalizeEffectOptionsForRuntime(effectDefinition, options) {
+  if (!isPlainObject(options)) return options ?? {};
+  if (options.__fxmNormalizedRangesExpanded === true) return options;
+
+  const parameters = getEffectParameters(effectDefinition);
+  const out = { ...options };
+
+  for (const [key, parameter] of Object.entries(parameters)) {
+    if (!parameter?.__fxmInternalRange || !hasOwn(out, key)) continue;
+
+    const entry = unwrapOptionValue(out[key]);
+    if (!isFiniteNumber(Number(entry.value))) continue;
+
+    const expanded = expandNormalizedRangeValue(parameter, Number(entry.value));
+    if (entry.wrapped) out[key] = { ...entry.source, value: expanded };
+    else out[key] = expanded;
+  }
+
+  out.__fxmNormalizedRangesExpanded = true;
+  return out;
+}
+
+/**
+ * Convert legacy internal options to normalized stored options.
+ *
+ * @param {object|null|undefined} effectDefinition
+ * @param {object|null|undefined} options
+ * @returns {object}
+ */
+export function normalizeEffectOptionsForStorageFromLegacy(effectDefinition, options) {
+  if (!isPlainObject(options)) return options ?? {};
+  const parameters = getEffectParameters(effectDefinition);
+  const out = { ...options };
+
+  for (const [key, parameter] of Object.entries(parameters)) {
+    if (!parameter?.__fxmInternalRange || !hasOwn(out, key)) continue;
+
+    const entry = unwrapOptionValue(out[key]);
+    if (!isFiniteNumber(Number(entry.value))) continue;
+
+    const compressed = compressNormalizedRangeValue(parameter, Number(entry.value));
+    out[key] = compressed;
+  }
+
+  delete out.__fxmNormalizedRangesExpanded;
+  return out;
+}
+
+/**
+ * Scale a normalized stored option by multiplying its internal value, then return a normalized stored value.
+ *
+ * @param {object|null|undefined} effectDefinition
+ * @param {string} key
+ * @param {number} value
+ * @param {number} multiplier
+ * @returns {number}
+ */
+export function scaleNormalizedStoredRangeValue(effectDefinition, key, value, multiplier) {
+  const parameter = getEffectParameters(effectDefinition)?.[key];
+  const numeric = Number(value);
+  const scale = Number(multiplier);
+  if (!Number.isFinite(numeric) || !Number.isFinite(scale)) return value;
+  if (!parameter?.__fxmInternalRange) return numeric * scale;
+  if (numeric === 0 && Number(parameter.__fxmInternalRange.min) > 0) return 0;
+
+  const internal = expandNormalizedRangeValue(parameter, numeric);
+  const range = parameter.__fxmInternalRange;
+  const nextInternal = clampRange(internal * scale, Number(range.min), Number(range.max), Number(range.min));
+  return compressNormalizedRangeValue(parameter, nextInternal);
+}
 
 /**
  * Build the standard render-order parameters for a given effect kind.
@@ -95,17 +386,17 @@ function normalizeParameterMap(kind, source) {
   const normalized = {};
 
   for (const key of leadingOrder) {
-    if (Object.hasOwn(parameters, key)) normalized[key] = parameters[key];
+    if (Object.hasOwn(parameters, key)) normalized[key] = normalizeRangeParameter(key, parameters[key]);
     else normalized[key] = defaults[key];
   }
 
   for (const [key, value] of Object.entries(parameters)) {
     if (specialOrder.includes(key)) continue;
-    normalized[key] = value;
+    normalized[key] = normalizeRangeParameter(key, value);
   }
 
   for (const key of trailingOrder) {
-    if (Object.hasOwn(parameters, key)) normalized[key] = parameters[key];
+    if (Object.hasOwn(parameters, key)) normalized[key] = normalizeRangeParameter(key, parameters[key]);
     else normalized[key] = defaults[key];
   }
 

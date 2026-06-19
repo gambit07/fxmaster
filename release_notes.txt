@@ -1,1 +1,17 @@
-- Resolved an edge case bug where a region with no shape data could cause a scene crash under certain circumstances
+Welcome to FXMaster V8.2.0!
+- Added new core filter effect, Screen Shake! This has a persistent or timed mode, along with an audio aware mode to allow activating based on audio bass level for things like integrating cleanly with Lightning if desired.
+- Added new Orbit mode to all Animal particles, along with Bubbles, Embers, Autumn Leaves, and Stars. This mode rotates the particles in a band around the center point of the scene or the region container with modifiable distance from center. Should allow some fun implementations for things like crows circling a battlefield or birds circling a seaside port.
+- Added new setting to allow playing effects over Fog of War/Token Vision. This is a request I've received a few times to allow effect visibility when players cannot see the area the effect is taking place in.
+- Added new api's for stopping all scene level effects on a scene, stopping all region level effects on a scene, and starting all regions level effects on a scene
+- Added right click option to the Clear Particle and Filter Effects button which will disable all region particle and filter effects for a given scene. This will not delete the behaviors.
+- Added new splash parameter to the presets api to allow turning Rain's splash option on/off
+- Updated compatability with V14 regions so that fxmaster effects respect Foundrys Wall Restrictions optionals
+- Updated effect direction normalization. Took a pass at modifying the direction parameter for all effects to respect geometric definitions. 0 should face right on the x-axis for all effects, with the angle increasing counterclockwise.
+- Updated effect normalization for many parameters to provide a 0-1 range instead of the arbitrary numeric values previously used in various places. This should be more consistent from a usability standpoint as non-numeric specific effects now effectively act on a 0-100% scale.
+- Updated Crows, Birds, and Eagles particle effects to have a higher cap for max density
+- Update Spiders particle effect to have a lower available minimum density
+- Updated Lightning, Lightning Bolt, and Screen Shake filter effects audio aware api parameter name from 'Thunder Aware' to 'Audio Aware' for more clarity. Tooltip now contains a reference to Thunder audio being a common use case for this parameter.
+- Resolved mask placement issue when Restricts Weather or FXMaster Restricts Particle/Filter was enabled for an overhead Tile with a mode other than Fade Entire Tile.
+- Resolved Embers, Stars, Fireflies, and Magic Crystals particle effects not displaying over top of Foundry darkness. When those effects are active in a scene with darkness, they will play outside of FXMaster's layers constructor and so will not be order-able against other effects - playing on top by default.
+- Resolved filter effects not fully displaying if a scene did not have a background applied.
+- Added localizations for the new Orbit mode and the new FXMaster+ Fire particle and filter effects!

@@ -27,7 +27,9 @@ import {
   composeMaskMinusTiles,
   composeMaskMinusTilesRT,
   composeMaskMinusCoverageRT,
+  repaintTilesMaskInto,
   estimateRegionInradius,
+  regionMaskTraceShapes,
   regionWorldBounds,
   getSceneDarknessLevel,
   isEffectActiveForSceneDarkness,
@@ -47,6 +49,7 @@ import {
   getRegionParticleEffectDefinitions,
   fxmUpdateDisplayObjectWorldTransform,
   buildBelowTokenMaskCoverageSignature,
+  buildBelowTileMaskCoverageSignature,
 } from "../utils.js";
 import {
   markSceneParticleSuppressionCompositorInteraction,
@@ -55,15 +58,19 @@ import {
 } from "./particle-effects-scene-manager.js";
 import { BaseEffectsLayer } from "../common/base-effects-layer.js";
 import { logger } from "../logger.js";
+import { hasOwn, isPlainObject } from "../utils/object.js";
 import {
   buildSceneEffectUid,
   buildRegionEffectUid,
   getOrderedEnabledEffectRenderRows,
+  normalizeBehaviorDocs,
 } from "../common/effect-stack.js";
 import { SceneMaskManager } from "../common/base-effects-scene-manager.js";
 import { fxmForEachEmitterParticle } from "./effects/effect.js";
 
 const TYPE = `${packageId}.particleEffectsRegion`;
+const ACTIVE_DARKNESS_EPSILON = 1e-4;
+
 /**
  * Return whether native weather occlusion filters can be used for stack-pass particle rendering.
  *
@@ -116,24 +123,8 @@ function buildRegionParticleContext(placeable) {
   };
 }
 
-/**
- * Normalize a region behavior collection or array into an array of behavior documents.
- *
- * @param {Iterable<foundry.documents.RegionBehavior>|foundry.documents.RegionBehavior[]|null|undefined} behaviorDocs
- * @returns {foundry.documents.RegionBehavior[]}
- * @private
- */
-function normalizeRegionBehaviorDocs(behaviorDocs) {
-  if (!behaviorDocs) return [];
-  if (Array.isArray(behaviorDocs)) return behaviorDocs;
-  if (Array.isArray(behaviorDocs.contents)) return behaviorDocs.contents;
-  if (typeof behaviorDocs.toArray === "function") return behaviorDocs.toArray();
-  if (typeof behaviorDocs.values === "function") return Array.from(behaviorDocs.values());
-  return Array.from(behaviorDocs);
-}
-
 function regionHasActiveSuppressionBehavior(placeable, behaviorType) {
-  return normalizeRegionBehaviorDocs(placeable?.document?.behaviors).some(
+  return normalizeBehaviorDocs(placeable?.document?.behaviors).some(
     (behavior) => behavior?.type === behaviorType && !behavior.disabled,
   );
 }
@@ -176,6 +167,35 @@ function particleBelowForegroundEnabled(value) {
 }
 
 /**
+ * Determine whether a particle tint option is enabled.
+ *
+ * @param {*} value
+ * @returns {boolean}
+ */
+function particleTintEnabled(value) {
+  if (!isPlainObject(value)) return false;
+  const nested = isPlainObject(value.value) ? value.value : null;
+  if (typeof nested?.apply === "boolean") return nested.apply;
+  if (typeof value.apply === "boolean") return value.apply;
+  return nested ? particleTintEnabled(nested) : false;
+}
+
+function normalizeStoredParticleOptionValue(value) {
+  if (!isPlainObject(value) || !hasOwn(value, "value")) return value;
+  if (typeof value.apply === "boolean") return { value: value.value, apply: value.apply };
+
+  const inner = value.value;
+  if (isPlainObject(inner) && hasOwn(inner, "value")) return normalizeStoredParticleOptionValue(inner);
+  return inner;
+}
+
+function wrapStoredParticleOptions(options = {}) {
+  return Object.fromEntries(
+    Object.entries(options ?? {}).map(([key, value]) => [key, { value: normalizeStoredParticleOptionValue(value) }]),
+  );
+}
+
+/**
  * Resolve the occlusion elevation used for a particle runtime.
  *
  * @param {{ belowForeground?: boolean }|null|undefined} entry
@@ -206,6 +226,49 @@ function chooseParticleMaskTexture(bundle, belowTokens, belowTiles) {
   if (belowTokens) return bundle.cutoutTokens || bundle.cutoutCombined || bundle.base || null;
   if (belowTiles) return bundle.cutoutTiles || bundle.cutoutCombined || bundle.base || null;
   return bundle.base || null;
+}
+
+/**
+ * Test whether a texture retains valid metadata for use as a PIXI sprite mask.
+ *
+ * @param {PIXI.Texture|PIXI.RenderTexture|null|undefined} texture
+ * @returns {boolean}
+ */
+function isUsableParticleMaskTexture(texture) {
+  if (
+    !texture ||
+    texture === PIXI.Texture.EMPTY ||
+    texture.destroyed ||
+    !texture.baseTexture ||
+    texture.baseTexture.destroyed ||
+    texture.valid === false
+  )
+    return false;
+  const width = Number(texture.orig?.width);
+  const height = Number(texture.orig?.height);
+  return Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0;
+}
+
+/**
+ * Detach and clear a sprite mask without destroying the sprite.
+ *
+ * @param {PIXI.Container|null|undefined} container
+ * @param {PIXI.Sprite|null|undefined} sprite
+ * @returns {void}
+ */
+function disableParticleMask(container, sprite) {
+  if (!sprite || sprite.destroyed) return;
+  try {
+    if (container?.mask === sprite) container.mask = null;
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+  }
+  try {
+    sprite._fxmMaskEnabled = false;
+    sprite.texture = PIXI.Texture.EMPTY;
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+  }
 }
 
 /**
@@ -332,6 +395,42 @@ function particleOptionsChangedOnlyRuntimeRouting(previous, next) {
   return sawRoutingChange;
 }
 
+function particleOptionsCanUpdateInPlace(EffectClass, existing, previous, next) {
+  try {
+    if (
+      typeof existing?.canUpdateParticleOptionsInPlace === "function" &&
+      existing.canUpdateParticleOptionsInPlace(previous, next)
+    )
+      return true;
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+  }
+
+  try {
+    if (
+      typeof EffectClass?.canUpdateParticleOptionsInPlace === "function" &&
+      EffectClass.canUpdateParticleOptionsInPlace(previous, next)
+    )
+      return true;
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+  }
+
+  return false;
+}
+
+async function updateParticleOptionsInPlace(existing, options, previous) {
+  if (typeof existing?.updateParticleOptions !== "function") return false;
+  try {
+    const result = existing.updateParticleOptions(options, { previous });
+    if (result && typeof result.then === "function") await result;
+    return result !== false;
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+    return false;
+  }
+}
+
 export class ParticleEffectsLayer extends BaseEffectsLayer {
   static get layerOptions() {
     return foundry.utils.mergeObject(super.layerOptions, { name: "particle-effects" });
@@ -372,6 +471,9 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     this._lastViewSize = { w: canvas.app.renderer.view?.width | 0, h: canvas.app.renderer.view?.height | 0 };
     this._gatePassCache = new Map();
     this._weatherOcclusionTilePresence = { key: null, value: false };
+    this._aboveWeatherRevealRT = null;
+    this._aboveWeatherRevealFilter = null;
+    this._aboveTintIsolationFilter = null;
 
     this._lastSceneMaskMatrix = null;
     this._currentCameraMatrix = null;
@@ -383,6 +485,8 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
 
     this._tokensDirty = false;
     this._lastBelowObjectCoverageMatrix = null;
+    this._lastBelowTokenCoverageSignature = null;
+    this._lastBelowTileCoverageSignature = null;
 
     this._coalescedSceneSuppressionRefresh = null;
     this._lastSceneDarknessSignature = "";
@@ -555,17 +659,21 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
   /**
    * Return transient scene-particle stack rows that should continue rendering while a prior runtime fades out.
    *
-   * @returns {Array<{ uid: string, kind: "particle", scope: "scene", renderIndex: number, options?: object|null, levels?: unknown }>}
+   * @returns {Array<{ uid: string, kind: "particle", scope: "scene", renderIndex: number, layerLevel?: string|null, options?: object|null, levels?: unknown }>}
    */
   getTransientStackRows() {
-    return Array.from(this._transientStackRows.values(), ({ uid, kind, scope, renderIndex, options, levels }) => ({
-      uid,
-      kind,
-      scope: scope ?? "scene",
-      renderIndex,
-      options,
-      levels,
-    }));
+    return Array.from(
+      this._transientStackRows.values(),
+      ({ uid, kind, scope, renderIndex, layerLevel, options, levels }) => ({
+        uid,
+        kind,
+        scope: scope ?? "scene",
+        renderIndex,
+        layerLevel: layerLevel ?? null,
+        options,
+        levels,
+      }),
+    );
   }
 
   /**
@@ -580,6 +688,58 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       const uid = orderedRows[index]?.uid;
       if (!uid.startsWith("scene:particle:")) continue;
       this._lastKnownOrder.set(uid, index);
+    }
+  }
+
+  /**
+   * Apply stack z-index ordering to live scene-particle containers.
+   *
+   * @returns {void}
+   */
+  _syncLiveSceneParticleStackOrder() {
+    const orderedRows = getOrderedEnabledEffectRenderRows(canvas.scene, { clone: false });
+    const zByUid = new Map();
+    for (let index = 0; index < orderedRows.length; index++) {
+      const uid = orderedRows[index]?.uid;
+      if (typeof uid !== "string" || !uid.startsWith("scene:particle:")) continue;
+      zByUid.set(uid, orderedRows.length - index);
+    }
+
+    for (const row of this._transientStackRows.values()) {
+      const uid = row?.uid;
+      if (!uid) continue;
+      const renderIndex = Number(row.renderIndex);
+      const z = Number.isFinite(renderIndex) ? orderedRows.length - renderIndex : 0;
+      zByUid.set(uid, z);
+    }
+
+    const parents = new Set();
+    for (const [uid, entry] of this.stackEntries.entries()) {
+      const zIndex = zByUid.get(uid);
+      if (!Number.isFinite(zIndex)) continue;
+      const slot = entry?.slot ?? entry?.container ?? entry?.fx ?? null;
+      if (!slot || slot.destroyed) continue;
+      try {
+        slot.zIndex = zIndex;
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+      try {
+        if (entry?.fx && !entry.fx.destroyed) entry.fx.zIndex = zIndex;
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+      if (slot.parent) parents.add(slot.parent);
+    }
+
+    for (const parent of parents) {
+      if (!parent || parent.destroyed) continue;
+      try {
+        parent.sortableChildren = true;
+        parent.sortChildren?.();
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
     }
   }
 
@@ -606,6 +766,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       kind: "particle",
       scope: "scene",
       renderIndex,
+      layerLevel: data?.layerLevel ?? null,
       options: data?.options ?? null,
       levels: data?.levels ?? data?.options?.levels ?? null,
     });
@@ -622,6 +783,113 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     if (!uid) return;
     this._transientStackRows.delete(uid);
     this._unregisterStackSlot(uid);
+  }
+
+  /**
+   * Ensure the pass-through filter used to isolate tinted above-darkness particles.
+   *
+   * @returns {PIXI.Filter|null}
+   */
+  _ensureAboveTintIsolationFilter() {
+    if (this._aboveTintIsolationFilter && !this._aboveTintIsolationFilter.destroyed)
+      return this._aboveTintIsolationFilter;
+
+    try {
+      this._aboveTintIsolationFilter = new PIXI.Filter(
+        `
+        precision mediump float;
+        attribute vec2 aVertexPosition;
+        uniform mat3 projectionMatrix;
+        uniform vec4 inputSize;
+        uniform vec4 outputFrame;
+        varying vec2 vTextureCoord;
+        void main() {
+          vec2 position = aVertexPosition * max(outputFrame.zw, vec2(0.0)) + outputFrame.xy;
+          vTextureCoord = aVertexPosition * (outputFrame.zw * inputSize.zw);
+          gl_Position = vec4((projectionMatrix * vec3(position, 1.0)).xy, 0.0, 1.0);
+        }
+      `,
+        `
+        precision mediump float;
+        varying vec2 vTextureCoord;
+        uniform sampler2D uSampler;
+        void main() {
+          gl_FragColor = texture2D(uSampler, vTextureCoord);
+        }
+      `,
+      );
+      this._aboveTintIsolationFilter.blendMode = PIXI.BLEND_MODES.NORMAL;
+      return this._aboveTintIsolationFilter;
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+      this._aboveTintIsolationFilter = null;
+      return null;
+    }
+  }
+
+  /**
+   * Remove tint-isolation compositing from a scene particle container.
+   *
+   * @param {PIXI.Container|null} container
+   * @returns {void}
+   */
+  _clearSceneParticleTintIsolation(container) {
+    if (!container || container.destroyed || !container.__fxmAboveTintIsolationEnabled) return;
+
+    const activeFilter = container.__fxmAboveTintIsolationFilter ?? this._aboveTintIsolationFilter;
+    try {
+      const filters = Array.isArray(container.filters)
+        ? container.filters.filter((candidate) => candidate && candidate !== activeFilter)
+        : [];
+      container.filters = filters.length ? filters : null;
+      container.filterArea = container.__fxmAboveTintIsolationFilterArea ?? null;
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    delete container.__fxmAboveTintIsolationEnabled;
+    delete container.__fxmAboveTintIsolationFilter;
+    delete container.__fxmAboveTintIsolationFilterArea;
+  }
+
+  /**
+   * Synchronize tint-isolation compositing for a scene particle runtime.
+   *
+   * @param {PIXI.DisplayObject|null} fx
+   * @param {PIXI.Container|null} container
+   * @param {string} layerLevel
+   * @returns {void}
+   */
+  _syncSceneParticleTintIsolation(fx, container, layerLevel) {
+    if (!container || container.destroyed) return;
+
+    const tintOption = fx?.__fxmOptions?.tint ?? fx?._fxmOptsCache?.tint ?? fx?.options?.tint;
+    const shouldIsolate = layerLevel === "aboveDarkness" && particleTintEnabled(tintOption);
+    if (!shouldIsolate) {
+      this._clearSceneParticleTintIsolation(container);
+      return;
+    }
+
+    const filter = this._ensureAboveTintIsolationFilter();
+    if (!filter) return;
+
+    try {
+      const previousIsolationFilter = container.__fxmAboveTintIsolationFilter ?? null;
+      const filters = Array.isArray(container.filters)
+        ? container.filters.filter(
+            (candidate) => candidate && candidate !== filter && candidate !== previousIsolationFilter,
+          )
+        : [];
+      filters.push(filter);
+      if (!container.__fxmAboveTintIsolationEnabled)
+        container.__fxmAboveTintIsolationFilterArea = container.filterArea ?? null;
+      container.filters = filters;
+      container.filterArea = canvas?.app?.renderer?.screen ?? container.filterArea ?? null;
+      container.__fxmAboveTintIsolationEnabled = true;
+      container.__fxmAboveTintIsolationFilter = filter;
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
 
   /**
@@ -879,7 +1147,6 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     }
     this._scratchGfx = null;
 
-    /** Cleanup of above-band scene container and mask bindings. */
     try {
       if (this._aboveContent?.mask) this._aboveContent.mask = null;
     } catch (err) {
@@ -892,7 +1159,6 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     }
     this._aboveContent = null;
 
-    /** Cleanup of below-band scene container. */
     try {
       this._belowContainer?.destroy({ children: true });
     } catch (err) {
@@ -900,7 +1166,6 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     }
     this._belowContainer = null;
 
-    /** Clear strong references to scene buckets and their mask sprites. */
     this._sceneBelowBase = null;
     this._sceneBelowCutout = null;
     this._sceneAboveBase = null;
@@ -918,6 +1183,27 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     this._aboveMaskGfx = null;
 
     try {
+      if (this._aboveWeatherRevealRT) this._releaseRT(this._aboveWeatherRevealRT);
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    this._aboveWeatherRevealRT = null;
+
+    try {
+      this._aboveWeatherRevealFilter?.destroy?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    this._aboveWeatherRevealFilter = null;
+
+    try {
+      this._aboveTintIsolationFilter?.destroy?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    this._aboveTintIsolationFilter = null;
+
+    try {
       this.filters = [];
     } catch (err) {
       logger.debug("FXMaster:", err);
@@ -926,6 +1212,9 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     this._aboveOccl = null;
 
     this._tokensDirty = false;
+    this._lastBelowObjectCoverageMatrix = null;
+    this._lastBelowTokenCoverageSignature = null;
+    this._lastBelowTileCoverageSignature = null;
     this._lastSceneMaskMatrix = null;
     this._currentCameraMatrix = null;
     this._lastSceneSuppressionOverlaySignature = "";
@@ -936,7 +1225,6 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
   }
 
   #destroyEffects() {
-    /** Destroy all scene-level particle effects. */
     for (const fx of this.particleEffects.values()) {
       try {
         fx.stop?.();
@@ -980,7 +1268,6 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     this._transientStackRows.clear();
     this._lastKnownOrder.clear();
 
-    /** Destroy all region-level particle effects and associated mask sprites. */
     for (const entries of this.regionEffects.values()) {
       for (const entry of entries) {
         if (entry?.uid) this._unregisterStackSlot(entry.uid);
@@ -1096,7 +1383,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
   }
 
   /**
-   * Refresh shared token and tile coverage masks when camera motion changes their screen-space projection.
+   * Refresh shared token and tile coverage masks when camera or live coverage state changes.
    *
    * @returns {void}
    */
@@ -1105,6 +1392,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     if (!anyBelowTokens && !anyBelowTiles) {
       this._lastBelowObjectCoverageMatrix = null;
       this._lastBelowTokenCoverageSignature = null;
+      this._lastBelowTileCoverageSignature = null;
       return;
     }
 
@@ -1119,10 +1407,20 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     } else {
       this._lastBelowTokenCoverageSignature = null;
     }
-    if (!cameraMoved && !tokenMotionChanged) return;
+
+    let tileCoverageChanged = false;
+    if (anyBelowTiles) {
+      const tileSignature = buildBelowTileMaskCoverageSignature();
+      tileCoverageChanged = tileSignature !== (this._lastBelowTileCoverageSignature ?? null);
+      this._lastBelowTileCoverageSignature = tileSignature;
+    } else {
+      this._lastBelowTileCoverageSignature = null;
+    }
+
+    if (!cameraMoved && !tokenMotionChanged && !tileCoverageChanged) return;
 
     try {
-      SceneMaskManager.instance.refreshTokensSync?.({ force: tokenMotionChanged });
+      SceneMaskManager.instance.refreshTokensSync?.({ force: tokenMotionChanged || tileCoverageChanged });
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
@@ -1196,17 +1494,17 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     const texture =
       entry?.maskTextureOverride ?? chooseParticleMaskTexture(this._sceneMaskBundle, belowTokens, belowTiles);
 
-    sprite.texture = texture ? safeMaskTexture(texture) : PIXI.Texture.EMPTY;
-    sprite._fxmMaskEnabled = !!texture;
+    if (!isUsableParticleMaskTexture(texture)) {
+      disableParticleMask(container, sprite);
+      return;
+    }
 
-    if (!texture) {
-      if (container.mask === sprite) {
-        try {
-          container.mask = null;
-        } catch (err) {
-          logger.debug("FXMaster:", err);
-        }
-      }
+    try {
+      sprite.texture = texture;
+      sprite._fxmMaskEnabled = true;
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+      disableParticleMask(container, sprite);
       return;
     }
 
@@ -1387,6 +1685,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     }
 
     this._applySceneMaskToContainer(container, maskSprite, { belowTokens, belowTiles });
+    this._syncSceneParticleTintIsolation(fx, container, layerLevel);
     return { container, maskSprite };
   }
 
@@ -1402,6 +1701,8 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
 
     const container = fx.__fxmSceneContainer ?? null;
     const maskSprite = fx.__fxmSceneMaskSprite ?? null;
+
+    this._clearSceneParticleTintIsolation(container);
 
     try {
       if (container && maskSprite && container.mask === maskSprite) container.mask = null;
@@ -1466,13 +1767,10 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
    * @param {{ base?: PIXI.RenderTexture|null, cutoutTokens?: PIXI.RenderTexture|null, cutoutTiles?: PIXI.RenderTexture|null, cutoutCombined?: PIXI.RenderTexture|null }} masks
    */
   setSceneMaskTextures({ base = null, cutoutTokens = null, cutoutTiles = null, cutoutCombined = null } = {}) {
-    const baseValid = !!base && !base.destroyed && !!base.orig && !base.baseTexture?.destroyed;
-    const cutoutTokensValid =
-      !!cutoutTokens && !cutoutTokens.destroyed && !!cutoutTokens.orig && !cutoutTokens.baseTexture?.destroyed;
-    const cutoutTilesValid =
-      !!cutoutTiles && !cutoutTiles.destroyed && !!cutoutTiles.orig && !cutoutTiles.baseTexture?.destroyed;
-    const cutoutCombinedValid =
-      !!cutoutCombined && !cutoutCombined.destroyed && !!cutoutCombined.orig && !cutoutCombined.baseTexture?.destroyed;
+    const baseValid = isUsableParticleMaskTexture(base);
+    const cutoutTokensValid = isUsableParticleMaskTexture(cutoutTokens);
+    const cutoutTilesValid = isUsableParticleMaskTexture(cutoutTiles);
+    const cutoutCombinedValid = isUsableParticleMaskTexture(cutoutCombined);
 
     this._sceneMaskBundle = {
       base: baseValid ? base : null,
@@ -1481,17 +1779,41 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       cutoutCombined: cutoutCombinedValid ? cutoutCombined : null,
     };
 
-    const apply = (spr, tex, enabled) => {
-      if (!spr || spr.destroyed) return;
-      suppressVisibleMaskPaint(spr);
-      spr.texture = tex ?? PIXI.Texture.EMPTY;
-      spr._fxmMaskEnabled = !!enabled;
+    const apply = (container, sprite, texture) => {
+      if (!sprite || sprite.destroyed) return;
+      suppressVisibleMaskPaint(sprite);
+      if (!isUsableParticleMaskTexture(texture)) {
+        disableParticleMask(container, sprite);
+        return;
+      }
+      try {
+        sprite.texture = texture;
+        sprite._fxmMaskEnabled = true;
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+        disableParticleMask(container, sprite);
+      }
     };
 
-    apply(this._sceneBelowBaseMask, baseValid ? base : PIXI.Texture.EMPTY, baseValid);
-    apply(this._sceneAboveBaseMask, baseValid ? base : PIXI.Texture.EMPTY, baseValid);
-    apply(this._sceneBelowCutoutMask, cutoutTokensValid ? cutoutTokens : PIXI.Texture.EMPTY, cutoutTokensValid);
-    apply(this._sceneAboveCutoutMask, cutoutTokensValid ? cutoutTokens : PIXI.Texture.EMPTY, cutoutTokensValid);
+    apply(this._sceneBelowBase, this._sceneBelowBaseMask, this._sceneMaskBundle.base);
+    apply(this._sceneAboveBase, this._sceneAboveBaseMask, this._sceneMaskBundle.base);
+    apply(this._sceneBelowCutout, this._sceneBelowCutoutMask, this._sceneMaskBundle.cutoutTokens);
+    apply(this._sceneAboveCutout, this._sceneAboveCutoutMask, this._sceneMaskBundle.cutoutTokens);
+
+    const updateSceneRuntimeMask = (fx) => {
+      if (!fx || fx.destroyed) return;
+      const container = fx.__fxmSceneContainer ?? null;
+      const maskSprite = fx.__fxmSceneMaskSprite ?? null;
+      if (!container || container.destroyed || !maskSprite || maskSprite.destroyed) return;
+      this._applySceneMaskToContainer(container, maskSprite, {
+        belowTokens: !!fx.__fxmBelowTokens,
+        belowTiles: !!fx.__fxmBelowTiles,
+        belowForeground: !!fx.__fxmBelowForeground,
+      });
+    };
+
+    for (const fx of this.particleEffects.values()) updateSceneRuntimeMask(fx);
+    for (const fx of this._dyingSceneEffects) updateSceneRuntimeMask(fx);
   }
 
   /**
@@ -1525,8 +1847,17 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         : null;
     if (!bucketSprite || bucketSprite.destroyed) return;
     suppressVisibleMaskPaint(bucketSprite);
-    bucketSprite.texture = texture ? safeMaskTexture(texture) : PIXI.Texture.EMPTY;
-    bucketSprite._fxmMaskEnabled = !!texture;
+    if (!isUsableParticleMaskTexture(texture)) {
+      disableParticleMask(root, bucketSprite);
+      return;
+    }
+    try {
+      bucketSprite.texture = texture;
+      bucketSprite._fxmMaskEnabled = true;
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+      disableParticleMask(root, bucketSprite);
+    }
   }
 
   /**
@@ -1617,7 +1948,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
    */
   _buildRegionDarknessActivationSignature(placeable, darknessLevel = getSceneDarknessLevel()) {
     const regionId = placeable?.id ?? "";
-    const behaviors = normalizeRegionBehaviorDocs(placeable?.document?.behaviors).filter(
+    const behaviors = normalizeBehaviorDocs(placeable?.document?.behaviors).filter(
       (behavior) => behavior.type === TYPE && !behavior.disabled,
     );
 
@@ -1703,7 +2034,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         continue;
       }
 
-      const options = Object.fromEntries(Object.entries(flagOptions ?? {}).map(([k, v]) => [k, { value: v }]));
+      const options = wrapStoredParticleOptions(flagOptions);
       const EffectClass = CONFIG.fxmaster.particleEffects[type];
       const defaultBlend = EffectClass?.defaultConfig?.blendMode ?? PIXI.BLEND_MODES.NORMAL;
       const existing = cur.get(id);
@@ -1794,6 +2125,24 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
           }
           registerRuntime(existing);
           continue;
+        }
+
+        if (particleOptionsCanUpdateInPlace(EffectClass, existing, prev, options)) {
+          const updated = await updateParticleOptionsInPlace(existing, options, prev);
+          if (updated) {
+            try {
+              existing._fxmOptsCache = foundry.utils.deepClone(options);
+            } catch (_err) {
+              existing._fxmOptsCache = options;
+            }
+            try {
+              existing.play?.({ skipFading: true });
+            } catch (err) {
+              logger.debug("FXMaster:", err);
+            }
+            registerRuntime(existing);
+            continue;
+          }
         }
 
         if (soft) {
@@ -1894,8 +2243,10 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
 
     this._lastSceneDarknessSignature = this._buildSceneDarknessActivationSignature(darknessLevel);
     this._updateOcclusionGates();
+    this._updateAboveWeatherRevealSuppression();
     this._updateRegionBelowTokensNeeded();
     this._syncSceneStackOrderCache();
+    this._syncLiveSceneParticleStackOrder();
 
     if (removalPromises.length) {
       try {
@@ -1950,7 +2301,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     );
     this.regionEffects.set(regionId, []);
 
-    const behaviors = normalizeRegionBehaviorDocs(behaviorDocs ?? placeable?.document?.behaviors).filter(
+    const behaviors = normalizeBehaviorDocs(behaviorDocs ?? placeable?.document?.behaviors).filter(
       (behavior) => behavior.type === TYPE && !behavior.disabled,
     );
     if (!behaviors.length) {
@@ -2067,10 +2418,11 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       const { layerLevel = "belowDarkness" } = EffectClass?.defaultConfig || {};
       const defaultBM = EffectClass?.defaultConfig?.blendMode ?? PIXI.BLEND_MODES.NORMAL;
 
-      const effectOptions = Object.fromEntries(
-        Object.entries(params?.options ?? {}).map(([k, v]) => [k, { value: v }]),
-      );
-      if (regionParticleContext) effectOptions.__fxmParticleContext = regionParticleContext;
+      const effectOptions = wrapStoredParticleOptions(params?.options ?? {});
+      const scopedParticleContext = regionParticleContext
+        ? { ...regionParticleContext, regionId, behaviorId: behavior?.id ?? null }
+        : null;
+      if (scopedParticleContext) effectOptions.__fxmParticleContext = scopedParticleContext;
 
       const container = new PIXI.Container();
       container.sortableChildren = true;
@@ -2084,7 +2436,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       container.addChild(spr);
 
       const fx = new EffectClass(effectOptions);
-      if (regionParticleContext) fx.__fxmParticleContext = regionParticleContext;
+      if (scopedParticleContext) fx.__fxmParticleContext = scopedParticleContext;
       try {
         fx.blendMode = defaultBM;
       } catch (err) {
@@ -2337,6 +2689,205 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     }
   }
 
+  /**
+   * Return the shader filter that removes live above-darkness particles where restrictive overhead tiles are revealed.
+   *
+   * @returns {PIXI.Filter|null}
+   */
+  _ensureAboveWeatherRevealFilter() {
+    if (this._aboveWeatherRevealFilter && !this._aboveWeatherRevealFilter.destroyed)
+      return this._aboveWeatherRevealFilter;
+
+    try {
+      this._aboveWeatherRevealFilter = new PIXI.Filter(
+        `
+        precision mediump float;
+        attribute vec2 aVertexPosition;
+        uniform mat3 projectionMatrix;
+        uniform vec4 inputSize;
+        uniform vec4 outputFrame;
+        uniform vec2 screenDimensions;
+        varying vec2 vTextureCoord;
+        varying vec2 vMaskTextureCoord;
+        void main() {
+          vec2 position = aVertexPosition * max(outputFrame.zw, vec2(0.0)) + outputFrame.xy;
+          vTextureCoord = aVertexPosition * (outputFrame.zw * inputSize.zw);
+          vMaskTextureCoord = position / max(screenDimensions, vec2(1.0));
+          gl_Position = vec4((projectionMatrix * vec3(position, 1.0)).xy, 0.0, 1.0);
+        }
+      `,
+        `
+        precision mediump float;
+        varying vec2 vTextureCoord;
+        varying vec2 vMaskTextureCoord;
+        uniform sampler2D uSampler;
+        uniform sampler2D revealSampler;
+        void main() {
+          vec4 src = texture2D(uSampler, vTextureCoord);
+          vec2 maskUV = clamp(vMaskTextureCoord, vec2(0.0), vec2(1.0));
+          vec4 revealSample = texture2D(revealSampler, maskUV);
+          float reveal = max(revealSample.r, revealSample.a);
+          float keep = clamp(1.0 - reveal, 0.0, 1.0);
+          gl_FragColor = vec4(src.rgb * keep, src.a * keep);
+        }
+      `,
+        { revealSampler: PIXI.Texture.EMPTY, screenDimensions: [1, 1] },
+      );
+      this._aboveWeatherRevealFilter.enabled = false;
+      return this._aboveWeatherRevealFilter;
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+      this._aboveWeatherRevealFilter = null;
+      return null;
+    }
+  }
+
+  /**
+   * Keep the above-darkness particle band filter list synchronized.
+   *
+   * @returns {void}
+   */
+  _syncAboveContentFilters() {
+    if (!this._aboveContent || this._aboveContent.destroyed) return;
+
+    const filters = [];
+    if (this._aboveOccl && !this._aboveOccl.destroyed) filters.push(this._aboveOccl);
+    if (this._aboveWeatherRevealFilter && !this._aboveWeatherRevealFilter.destroyed)
+      filters.push(this._aboveWeatherRevealFilter);
+
+    try {
+      this._aboveContent.filters = filters.length ? filters : null;
+      const screen = canvas?.app?.renderer?.screen ?? null;
+      if (screen) this._aboveContent.filterArea = screen;
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+  }
+
+  /**
+   * Return whether the live above-darkness band currently has a renderable source.
+   *
+   * @returns {boolean}
+   */
+  _aboveContentHasRenderableSource() {
+    for (const entry of this.stackEntries.values()) {
+      if (entry?.layerLevel !== "aboveDarkness") continue;
+      const slot = entry?.slot ?? entry?.container ?? entry?.fx ?? null;
+      if (!slot || slot.destroyed) continue;
+      if (slot.__fxmCompositorSourceSuppressed) continue;
+      if (slot.visible === false || slot.renderable === false) continue;
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Return a reusable viewport-sized Restricts Weather reveal mask for the above-darkness band.
+   *
+   * @returns {PIXI.RenderTexture|null}
+   */
+  _ensureAboveWeatherRevealRT() {
+    const { cssW, cssH } = getCssViewportMetrics();
+    const res = safeResolutionForCssArea(cssW, cssH);
+    let rt = this._aboveWeatherRevealRT ?? null;
+
+    const needsNew =
+      !rt ||
+      rt.destroyed ||
+      Math.abs(Number(rt.width ?? 0) - cssW) > 0.001 ||
+      Math.abs(Number(rt.height ?? 0) - cssH) > 0.001 ||
+      Math.abs(Number(rt.resolution || 1) - res) > 0.0001;
+
+    if (!needsNew) return rt;
+
+    try {
+      if (rt) this._releaseRT(rt);
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    try {
+      rt = this._acquireRT(cssW, cssH, res);
+      rt.baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
+      rt.baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
+      this._aboveWeatherRevealRT = rt;
+      return rt;
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+      this._aboveWeatherRevealRT = null;
+      return null;
+    }
+  }
+
+  /**
+   * Update Restricts Weather reveal suppression for live above-darkness particles.
+   *
+   * @returns {void}
+   */
+  _updateAboveWeatherRevealSuppression() {
+    const disable = () => {
+      const filter = this._aboveWeatherRevealFilter ?? null;
+      if (!filter || filter.destroyed) return;
+      try {
+        filter.enabled = false;
+        if (filter.uniforms) filter.uniforms.revealSampler = PIXI.Texture.EMPTY;
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    };
+
+    if (!this._aboveContent || this._aboveContent.destroyed) {
+      disable();
+      return;
+    }
+
+    if (getSceneDarknessLevel() <= ACTIVE_DARKNESS_EPSILON) {
+      disable();
+      return;
+    }
+
+    if (!this._aboveContentHasRenderableSource()) {
+      disable();
+      return;
+    }
+
+    if (!this._sceneHasWeatherOcclusionTiles()) {
+      disable();
+      return;
+    }
+
+    const revealRT = this._ensureAboveWeatherRevealRT();
+    const revealFilter = this._ensureAboveWeatherRevealFilter();
+    if (!revealRT || !revealFilter) {
+      disable();
+      return;
+    }
+
+    try {
+      repaintTilesMaskInto(revealRT, {
+        mode: "weatherReveal",
+        eraseUpperCoverage: false,
+        restrictionKind: "particles",
+        shouldIncludeTile: (tile) => tileDocumentRestrictsParticles(tile),
+      });
+      const screen = canvas?.app?.renderer?.screen ?? null;
+      const screenW = Number(screen?.width ?? revealRT.width ?? 1);
+      const screenH = Number(screen?.height ?? revealRT.height ?? 1);
+      const fallbackW = Math.max(1, Number(revealRT.width) || 1);
+      const fallbackH = Math.max(1, Number(revealRT.height) || 1);
+      revealFilter.uniforms.revealSampler = revealRT;
+      revealFilter.uniforms.screenDimensions = [
+        Number.isFinite(screenW) && screenW > 0 ? screenW : fallbackW,
+        Number.isFinite(screenH) && screenH > 0 ? screenH : fallbackH,
+      ];
+      revealFilter.enabled = true;
+      this._syncAboveContentFilters();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+      disable();
+    }
+  }
+
   #initializeInverseOcclusionFilter() {
     this.occlusionFilter = CONFIG.fxmaster.WeatherOcclusionMaskFilterNS.create({
       occlusionTexture: canvas.masks.depth.renderTexture,
@@ -2420,7 +2971,8 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       this._aboveContent.name = "fxmSceneAboveBand";
       this._aboveContent.sortableChildren = true;
       this._aboveContent.eventMode = "none";
-      this._aboveContent.renderable = false;
+      this._aboveContent.renderable = true;
+      this._aboveContent.zIndex = Math.max(Number(this._aboveContent.zIndex ?? 0) || 0, 100000);
       expectParent.addChild(this._aboveContent);
       this.refreshAboveSceneMask();
 
@@ -2430,8 +2982,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       this._aboveOccl.enabled = false;
       this._aboveOccl.elevation = this.#elevation;
       this._aboveOccl.blendMode = PIXI.BLEND_MODES.NORMAL;
-      this._aboveContent.filters = [this._aboveOccl];
-      this._aboveContent.filterArea = canvas.app.renderer.screen;
+      this._syncAboveContentFilters();
     } else if (this._aboveContent.parent !== expectParent) {
       try {
         this._aboveContent.parent?.removeChild?.(this._aboveContent);
@@ -2440,7 +2991,19 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       }
       expectParent.addChild(this._aboveContent);
     }
-    this._aboveContent.renderable = false;
+    try {
+      this._aboveContent.visible = true;
+      this._aboveContent.renderable = true;
+      this._aboveContent.zIndex = Math.max(Number(this._aboveContent.zIndex ?? 0) || 0, 100000);
+      if (expectParent.sortableChildren) expectParent.sortChildren?.();
+      else if (typeof expectParent.setChildIndex === "function" && this._aboveContent.parent === expectParent) {
+        const last = Math.max(0, (expectParent.children?.length ?? 1) - 1);
+        if (expectParent.getChildIndex?.(this._aboveContent) !== last)
+          expectParent.setChildIndex(this._aboveContent, last);
+      }
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     if (!this._sceneAboveCutout || this._sceneAboveCutout.destroyed) {
       this._sceneAboveCutout = new PIXI.Container();
@@ -2503,7 +3066,6 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         }
       }
 
-      /** Guard against transient invalid textures during scene transitions. */
       try {
         if (spr.texture?.orig) {
           spr.width = cssW;
@@ -2694,7 +3256,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     const bandWorld = Math.max(1e-6, pct * (Number.isFinite(inrad) && inrad > 0 ? inrad : 0));
     if (!(bandWorld > 0)) return null;
 
-    const shapes = placeable?.document?.shapes ?? [];
+    const shapes = regionMaskTraceShapes(placeable);
     if (!Array.isArray(shapes) || shapes.length === 0) return null;
 
     /** @type {Array<any>} */
@@ -2759,7 +3321,6 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       const n = (pts.length / 2) | 0;
       if (n < 3) return null;
 
-      /** Tight AABB for fast rejection and hole-distance lower bounds. */
       let minX = Infinity,
         minY = Infinity,
         maxX = -Infinity,
@@ -2773,9 +3334,6 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         if (y > maxY) maxY = y;
       }
 
-      /**
-       * Precompute per-edge data for fast point-to-segment distance. Layout per edge: [ax, ay, bx, by, abx, aby, invDenom]
-       */
       const edges = new Float32Array(n * 7);
       for (let i = 0; i < n; i++) {
         const j = (i + n - 1) % n;
@@ -2848,7 +3406,6 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         const c = Math.cos(rotRad);
         const sn = Math.sin(rotRad);
 
-        /** Tight AABB for a rotated rectangle. */
         const ex = Math.abs(c) * (w / 2) + Math.abs(sn) * (h / 2);
         const ey = Math.abs(sn) * (w / 2) + Math.abs(c) * (h / 2);
 
@@ -2876,7 +3433,6 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         const c = Math.cos(rotRad);
         const sn = Math.sin(rotRad);
 
-        /** Tight AABB for a rotated ellipse. */
         const ex = Math.sqrt(rx * c * (rx * c) + ry * sn * (ry * sn));
         const ey = Math.sqrt(rx * sn * (rx * sn) + ry * c * (ry * c));
 
@@ -2901,7 +3457,6 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         continue;
       }
 
-      /** Fallback for unusual shapes: if it has a points array, treat it as a polygon. */
       if (Array.isArray(s?.points) && s.points.length) {
         addPoly(s.points, hole, rotRad);
       }
@@ -2910,7 +3465,6 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     if (!solids.length) return null;
 
     const sdRect = (px, py, r) => {
-      /** Rotate by -rot using c=cos(rot), s=sin(rot). */
       const dx = px - r.cx;
       const dy = py - r.cy;
       const x = r.c * dx + r.s * dy;
@@ -2955,11 +3509,9 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         const aby = edges[o + 5];
         const inv = edges[o + 6];
 
-        /** Even-odd rule (ray cast on +X). */
         const intersect = ay > py !== by > py && px < (abx * (py - ay)) / (by - ay + 1e-12) + ax;
         if (intersect) inside = !inside;
 
-        /** Point-to-segment distance squared (one sqrt at the end). */
         const dx = px - ax;
         const dy = py - ay;
         let t = inv > 0 ? (dx * abx + dy * aby) * inv : 0;
@@ -2989,11 +3541,9 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     };
 
     const computeFade = (x, y) => {
-      /** Union of solids: inside-distance is max of per-shape inside distances. */
       let insideSolid = 0;
 
       for (const sh of solids) {
-        /** Fast AABB reject: if point is outside, it cannot be inside the shape. */
         if (x < sh.minX || x > sh.maxX || y < sh.minY || y > sh.maxY) continue;
 
         const sd = shapeSd(x, y, sh);
@@ -3001,7 +3551,6 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
           const d = -sd;
           if (d > insideSolid) insideSolid = d;
 
-          /** Once at or beyond the fade band, additional precision is unnecessary. */
           if (insideSolid >= bandWorld) {
             insideSolid = bandWorld;
             break;
@@ -3011,17 +3560,12 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
 
       if (!(insideSolid > 0)) return 0;
 
-      /** No holes: return directly (including early-out at full opacity). */
       if (!holes.length) return insideSolid >= bandWorld ? 1 : smooth01(insideSolid / bandWorld);
 
-      /** Holes: nearest boundary can also be a hole boundary. */
       let holeMin = Infinity;
       let holeMin2 = Infinity;
 
       for (const sh of holes) {
-        /**
-         * Lower-bound prune using AABB distance: if the AABB is already farther than the current best known hole distance, this hole cannot affect the result.
-         */
         if (holeMin2 !== Infinity) {
           let dx = 0;
           if (x < sh.minX) dx = sh.minX - x;
@@ -3041,14 +3585,12 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
           holeMin = sd;
           holeMin2 = sd * sd;
 
-          /** Cannot do better than zero; allow a small epsilon to stop scanning. */
           if (holeMin <= 1e-6) break;
         }
       }
 
       if (Number.isFinite(holeMin)) insideSolid = Math.min(insideSolid, holeMin);
 
-      /** Early-out: fully inside the fade band even after accounting for holes. */
       if (insideSolid >= bandWorld) return 1;
 
       return smooth01(insideSolid / bandWorld);
@@ -3074,7 +3616,6 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       if (typeof origUpdate !== "function") continue;
 
       emitter.update = (delta) => {
-        /** Restore unfaded alpha from the previous frame to prevent compounding. */
         try {
           fxmForEachEmitterParticle(emitter, (p) => {
             const last = Number(p?._fxmEdgeFadeMul);
@@ -3096,7 +3637,6 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
             const a = Number(p?.alpha) || 0;
             p._fxmEdgeFadeBaseAlpha = a;
 
-            /** PIXI particles expose numeric x/y values in world space. */
             const x = typeof p?.x === "number" ? p.x : Number(p?.x) || 0;
             const y = typeof p?.y === "number" ? p.y : Number(p?.y) || 0;
 
@@ -3124,6 +3664,12 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
 
     try {
       this._sanitizeSceneMasks();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    try {
+      this._updateAboveWeatherRevealSuppression();
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
@@ -3299,9 +3845,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
   }
 
   /**
-   * Return whether the current scene contains any visible overhead tiles that both expose native occlusion and restrict FXMaster particles.
-   *
-   * Plain scene particles do not need to route through the parent weather-occlusion filter when no such tiles exist. Skipping that filter in the simple case keeps compositor rendering aligned with the live scene during camera pan instead of sampling an unnecessary screen-space occlusion pass.
+   * Return whether the scene contains visible tile occlusion that can restrict FXMaster particles.
    *
    * @returns {boolean}
    */
@@ -3314,13 +3858,18 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
 
     if (cache.key === key && now - Number(cache.time ?? 0) < 250) return cache.value;
 
+    const foundryGeneration = Number(
+      globalThis.game?.release?.generation ?? String(globalThis.game?.version ?? "").split(".")[0],
+    );
+    const requireLegacyOverhead = !Number.isFinite(foundryGeneration) || foundryGeneration < 14;
+
     let value = false;
     for (const tile of tiles) {
       if (!tile || tile.document?.hidden) continue;
       if (tile.visible === false || tile?.mesh?.visible === false || tile?.mesh?.renderable === false) continue;
 
-      if (!isTileOverhead(tile)) continue;
       if (!tileHasActiveOcclusion(tile)) continue;
+      if (requireLegacyOverhead && !isTileOverhead(tile)) continue;
       if (!tileDocumentRestrictsParticles(tile)) continue;
 
       value = true;
@@ -3395,42 +3944,17 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       if (!bucket || bucket.destroyed || !spr || spr.destroyed) return;
       suppressVisibleMaskPaint(spr);
 
-      if (!spr._fxmMaskEnabled) {
-        if (bucket.mask === spr) {
-          try {
-            bucket.mask = null;
-          } catch (err) {
-            logger.debug("FXMaster:", err);
-          }
-        }
-        return;
-      }
-
-      /**
-       * Skip updates when the sprite points at an invalid texture. PIXI's Sprite width/height setters read texture.orig dimensions and may throw.
-       */
-      if (!spr.texture?.orig) {
-        if (bucket.mask === spr) {
-          try {
-            bucket.mask = null;
-          } catch (err) {
-            logger.debug("FXMaster:", err);
-          }
-        }
+      if (!spr._fxmMaskEnabled || !isUsableParticleMaskTexture(spr.texture)) {
+        disableParticleMask(bucket, spr);
         return;
       }
 
       try {
         spr.width = cssW;
         spr.height = cssH;
-      } catch {
-        if (bucket.mask === spr) {
-          try {
-            bucket.mask = null;
-          } catch (err) {
-            logger.debug("FXMaster:", err);
-          }
-        }
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+        disableParticleMask(bucket, spr);
         return;
       }
 
@@ -3492,8 +4016,12 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
               ty: coverageMatrix.ty,
             }
           : null;
+        this._lastBelowTokenCoverageSignature = anyBelowTokens ? buildBelowTokenMaskCoverageSignature() : null;
+        this._lastBelowTileCoverageSignature = anyBelowTiles ? buildBelowTileMaskCoverageSignature() : null;
       } else {
         this._lastBelowObjectCoverageMatrix = null;
+        this._lastBelowTokenCoverageSignature = null;
+        this._lastBelowTileCoverageSignature = null;
       }
     } catch (err) {
       logger.debug("FXMaster:", err);

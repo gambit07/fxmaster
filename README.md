@@ -13,7 +13,7 @@
 <hr/>
 <p>Welcome to the official release of FXMaster V8! This release brings brand new handling for V14 Scene Levels, new Manage Layers functionality to order particle and filter effects, new macro API with improved flexibility, and more! Hope everyone enjoys!</p>
 
-**<p>Any support via the <a href="https://www.patreon.com/GambitsLounge" target="_blank" rel="nofollow noopener">Patreon</a> or <a href="https://ko-fi.com/gambit07" target="_blank" rel="nofollow noopener">Ko-fi</a> is greatly appreciated! If you are a Patreon subscriber you will receive access to the FXMaster+ module. FXMaster+ can be accessed from Patreon, and it's where I will be adding new particle effects and filters moving forward. For the month of April, it will get you access to the 🟢Aurora Borealis, ⚪Wind, ⚪Wind Wisp, 🔵Water, 🟡Lightning Bolts, 🔵Fish, 🟢Glitch, 🔵Ice, 🟤Duststorm, 🟤Sandstorm, 🟢Ghosts, 🟡Sunlight, 🟢Magic Crystals, 🟡Fireflies, 🌸Sakura Bloom, and 🌸Sakura Blossoms Effects - Effects are previewed below:</p>**
+**<p>Any support via the <a href="https://www.patreon.com/GambitsLounge" target="_blank" rel="nofollow noopener">Patreon</a> or <a href="https://ko-fi.com/gambit07" target="_blank" rel="nofollow noopener">Ko-fi</a> is greatly appreciated! If you are a Patreon subscriber you will receive access to the FXMaster+ module. FXMaster+ can be accessed from Patreon, and it's where I will be adding new particle effects and filters moving forward. For the month of May, it will get you access to the 🟡Fire, 🟢Aurora Borealis, ⚪Wind, ⚪Wind Wisp, 🔵Water, 🟡Lightning Bolts, 🔵Fish, 🟢Glitch, 🔵Ice, 🟤Duststorm, 🟤Sandstorm, 🟢Ghosts, 🟡Sunlight, 🟢Magic Crystals, 🟡Fireflies, 🌸Sakura Bloom, and 🌸Sakura Blossoms Effects - Effects are previewed below:</p>**
 
 
   <video
@@ -264,6 +264,8 @@ By clicking on the name of a _Particle Effect_, you expand it, showing the optio
 
 ![Particle Effect Options](./media/screenshots/particle-effect-options.webp)
 
+Right clicking a given toggle button will give you the option to reset the specific effect to its default values.
+
 #### Particle Effects via Region Behavior
 
 After adding a Region, open the Region config menu and navigate to the Behaviors tab. Add a new behavior and select the option 'FXMaster: Particle Effects': 
@@ -296,7 +298,7 @@ After adding a Region, open the Region config menu and navigate to the Behaviors
 
 #### Masking Particle Effects
 
-By default, _Particle Effects_ added via the app are displayed across the entire scene. However, it is possible to mask them from specific areas. This can be achieved within Regions by using the Region behavior "Suppress Weather" or "FXMaster: Suppress Scene Particles". "Suppress Weather" masks all Particle and Filter effects along with core Foundry effects, "FXMaster: Suppress Scene Particles" only masks FXMaster Particle Effects.
+By default, _Particle Effects_ added via the app are displayed across the entire scene. However, it is possible to mask them from specific areas. This can be achieved in two ways. Firstly, within Regions by using the Region behavior "Suppress Weather" or "FXMaster: Suppress Scene Particles". "Suppress Weather" masks all Particle and Filter effects along with core Foundry effects, "FXMaster: Suppress Scene Particles" only masks FXMaster Particle Effects.
 
 - When using "FXMaster: Suppress Scene Particles", there is additional region elevation visibility handling.
 - **Elevation Constraints**
@@ -317,6 +319,8 @@ By default, _Particle Effects_ added via the app are displayed across the entire
 - Finally, you can opt to enable Edge Fade %. When this setting is above 0, scene level filters will be blended into the region edges to create a more natural looking suppression area rather than a stark cutout shape
 
 _Particle Effects_ are only displayed outside the region areas when masked. If a Hole shape is added to the region, scene particle effects will display in the hole area cutout.
+
+Secondly, within Tiles by using the Tiles Overhead option "Restricts Weather", or "FXMaster: Restricts Particles". "Restricts Weather" masks all Particle and Filter effects along with core Foundry effects underneath a given tile, "FXMaster: Restricts Particles" only masks FXMaster Particle Effects underneath a given tile. You would typically use this functionality for something like a Roof tile, where the Roof is set to fade and you want something like Rain to appear when viewing the roof from above, but not when a token is underneath the roof (inside the house).
 
 #### ⚠ Performance Note
 
@@ -347,10 +351,7 @@ By clicking on the name of a _Filter Effect_, you expand it, showing the options
 
 ![Filter Effect Options](./media/screenshots/filter-effect-options.webp)
 
-The available options differ heavily between individual _Filter Effects_, so it doesn't make much sense to list them
-here.
-
-The options will be adjusted in real-time as you make changes to them.
+The options will be adjusted in real-time as you make changes to them. Right clicking a given toggle button will give you the option to reset the specific effect to its default values.
 
 #### Filter Effects via Region Behavior
 
@@ -404,6 +405,8 @@ By default, _Filter Effects_ added via the scene app are displayed across the en
 - Finally, you can opt to enable Edge Fade %. When this setting is above 0, scene level filters will be blended into the region edges to create a more natural looking suppression area rather than a stark cutout shape
 
 _Filter Effects_ are only displayed outside the region areas when masked. If a Hole shape is added to the region, scene filter effects will display in the hole area cutout.
+
+Secondly, within Tiles by using the Tiles Overhead option "Restricts Weather", or "FXMaster: Restricts Filters". "Restricts Weather" masks all Particle and Filter effects along with core Foundry effects underneath a given tile, "FXMaster: Restricts Filters" only masks FXMaster Filter Effects underneath a given tile. You would typically use this functionality for something like a Roof tile, where the Roof is set to fade and you want something like Fog to appear when viewing the roof from above, but not when a token is underneath the roof (inside the house).
 
 ### API Effects UI Manager&nbsp;&nbsp;<picture style="display:inline-block; vertical-align:bottom;"><source srcset="./media/font-awesome/pen-to-square-light.svg" media="(prefers-color-scheme: dark)"><source srcset="./media/font-awesome/pen-to-square-dark.svg" media="(prefers-color-scheme: light)"><img src="./media/font-awesome/pen-to-square-dark.svg" alt="" aria-hidden="true" role="presentation" height="20" width="20" style="vertical-align:middle;"></picture>
 
@@ -492,20 +495,35 @@ Actions:
 
 **Notes**
 
+- The Foundry Grid can be added as part of the Layer stack by turning on the FXMaster setting "Include Foundry Grid in FX Stack". This will allow placing effects over or under the grid within the Layers manager, can give a greater sense of depth to certain particles when on a gridded scene.
 - Layer order is separate from **Below Tokens**, **Below Tiles**, and **Below Foreground**. Those options still control whether an effect appears underneath those scene elements, while the Layers window controls the order between FXMaster effects themselves.
 - Effects added later will appear in the list automatically with highest priority and can be reordered at any time.
 - The **Level** column is informational. To change which Level an effect uses, edit the effect in its manager or Region behavior.
 
 ## Developer API
 
-FXMaster exposes two supported global APIs for macros and third-party packages:
+FXMaster exposes three supported global APIs for macros and third-party packages:
 
 ```js
+FXMASTER.api
 FXMASTER.api.presets
 FXMASTER.api.effects
 ```
 
 > **Tip:** Call these after the world is ready (for example inside `Hooks.once("ready", ...)`) so `FXMASTER` and `CONFIG.fxmaster` are initialized.
+
+FXMaster contains three high level api commands to stop or start effects on a given scene.
+
+```js
+// Stop all scene effects on a given scene.
+await FXMASTER.api.stopSceneEffects({ scene: canvas.scene, skipFading: true });
+
+// Stop all region effects on a given scene. Note: This will not delete FXMaster region behaviors, it disables any FXMaster region behavior
+await FXMASTER.api.stopRegionEffects({ scene: canvas.scene, skipFading: true });
+
+// Start all region effects on a given scene. Note: This will re-enable existing region effects that have been disabled
+await FXMASTER.api.startRegionEffects({ scene: canvas.scene, skipFading: true });
+```
 
 ### Presets API
 
@@ -569,6 +587,7 @@ All preset methods accept an optional `opts` object.
 | `soundFx` | `boolean` | - | Enable or disable preset-linked Sound FX when **FXMaster+** is active. |
 | `levels` | `string \| number \| Array<string \| number>` | - | Restrict the preset to one or more native Scene Levels by id or name. Invalid selections fall back to all levels. |
 | `scene` | `Scene \| string` | current scene | Target Scene document or Scene UUID. |
+| `splash` | `boolean` | `true` | Enable or disable rain splash particles when a preset includes Rain. |
 | `silent` | `boolean` | `true` | Suppress UI warning notifications for missing presets or invalid override values. |
 
 #### Notes
@@ -805,11 +824,11 @@ await FXMASTER.api.effects.filters.toggle(
 
 Core FXMaster currently registers these filter types:
 
-`bloom`, `color`, `fog`, `lightning`, `oldfilm`, `predator`, `underwater`
+`bloom`, `color`, `fog`, `lightning`, `oldfilm`, `predator`, `underwater`, `screenShake`
 
 FXMaster+ registers additional filter effect types:
 
-`water`, `lightningbolts`, `ice`, `sunlight`, `duststorm`, `glitch`, `wind`, `auroraborealis`
+`water`, `lightningbolts`, `ice`, `sunlight`, `duststorm`, `glitch`, `wind`, `auroraborealis`, `fire`
 
 You can inspect the currently registered filter types in a running world with:
 
@@ -827,7 +846,7 @@ Core FXMaster currently registers these particle types:
 
 FXMaster+ registers additional particle effect types:
 
-`sakurabloom`, `sakurablossom`, `magiccrystals`, `fireflies`, `ghosts`, `sandstorm`, `fish`, `windwisps`
+`sakurabloom`, `sakurablossom`, `magiccrystals`, `fireflies`, `ghosts`, `sandstorm`, `fish`, `windwisps`, `fire`
 
 You can inspect the currently registered particle types in a running world with:
 

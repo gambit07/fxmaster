@@ -25,9 +25,11 @@ import {
   isEffectActiveForCurrentOrVisibleCanvasLevel,
   getCanvasLiveLevelSurfaceState,
   buildBelowTokenMaskCoverageSignature,
+  buildBelowTileMaskCoverageSignature,
   getSelectedSceneLevelIds,
   normalizeSceneLevelSelection,
   ensureSingleSceneLevelSelection,
+  prepareFilterOptionsForSceneStorage,
 } from "../utils.js";
 
 import { SceneMaskManager } from "../common/base-effects-scene-manager.js";
@@ -147,6 +149,8 @@ export class FilterEffectsSceneManager {
     this._ticker = false;
     this._lastRegionsMatrix = null;
     this._lastCamFrac = undefined;
+    this._lastBelowTokenCoverageSignature = null;
+    this._lastBelowTileCoverageSignature = null;
     this.stackEntries = new Map();
     this._transientStackRows = new Map();
     this._lastKnownOrder = new Map();
@@ -155,6 +159,7 @@ export class FilterEffectsSceneManager {
     this._lastSceneSuppressionNeedsMasking = false;
     this._lastDarknessLevel = getSceneDarknessLevel();
     this._runtimeFilterScratch = [];
+    this._timedRemovalPending = new Set();
 
     /** @type {Function|null} */
     this._coalescedBindSceneMask = null;
@@ -234,6 +239,7 @@ export class FilterEffectsSceneManager {
     this._lastKnownOrder.clear();
     this._dyingFilters.clear();
     this._lastSuppressionOverlaySignature = "";
+    this._timedRemovalPending.clear();
 
     try {
       canvas?.app?.ticker?.remove?.(this.#animate, this);
@@ -241,6 +247,9 @@ export class FilterEffectsSceneManager {
       logger.debug("FXMaster:", err);
     }
     this._ticker = false;
+    this._lastCamFrac = undefined;
+    this._lastBelowTokenCoverageSignature = null;
+    this._lastBelowTileCoverageSignature = null;
 
     try {
       SceneMaskManager.instance.setBelowTokensNeeded?.("filters", false);
@@ -289,8 +298,10 @@ export class FilterEffectsSceneManager {
 
       try {
         const strength = filter?.uniforms?.strength;
-        if (!skipFading && typeof strength === "number") {
-          filter.fadeUniformTo?.("strength", strength, { from: 0, durationMs: 3000 });
+        if (!skipFading && filter?.constructor?.skipInitialFade !== true && typeof strength === "number") {
+          const configuredDuration = Number(filter?.constructor?.initialFadeDurationMs);
+          const durationMs = Number.isFinite(configuredDuration) && configuredDuration >= 0 ? configuredDuration : 3000;
+          filter.fadeUniformTo?.("strength", strength, { from: 0, durationMs });
         }
       } catch (err) {
         logger.debug("FXMaster:", err);
@@ -378,9 +389,10 @@ export class FilterEffectsSceneManager {
     if (!scene) return;
 
     name = name ?? foundry.utils.randomID();
-    const normalizedOptions = ensureSingleSceneLevelSelection(
-      options && typeof options === "object" ? { ...options } : {},
-      scene,
+    const normalizedOptions = prepareFilterOptionsForSceneStorage(
+      type,
+      ensureSingleSceneLevelSelection(options && typeof options === "object" ? { ...options } : {}, scene),
+      { forceRestart: true },
     );
 
     await scene.setFlag(packageId, "filters", { [name]: { type, options: normalizedOptions } });
@@ -681,7 +693,27 @@ export class FilterEffectsSceneManager {
     return this.#collectRuntimeFiltersScratch().some((f) => isBelowTilesFilter(f));
   }
 
+  /**
+   * Remove expired timed scene filters from the active scene.
+   *
+   * @returns {void}
+   */
+  #pruneExpiredTimedFilters() {
+    if (!game?.user?.isGM || !canvas?.scene) return;
+
+    for (const [key, filter] of Object.entries(this.filters ?? {})) {
+      if (!filter || typeof filter.isTimedExpired !== "function") continue;
+      if (!filter.isTimedExpired()) continue;
+      if (this._timedRemovalPending.has(key)) continue;
+
+      this._timedRemovalPending.add(key);
+      Promise.resolve(this.removeFilter(key)).finally(() => this._timedRemovalPending.delete(key));
+    }
+  }
+
   #animate() {
+    this.#pruneExpiredTimedFilters();
+
     for (const key in this.filters) {
       if (!Object.prototype.hasOwnProperty.call(this.filters, key)) continue;
       this.filters[key]?.step?.();
@@ -750,7 +782,11 @@ export class FilterEffectsSceneManager {
     this._lastSuppressionOverlaySignature = overlaySignature;
 
     try {
-      if (!anyBelowTokens && !anyBelowTiles) return;
+      if (!anyBelowTokens && !anyBelowTiles) {
+        this._lastBelowTokenCoverageSignature = null;
+        this._lastBelowTileCoverageSignature = null;
+        return;
+      }
 
       const r = canvas?.app?.renderer;
       const res = r?.resolution || window.devicePixelRatio || 1;
@@ -780,8 +816,17 @@ export class FilterEffectsSceneManager {
         this._lastBelowTokenCoverageSignature = null;
       }
 
-      if (!changed && (fracMoved || tokenMotionChanged)) {
-        if (tokenMotionChanged) SceneMaskManager.instance.refreshTokensSync?.({ force: true });
+      let tileCoverageChanged = false;
+      if (anyBelowTiles) {
+        const tileSignature = buildBelowTileMaskCoverageSignature();
+        tileCoverageChanged = tileSignature !== (this._lastBelowTileCoverageSignature ?? null);
+        this._lastBelowTileCoverageSignature = tileSignature;
+      } else {
+        this._lastBelowTileCoverageSignature = null;
+      }
+
+      if (!changed && (fracMoved || tokenMotionChanged || tileCoverageChanged)) {
+        if (tokenMotionChanged || tileCoverageChanged) SceneMaskManager.instance.refreshTokensSync?.({ force: true });
         else SceneMaskManager.instance.refreshTokensSync?.();
         this.#bindSuppressMaskUniforms();
       }

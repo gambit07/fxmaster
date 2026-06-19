@@ -85,3 +85,64 @@ export const num = (v, d = 0) => (v === undefined || v === null || Number.isNaN(
  * @returns {Float32Array}
  */
 export const asFloat3 = (arr) => new Float32Array([arr[0], arr[1], arr[2]]);
+
+/**
+ * Normalize an angle in degrees into the canonical [0, 360) range.
+ *
+ * @param {*} value - Angle-like value.
+ * @param {number} [fallback=0] - Fallback angle when the value is not finite.
+ * @returns {number}
+ */
+export function normalizeDirectionDegrees(value, fallback = 0) {
+  const n = Number(value);
+  const base = Number.isFinite(n) ? n : Number(fallback);
+  const safe = Number.isFinite(base) ? base : 0;
+  return ((safe % 360) + 360) % 360;
+}
+
+/**
+ * Convert a legacy screen-clockwise direction into FXMaster's geometric direction convention.
+ *
+ * @param {*} value - Legacy angle value.
+ * @param {number} [fallback=0] - Fallback angle when the value is not finite.
+ * @returns {number}
+ */
+export function legacyClockwiseDirectionToGeometric(value, fallback = 0) {
+  return normalizeDirectionDegrees(-normalizeDirectionDegrees(value, fallback));
+}
+
+/**
+ * Convert an FXMaster geometric direction into a PIXI/screen-clockwise rotation angle.
+ *
+ * @param {*} value - Geometric direction in degrees.
+ * @param {number} [fallback=0] - Fallback angle when the value is not finite.
+ * @returns {number}
+ */
+export function geometricDirectionToScreenDegrees(value, fallback = 0) {
+  return normalizeDirectionDegrees(-normalizeDirectionDegrees(value, fallback));
+}
+
+/**
+ * Convert an FXMaster geometric direction into radians for PIXI/screen-clockwise rotation.
+ *
+ * @param {*} value - Geometric direction in degrees.
+ * @param {number} [fallback=0] - Fallback angle when the value is not finite.
+ * @returns {number}
+ */
+export function geometricDirectionToScreenRadians(value, fallback = 0) {
+  return geometricDirectionToScreenDegrees(value, fallback) * (Math.PI / 180);
+}
+
+/**
+ * Convert an FXMaster geometric direction into a canvas-space unit vector.
+ *
+ * The vector uses Foundry's screen-space axes: positive X points right, and positive Y points down.
+ *
+ * @param {*} value - Geometric direction in degrees.
+ * @param {number} [fallback=0] - Fallback angle when the value is not finite.
+ * @returns {{x:number,y:number}}
+ */
+export function geometricDirectionToCanvasVector(value, fallback = 0) {
+  const radians = normalizeDirectionDegrees(value, fallback) * (Math.PI / 180);
+  return { x: Math.cos(radians), y: -Math.sin(radians) };
+}

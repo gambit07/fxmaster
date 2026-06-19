@@ -36,3 +36,16 @@ export function compositeGridInFxStack() {
     return false;
   }
 }
+
+/**
+ * Return whether FXMaster compositor output should render above Foundry visibility and fog.
+ *
+ * @returns {boolean}
+ */
+export function displayEffectsOverVision() {
+  try {
+    return globalThis.game?.settings?.get(packageId, "displayEffectsOverVision") === true;
+  } catch (_err) {
+    return false;
+  }
+}

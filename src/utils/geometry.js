@@ -10,6 +10,9 @@ import { fxmGetRegionBehaviorEventGate } from "./foundry-public.js";
 /** Circle constant (`2π`). */
 export const TAU = Math.PI * 2;
 
+/** @type {WeakMap<object, string>} */
+const _regionMaskShapeSignatureCache = new WeakMap();
+
 /**
  * Rotate a point around a center by radians.
  * @param {number} px
@@ -108,6 +111,270 @@ export function ellipseToPolygon(cx, cy, rx, ry, rotRad, segments = 48) {
 }
 
 /**
+ * Resolve the Region document represented by a placeable, document, or adapter.
+ * @param {PlaceableObject|foundry.documents.RegionDocument|object|null|undefined} region
+ * @returns {foundry.documents.RegionDocument|object|null}
+ * @private
+ */
+function _regionDocument(region) {
+  return region?.document ?? region ?? null;
+}
+
+/**
+ * Return whether a Region uses Foundry's native restricted geometry.
+ * @param {PlaceableObject|foundry.documents.RegionDocument|object|null|undefined} region
+ * @returns {boolean}
+ */
+export function regionHasRestrictedGeometry(region) {
+  const doc = _regionDocument(region);
+  return !!doc?.restriction?.enabled;
+}
+
+/**
+ * Normalize a PIXI polygon or point array into a flat point array.
+ * @param {PIXI.Polygon|number[]|{points?: number[]}|null|undefined} polygon
+ * @returns {number[]|null}
+ * @private
+ */
+function _flatPolygonPoints(polygon) {
+  const points = polygon?.points ?? polygon;
+  if (!Array.isArray(points) || points.length < 6) return null;
+  const flat = [];
+  if (typeof points[0] === "number") {
+    for (let i = 0; i + 1 < points.length; i += 2) {
+      const x = Number(points[i]);
+      const y = Number(points[i + 1]);
+      if (Number.isFinite(x) && Number.isFinite(y)) flat.push(x, y);
+    }
+  } else if (typeof points[0] === "object") {
+    for (const point of points) {
+      const x = Number(point?.x);
+      const y = Number(point?.y);
+      if (Number.isFinite(x) && Number.isFinite(y)) flat.push(x, y);
+    }
+  }
+  return flat.length >= 6 ? flat : null;
+}
+
+/**
+ * Return whether a flat polygon contains a point.
+ * @param {number[]} points
+ * @param {number} x
+ * @param {number} y
+ * @returns {boolean}
+ * @private
+ */
+function _pointInFlatPolygon(points, x, y) {
+  if (!Array.isArray(points) || points.length < 6) return false;
+
+  const onSegment = (ax, ay, bx, by) => {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq <= 1e-12) return Math.hypot(x - ax, y - ay) <= 1e-6;
+    const t = ((x - ax) * dx + (y - ay) * dy) / lenSq;
+    if (t < -1e-6 || t > 1 + 1e-6) return false;
+    return Math.hypot(x - (ax + t * dx), y - (ay + t * dy)) <= 1e-6;
+  };
+
+  let inside = false;
+  let j = points.length - 2;
+  for (let i = 0; i < points.length; i += 2) {
+    const xi = Number(points[i]);
+    const yi = Number(points[i + 1]);
+    const xj = Number(points[j]);
+    const yj = Number(points[j + 1]);
+    if ([xi, yi, xj, yj].every(Number.isFinite)) {
+      if (onSegment(xi, yi, xj, yj)) return true;
+      const dy = yj - yi;
+      const denom = Math.abs(dy) <= 1e-12 ? 1e-12 : dy;
+      const intersects = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / denom + xi;
+      if (intersects) inside = !inside;
+    }
+    j = i;
+  }
+  return inside;
+}
+
+/**
+ * Return a shape-relative point after inverse rotation around a center.
+ * @param {number} x
+ * @param {number} y
+ * @param {number} cx
+ * @param {number} cy
+ * @param {number} rotationDeg
+ * @returns {{x:number,y:number}}
+ * @private
+ */
+function _inverseRotatedPoint(x, y, cx, cy, rotationDeg) {
+  const angle = (-Number(rotationDeg || 0) * Math.PI) / 180;
+  return angle ? rotatePoint(x, y, cx, cy, angle) : { x, y };
+}
+
+/**
+ * Return whether a Region shape contains a point in world coordinates.
+ * @param {object} shape
+ * @param {number} x
+ * @param {number} y
+ * @returns {boolean}
+ * @private
+ */
+function _regionShapeContainsPoint(shape, x, y) {
+  if (!shape) return false;
+
+  try {
+    const contains = shape?.contains?.(x, y);
+    if (typeof contains === "boolean") return contains;
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+  }
+
+  const polygons = shape?.polygons;
+  if (Array.isArray(polygons) && polygons.length) {
+    return polygons.some((polygon) => _pointInFlatPolygon(_flatPolygonPoints(polygon) ?? [], x, y));
+  }
+
+  const type = shape?.type;
+  if (type === "polygon") {
+    const points = _flatPolygonPoints(shape.points ?? []);
+    if (!points) return false;
+    const c = centroid(points);
+    const p = _inverseRotatedPoint(x, y, c.x, c.y, shape.rotation);
+    return _pointInFlatPolygon(points, p.x, p.y);
+  }
+
+  if (type === "rectangle") {
+    const sx = Number(shape.x ?? 0);
+    const sy = Number(shape.y ?? 0);
+    const w = Number(shape.width ?? 0);
+    const h = Number(shape.height ?? 0);
+    if (!(w > 0 && h > 0)) return false;
+    const p = _inverseRotatedPoint(x, y, sx + w / 2, sy + h / 2, shape.rotation);
+    return p.x >= sx && p.x <= sx + w && p.y >= sy && p.y <= sy + h;
+  }
+
+  if (type === "ellipse" || type === "circle") {
+    const cx = Number(shape.x ?? 0);
+    const cy = Number(shape.y ?? 0);
+    const rx = Math.max(0, type === "circle" ? Number(shape.radius ?? 0) : Number(shape.radiusX ?? 0));
+    const ry = Math.max(0, type === "circle" ? Number(shape.radius ?? 0) : Number(shape.radiusY ?? 0));
+    if (!(rx > 0 && ry > 0)) return false;
+    const p = _inverseRotatedPoint(x, y, cx, cy, shape.rotation);
+    const nx = (p.x - cx) / rx;
+    const ny = (p.y - cy) / ry;
+    return nx * nx + ny * ny <= 1;
+  }
+
+  const points = _flatPolygonPoints(shape?.points ?? []);
+  return points ? _pointInFlatPolygon(points, x, y) : false;
+}
+
+/**
+ * Return whether a point is inside a Region's effective shape geometry.
+ * @param {PlaceableObject|foundry.documents.RegionDocument|object|null|undefined} region
+ * @param {{x:number,y:number}|null|undefined} point
+ * @returns {boolean}
+ */
+export function regionContainsPoint(region, point) {
+  const x = Number(point?.x);
+  const y = Number(point?.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+
+  const shapes = regionMaskTraceShapes(region);
+  if (!Array.isArray(shapes) || !shapes.length) return false;
+
+  let inside = false;
+  for (const shape of shapes) {
+    const contains = _regionShapeContainsPoint(shape, x, y);
+    if (!contains) continue;
+    if (shape?.hole) return false;
+    inside = true;
+  }
+
+  return inside;
+}
+
+/**
+ * Return Foundry's constrained Region polygons when native wall restriction is enabled.
+ * @param {PlaceableObject|foundry.documents.RegionDocument|object|null|undefined} region
+ * @returns {{points:number[]}[]|null}
+ */
+export function regionConstrainedPolygons(region) {
+  const doc = _regionDocument(region);
+  if (!regionHasRestrictedGeometry(doc)) return null;
+
+  const candidates = doc?.polygons ?? doc?.polygonTree?.polygons ?? [];
+  const output = [];
+  for (const polygon of candidates) {
+    const points = _flatPolygonPoints(polygon);
+    if (points) output.push({ points });
+  }
+  return output;
+}
+
+/**
+ * Return the shape list that should be used for FXMaster Region masks.
+ * @param {PlaceableObject|foundry.documents.RegionDocument|object|null|undefined} region
+ * @returns {object[]}
+ */
+export function regionMaskTraceShapes(region) {
+  const constrained = regionConstrainedPolygons(region);
+  if (constrained) return constrained.length ? [{ type: "polygon", polygons: constrained }] : [];
+  const doc = _regionDocument(region);
+  return Array.from(doc?.shapes ?? []);
+}
+
+/**
+ * Return a stable key for the geometry used by FXMaster Region masks.
+ * @param {PlaceableObject|foundry.documents.RegionDocument|object|null|undefined} region
+ * @returns {string}
+ */
+export function regionMaskGeometrySignature(region) {
+  const doc = _regionDocument(region);
+  if (!doc) return "";
+
+  const restriction = doc?.restriction ?? {};
+  if (!restriction.enabled) {
+    const source = doc?.shapes;
+    if (source && typeof source === "object") {
+      const cached = _regionMaskShapeSignatureCache.get(source);
+      if (cached != null) return cached;
+    }
+
+    let signature = "";
+    try {
+      const shapes = Array.from(source ?? []);
+      signature =
+        JSON.stringify(shapes.map((shape) => (typeof shape?.toObject === "function" ? shape.toObject() : shape))) ?? "";
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    if (source && typeof source === "object") _regionMaskShapeSignatureCache.set(source, signature);
+    return signature;
+  }
+
+  const polygonKey = regionConstrainedPolygons(doc)
+    .map((polygon) => polygon.points.map((value) => Number(value || 0).toFixed(3)).join(","))
+    .join(";");
+  const constraints = doc?._shapeConstraints ?? doc?._source?._shapeConstraints ?? null;
+  let constraintKey = "";
+  try {
+    constraintKey = constraints ? JSON.stringify(constraints) : "";
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+  }
+
+  return [
+    "restricted",
+    restriction.type ?? "",
+    Number(restriction.priority ?? 0).toFixed(3),
+    constraintKey,
+    polygonKey,
+  ].join("|");
+}
+
+/**
  * Trace a region shape into a PIXI.Graphics path.
  * @param {PIXI.Graphics} g
  * @param {object} s
@@ -128,8 +395,9 @@ export function traceRegionShapePIXI(g, s, opts = {}) {
 
   if (Array.isArray(s?.polygons) && s.polygons.length) {
     for (const poly of s.polygons) {
-      if (!poly) continue;
-      g.drawShape(poly);
+      const points = poly?.points ?? poly;
+      if (!points?.length) continue;
+      g.drawShape(new PIXI.Polygon(points));
     }
     return;
   }
@@ -322,7 +590,9 @@ export function traceRegionShapePath2D(ctx, s) {
  * @returns {{minX:number,minY:number,maxX:number,maxY:number}|null}
  */
 export function regionWorldBounds(placeable) {
-  const shapes = placeable?.document?.shapes ?? [];
+  const doc = _regionDocument(placeable);
+  const constrained = regionConstrainedPolygons(doc);
+  const shapes = constrained ? regionMaskTraceShapes(doc) : Array.from(doc?.shapes ?? []);
   let minX = Infinity,
     minY = Infinity,
     maxX = -Infinity,
@@ -369,8 +639,22 @@ export function regionWorldBounds(placeable) {
       else for (let i = 0; i + 1 < pts.length; i += 2) include(pts[i], pts[i + 1]);
     }
   }
-  if (![minX, minY, maxX, maxY].every(Number.isFinite)) return null;
-  return { minX, minY, maxX, maxY };
+  if ([minX, minY, maxX, maxY].every(Number.isFinite)) return { minX, minY, maxX, maxY };
+  if (constrained) {
+    const b = doc?.bounds;
+    if (
+      b &&
+      Number.isFinite(b.x) &&
+      Number.isFinite(b.y) &&
+      Number.isFinite(b.width) &&
+      Number.isFinite(b.height) &&
+      b.width > 0 &&
+      b.height > 0
+    ) {
+      return { minX: b.x, minY: b.y, maxX: b.x + b.width, maxY: b.y + b.height };
+    }
+  }
+  return null;
 }
 
 /**
@@ -395,7 +679,11 @@ export function regionWorldBoundsAligned(placeable) {
     cssMaxY = Math.max(cssMaxY, Y);
   };
 
-  for (const s of placeable?.document?.shapes ?? []) {
+  const doc = _regionDocument(placeable);
+  const constrained = regionConstrainedPolygons(doc);
+  const shapes = constrained ? regionMaskTraceShapes(doc) : Array.from(doc?.shapes ?? []);
+
+  for (const s of shapes) {
     if (!s || s.hole) continue;
 
     const b = s?.bounds;
@@ -453,6 +741,25 @@ export function regionWorldBoundsAligned(placeable) {
           const q = toCss(pts[i], pts[i + 1]);
           includeCss(q.x, q.y);
         }
+    }
+  }
+  if (!Number.isFinite(cssMinX) && constrained) {
+    const b = doc?.bounds;
+    if (
+      b &&
+      Number.isFinite(b.x) &&
+      Number.isFinite(b.y) &&
+      Number.isFinite(b.width) &&
+      Number.isFinite(b.height) &&
+      b.width > 0 &&
+      b.height > 0
+    ) {
+      const a = toCss(b.x, b.y);
+      const b2 = toCss(b.x + b.width, b.y + b.height);
+      cssMinX = Math.min(a.x, b2.x);
+      cssMinY = Math.min(a.y, b2.y);
+      cssMaxX = Math.max(a.x, b2.x);
+      cssMaxY = Math.max(a.y, b2.y);
     }
   }
   if (!Number.isFinite(cssMinX)) return null;
@@ -549,7 +856,7 @@ export function buildPolygonEdges(placeable, { maxEdges = Infinity } = {}) {
     }
   };
 
-  for (const s of placeable?.document?.shapes ?? []) {
+  for (const s of regionMaskTraceShapes(placeable)) {
     if (!s) continue;
     if (isEmptyShape(s)) continue;
 
@@ -711,6 +1018,9 @@ export function buildPolygonEdges(placeable, { maxEdges = Infinity } = {}) {
  * @returns {boolean}
  */
 export function hasMultipleNonHoleShapes(placeable) {
+  const constrained = regionConstrainedPolygons(placeable);
+  if (constrained) return constrained.length > 1;
+
   let n = 0;
   for (const s of placeable?.document?.shapes ?? []) {
     if (!s || s.hole) continue;
@@ -864,6 +1174,16 @@ export function estimateShapeInradiusWorld(shape) {
  * @returns {number}
  */
 export function estimateRegionInradius(placeable) {
+  const constrained = regionConstrainedPolygons(placeable);
+  if (constrained) {
+    const b = regionWorldBounds(placeable) ?? regionWorldBoundsAligned(placeable);
+    if (b && [b.minX, b.minY, b.maxX, b.maxY].every(Number.isFinite)) {
+      const w = Math.max(1e-6, b.maxX - b.minX);
+      const h = Math.max(1e-6, b.maxY - b.minY);
+      return Math.max(1e-6, 0.25 * Math.min(w, h));
+    }
+  }
+
   const shapes = placeable?.document?.shapes ?? [];
 
   let minR = Infinity;

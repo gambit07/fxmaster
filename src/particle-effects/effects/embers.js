@@ -18,6 +18,10 @@ export class EmbersParticleEffect extends FXMasterParticleEffect {
     return "ambient";
   }
 
+  static get orbitFacesTangent() {
+    return false;
+  }
+
   static get densityScalar() {
     return 0.2;
   }
@@ -32,7 +36,18 @@ export class EmbersParticleEffect extends FXMasterParticleEffect {
       belowTiles: p.belowTiles,
       soundFxEnabled: p.soundFxEnabled,
       tint: { ...p.tint, value: { ...p.tint.value, value: "#f77300" } },
-      topDown: { label: "FXMASTER.Params.TopDown", type: "checkbox", value: false },
+      topDown: { label: "FXMASTER.Params.TopDown", type: "checkbox", value: false, hideWhen: { orbit: true } },
+      orbit: { label: "FXMASTER.Params.Orbit", type: "checkbox", value: false, hideWhen: { topDown: true } },
+      orbitDistance: {
+        label: "FXMASTER.Params.OrbitDistance",
+        type: "range",
+        min: 0,
+        value: 0.5,
+        max: 1,
+        step: 0.01,
+        decimals: 2,
+        showWhen: { orbit: true },
+      },
       scale: p.scale,
       speed: p.speed,
       lifetime: p.lifetime,
@@ -115,7 +130,8 @@ export class EmbersParticleEffect extends FXMasterParticleEffect {
   /** @override */
   getParticleEmitters(options = {}) {
     options = this.constructor.mergeWithDefaults(options);
-    const topDown = !!options?.topDown?.value;
+    const orbit = !!options?.orbit?.value;
+    const topDown = !!options?.topDown?.value && !orbit;
 
     const d = CONFIG.fxmaster.getParticleDimensions(options);
 

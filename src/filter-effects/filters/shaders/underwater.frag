@@ -20,7 +20,7 @@ uniform vec4  outputFrame;  /** xy: offset in CSS px;    zw: size */
 
 /** Kept for ABI/back-compat; not used for mask sample now */
 uniform vec4  srcFrame;     /** CSS px area spanned by vTextureCoord */
-uniform vec2  camFrac;      /** CSS px fractional camera translation */
+uniform vec2  camFrac;
 
 uniform float hasMask;
 uniform float maskReady;
@@ -84,6 +84,7 @@ void main(void) {
 
   /** SCREEN position in CSS px (match Color) */
   vec2 screenPx = outputFrame.xy + vTextureCoord * outputFrame.zw;
+  vec2 snapPx   = screenPx - camFrac;
 
   /** ---- Region/suppression mask ---- */
   float inMask = src.a;
@@ -92,8 +93,11 @@ void main(void) {
                       (viewSize.x >= 1.0) &&
                       (viewSize.y >= 1.0);
     if (maskUsable) {
-      vec2 maskUV = screenPx / max(viewSize, vec2(1.0));
-      float a = texture2D(maskSampler, maskUV).r;
+      vec2 samplePx = (uRegionShape < 0) ? screenPx : snapPx;
+
+      vec2 maskPx = floor(samplePx) + 0.5;
+      vec2 maskUV = clamp(maskPx / max(viewSize, vec2(1.0)), 0.0, 1.0);
+      float a = clamp(texture2D(maskSampler, maskUV).r, 0.0, 1.0);
 
       if (feather > 0.5) {
         vec2 px = 1.0 / max(viewSize, vec2(1.0));
@@ -108,10 +112,10 @@ void main(void) {
         s += texture2D(maskSampler, maskUV + vec2(-o.x,  o.y)).r;
         s += texture2D(maskSampler, maskUV + vec2( 0.0,  o.y)).r;
         s += texture2D(maskSampler, maskUV + vec2( o.x,  o.y)).r;
-        a = s / 9.0;
+        a = clamp(s / 9.0, 0.0, 1.0);
       }
 
-      float m = (maskSoft > 0.5) ? a : smoothstep(0.49, 0.51, a);
+      float m = (maskSoft > 0.5) ? a : ((uRegionShape < 0) ? step(0.5, a) : smoothstep(0.49, 0.51, a));
       if (invertMask > 0.5) m = 1.0 - m;
       inMask *= m;
     }
@@ -119,7 +123,7 @@ void main(void) {
 
   /** ---- Region edge fade (percent or absolute) ---- */
   float fadeEdge = 1.0;
-  vec2  pW       = applyCssToWorld(screenPx);
+  vec2  pW       = applyCssToWorld((uRegionShape < 0) ? screenPx : snapPx);
 
   if (uUsePct > 0.5) {
     float pct = clamp(uFadePct, 0.0, 1.0);

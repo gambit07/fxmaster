@@ -71,6 +71,7 @@ void main(void) {
 
   /** SCREEN position in CSS px (match Color) */
   vec2 screenPx = outputFrame.xy + vTextureCoord * outputFrame.zw;
+  vec2 snapPx   = screenPx - camFrac;
 
   /** region/suppression gating */
   float inMask = src.a;
@@ -79,10 +80,13 @@ void main(void) {
                       (viewSize.x >= 1.0) &&
                       (viewSize.y >= 1.0);
     if (maskUsable) {
-      vec2 maskUV = screenPx / max(viewSize, vec2(1.0));
-      float aRaw  = texture2D(maskSampler, maskUV).r;
-      float a     = clamp(aRaw, 0.0, 1.0);
-      float m     = (maskSoft > 0.5) ? a : smoothstep(0.48, 0.52, a);
+      vec2 samplePx = (uRegionShape < 0) ? screenPx : snapPx;
+
+      vec2 maskPx = floor(samplePx) + 0.5;
+      vec2 maskUV = clamp(maskPx / max(viewSize, vec2(1.0)), 0.0, 1.0);
+      float a     = clamp(texture2D(maskSampler, maskUV).r, 0.0, 1.0);
+
+      float m     = (maskSoft > 0.5) ? a : ((uRegionShape < 0) ? step(0.5, a) : smoothstep(0.48, 0.52, a));
       if (invertMask > 0.5) m = 1.0 - m;
       inMask *= m;
     }
@@ -90,7 +94,7 @@ void main(void) {
 
   /** region edge fade (percent or absolute) */
   float fadeEdge = 1.0;
-  vec2  pW       = applyCssToWorld(screenPx);
+  vec2  pW       = applyCssToWorld((uRegionShape < 0) ? screenPx : snapPx);
 
   if (uUsePct > 0.5) {
     float pct = clamp(uFadePct, 0.0, 1.0);
@@ -119,7 +123,8 @@ void main(void) {
 
   /** brightness flash, gated by mask * fade */
   float mixAmt = clamp(inMask * fadeEdge, 0.0, 1.0);
-  vec3 lit     = src.rgb * max(brightness, 0.0);
+  float flash  = max(brightness - 1.0, 0.0);
+  vec3 lit     = clamp(src.rgb * max(brightness, 0.0) + vec3(flash * 0.30), 0.0, 1.0);
   vec3 outRgb  = mix(src.rgb, lit, mixAmt);
   gl_FragColor = vec4(outRgb, src.a);
 }

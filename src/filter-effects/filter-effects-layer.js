@@ -15,6 +15,9 @@ import {
   _belowTilesEnabled,
   _belowForegroundEnabled,
   traceRegionShapePath2D,
+  regionHasRestrictedGeometry,
+  regionMaskTraceShapes,
+  regionMaskGeometrySignature,
   snappedStageMatrix,
   cameraMatrixChanged,
   mat3FromPixi,
@@ -45,10 +48,11 @@ import {
   isEffectActiveForSceneDarkness,
   getRegionFilterEffectDefinitions,
   buildBelowTokenMaskCoverageSignature,
+  buildBelowTileMaskCoverageSignature,
 } from "../utils.js";
 import { BaseEffectsLayer } from "../common/base-effects-layer.js";
 import { SceneMaskManager } from "../common/base-effects-scene-manager.js";
-import { buildRegionEffectUid } from "../common/effect-stack.js";
+import { buildRegionEffectUid, normalizeBehaviorDocs } from "../common/effect-stack.js";
 
 const FILTER_TYPE = `${packageId}.filterEffectsRegion`;
 /**
@@ -132,6 +136,7 @@ function _geomKeyFromShapes(shapes) {
 }
 
 function _regionHasHoleShapes(placeable) {
+  if (regionHasRestrictedGeometry(placeable)) return false;
   return (placeable?.document?.shapes ?? []).some((s) => !!s?.hole);
 }
 
@@ -165,6 +170,7 @@ function _regionWorldBoundsContext(placeable) {
 }
 
 function _analyzeAnalyticShape(placeable) {
+  if (regionHasRestrictedGeometry(placeable)) return null;
   const shapes = (placeable?.document?.shapes ?? []).filter((s) => !s.hole);
   if (shapes.length !== 1) return null;
 
@@ -521,7 +527,7 @@ function _buildRegionSDF_FromBinary(placeable, worldBounds, { maxDistWorld = nul
   ctx.setTransform(sx, 0, 0, sy, ox, oy);
   ctx.imageSmoothingEnabled = false;
 
-  const shapes = placeable?.document?.shapes ?? [];
+  const shapes = regionMaskTraceShapes(placeable);
 
   ctx.globalCompositeOperation = "source-over";
   ctx.fillStyle = "#ffffff";
@@ -576,24 +582,8 @@ function _buildRegionSDF_FromBinary(placeable, worldBounds, { maxDistWorld = nul
   return { texture, uUvFromWorld, uSdfScaleOff, uSdfScaleOff4, uSdfTexel, insideMax };
 }
 
-/**
- * Normalize a region behavior collection or array into an array of behavior documents.
- *
- * @param {Iterable<foundry.documents.RegionBehavior>|foundry.documents.RegionBehavior[]|null|undefined} behaviorDocs
- * @returns {foundry.documents.RegionBehavior[]}
- * @private
- */
-function normalizeRegionBehaviorDocs(behaviorDocs) {
-  if (!behaviorDocs) return [];
-  if (Array.isArray(behaviorDocs)) return behaviorDocs;
-  if (Array.isArray(behaviorDocs.contents)) return behaviorDocs.contents;
-  if (typeof behaviorDocs.toArray === "function") return behaviorDocs.toArray();
-  if (typeof behaviorDocs.values === "function") return Array.from(behaviorDocs.values());
-  return Array.from(behaviorDocs);
-}
-
 function regionHasActiveSuppressionBehavior(placeable, behaviorType) {
-  return normalizeRegionBehaviorDocs(placeable?.document?.behaviors).some(
+  return normalizeBehaviorDocs(placeable?.document?.behaviors).some(
     (behavior) => behavior?.type === behaviorType && !behavior.disabled,
   );
 }
@@ -661,6 +651,7 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
 
     this._lastCutoutCameraMatrix = null;
     this._lastBelowTokenCoverageSignature = null;
+    this._lastBelowTileCoverageSignature = null;
     this._lastRegionMaskMatrix = null;
     this._lastRegionDarknessSignatures = new Map();
     this._lastDarknessLevel = getSceneDarknessLevel();
@@ -796,9 +787,12 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
   }
 
   /**
-   * Recompose all region cutout masks that have below-tokens or below-tiles enabled. Uses shared coverage RenderTextures maintained by {@link SceneMaskManager}.
+   * Recompose region cutout masks from shared token and tile coverage textures.
+   *
+   * @param {{refreshSharedMasks?: boolean, forceSharedMasks?: boolean}} [options]
+   * @returns {void}
    */
-  _recomposeBelowTokensCutoutsSync({ refreshSharedMasks = true } = {}) {
+  _recomposeBelowTokensCutoutsSync({ refreshSharedMasks = true, forceSharedMasks = false } = {}) {
     let anyBelowTokens = false;
     let anyBelowTiles = false;
     for (const entry of this.regionMasks.values()) {
@@ -820,7 +814,7 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
     try {
       SceneMaskManager.instance.setBelowTokensNeeded?.("filters", anyBelowTokens, "regions");
       SceneMaskManager.instance.setBelowTilesNeeded?.("filters", anyBelowTiles, "regions");
-      if (refreshSharedMasks) SceneMaskManager.instance.refreshTokensSync?.();
+      if (refreshSharedMasks) SceneMaskManager.instance.refreshTokensSync?.({ force: forceSharedMasks });
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
@@ -853,9 +847,7 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
   }
 
   /**
-   * Recompose live region below-object cutout masks against the current shared scene coverage textures.
-   *
-   * Region-scoped below-tiles filters use per-region cutout render textures derived from the shared SceneMaskManager tile silhouettes. Tile hover fade updates those shared silhouettes every frame in the compositor, so region cutouts must also be refreshed against the latest shared masks instead of waiting for token/camera invalidation.
+   * Recompose live region below-object cutouts against the current shared scene coverage textures.
    *
    * @param {{ refreshSharedMasks?: boolean }} [options]
    * @returns {void}
@@ -916,6 +908,7 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
     this._tokensDirty = false;
     this._lastCutoutCameraMatrix = null;
     this._lastBelowTokenCoverageSignature = null;
+    this._lastBelowTileCoverageSignature = null;
     this._lastRegionMaskMatrix = null;
 
     this._destroyRegionMasks();
@@ -970,7 +963,7 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
 
     if (!regionDocumentCanApplyInCurrentView(placeable?.document ?? null, canvas?.scene ?? null)) return;
 
-    const behaviors = normalizeRegionBehaviorDocs(behaviorDocs ?? placeable?.document?.behaviors).filter(
+    const behaviors = normalizeBehaviorDocs(behaviorDocs ?? placeable?.document?.behaviors).filter(
       (behavior) => behavior.type === FILTER_TYPE && !behavior.disabled,
     );
     if (!behaviors.length) return;
@@ -1081,8 +1074,7 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
         uSdfScaleOff4 = new Float32Array([1, 0, 0, 1]);
         uSdfTexel = new Float32Array([1, 1]);
       } else {
-        const shapes = placeable?.document?.shapes ?? [];
-        const geomKey = _geomKeyFromShapes(shapes);
+        const geomKey = regionMaskGeometrySignature(placeable);
 
         const desiredMaxDistWorld = Math.max(1e-6, maxFadeFrac * uSdfInsideMax);
 
@@ -1603,7 +1595,7 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
     const cssToWorldMat3 = mat3FromPixi(cssToWorld);
 
     const analytic = _analyzeAnalyticShape(placeable);
-    const behaviors = normalizeRegionBehaviorDocs(placeable?.document?.behaviors).filter(
+    const behaviors = normalizeBehaviorDocs(placeable?.document?.behaviors).filter(
       (behavior) => behavior.type === FILTER_TYPE && !behavior.disabled,
     );
     const maxFadeFrac = _regionMaxFadeFrac(behaviors);
@@ -1672,7 +1664,7 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
 
         if (!fastPoly) {
           let sdf = this._sdfCache.get(regionId);
-          const geomKey = _geomKeyFromShapes(placeable?.document?.shapes ?? []);
+          const geomKey = regionMaskGeometrySignature(placeable);
           if (!sdf || sdf.geomKey !== geomKey) {
             try {
               sdf?.texture?.destroy(true);
@@ -1864,11 +1856,23 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
         this._lastBelowTokenCoverageSignature = null;
       }
 
-      if (!this._rebuiltThisTick && (this._tokensDirty || cameraMoved || tokenMotionChanged)) {
+      let tileCoverageChanged = false;
+      if (anyBelowTiles) {
+        const tileSignature = buildBelowTileMaskCoverageSignature();
+        tileCoverageChanged = tileSignature !== (this._lastBelowTileCoverageSignature ?? null);
+        this._lastBelowTileCoverageSignature = tileSignature;
+      } else {
+        this._lastBelowTileCoverageSignature = null;
+      }
+
+      if (!this._rebuiltThisTick && (this._tokensDirty || cameraMoved || tokenMotionChanged || tileCoverageChanged)) {
         try {
-          this._recomposeBelowTokensCutoutsSync({ refreshSharedMasks: tokenMotionChanged });
+          this._recomposeBelowTokensCutoutsSync({
+            refreshSharedMasks: tokenMotionChanged || tileCoverageChanged,
+            forceSharedMasks: tokenMotionChanged || tileCoverageChanged,
+          });
         } catch (err) {
-          logger?.error?.("FXMaster: error recomposing token cutout masks", err);
+          logger?.error?.("FXMaster: error recomposing below-object cutout masks", err);
         }
       }
 
@@ -1877,6 +1881,8 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
     } else {
       this._tokensDirty = false;
       this._lastCutoutCameraMatrix = null;
+      this._lastBelowTokenCoverageSignature = null;
+      this._lastBelowTileCoverageSignature = null;
     }
 
     for (const regionId of this.regionMasks.keys()) {

@@ -360,7 +360,7 @@ function isManagementParameterVisible(kind, type, paramName) {
  * @returns {boolean}
  */
 function shouldRenderManagementParameterTitle(parameterConfig, paramName) {
-  return parameterConfig?.type !== "scene-levels" && paramName !== "levels";
+  return !["scene-levels", "particle-actions"].includes(parameterConfig?.type) && paramName !== "levels";
 }
 
 export function registerHandlebarsHelpers() {
@@ -581,6 +581,26 @@ export function registerHandlebarsHelpers() {
         };
         const select = foundry.applications.fields.createMultiSelectInput(config);
         return `<div class="fxmaster-input-multi"${tipAttrs}>${select.outerHTML}</div>`;
+      }
+      case "particle-actions": {
+        const actions = Array.isArray(parameterConfig.actions) ? parameterConfig.actions : [];
+        const buttons = actions
+          .map((action) => {
+            const actionId = Handlebars.escapeExpression(String(action?.action ?? ""));
+            if (!actionId) return "";
+            const icon = action?.icon
+              ? `<i class="${Handlebars.escapeExpression(String(action.icon))}" aria-hidden="true"></i>`
+              : "";
+            const labelKey = String(action?.label ?? actionId);
+            const label = Handlebars.escapeExpression(game.i18n?.localize?.(labelKey) ?? labelKey);
+            const tooltipKey = typeof action?.tooltip === "string" ? action.tooltip : "";
+            const tooltip = tooltipKey
+              ? buildTooltipAttributeString(game.i18n?.localize?.(tooltipKey) ?? tooltipKey, tipDir)
+              : "";
+            return `<button type="button" class="fxmaster-particle-action" data-action="particleEffectAction" data-effect-action="${actionId}"${tooltip}>${icon}<span>${label}</span></button>`;
+          })
+          .join("");
+        return `<div class="fxmaster-particle-actions"><input type="hidden" name="${nameBase}" value="" data-action="updateParam">${buttons}</div>`;
       }
 
       default:

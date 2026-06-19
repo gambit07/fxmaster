@@ -3,8 +3,10 @@ import {
   getRegionPlaceableOrDocumentAdapter,
   resetFlag,
   normalizeDarknessActivationRange,
+  prepareFilterOptionsForSceneStorage,
 } from "../utils.js";
 import { packageId } from "../constants.js";
+import { applyLegacyRangeTolerance } from "../utils/region-schema.js";
 import { buildRegionEffectUid, promoteEffectStackUids } from "../common/effect-stack.js";
 
 /**
@@ -97,6 +99,7 @@ export class FilterRegionBehaviorType extends foundry.data.regionBehaviors.Regio
           if (cfg.min !== undefined) opts.min = cfg.min;
           if (cfg.max !== undefined) opts.max = cfg.max;
           if (cfg.step !== undefined) opts.step = cfg.step;
+          applyLegacyRangeTolerance(opts, cfg);
         } else if (cfg.type === "range-dual") {
           schema[`${type}_${param}_min`] = new foundry.data.fields.StringField({
             required: false,
@@ -237,6 +240,8 @@ export class FilterRegionBehaviorType extends foundry.data.regionBehaviors.Regio
   async _applyFilters() {
     const system = this.toObject();
 
+    const prevFilters = this.parent.getFlag(packageId, "filters") ?? {};
+
     const nextFilters = Object.entries(CONFIG.fxmaster.filterEffects)
       .filter(([type]) => system[`${type}_enabled`])
       .reduce((map, [type, cls]) => {
@@ -266,13 +271,21 @@ export class FilterRegionBehaviorType extends foundry.data.regionBehaviors.Regio
         for (const [k, v] of Object.entries(opts)) {
           if (v === undefined || v === null) delete opts[k];
         }
-        map[type] = { type, options: opts };
+        const previousOptions =
+          prevFilters[type]?.options && typeof prevFilters[type].options === "object"
+            ? prevFilters[type].options
+            : null;
+        const durationChanged = previousOptions && Number(previousOptions.duration) !== Number(opts.duration);
+        const options = prepareFilterOptionsForSceneStorage(type, opts, {
+          previousOptions,
+          changedParam: durationChanged ? "duration" : null,
+          forceRestart: !(type in prevFilters),
+        });
+        map[type] = { type, options };
         return map;
       }, {});
 
     let changedAny = false;
-
-    const prevFilters = this.parent.getFlag(packageId, "filters") ?? {};
     const diff1 = foundry.utils.diffObject(prevFilters, nextFilters);
     const diff2 = foundry.utils.diffObject(nextFilters, prevFilters);
     if ((!foundry.utils.isEmpty(diff1) || !foundry.utils.isEmpty(diff2)) && game.user.isGM) {

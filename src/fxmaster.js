@@ -19,9 +19,34 @@ import { SpecialEffectsLayer } from "./special-effects/special-effects-layer.js"
 import customVertex2D from "./filter-effects/filters/shaders/custom-vertex-2d.vert";
 import { GlobalEffectsStackLayer } from "./stack/global-effects-stack-layer.js";
 import { GlobalEffectsCompositor } from "./stack/global-effects-compositor.js";
-import { regionWorldBoundsAligned, regionWorldBounds, rectFromAligned } from "./utils.js";
+import {
+  regionWorldBoundsAligned,
+  regionWorldBounds,
+  regionContainsPoint,
+  getRegionElevationWindow,
+  getDocumentLevelsSet,
+  getSelectedSceneLevelIds,
+  getDocumentAssignedLevelIds,
+  inferVisibleLevelForDocument,
+  rectFromAligned,
+  normalizeDirectionDegrees,
+  legacyClockwiseDirectionToGeometric,
+  geometricDirectionToScreenDegrees,
+  geometricDirectionToScreenRadians,
+  geometricDirectionToCanvasVector,
+  isPlainObject,
+  hasOwn,
+  collectionValues,
+} from "./utils.js";
 import { FXMasterBaseFormV2 } from "./base-form.js";
-import { normalizeRegisteredEffectParameters } from "./common/effect-parameter-normalization.js";
+import {
+  normalizeRegisteredEffectParameters,
+  normalizeEffectOptionsForRuntime,
+  normalizeEffectOptionsForStorageFromLegacy,
+  compressNormalizedRangeValue,
+  expandNormalizedRangeValue,
+  scaleNormalizedStoredRangeValue,
+} from "./common/effect-parameter-normalization.js";
 import "../css/filters-config.css";
 import "../css/particle-effects-config.css";
 import "../css/common.css";
@@ -39,7 +64,26 @@ CONFIG.fxmaster.customVertex2D = customVertex2D;
 CONFIG.fxmaster.FXMasterFilterEffectMixin = FXMasterFilterEffectMixin;
 CONFIG.fxmaster.regionWorldBoundsAligned = regionWorldBoundsAligned;
 CONFIG.fxmaster.regionWorldBounds = regionWorldBounds;
+CONFIG.fxmaster.regionContainsPoint = regionContainsPoint;
+CONFIG.fxmaster.getRegionElevationWindow = getRegionElevationWindow;
+CONFIG.fxmaster.getDocumentLevelsSet = getDocumentLevelsSet;
+CONFIG.fxmaster.getSelectedSceneLevelIds = getSelectedSceneLevelIds;
+CONFIG.fxmaster.getDocumentAssignedLevelIds = getDocumentAssignedLevelIds;
+CONFIG.fxmaster.inferVisibleLevelForDocument = inferVisibleLevelForDocument;
 CONFIG.fxmaster.rectFromAligned = rectFromAligned;
+CONFIG.fxmaster.normalizeDirectionDegrees = normalizeDirectionDegrees;
+CONFIG.fxmaster.legacyClockwiseDirectionToGeometric = legacyClockwiseDirectionToGeometric;
+CONFIG.fxmaster.geometricDirectionToScreenDegrees = geometricDirectionToScreenDegrees;
+CONFIG.fxmaster.geometricDirectionToScreenRadians = geometricDirectionToScreenRadians;
+CONFIG.fxmaster.geometricDirectionToCanvasVector = geometricDirectionToCanvasVector;
+CONFIG.fxmaster.isPlainObject = isPlainObject;
+CONFIG.fxmaster.hasOwn = hasOwn;
+CONFIG.fxmaster.collectionValues = collectionValues;
+CONFIG.fxmaster.normalizeEffectOptionsForRuntime = normalizeEffectOptionsForRuntime;
+CONFIG.fxmaster.normalizeEffectOptionsForStorageFromLegacy = normalizeEffectOptionsForStorageFromLegacy;
+CONFIG.fxmaster.compressNormalizedRangeValue = compressNormalizedRangeValue;
+CONFIG.fxmaster.expandNormalizedRangeValue = expandNormalizedRangeValue;
+CONFIG.fxmaster.scaleNormalizedStoredRangeValue = scaleNormalizedStoredRangeValue;
 CONFIG.fxmaster.GlobalEffectsCompositor = GlobalEffectsCompositor;
 CONFIG.fxmaster.SpecialEffectsLayer = SpecialEffectsLayer;
 CONFIG.fxmaster.getGlobalEffectsCompositor = () => GlobalEffectsCompositor.instance;
@@ -70,6 +114,42 @@ CONFIG.fxmaster.overheadPerformance = {
   skipInitialStackBlitForSimpleHiDpiFrames:
     CONFIG.fxmaster.overheadPerformance?.skipInitialStackBlitForSimpleHiDpiFrames ?? true,
 };
+
+const PARTICLE_REGION_BEHAVIOR_TYPE = `${packageId}.particleEffectsRegion`;
+const FILTER_REGION_BEHAVIOR_TYPE = `${packageId}.filterEffectsRegion`;
+const SUPPRESS_SCENE_FILTERS_REGION_BEHAVIOR_TYPE = `${packageId}.suppressSceneFilters`;
+const SUPPRESS_SCENE_PARTICLES_REGION_BEHAVIOR_TYPE = `${packageId}.suppressSceneParticles`;
+
+function registerRegionBehaviorTypes() {
+  const config = CONFIG?.RegionBehavior ?? null;
+  if (!config?.dataModels) return false;
+
+  config.dataModels[PARTICLE_REGION_BEHAVIOR_TYPE] = ParticleRegionBehaviorType;
+  config.dataModels[FILTER_REGION_BEHAVIOR_TYPE] = FilterRegionBehaviorType;
+  config.dataModels[SUPPRESS_SCENE_FILTERS_REGION_BEHAVIOR_TYPE] = SuppressSceneFiltersBehaviorType;
+  config.dataModels[SUPPRESS_SCENE_PARTICLES_REGION_BEHAVIOR_TYPE] = SuppressSceneParticlesBehaviorType;
+
+  if (config.typeIcons) {
+    config.typeIcons[PARTICLE_REGION_BEHAVIOR_TYPE] = "fas fa-hat-wizard";
+    config.typeIcons[FILTER_REGION_BEHAVIOR_TYPE] = "fas fa-filter";
+    config.typeIcons[SUPPRESS_SCENE_FILTERS_REGION_BEHAVIOR_TYPE] = "fas fa-ban";
+    config.typeIcons[SUPPRESS_SCENE_PARTICLES_REGION_BEHAVIOR_TYPE] = "fas fa-cloud-slash";
+  }
+
+  if (config.typeLabels) {
+    config.typeLabels[PARTICLE_REGION_BEHAVIOR_TYPE] =
+      "FXMASTER.Regions.BehaviorNames.ParticleEffectRegionBehaviorName";
+    config.typeLabels[FILTER_REGION_BEHAVIOR_TYPE] = "FXMASTER.Regions.BehaviorNames.FilterEffectRegionBehaviorName";
+    config.typeLabels[SUPPRESS_SCENE_FILTERS_REGION_BEHAVIOR_TYPE] =
+      "FXMASTER.Regions.BehaviorNames.SuppressSceneFiltersRegionBehaviorName";
+    config.typeLabels[SUPPRESS_SCENE_PARTICLES_REGION_BEHAVIOR_TYPE] =
+      "FXMASTER.Regions.BehaviorNames.SuppressSceneParticlesRegionBehaviorName";
+  }
+
+  return true;
+}
+
+registerRegionBehaviorTypes();
 
 /**
  * Helpers to allow particle effects to run in other renderers ie not Canvas Provides an override context on either:
@@ -112,11 +192,6 @@ Hooks.once("init", function () {
   registerHandlebarsHelpers();
   registerPresetApi();
 
-  const PARTICLE_TYPE = `${packageId}.particleEffectsRegion`;
-  const FILTER_TYPE = `${packageId}.filterEffectsRegion`;
-  const SUPPRESS_SCENE_FILTERS = `${packageId}.suppressSceneFilters`;
-  const SUPPRESS_SCENE_PARTICLES = `${packageId}.suppressSceneParticles`;
-
   foundry.utils.mergeObject(CONFIG.fxmaster, {
     filterEffects: FXMASTER.filterEffects,
     particleEffects: FXMASTER.particleEffects,
@@ -139,20 +214,7 @@ Hooks.once("init", function () {
 
   CONFIG.originalWeatherEffects = CONFIG.weatherEffects;
   CONFIG.weatherEffects = { ...CONFIG.weatherEffects, ...weatherEffects };
-  CONFIG.RegionBehavior.dataModels[PARTICLE_TYPE] = ParticleRegionBehaviorType;
-  CONFIG.RegionBehavior.typeIcons[PARTICLE_TYPE] = "fas fa-hat-wizard";
-  CONFIG.RegionBehavior.typeLabels[PARTICLE_TYPE] = "FXMASTER.Regions.BehaviorNames.ParticleEffectRegionBehaviorName";
-  CONFIG.RegionBehavior.dataModels[FILTER_TYPE] = FilterRegionBehaviorType;
-  CONFIG.RegionBehavior.typeIcons[FILTER_TYPE] = "fas fa-filter";
-  CONFIG.RegionBehavior.typeLabels[FILTER_TYPE] = "FXMASTER.Regions.BehaviorNames.FilterEffectRegionBehaviorName";
-  CONFIG.RegionBehavior.dataModels[SUPPRESS_SCENE_FILTERS] = SuppressSceneFiltersBehaviorType;
-  CONFIG.RegionBehavior.typeIcons[SUPPRESS_SCENE_FILTERS] = "fas fa-ban";
-  CONFIG.RegionBehavior.typeLabels[SUPPRESS_SCENE_FILTERS] =
-    "FXMASTER.Regions.BehaviorNames.SuppressSceneFiltersRegionBehaviorName";
-  CONFIG.RegionBehavior.dataModels[SUPPRESS_SCENE_PARTICLES] = SuppressSceneParticlesBehaviorType;
-  CONFIG.RegionBehavior.typeIcons[SUPPRESS_SCENE_PARTICLES] = "fas fa-cloud-slash";
-  CONFIG.RegionBehavior.typeLabels[SUPPRESS_SCENE_PARTICLES] =
-    "FXMASTER.Regions.BehaviorNames.SuppressSceneParticlesRegionBehaviorName";
+  registerRegionBehaviorTypes();
 });
 
 registerGetSceneControlButtonsHook();

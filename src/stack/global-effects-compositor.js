@@ -1,7 +1,12 @@
 import { FOUNDRY_GRID_STACK_UID, getOrderedEnabledEffectRenderRows } from "../common/effect-stack.js";
 import { FilterEffectsSceneManager } from "../filter-effects/filter-effects-scene-manager.js";
 import { SceneMaskManager } from "../common/base-effects-scene-manager.js";
-import { applyRegionBehaviorsToOverheadLevels, compositeGridInFxStack, isEnabled } from "../settings-access.js";
+import {
+  applyRegionBehaviorsToOverheadLevels,
+  compositeGridInFxStack,
+  displayEffectsOverVision,
+  isEnabled,
+} from "../settings-access.js";
 import { logger } from "../logger.js";
 import { packageId } from "../constants.js";
 import {
@@ -13,6 +18,7 @@ import {
   getDocumentAssignedLevelIds,
   getRegionBehaviorEdgeFadePercent,
   getRegionBehaviorRuntimeSignature,
+  getSceneDarknessLevel,
   getSelectedSceneLevelIds,
   getSceneLevels as getSceneLevelDocuments,
   getRegionElevationWindow,
@@ -21,8 +27,8 @@ import {
   getSceneRegionDocumentById,
   getSceneSurfaces,
   regionDocumentCanApplyInCurrentView,
-  getTileOcclusionModes,
   regionWorldBounds,
+  regionMaskGeometrySignature,
   inferVisibleLevelForDocument,
   getCanvasLiveLevelSurfaceRevealState,
   getCanvasLiveLevelSurfaceState,
@@ -32,6 +38,7 @@ import {
   isDocumentOnCurrentCanvasLevel,
   tokenUpperLevelRevealAllowsBelowTokenMask,
   collectBelowTokenMaskTokens,
+  buildBelowTileMaskCoverageSignature,
   resolveDocumentOcclusionElevation,
   safeResolutionForCssArea,
   syncCanvasLiveLevelSurfaceState,
@@ -57,12 +64,12 @@ import {
   fxmGetPublicHoverFadeState,
   fxmUpdateDisplayObjectWorldTransform,
   fxmDisplayObjectTransformSignature,
-  fxmReadDocumentShapes,
 } from "../utils.js";
 
 const SUPPRESS_WEATHER = "suppressWeather";
 const SUPPRESS_SCENE_PARTICLES = `${packageId}.suppressSceneParticles`;
 const SUPPRESS_SCENE_FILTERS = `${packageId}.suppressSceneFilters`;
+const ACTIVE_DARKNESS_EPSILON = 1e-4;
 
 /**
  * Return whether native weather occlusion filters can be used for compositor stack passes.
@@ -277,6 +284,8 @@ export class GlobalEffectsCompositor {
     this._surfaceMaskRenderList = null;
     this._primaryCaptureRenderList = null;
     this._primaryCaptureObjects = [];
+    this._renderedVisibilityCaptureRenderList = null;
+    this._renderedVisibilityCaptureObjects = [];
     this._surfaceMaskThresholdSprite = null;
     this._sceneFilterSuppressionRegionRT = null;
     this._sceneSuppressionRegionMaskRTCache = new Map();
@@ -364,6 +373,8 @@ export class GlobalEffectsCompositor {
     this._hasVisibleForegroundCoverageFrameValue = false;
     this._hasVisibleLevelSurfacesForBelowForegroundFrameSerial = -1;
     this._hasVisibleLevelSurfacesForBelowForegroundFrameValue = false;
+    this._hasSyncableNativeLevelSurfaceFrameSerial = -1;
+    this._hasSyncableNativeLevelSurfaceFrameValue = true;
     this._levelBlockerFrameSerial = -1;
     this._levelBlockerFrameKey = null;
     this._selectedLevelSurfaceFrameSerial = -1;
@@ -388,6 +399,7 @@ export class GlobalEffectsCompositor {
     this._levelSurfaceSignatureFrameSerial = -1;
     this._levelSurfaceSignatureFrameValue = null;
     this._displayParentStructureDirtyFrame = -1;
+    this._displayParentStructureDirtyParent = null;
     this._displayOutputWidth = 0;
     this._displayOutputHeight = 0;
     this._viewportMetricsKey = null;
@@ -608,7 +620,8 @@ export class GlobalEffectsCompositor {
       this._hasSceneFilterRowsFrame = frameInfo.hasSceneFilterRows;
       this._forceGeneratedSceneClipFrame =
         !!canvas?.level && this._hasSelectedLevelParticleRowsFrame && this._hasSceneFilterRowsFrame;
-      frameInfo.needsOutputSceneMask = rows.some((row) => this.#rowNeedsOutputSceneMask(row));
+      frameInfo.needsOutputSceneMask =
+        this.#effectsOverVisionEnabled() || rows.some((row) => this.#rowNeedsOutputSceneMask(row));
       this._foregroundMaskFrameSerial = -1;
       this._foregroundMaskFrameTexture = null;
       this._foregroundVisibleMaskFrameSerial = -1;
@@ -951,9 +964,6 @@ export class GlobalEffectsCompositor {
                 this.#blit(compositeTarget, next, { clear: true });
               }
             } else if (row.kind === "particle") {
-              /**
-               * Region particles are rendered as independent sprites. If a Level-constrained Region row cannot capture an assigned-Level surface mask this frame, preserve the input instead of allowing unconstrained particles to leak onto higher overlays.
-               */
               this.#blit(rowCompositeInput, next, { clear: true });
             }
           }
@@ -2525,8 +2535,7 @@ export class GlobalEffectsCompositor {
       logger.debug("FXMaster:", err);
     }
 
-    const shapes = fxmReadDocumentShapes(doc);
-    const shapeKey = this.#regionShapeKeyForFrame(shapes);
+    const shapeKey = regionMaskGeometrySignature(region);
 
     const elevationKey = (() => {
       try {
@@ -2965,6 +2974,7 @@ export class GlobalEffectsCompositor {
   #shouldSyncLevelSurfaceStateForFrame(frameInfo) {
     if (!canvas?.level || !frameInfo?.hasLevelAwareRows) return false;
     if (frameInfo.needsDynamicTokenCoverage || frameInfo.needsDynamicTileCoverage) return false;
+    if (!this.#hasSyncableNativeLevelSurfaceForFrame()) return false;
     if (!this.#selectedLevelViewportMovedThisFrame()) return true;
     if (Number.isFinite(getCanvasPrimaryHoverFadeElevation())) return true;
 
@@ -2998,6 +3008,66 @@ export class GlobalEffectsCompositor {
     }
 
     return false;
+  }
+
+  /**
+   * Return whether V14 Levels exposes syncable native surface state for the current frame.
+   *
+   * @returns {boolean}
+   */
+  #hasSyncableNativeLevelSurfaceForFrame() {
+    if (this._hasSyncableNativeLevelSurfaceFrameSerial === this._renderFrameSerial) {
+      return this._hasSyncableNativeLevelSurfaceFrameValue === true;
+    }
+
+    const remember = (value) => {
+      const resolved = value === true;
+      this._hasSyncableNativeLevelSurfaceFrameSerial = this._renderFrameSerial;
+      this._hasSyncableNativeLevelSurfaceFrameValue = resolved;
+      return resolved;
+    };
+
+    if (!canvas?.level) return remember(false);
+
+    try {
+      for (const mesh of this.#getPrimaryLevelTexturesForFrame()) {
+        if (mesh && !mesh.destroyed) return remember(true);
+      }
+
+      for (const level of this.#getSceneLevels()) {
+        const levelId = level?.id ?? null;
+        if (!levelId) continue;
+        if (this.#getConfiguredLevelImageSources(levelId).length) return remember(true);
+        if (this.#getConfiguredLevelImageSources(levelId, { foregroundOnly: true }).length) return remember(true);
+      }
+
+      for (const mesh of this.#getPrimaryTileMeshesForFrame()) {
+        if (!mesh || mesh.destroyed) continue;
+
+        const object = fxmLinkedPlaceableFromDisplayObject(mesh);
+        const document = object?.document ?? mesh?.document ?? null;
+        if (document?.hidden) continue;
+
+        const liveMesh = object?.mesh ?? object?.primaryMesh ?? object?.sprite ?? mesh;
+        const hoverState = fxmGetPublicHoverFadeState(liveMesh, mesh);
+        if (hoverState?.faded || hoverState?.hovered) return remember(true);
+
+        const fadeOcclusion = Number(
+          liveMesh?.fadeOcclusion ??
+            liveMesh?.shader?.uniforms?.fadeOcclusion ??
+            mesh?.fadeOcclusion ??
+            mesh?.shader?.uniforms?.fadeOcclusion ??
+            hoverState?.occlusion ??
+            0,
+        );
+        if (Number.isFinite(fadeOcclusion) && fadeOcclusion > 0.001) return remember(true);
+      }
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+      return remember(true);
+    }
+
+    return remember(false);
   }
 
   /**
@@ -8997,46 +9067,7 @@ export class GlobalEffectsCompositor {
       }
     }
 
-    if (includeTiles) {
-      const tileViewportPadding = 16;
-      for (const tile of canvas?.tiles?.placeables ?? []) {
-        if (!this.#tileIsActiveOnCanvas(tile)) continue;
-        if (!this.#placeableIntersectsWorldViewport(tile, tileViewportPadding)) continue;
-        const tileId = tile?.id ?? tile?.document?.id ?? "";
-        const mesh = tile?.mesh ?? null;
-        const transformId = fxmDisplayObjectTransformSignature(mesh);
-        const hoverFade = fxmGetPublicHoverFadeState(mesh);
-        const visibleAlpha = Math.round((Number(mesh?.worldAlpha ?? tile?.alpha ?? 1) || 0) * 1000);
-        const fadeOcclusion = Math.round((Number(mesh?.fadeOcclusion ?? hoverFade?.occlusion ?? 0) || 0) * 1000);
-        const bounds = tile?.bounds ?? null;
-        const bx = Number(bounds?.x ?? tile?.x ?? 0) || 0;
-        const by = Number(bounds?.y ?? tile?.y ?? 0) || 0;
-        const bw = Number(bounds?.width ?? tile?.width ?? 0) || 0;
-        const bh = Number(bounds?.height ?? tile?.height ?? 0) || 0;
-        const occlusionMode = getTileOcclusionModes(tile?.document ?? tile ?? null);
-        const restrictsParticles = tileDocumentRestrictsParticles(tile) ? 1 : 0;
-        const restrictsFilters = tileDocumentRestrictsFilters(tile) ? 1 : 0;
-        const tileContentTransformId = [
-          fmt(bx),
-          fmt(by),
-          fmt(bw),
-          fmt(bh),
-          fmt(tile?.document?.rotation ?? tile?.rotation ?? 0, 3),
-          fmt(tile?.document?.elevation ?? tile?.elevation ?? 0, 3),
-          fmt(mesh?.scale?.x ?? 1, 4),
-          fmt(mesh?.scale?.y ?? 1, 4),
-        ].join(",");
-        const tileStateTail = `${visibleAlpha}:${fadeOcclusion}:${tile?.occluded ? 1 : 0}:${
-          hoverFade?.faded ? 1 : 0
-        }:${restrictsParticles}:${restrictsFilters}:1:${String(occlusionMode)}`;
-        pushContentPart(
-          `tile:${tileId}:${transformId}:${bx.toFixed(2)}:${by.toFixed(2)}:${bw.toFixed(2)}:${bh.toFixed(
-            2,
-          )}:${tileStateTail}`,
-          `tile:${tileId}:${tileContentTransformId}:${tileStateTail}`,
-        );
-      }
-    }
+    if (includeTiles) pushContentPart(`tiles:${buildBelowTileMaskCoverageSignature()}`);
 
     return { key: parts.join("|"), contentKey: contentParts.join("|"), forceRefresh: false };
   }
@@ -9152,7 +9183,10 @@ export class GlobalEffectsCompositor {
 
     if (dynamicCoverageChanged) {
       try {
-        SceneMaskManager.instance.refreshTokensSync?.({ presyncedDynamicCoverage });
+        SceneMaskManager.instance.refreshTokensSync?.({
+          presyncedDynamicCoverage,
+          force: dynamicContentChanged,
+        });
       } catch (err) {
         logger.debug("FXMaster:", err);
       }
@@ -9176,9 +9210,6 @@ export class GlobalEffectsCompositor {
       this._dynamicCoverageSignature = dynamicState.forceRefresh ? null : dynamicState.key;
       this._dynamicCoverageContentSignature = dynamicState.forceRefresh ? null : dynamicState.contentKey ?? null;
     } else if (needsDynamicSuppressionPreservation) {
-      /**
-       * Below-token/tile coverage may be stable while a Level-scoped suppression aperture changes due to direct lower-token hover. Re-check the compact suppression-preservation signature even when the generic coverage key is unchanged. The manager only rebuilds the base masks when that signature actually changes.
-       */
       try {
         SceneMaskManager.instance.refreshDynamicSuppressionPreservationIfNeeded?.();
       } catch (err) {
@@ -9188,14 +9219,83 @@ export class GlobalEffectsCompositor {
   }
 
   /**
+   * Return whether above-darkness particles should use the live particle band.
+   *
+   * @param {Scene|null|undefined} scene
+   * @returns {boolean}
+   */
+  #aboveDarknessParticlesUseLiveBand(scene) {
+    return !this.#effectsOverVisionEnabled() && getSceneDarknessLevel(scene) > ACTIVE_DARKNESS_EPSILON;
+  }
+
+  /**
+   * Return whether a particle row renders in the live above-darkness particle band.
+   *
+   * @param {object|null|undefined} row
+   * @param {boolean} useLiveBand
+   * @returns {boolean}
+   */
+  #rowRendersInLiveAboveDarknessParticleBand(row, useLiveBand) {
+    return !!useLiveBand && row?.kind === "particle" && row?.layerLevel === "aboveDarkness";
+  }
+
+  #rowsHaveLiveAboveDarknessParticle(rows, useLiveBand) {
+    if (!useLiveBand) return false;
+    for (const row of rows ?? []) {
+      if (this.#rowRendersInLiveAboveDarknessParticleBand(row, useLiveBand) && this.#rowHasRenderableRuntime(row))
+        return true;
+    }
+    return false;
+  }
+
+  /**
+   * Return whether the Foundry grid remains outside stack composition for the frame.
+   *
+   * @param {Array<object>} rows
+   * @param {boolean} useLiveBand
+   * @returns {boolean}
+   */
+  #gridShouldRemainLiveForRows(rows, useLiveBand) {
+    if (!this.#gridCompositingEnabled() || !useLiveBand) return false;
+    const orderedRows = Array.isArray(rows) ? rows : [];
+    const gridIndex = orderedRows.findIndex((row) => this.#rowIsFoundryGrid(row));
+    if (gridIndex < 0) return false;
+
+    let firstLiveAboveDarknessParticle = Number.POSITIVE_INFINITY;
+    for (let index = 0; index < orderedRows.length; index++) {
+      const row = orderedRows[index];
+      if (this.#rowRendersInLiveAboveDarknessParticleBand(row, useLiveBand) && this.#rowHasRenderableRuntime(row)) {
+        firstLiveAboveDarknessParticle = Math.min(firstLiveAboveDarknessParticle, index);
+      }
+    }
+    if (!Number.isFinite(firstLiveAboveDarknessParticle) || gridIndex >= firstLiveAboveDarknessParticle) return false;
+
+    for (let index = 0; index < gridIndex; index++) {
+      const row = orderedRows[index];
+      if (!row || this.#rowIsSuppressionOperator(row) || this.#rowIsFoundryGrid(row)) continue;
+      if (this.#rowHasRenderableRuntime(row)) return false;
+    }
+
+    return true;
+  }
+
+  /**
    * Collect ordered rows for the current compositor pass, including transient rows that remain visible during fade-out.
    *
    * @param {Scene|null|undefined} scene
    * @returns {Array<object>}
    */
   #collectRenderableRows(scene) {
-    const rows = getOrderedEnabledEffectRenderRows(scene, { clone: false }).filter((row) =>
-      this.#rowHasRenderableRuntime(row),
+    const orderedRows = getOrderedEnabledEffectRenderRows(scene, { clone: false });
+    const useLiveAboveDarknessBand = this.#aboveDarknessParticlesUseLiveBand(scene);
+    const keepGridLive = this.#gridShouldRemainLiveForRows(orderedRows, useLiveAboveDarknessBand);
+    if (keepGridLive) this.#restoreLiveGridMeshVisibility();
+
+    const rows = orderedRows.filter(
+      (row) =>
+        !this.#rowRendersInLiveAboveDarknessParticleBand(row, useLiveAboveDarknessBand) &&
+        !(keepGridLive && this.#rowIsFoundryGrid(row)) &&
+        this.#rowHasRenderableRuntime(row),
     );
     const known = this.#clearFrameSetProperty("_collectRenderableRowsKnownFrameSet");
     for (const row of rows) {
@@ -9206,6 +9306,7 @@ export class GlobalEffectsCompositor {
     transientRows.length = 0;
     const collectTransientRows = (sourceRows) => {
       for (const row of sourceRows ?? []) {
+        if (this.#rowRendersInLiveAboveDarknessParticleBand(row, useLiveAboveDarknessBand)) continue;
         if (row?.uid && !known.has(row.uid) && this.#rowHasRenderableRuntime(row)) transientRows.push(row);
       }
     };
@@ -9226,8 +9327,13 @@ export class GlobalEffectsCompositor {
       logger.debug("FXMaster:", err);
     }
 
-    if (!transientRows.length)
-      return rows.some((row) => row?.kind === "particle" || row?.kind === "filter") ? rows : [];
+    if (!transientRows.length) {
+      const hasEffectRow = rows.some((row) => row?.kind === "particle" || row?.kind === "filter");
+      const hasGridSupportRow =
+        rows.some((row) => this.#rowIsFoundryGrid(row)) &&
+        this.#rowsHaveLiveAboveDarknessParticle(orderedRows, useLiveAboveDarknessBand);
+      return hasEffectRow || hasGridSupportRow ? rows : [];
+    }
     transientRows.sort(
       (a, b) => (a.renderIndex ?? Number.MAX_SAFE_INTEGER) - (b.renderIndex ?? Number.MAX_SAFE_INTEGER),
     );
@@ -9458,8 +9564,14 @@ export class GlobalEffectsCompositor {
     }
 
     if (!structural) return;
-    if (this._displayParentStructureDirtyFrame === this._renderFrameSerial) return;
+    if (
+      this._displayParentStructureDirtyFrame === this._renderFrameSerial &&
+      this._displayParentStructureDirtyParent === parent
+    ) {
+      return;
+    }
     this._displayParentStructureDirtyFrame = this._renderFrameSerial;
+    this._displayParentStructureDirtyParent = parent;
 
     try {
       if (parent === canvas?.primary) parent.update?.();
@@ -9510,6 +9622,15 @@ export class GlobalEffectsCompositor {
    */
   #gridCompositingEnabled() {
     return compositeGridInFxStack() === true;
+  }
+
+  /**
+   * Return whether compositor output should render above Foundry visibility and fog.
+   *
+   * @returns {boolean}
+   */
+  #effectsOverVisionEnabled() {
+    return displayEffectsOverVision() === true;
   }
 
   /**
@@ -9586,6 +9707,17 @@ export class GlobalEffectsCompositor {
    */
   syncGridCompositingSetting() {
     if (!this.#gridCompositingEnabled()) this.#restoreLiveGridMeshVisibility();
+  }
+
+  /**
+   * Apply the current visibility presentation setting after settings or canvas state change.
+   *
+   * @returns {void}
+   */
+  syncVisionPresentationSetting() {
+    this.#attachDisplayContainer();
+    this.#resetOutputSpriteTransform();
+    this.#markDisplayParentRenderDirty({ structural: true });
   }
 
   /**
@@ -9696,8 +9828,6 @@ export class GlobalEffectsCompositor {
   /**
    * Return the scene graph object used as the base image for FX stack composition.
    *
-   * Primary-group output requires primary-group capture so darkness is not pre-baked into the stack input.
-   *
    * @returns {PIXI.DisplayObject|null}
    */
   #getBaseCaptureTarget() {
@@ -9765,6 +9895,133 @@ export class GlobalEffectsCompositor {
   }
 
   /**
+   * Normalize the RGB scene-background channels exposed by Foundry's PrimaryCanvasGroup.
+   *
+   * @param {unknown} value
+   * @returns {[number, number, number]|null}
+   */
+  #normalizePrimaryBackgroundRgb(value) {
+    if (value === null || value === undefined) return null;
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return [((value >> 16) & 0xff) / 255, ((value >> 8) & 0xff) / 255, (value & 0xff) / 255];
+    }
+
+    if (typeof value === "string") {
+      let s = value.trim();
+      if (!s) return null;
+      if (s.startsWith("#")) s = s.slice(1);
+      if (s.startsWith("0x") || s.startsWith("0X")) s = s.slice(2);
+      if (s.length === 3) {
+        s = s
+          .split("")
+          .map((c) => `${c}${c}`)
+          .join("");
+      }
+      if (s.length >= 6) s = s.slice(0, 6);
+      if (!/^[0-9a-f]{6}$/i.test(s)) return null;
+      return [
+        Number.parseInt(s.slice(0, 2), 16) / 255,
+        Number.parseInt(s.slice(2, 4), 16) / 255,
+        Number.parseInt(s.slice(4, 6), 16) / 255,
+      ];
+    }
+
+    const source =
+      Array.isArray(value) || ArrayBuffer.isView(value)
+        ? Array.from(value)
+        : Array.isArray(value?.rgb) || ArrayBuffer.isView(value?.rgb)
+        ? Array.from(value.rgb)
+        : null;
+
+    if (!source || source.length < 3) return null;
+
+    const channels = source.slice(0, 3).map((v) => Number(v));
+    if (!channels.every(Number.isFinite)) return null;
+
+    const scale = channels.some((v) => Math.abs(v) > 1) ? 255 : 1;
+    return channels.map((v) => Math.max(0, Math.min(1, v / scale)));
+  }
+
+  /**
+   * Resolve the RGB background clear color for PrimaryCanvasGroup._render.
+   *
+   * @param {PIXI.Container|null|undefined} primary
+   * @returns {[number, number, number]|null}
+   */
+  #resolvePrimaryBackgroundClearRgb(primary) {
+    const candidates = [
+      primary?._backgroundColor,
+      canvas?.environment?.colors?.sceneBackground?.rgb,
+      canvas?.level?.background?.color,
+      canvas?.scene?.initialLevel?.background?.color,
+      canvas?.scene?.firstLevel?.background?.color,
+    ];
+
+    for (const candidate of candidates) {
+      const rgb = this.#normalizePrimaryBackgroundRgb(candidate);
+      if (rgb) return rgb;
+    }
+
+    return null;
+  }
+
+  /**
+   * Clear a render texture to PrimaryCanvasGroup's opaque scene background color.
+   *
+   * @param {PIXI.RenderTexture|null|undefined} renderTexture
+   * @param {PIXI.Container|null|undefined} primary
+   * @returns {boolean}
+   */
+  #clearPrimaryBaseRenderTexture(renderTexture, primary) {
+    const rgb = this.#resolvePrimaryBackgroundClearRgb(primary);
+    if (!rgb) return this.#clearRenderTexture(renderTexture);
+
+    const renderer = canvas?.app?.renderer;
+    const renderTextureSystem = renderer?.renderTexture ?? null;
+    if (!renderer || !renderTextureSystem?.bind || !this.#canBindRenderTexture(renderTexture)) {
+      return this.#clearRenderTexture(renderTexture);
+    }
+
+    const previousTarget = renderTextureSystem.current ?? null;
+    let bound = false;
+    let cleared = false;
+
+    try {
+      renderTextureSystem.bind(renderTexture);
+      bound = true;
+
+      if (typeof renderer.framebuffer?.clear === "function") {
+        renderer.framebuffer.clear(rgb[0], rgb[1], rgb[2], 1, PIXI.BUFFER_BITS?.COLOR);
+        cleared = true;
+      } else if (typeof renderTextureSystem.clear === "function") {
+        try {
+          renderTextureSystem.clear([rgb[0], rgb[1], rgb[2], 1]);
+        } catch (_err) {
+          const red = Math.round(rgb[0] * 255) & 0xff;
+          const green = Math.round(rgb[1] * 255) & 0xff;
+          const blue = Math.round(rgb[2] * 255) & 0xff;
+          renderTextureSystem.clear((red << 16) | (green << 8) | blue, 1);
+        }
+        cleared = true;
+      }
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+      cleared = false;
+    } finally {
+      if (bound && this.#canBindRenderTexture(previousTarget)) {
+        try {
+          renderTextureSystem.bind(previousTarget);
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+      }
+    }
+
+    return cleared || this.#clearRenderTexture(renderTexture);
+  }
+
+  /**
    * Capture raw primary children without sampling the primary display shader.
    *
    * @param {PIXI.Container} primary
@@ -9774,7 +10031,7 @@ export class GlobalEffectsCompositor {
   #capturePrimaryBase(primary, renderTexture) {
     const renderer = canvas?.app?.renderer;
     if (!renderer || !primary || !renderTexture) return false;
-    if (!this.#clearRenderTexture(renderTexture)) return false;
+    if (!this.#clearPrimaryBaseRenderTexture(renderTexture, primary)) return false;
 
     try {
       fxmUpdateDisplayObjectWorldTransform(primary);
@@ -9810,6 +10067,117 @@ export class GlobalEffectsCompositor {
   }
 
   /**
+   * Return a reusable renderer for the rendered-scene visibility capture.
+   *
+   * @returns {PIXI.Container}
+   */
+  #getRenderedVisibilityCaptureRenderList() {
+    if (!this._renderedVisibilityCaptureRenderList || this._renderedVisibilityCaptureRenderList.destroyed) {
+      const renderList = new PIXI.Container();
+      renderList.name = "fxmasterRenderedVisibilityCaptureRenderer";
+      renderList.eventMode = "none";
+      renderList.sortableChildren = false;
+      renderList.__fxmObjects = [];
+      renderList.render = function fxmRenderRenderedVisibilityCapture(renderer) {
+        for (const object of this.__fxmObjects ?? []) {
+          if (!object || object.destroyed || object.visible === false || object.renderable === false) continue;
+          try {
+            object.render?.(renderer);
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
+        }
+      };
+      renderList.updateTransform = function fxmNoopRenderedVisibilityCaptureTransform() {};
+      this._renderedVisibilityCaptureRenderList = renderList;
+    }
+
+    return this._renderedVisibilityCaptureRenderList;
+  }
+
+  /**
+   * Return rendered-group children that form the fogged scene before interface layers.
+   *
+   * @param {PIXI.Container|null|undefined} rendered
+   * @returns {PIXI.DisplayObject[]}
+   */
+  #collectRenderedVisibilityCaptureObjects(rendered) {
+    const objects = this._renderedVisibilityCaptureObjects ?? (this._renderedVisibilityCaptureObjects = []);
+    objects.length = 0;
+    if (!rendered || rendered.destroyed) return objects;
+
+    try {
+      rendered.sortChildren?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    const visibility = canvas?.visibility ?? null;
+    const interfaceGroup = canvas?.interface ?? null;
+    const visibilityIndex = visibility?.parent === rendered ? rendered.getChildIndex?.(visibility) ?? -1 : -1;
+    const interfaceIndex = interfaceGroup?.parent === rendered ? rendered.getChildIndex?.(interfaceGroup) ?? -1 : -1;
+
+    for (const child of rendered.children ?? []) {
+      if (!child || child.destroyed) continue;
+      if (child === this.layer || child === this._displayContainer || child === this._displaySprite) continue;
+      if (interfaceGroup && child === interfaceGroup) break;
+      if (child.visible === false || child.renderable === false) continue;
+
+      const index = typeof rendered.getChildIndex === "function" ? rendered.getChildIndex(child) : -1;
+      if (visibilityIndex >= 0 && index > visibilityIndex) continue;
+      if (visibilityIndex < 0 && interfaceIndex >= 0 && index >= interfaceIndex) continue;
+      objects.push(child);
+    }
+
+    return objects;
+  }
+
+  /**
+   * Capture the rendered scene after Foundry visibility and fog but before interface layers.
+   *
+   * @param {PIXI.RenderTexture|null|undefined} renderTexture
+   * @returns {boolean}
+   */
+  #captureRenderedVisibilityBase(renderTexture) {
+    const renderer = canvas?.app?.renderer;
+    const rendered = canvas?.rendered ?? null;
+    if (!renderer || !rendered || !renderTexture) return false;
+    if (!this.#clearRenderTexture(renderTexture)) return false;
+
+    try {
+      fxmUpdateDisplayObjectWorldTransform(rendered);
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    try {
+      rendered.updateTransform?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    const renderList = this.#getRenderedVisibilityCaptureRenderList();
+    const objects = this.#collectRenderedVisibilityCaptureObjects(rendered);
+    if (!objects.length) return true;
+
+    renderList.__fxmObjects = objects;
+
+    try {
+      renderer.render(renderList, {
+        renderTexture,
+        clear: false,
+        skipUpdateTransform: true,
+      });
+      return true;
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+      return false;
+    } finally {
+      renderList.__fxmObjects.length = 0;
+    }
+  }
+
+  /**
    * Capture the current primary/environment output into the supplied render texture using live world transforms.
    *
    * @param {PIXI.RenderTexture} renderTexture
@@ -9817,8 +10185,12 @@ export class GlobalEffectsCompositor {
    */
   #captureEnvironment(renderTexture) {
     const renderer = canvas?.app?.renderer;
+    if (!renderer || !renderTexture) return false;
+
+    if (this.#effectsOverVisionEnabled()) return this.#captureRenderedVisibilityBase(renderTexture);
+
     const target = this.#getBaseCaptureTarget();
-    if (!renderer || !target || !renderTexture) return false;
+    if (!target) return false;
 
     if (target === canvas?.primary) return this.#capturePrimaryBase(target, renderTexture);
 
@@ -10037,7 +10409,7 @@ export class GlobalEffectsCompositor {
    * @returns {PIXI.DisplayObject|null}
    */
   #getPreferredSceneMask() {
-    if (!this._forceGeneratedSceneClipFrame) {
+    if (!this._forceGeneratedSceneClipFrame && !this.#effectsOverVisionEnabled()) {
       const nativeMask = canvas?.masks?.scene ?? null;
       if (nativeMask && !nativeMask.destroyed) return nativeMask;
     }
@@ -10090,6 +10462,15 @@ export class GlobalEffectsCompositor {
    */
   #getInsertionTarget(parent) {
     if (!parent) return null;
+
+    if (this.#effectsOverVisionEnabled() && parent === canvas?.rendered) {
+      const visibility = canvas?.visibility ?? null;
+      if (visibility?.parent === parent) return visibility;
+      const environment = canvas?.environment ?? null;
+      if (environment?.parent === parent) return environment;
+      return null;
+    }
+
     if (parent === this.#getPrimaryDisplayParent()) return null;
     const environment = canvas?.environment ?? null;
     if (environment?.parent === parent) return environment;
@@ -10102,6 +10483,11 @@ export class GlobalEffectsCompositor {
    * @returns {PIXI.Container|null}
    */
   #getDisplayParent() {
+    if (this.#effectsOverVisionEnabled()) {
+      const rendered = canvas?.rendered ?? null;
+      if (rendered && !rendered.destroyed) return rendered;
+    }
+
     return this.#getPrimaryDisplayParent() ?? canvas?.rendered ?? this.layer ?? null;
   }
 
@@ -10119,6 +10505,7 @@ export class GlobalEffectsCompositor {
     const hasTarget = insertionTarget && insertionTarget.parent === parent;
 
     if (container.parent !== parent) {
+      const previousParent = container.parent ?? null;
       try {
         container.parent?.removeChild?.(container);
       } catch (err) {
@@ -10130,6 +10517,9 @@ export class GlobalEffectsCompositor {
         parent.addChildAt(container, Math.min(index, parent.children.length));
       } else {
         parent.addChild(container);
+      }
+      if (previousParent && previousParent !== parent) {
+        this.#markDisplayParentRenderDirty({ parent: previousParent, structural: true });
       }
       this.#markDisplayParentRenderDirty({ structural: true });
       return;

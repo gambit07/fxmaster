@@ -27,6 +27,7 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
     classes: ["fxmaster", "form-v2", "particle-effects", "ui-control"],
     actions: {
       updateParam: ParticleEffectsManagement.updateParam,
+      particleEffectAction: ParticleEffectsManagement.particleEffectAction,
       openHideEffects: ParticleEffectsManagement.openHideEffects,
     },
     window: {
@@ -130,6 +131,83 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
       activeEffects,
       passiveEffects,
     };
+  }
+
+  /**
+   * Invoke a particle effect-provided action from an effect option row.
+   *
+   * @param {PointerEvent} event
+   * @param {HTMLElement} button
+   * @returns {Promise<void>}
+   */
+  static async particleEffectAction(event, button) {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+
+    const action = button?.dataset?.effectAction;
+    const row = button?.closest?.(".fxmaster-particle-expand")?.previousElementSibling;
+    const type =
+      button?.dataset?.effectType ?? button?.closest?.("[data-effect-type]")?.dataset?.effectType ?? row?.dataset?.type;
+    if (!type || !action) return;
+
+    const effectDef = CONFIG.fxmaster?.particleEffects?.[type];
+    if (!effectDef) {
+      logger.warn(game.i18n.format("FXMASTER.Particles.TypeErrors.TypeNotFound", { type }));
+      return;
+    }
+
+    const parameterActions = Object.values(effectDef.parameters ?? {}).flatMap((parameter) =>
+      Array.isArray(parameter?.actions) ? parameter.actions : [],
+    );
+    const actions = [
+      ...(Array.isArray(effectDef.managementActions) ? effectDef.managementActions : []),
+      ...(Array.isArray(effectDef.particleActions) ? effectDef.particleActions : []),
+      ...parameterActions,
+    ];
+    const actionDef = actions.find((entry) => entry?.action === action);
+    if (!actionDef) return;
+
+    const getOptions = () => {
+      try {
+        return FXMasterBaseFormV2.gatherFilterOptions(
+          effectDef,
+          this?.element ?? button?.closest?.(".fxmaster-particle-expand") ?? document,
+        );
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+        try {
+          const current = canvas?.scene?.getFlag?.(packageId, "effects") ?? {};
+          return foundry.utils.deepClone(current[`core_${type}`]?.options ?? {});
+        } catch (fallbackErr) {
+          logger.debug("FXMaster:", fallbackErr);
+          return {};
+        }
+      }
+    };
+
+    const context = {
+      app: this,
+      scene: canvas?.scene ?? null,
+      type,
+      action,
+      actionDef,
+      button,
+      event,
+      getOptions,
+      options: getOptions(),
+    };
+
+    try {
+      if (typeof actionDef.handler === "string" && typeof effectDef[actionDef.handler] === "function") {
+        await effectDef[actionDef.handler](context);
+      } else if (typeof effectDef.handleManagementAction === "function") {
+        await effectDef.handleManagementAction(action, context);
+      } else if (typeof actionDef.onClick === "function") {
+        await actionDef.onClick(context);
+      }
+    } catch (err) {
+      logger.error("FXMaster | Particle effect action failed", err);
+    }
   }
 
   /**

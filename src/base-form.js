@@ -550,8 +550,60 @@ export class FXMasterBaseFormV2 extends Base {
         /** @type {string[]} */
         let values = [];
 
+        let hasAuthoritativeMultiValue = false;
+
         if (multi) {
-          if (param.type !== "scene-levels") {
+          try {
+            const innerSelect =
+              multi.querySelector(`select[name="${base}"]`) || multi.querySelector("select[multiple]") || null;
+            if (innerSelect?.multiple) {
+              hasAuthoritativeMultiValue = true;
+              values = Array.from(innerSelect.selectedOptions)
+                .map((o) => o.value)
+                .filter(Boolean);
+            }
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
+
+          if (!values.length) {
+            try {
+              const checkedOptions = Array.from(multi.querySelectorAll("option:checked"));
+              if (checkedOptions.length) {
+                hasAuthoritativeMultiValue = true;
+                values = checkedOptions.map((option) => option.value).filter(Boolean);
+              }
+            } catch (err) {
+              logger.debug("FXMaster:", err);
+            }
+          }
+
+          if (!values.length) {
+            try {
+              const tags = Array.from(multi.querySelectorAll(".tag"));
+              if (tags.length) hasAuthoritativeMultiValue = true;
+              const allLevelsLabel = String(game?.i18n?.localize?.("FXMASTER.Params.AllLevels") ?? "All Levels");
+              const hasAllLevelsTag = tags.some((tag) => tag.textContent?.trim() === allLevelsLabel);
+              if (hasAllLevelsTag) values = [ALL_LEVELS_SELECTION];
+              else {
+                values = tags
+                  .map((t) => t.dataset.key ?? t.dataset.value ?? t.dataset.id ?? t.dataset.tag ?? t.dataset.option)
+                  .filter(Boolean);
+                if (
+                  !values.length &&
+                  param.type === "scene-levels" &&
+                  multi.querySelector(".tags, .tag-list, .selected, .selected-tags")
+                ) {
+                  hasAuthoritativeMultiValue = true;
+                  values = [ALL_LEVELS_SELECTION];
+                }
+              }
+            } catch (err) {
+              logger.debug("FXMaster:", err);
+            }
+          }
+
+          if (!values.length && !hasAuthoritativeMultiValue && param.type !== "scene-levels") {
             try {
               const mv = multi.value ?? multi.getAttribute?.("value");
               if (mv instanceof Set) values = Array.from(mv);
@@ -571,44 +623,7 @@ export class FXMasterBaseFormV2 extends Base {
             }
           }
 
-          if (!values.length) {
-            try {
-              const tags = Array.from(multi.querySelectorAll(".tag"));
-              const allLevelsLabel = String(game?.i18n?.localize?.("FXMASTER.Params.AllLevels") ?? "All Levels");
-              const hasAllLevelsTag = tags.some((tag) => tag.textContent?.trim() === allLevelsLabel);
-              if (hasAllLevelsTag) values = [ALL_LEVELS_SELECTION];
-              else {
-                values = tags
-                  .map((t) => t.dataset.key ?? t.dataset.value ?? t.dataset.id ?? t.dataset.tag ?? t.dataset.option)
-                  .filter(Boolean);
-                if (
-                  !values.length &&
-                  param.type === "scene-levels" &&
-                  multi.querySelector(".tags, .tag-list, .selected, .selected-tags")
-                ) {
-                  values = [ALL_LEVELS_SELECTION];
-                }
-              }
-            } catch (err) {
-              logger.debug("FXMaster:", err);
-            }
-          }
-
-          if (!values.length) {
-            try {
-              const innerSelect =
-                multi.querySelector(`select[name="${base}"]`) || multi.querySelector("select[multiple]") || null;
-              if (innerSelect?.multiple) {
-                values = Array.from(innerSelect.selectedOptions)
-                  .map((o) => o.value)
-                  .filter(Boolean);
-              }
-            } catch (err) {
-              logger.debug("FXMaster:", err);
-            }
-          }
-
-          if (!values.length && param.type !== "scene-levels") {
+          if (!values.length && !hasAuthoritativeMultiValue && param.type !== "scene-levels") {
             try {
               const hidden =
                 multi.querySelector(`input[type="hidden"][name="${base}"]`) ||
@@ -639,7 +654,7 @@ export class FXMasterBaseFormV2 extends Base {
               .filter(Boolean);
         }
 
-        if (!values.length && param.type !== "scene-levels") {
+        if (!values.length && param.type !== "scene-levels" && param.allowEmpty !== true) {
           values = Array.isArray(param.value)
             ? param.value
             : param.value != null && param.value !== ""
@@ -997,13 +1012,9 @@ export class FXMasterBaseFormV2 extends Base {
   }
 
   /**
-   * Wire a lightweight, extendable system for hiding/showing parameters based on other parameter values.
+   * Wire conditional parameter visibility based on other parameter values.
    *
-   * To opt-in, a parameter config can declare:
-   * - showWhen: { otherParamName: expectedValue, ... }
-   * - hideWhen: { otherParamName: expectedValue, ... }
-   * - regionOnly: true
-   * - sceneOnly: true
+   * Parameter configs can declare `showWhen`, `hideWhen`, `regionOnly`, or `sceneOnly`.
    */
   _fxmWireConditionalVisibility() {
     this._fxmUnwireConditionalVisibility();
@@ -1069,6 +1080,7 @@ export class FXMasterBaseFormV2 extends Base {
 
     const evalCond = (cond, effectLabel) => {
       if (!cond) return true;
+      if (Array.isArray(cond)) return cond.some((entry) => evalCond(entry, effectLabel));
       if (typeof cond === "function") {
         try {
           return !!cond({ get: (k) => getValue(effectLabel, k) });
@@ -1216,6 +1228,7 @@ export class FXMasterBaseFormV2 extends Base {
       ".fxmaster-parameter",
       ".fxmaster-filter-param",
       ".fxmaster-particle-param",
+      ".fxmaster-param-field",
       ".fxmaster-particles-param",
       ".fxmaster-filters-param",
       ".setting",

@@ -9,7 +9,11 @@
  * - Includes V1-V2 option converters for scene-dimension-aware values.
  */
 
-import { roundToDecimals } from "../../utils.js";
+import {
+  geometricDirectionToScreenDegrees,
+  legacyClockwiseDirectionToGeometric,
+  roundToDecimals,
+} from "../../utils.js";
 import { logger } from "../../logger.js";
 
 /** ------------------------------------------------------------------------- */
@@ -101,6 +105,64 @@ function fxmAngleLerp(a, b, t) {
 }
 
 /**
+ * Clamp a number to a finite inclusive range.
+ *
+ * @param {number} value
+ * @param {number} min
+ * @param {number} max
+ * @param {number} fallback
+ * @returns {number}
+ */
+function fxmClampNumber(value, min, max, fallback = min) {
+  const n = Number(value);
+  const safe = Number.isFinite(n) ? n : fallback;
+  return Math.max(min, Math.min(max, safe));
+}
+
+/**
+ * Read either a raw option or a normalized parameter option.
+ *
+ * @param {any} value
+ * @param {any} fallback
+ * @returns {any}
+ */
+function fxmOptionValue(value, fallback = undefined) {
+  if (value && typeof value === "object" && Object.prototype.hasOwnProperty.call(value, "value")) return value.value;
+  return value === undefined ? fallback : value;
+}
+
+/**
+ * Locate the rectangle used for orbit geometry.
+ *
+ * @param {PIXI.particles.EmitterConfigV3|object} config
+ * @returns {{x:number,y:number,w:number,h:number}}
+ */
+function fxmOrbitRectFromConfig(config) {
+  const spawn = (config?.behaviors ?? []).find(
+    (behavior) => behavior?.type === "spawnShape" && behavior?.config?.type === "rect" && behavior?.config?.data,
+  );
+  const rect = config?._activeRect ?? spawn?.config?.data ?? canvas?.dimensions?.sceneRect ?? canvas?.dimensions ?? {};
+  const x = Number(rect.x ?? rect.sceneX ?? 0) || 0;
+  const y = Number(rect.y ?? rect.sceneY ?? 0) || 0;
+  const w = Math.max(1, Number(rect.w ?? rect.width ?? rect.sceneWidth ?? 1) || 1);
+  const h = Math.max(1, Number(rect.h ?? rect.height ?? rect.sceneHeight ?? 1) || 1);
+  return { x, y, w, h };
+}
+
+/**
+ * Compute a ring inside a rectangle for orbit movement.
+ *
+ * @param {number} minDimension
+ * @param {number} distance
+ * @returns {{min:number,max:number}}
+ */
+function fxmOrbitRadii(minDimension, distance) {
+  const base = Math.max(1, minDimension) * 0.48;
+  const outer = base * (0.3 + 0.7 * fxmClampNumber(distance, 0, 1, 0.5));
+  return { min: Math.max(1, outer * 0.65), max: Math.max(1, outer) };
+}
+
+/**
  * Abstract particle effect with parameter plumbing and utilities. Subclasses must provide a PIXI EmitterConfig via `defaultConfig`.
  */
 export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
@@ -168,6 +230,11 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
    */
   static get lateralMovementAmplitudeMinPx() {
     return 0;
+  }
+
+  /** Whether orbit movement rotates particles toward their path tangent. */
+  static get orbitFacesTangent() {
+    return true;
   }
 
   /** Parameter schema used to render controls and hold defaults. */
@@ -274,7 +341,7 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
       }
     }
 
-    return merged;
+    return CONFIG.fxmaster?.normalizeEffectOptionsForRuntime?.(this, merged) ?? merged;
   }
 
   /**
@@ -292,13 +359,13 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
     const rotationBehavior = this.defaultConfig.behaviors.find((b) => b.type === "rotation");
     if (rotationBehavior !== undefined) {
       const avg = (rotationBehavior.config.minStart + rotationBehavior.config.maxStart) / 2;
-      return Math.round(avg / step) * step;
+      return Math.round(legacyClockwiseDirectionToGeometric(avg) / step) * step;
     }
 
     const rotationStatic = this.defaultConfig.behaviors.find((b) => b.type === "rotationStatic");
     if (rotationStatic !== undefined) {
       const avg = (rotationStatic.config.min + rotationStatic.config.max) / 2;
-      return Math.round(avg / step) * step;
+      return Math.round(legacyClockwiseDirectionToGeometric(avg) / step) * step;
     }
 
     return undefined;
@@ -513,6 +580,8 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
     const direction = options.direction?.value;
     if (direction === undefined) return;
 
+    const screenDirection = geometricDirectionToScreenDegrees(direction);
+
     const spreadRaw = options?.spread?.value;
     const spread =
       directionalEnabled && Number.isFinite(Number(spreadRaw)) ? Math.min(20, Math.max(0, Number(spreadRaw))) : null;
@@ -521,16 +590,16 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
       .filter((b) => b.type === "rotation")
       .forEach(({ config }) => {
         const range = spread !== null ? spread * 2 : config.maxStart - config.minStart;
-        config.minStart = direction - range / 2;
-        config.maxStart = direction + range / 2;
+        config.minStart = screenDirection - range / 2;
+        config.maxStart = screenDirection + range / 2;
       });
 
     config.behaviors
       .filter((b) => b.type === "rotationStatic")
       .forEach(({ config }) => {
         const range = spread !== null ? spread * 2 : config.max - config.min;
-        config.min = direction - range / 2;
-        config.max = direction + range / 2;
+        config.min = screenDirection - range / 2;
+        config.max = screenDirection + range / 2;
       });
   }
 
@@ -674,8 +743,12 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
       : new PIXI.particles.Emitter(this, config);
 
     try {
+      config._fxmOrbitFacesTangent = this.constructor.orbitFacesTangent !== false;
+      emitter._fxmOrbitConfig = config;
+      emitter._fxmOrbitFacesTangent = config._fxmOrbitFacesTangent;
       const opts = this._fxmLastOptions ?? this.options ?? {};
       this._fxmInstallLateralMovement(emitter, opts, { wrap: true });
+      this._fxmInstallOrbitMovement(emitter, opts, { wrap: true });
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
@@ -1035,6 +1108,111 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
     };
 
     emitter._fxmLateralMovementWrapped = true;
+
+    if (wasAuto) emitter.autoUpdate = true;
+  }
+
+  /**
+   * Install circular orbit movement onto an emitter.
+   *
+   * Particles are positioned on a ring within the active spawn rectangle and rotated along the tangent heading.
+   *
+   * @param {PIXI.particles.Emitter} emitter
+   * @param {object} options
+   * @param {{wrap?: boolean}} [cfg]
+   * @returns {void}
+   */
+  _fxmInstallOrbitMovement(emitter, options = {}, { wrap = true } = {}) {
+    if (!emitter) return;
+
+    const enabled = !!fxmOptionValue(options?.orbit, false);
+    if (!enabled) {
+      emitter._fxmOrbitMovementUpdate = null;
+      return;
+    }
+
+    const config = emitter?._fxmOrbitConfig ?? emitter?._origConfig ?? emitter?.config ?? {};
+    const rect = fxmOrbitRectFromConfig(config);
+    const distance = fxmClampNumber(fxmOptionValue(options?.orbitDistance, 0.5), 0, 1, 0.5);
+    const radii = fxmOrbitRadii(Math.min(rect.w, rect.h), distance);
+    const grid = Math.max(1, Number(canvas?.dimensions?.size ?? 100) || 100);
+    const speedScale = Math.max(0.05, Number(fxmOptionValue(options?.speed, 1)) || 1);
+    const tangentialSpeed = (16 + 34 * Math.sqrt(speedScale)) * (grid / 100);
+    const direction = -1;
+    const facesTangent = emitter?._fxmOrbitFacesTangent !== false && config?._fxmOrbitFacesTangent !== false;
+
+    emitter._fxmOrbitMovementUpdate = (delta) => {
+      const dt = fxmDeltaSeconds(delta);
+      if (!(dt > 0)) return;
+
+      fxmForEachEmitterParticle(emitter, (particle) => {
+        if (!particle) return;
+
+        const age = fxmGetParticleAge(particle);
+        const respawn =
+          age !== undefined &&
+          typeof particle._fxmOrbitLastAge === "number" &&
+          Number.isFinite(particle._fxmOrbitLastAge) &&
+          age < particle._fxmOrbitLastAge;
+        particle._fxmOrbitLastAge = age;
+
+        if (respawn || !particle._fxmOrbitSeeded) {
+          const theta = Math.random() * Math.PI * 2;
+          const u = Math.random();
+          const radius = Math.sqrt(u * (radii.max * radii.max - radii.min * radii.min) + radii.min * radii.min);
+          particle._fxmOrbitTheta = theta;
+          particle._fxmOrbitRadius = radius;
+          particle._fxmOrbitOmegaScale = 0.82 + Math.random() * 0.36;
+          particle._fxmOrbitRadialPhase = Math.random() * Math.PI * 2;
+          particle._fxmOrbitRadialScale = 0.012 + Math.random() * 0.025;
+          particle._fxmOrbitVisualRotation =
+            typeof particle.rotation === "number" ? particle.rotation : theta + direction * Math.PI * 0.5;
+          particle._fxmOrbitSeeded = true;
+        }
+
+        const baseRadius = Math.max(1, Number(particle._fxmOrbitRadius) || (radii.min + radii.max) * 0.5);
+        const omega = (tangentialSpeed / baseRadius) * (Number(particle._fxmOrbitOmegaScale) || 1);
+        particle._fxmOrbitTheta = (Number(particle._fxmOrbitTheta) || 0) + direction * omega * dt;
+
+        const radial =
+          baseRadius *
+          (1 +
+            Math.sin((Number(particle._fxmOrbitTheta) || 0) * 0.7 + (Number(particle._fxmOrbitRadialPhase) || 0)) *
+              (Number(particle._fxmOrbitRadialScale) || 0));
+        const theta = Number(particle._fxmOrbitTheta) || 0;
+        const centerX = rect.x + rect.w * 0.5;
+        const centerY = rect.y + rect.h * 0.5;
+        particle.x = centerX + Math.cos(theta) * radial;
+        particle.y = centerY + Math.sin(theta) * radial;
+
+        if (!facesTangent) return;
+
+        const heading = theta + direction * Math.PI * 0.5;
+        const current =
+          typeof particle._fxmOrbitVisualRotation === "number" ? particle._fxmOrbitVisualRotation : heading;
+        const next = fxmAngleLerp(current, heading, 1 - Math.exp(-8 * dt));
+        particle._fxmOrbitVisualRotation = next;
+        particle.rotation = next;
+      });
+    };
+
+    if (!wrap || emitter._fxmOrbitMovementWrapped) return;
+
+    const wasAuto = !!emitter.autoUpdate;
+    if (wasAuto) emitter.autoUpdate = false;
+
+    const origUpdate = emitter.update.bind(emitter);
+    emitter._fxmOrbitMovementOrigUpdate = origUpdate;
+    emitter.update = (delta) => {
+      origUpdate(delta);
+      try {
+        emitter._fxmOrbitMovementUpdate?.(delta);
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    };
+
+    emitter._fxmOrbitMovementWrapped = true;
 
     if (wasAuto) emitter.autoUpdate = true;
   }

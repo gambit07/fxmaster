@@ -8,6 +8,9 @@
  * await FXMASTER.api.presets.stop("blizzard");
  * await FXMASTER.api.presets.toggle("blizzard", { topDown: true });
  * await FXMASTER.api.presets.switch("sunshower", { topDown: true });
+ * await FXMASTER.api.stopSceneEffects({ skipFading: true });
+ * await FXMASTER.api.stopRegionEffects({ scene: canvas.scene });
+ * await FXMASTER.api.startRegionEffects({ scene: canvas.scene });
  * const allPresets = FXMASTER.api.presets.list();
  * const validPresets = FXMASTER.api.presets.listValid();
  * const activePresets = FXMASTER.api.presets.listActive();
@@ -21,6 +24,9 @@ import {
   ensureSingleSceneLevelSelection,
   normalizeDarknessActivationRange,
   fxmDocumentId,
+  collectionValues,
+  normalizeDirectionDegrees,
+  prepareFilterOptionsForSceneStorage,
 } from "./utils.js";
 import { logger } from "./logger.js";
 import { buildSceneEffectUid, promoteEffectStackUids } from "./common/effect-stack.js";
@@ -29,6 +35,8 @@ const FXMASTER_PLUS_ID = "fxmaster-plus";
 const KEY_PREFIX = "apiPreset_";
 
 const ACTIVE_KEY_RE = /^apiPreset_(.+)_(?:p|f)\d+$/;
+const REGION_PARTICLE_EFFECT_TYPE = `${packageId}.particleEffectsRegion`;
+const REGION_FILTER_EFFECT_TYPE = `${packageId}.filterEffectsRegion`;
 
 /**
  * Accepted relative intensity values for preset speed and density overrides.
@@ -54,6 +62,7 @@ const ACTIVE_KEY_RE = /^apiPreset_(.+)_(?:p|f)\d+$/;
  * @property {PresetRelativeLevelValue} [speed] Relative speed preset (`"very-low"`, `"low"`, `"medium"`, `"high"`, `"very-high"`) or an explicit numeric multiplier.
  * @property {PresetRelativeLevelValue} [density] Relative density preset (`"very-low"`, `"low"`, `"medium"`, `"high"`, `"very-high"`) or an explicit numeric multiplier.
  * @property {boolean} [belowTokens] Apply the preset beneath tokens.
+ * @property {boolean} [splash=true] Enable Rain splash particles when a preset includes Rain.
  * @property {boolean} [belowTiles=false] Apply the preset beneath tiles.
  * @property {boolean} [belowForeground=false] Apply the preset beneath foreground coverage.
  * @property {boolean} [darknessActivationEnabled=false] Enable or disable darkness gating explicitly.
@@ -156,7 +165,7 @@ export function normalizePresetName(name) {
 }
 
 /**
- * Convert a compass direction string into FXMaster degrees. FXMaster particle direction is screen-space degrees where: 0   = east (→) 90  = south (↓) 180 = west (←) 270 = north (↑)
+ * Convert a compass direction string into FXMaster geometric degrees. FXMaster direction uses standard coordinate-plane orientation: 0 = east, 90 = north, 180 = west, 270 = south.
  *
  * @param {string|number|null|undefined} dir
  * @returns {number|null}
@@ -164,10 +173,7 @@ export function normalizePresetName(name) {
 export function parseDirectionDegrees(dir) {
   if (dir === null || dir === undefined) return null;
 
-  if (typeof dir === "number" && Number.isFinite(dir)) {
-    const d = ((dir % 360) + 360) % 360;
-    return d;
-  }
+  if (typeof dir === "number" && Number.isFinite(dir)) return normalizeDirectionDegrees(dir);
 
   const s = String(dir).trim().toLowerCase();
   if (!s) return null;
@@ -177,22 +183,22 @@ export function parseDirectionDegrees(dir) {
   const map = {
     e: 0,
     east: 0,
-    se: 45,
-    southeast: 45,
-    s: 90,
-    south: 90,
-    sw: 135,
-    southwest: 135,
+    ne: 45,
+    northeast: 45,
+    n: 90,
+    north: 90,
+    nw: 135,
+    northwest: 135,
     w: 180,
     west: 180,
-    nw: 225,
-    northwest: 225,
-    n: 270,
-    north: 270,
-    ne: 315,
-    northeast: 315,
-    up: 270,
-    down: 90,
+    sw: 225,
+    southwest: 225,
+    s: 270,
+    south: 270,
+    se: 315,
+    southeast: 315,
+    up: 90,
+    down: 270,
     left: 180,
     right: 0,
   };
@@ -287,6 +293,9 @@ function getRegisteredParamDescriptor(meta, key) {
       ...(Number.isFinite(max) ? { max } : {}),
       ...(Number.isFinite(step) && step > 0 ? { step } : {}),
       ...(Number.isFinite(decimals) && decimals >= 0 ? { decimals } : {}),
+      ...(desc.__fxmInternalRange ? { __fxmInternalRange: desc.__fxmInternalRange } : {}),
+      __fxmParameter: desc,
+      __fxmEffectDefinition: cls,
     };
   } catch {
     return null;
@@ -358,6 +367,50 @@ function clampAndQuantizeForEffect(meta, key, value) {
   }
   return clampAndQuantize(value, desc);
 }
+
+/**
+ * Apply a relative multiplier to a normalized range by scaling the effect's internal value.
+ *
+ * @param {{kind?: "particles"|"filters", type?: string}} meta
+ * @param {string} key
+ * @param {number} value
+ * @param {number} multiplier
+ * @returns {number}
+ */
+function scaleRangeForEffect(meta, key, value, multiplier) {
+  const desc = getRegisteredParamDescriptor(meta, key);
+  const v = Number(value);
+  const m = Number(multiplier);
+  if (!Number.isFinite(v) || !Number.isFinite(m)) return value;
+
+  if (desc?.__fxmEffectDefinition && desc?.__fxmInternalRange) {
+    const scaled = CONFIG.fxmaster?.scaleNormalizedStoredRangeValue?.(desc.__fxmEffectDefinition, key, v, m);
+    return clampAndQuantizeForEffect(meta, key, scaled);
+  }
+
+  return clampAndQuantizeForEffect(meta, key, v * m);
+}
+
+/**
+ * Convert preset-authored legacy effect options into current UI option ranges.
+ *
+ * @param {{kind?: "particles"|"filters", type?: string}} meta
+ * @param {object} options
+ * @returns {object}
+ */
+function normalizePresetOptionsToCurrentRanges(meta, options = {}) {
+  try {
+    const kind = meta?.kind;
+    const type = meta?.type;
+    const db = kind === "particles" ? CONFIG?.fxmaster?.particleEffects : CONFIG?.fxmaster?.filterEffects;
+    const cls = db?.[type];
+    if (!cls) return options;
+    return CONFIG.fxmaster?.normalizeEffectOptionsForStorageFromLegacy?.(cls, options) ?? options;
+  } catch {
+    return options;
+  }
+}
+
 /**
  * Parse a user-provided hex color string.
  *
@@ -397,35 +450,15 @@ function parseHexColor(color) {
 }
 
 /**
- * Normalize degrees into the range [-180, 180], mapping 180 => -180.
- *
- * @param {number} deg
- * @returns {number}
- */
-function normalizeAngle180(deg) {
-  let d = ((deg % 360) + 360) % 360;
-  if (d > 180) d -= 360;
-  if (d === 180) d = -180;
-  return d;
-}
-
-/**
- * Convert API direction (FXMaster degrees: 0=east, 90=south, 180=west, 270=north) into the FXMaster+ Sunlight filter's angle parameter.
- *
- * Sunlight: Angle is effectively an emission point, and the mapping differs depending on whether the filter is in parallel mode.
- *
- * Mappings:
- * - parallel (sunshower): -180=north, -90=east, 0=south, 90=west
- * - non-parallel (black-sun/twilight-sun): -180=east, -90=south, 0=west, 90=north
+ * Convert API direction into the FXMaster+ Sunlight filter's geometric travel angle.
  *
  * @param {number} directionDeg
- * @param {boolean} parallel
  * @returns {number}
  */
-function sunlightAngleFromDirection(directionDeg, parallel) {
+function sunlightAngleFromDirection(directionDeg) {
   const d = Number(directionDeg);
   if (!Number.isFinite(d)) return 0;
-  return parallel ? normalizeAngle180(d - 90) : normalizeAngle180(d - 180);
+  return normalizeDirectionDegrees(d);
 }
 
 /**
@@ -800,6 +833,9 @@ function normalizeGenericApiEffectEntry(entry, scene) {
     info.options && typeof info.options === "object" ? { ...info.options } : {},
     scene,
   );
+  if (kind === "filter") {
+    info.options = prepareFilterOptionsForSceneStorage(type, info.options, { forceRestart: true });
+  }
 
   return { kind, info, requestedId };
 }
@@ -917,6 +953,17 @@ export async function playApiEffects({
 function arrayifyApiEffectStopInput(value) {
   if (value === null || value === undefined) return [];
   return Array.isArray(value) ? value : [value];
+}
+
+/**
+ * Strip a Foundry flag update operator prefix from a scene flag key.
+ *
+ * @param {string} key
+ * @returns {string}
+ */
+function stripSceneFlagOperatorPrefix(key) {
+  const id = String(key ?? "");
+  return id.startsWith("-=") || id.startsWith("==") ? id.slice(2) : id;
 }
 
 /**
@@ -1208,6 +1255,182 @@ export async function stopApiFilterEffects(filters = [], opts = {}) {
 }
 
 /**
+ * Stop every scene-level FXMaster particle and filter effect on a scene.
+ *
+ * Core-managed, API-created, macro-created, and preset-created scene rows are removed. Region behaviors and saved macros or presets are not deleted.
+ *
+ * @param {{scene?: Scene|string, skipFading?: boolean}|Scene|string} [opts]
+ * @returns {Promise<{particles: string[], filters: string[]}|false>} Removed ids by kind, or false when no scene is available.
+ */
+export async function stopSceneEffects(opts = {}) {
+  const source = typeof opts === "string" || opts?.collectionName === "scenes" ? { scene: opts } : opts ?? {};
+  const sc = source.scene ? resolveScene(source.scene) : canvas?.scene;
+  const skipFading = source.skipFading === true;
+  if (!sc) return false;
+
+  const curParticles = sc.getFlag?.(packageId, "effects") ?? {};
+  const curFilters = sc.getFlag?.(packageId, "filters") ?? {};
+  const curToggleGroups = sc.getFlag?.(packageId, API_EFFECT_TOGGLE_GROUPS_FLAG) ?? {};
+  const particleUpdate = {};
+  const filterUpdate = {};
+  const toggleGroupUpdate = {};
+  const removed = { particles: [], filters: [] };
+  const removedParticleIds = new Set();
+  const removedFilterIds = new Set();
+
+  for (const rawKey of Object.keys(curParticles)) {
+    const key = stripSceneFlagOperatorPrefix(rawKey);
+    if (!key || removedParticleIds.has(key)) continue;
+    addDeletionKey(particleUpdate, key);
+    removedParticleIds.add(key);
+    removed.particles.push(key);
+  }
+
+  for (const rawKey of Object.keys(curFilters)) {
+    const key = stripSceneFlagOperatorPrefix(rawKey);
+    if (!key || removedFilterIds.has(key)) continue;
+    addDeletionKey(filterUpdate, key);
+    removedFilterIds.add(key);
+    removed.filters.push(key);
+  }
+
+  for (const rawKey of Object.keys(curToggleGroups)) {
+    const key = stripSceneFlagOperatorPrefix(rawKey);
+    if (key) addDeletionKey(toggleGroupUpdate, key);
+  }
+
+  let nextStack = null;
+  const currentStack = sc.getFlag?.(packageId, "stack");
+  if (Array.isArray(currentStack)) {
+    const filtered = currentStack.filter((entry) => {
+      const uid = String(entry?.uid ?? "");
+      return !(uid.startsWith("scene:particle:") || uid.startsWith("scene:filter:"));
+    });
+    if (filtered.length !== currentStack.length) nextStack = filtered;
+  }
+
+  await commitApiEffectsSceneUpdate(sc, {
+    particleUpdate,
+    filterUpdate,
+    stack: nextStack,
+    toggleGroupUpdate,
+    skipFading,
+  });
+
+  return removed;
+}
+
+/**
+ * Disable every active FXMaster region particle or filter behavior on a scene.
+ *
+ * Region documents and RegionBehavior documents remain in place. Suppression behaviors are not modified.
+ *
+ * @param {{scene?: Scene|string}|Scene|string} [opts]
+ * @returns {Promise<{particles: Array<{region: string|null, behavior: string}>, filters: Array<{region: string|null, behavior: string}>, regions: string[]}|false>} Disabled behavior ids by kind, or false when no scene is available.
+ */
+export async function stopRegionEffects(opts = {}) {
+  const source = typeof opts === "string" || opts?.collectionName === "scenes" ? { scene: opts } : opts ?? {};
+  const sc = source.scene ? resolveScene(source.scene) : canvas?.scene;
+  if (!sc) return false;
+
+  const disabled = { particles: [], filters: [], regions: [] };
+  const touchedRegions = new Set();
+  const updates = [];
+  const regions = collectionValues(sc.regions ?? sc.getEmbeddedCollection?.("Region"));
+
+  for (const region of regions) {
+    const regionUpdates = [];
+    const regionId = fxmDocumentId(region) || String(region?.id ?? "");
+
+    for (const behavior of collectionValues(region?.behaviors)) {
+      if (!behavior || behavior.disabled) continue;
+      const type = String(behavior.type ?? "");
+      if (type !== REGION_PARTICLE_EFFECT_TYPE && type !== REGION_FILTER_EFFECT_TYPE) continue;
+
+      const behaviorId = fxmDocumentId(behavior) || String(behavior?.id ?? "");
+      if (!behaviorId) continue;
+
+      regionUpdates.push({ _id: behaviorId, disabled: true });
+      const entry = { region: regionId || null, behavior: behaviorId };
+      if (type === REGION_PARTICLE_EFFECT_TYPE) disabled.particles.push(entry);
+      else disabled.filters.push(entry);
+    }
+
+    if (!regionUpdates.length) continue;
+    if (regionId) touchedRegions.add(regionId);
+
+    if (typeof region?.updateEmbeddedDocuments === "function") {
+      updates.push(region.updateEmbeddedDocuments("RegionBehavior", regionUpdates));
+    } else {
+      const behaviors = collectionValues(region?.behaviors);
+      for (const update of regionUpdates) {
+        const behavior = behaviors.find((doc) => (fxmDocumentId(doc) || String(doc?.id ?? "")) === update._id);
+        if (typeof behavior?.update === "function") updates.push(behavior.update({ disabled: true }));
+      }
+    }
+  }
+
+  if (updates.length) await Promise.all(updates);
+  disabled.regions = [...touchedRegions];
+  return disabled;
+}
+
+/**
+ * Enable every disabled FXMaster region particle or filter behavior on a scene.
+ *
+ * Region documents and RegionBehavior documents remain in place. Suppression behaviors are not modified.
+ *
+ * @param {{scene?: Scene|string}|Scene|string} [opts]
+ * @returns {Promise<{particles: Array<{region: string|null, behavior: string}>, filters: Array<{region: string|null, behavior: string}>, regions: string[]}|false>} Enabled behavior ids by kind, or false when no scene is available.
+ */
+export async function startRegionEffects(opts = {}) {
+  const source = typeof opts === "string" || opts?.collectionName === "scenes" ? { scene: opts } : opts ?? {};
+  const sc = source.scene ? resolveScene(source.scene) : canvas?.scene;
+  if (!sc) return false;
+
+  const enabled = { particles: [], filters: [], regions: [] };
+  const touchedRegions = new Set();
+  const updates = [];
+  const regions = collectionValues(sc.regions ?? sc.getEmbeddedCollection?.("Region"));
+
+  for (const region of regions) {
+    const regionUpdates = [];
+    const regionId = fxmDocumentId(region) || String(region?.id ?? "");
+
+    for (const behavior of collectionValues(region?.behaviors)) {
+      if (!behavior || !behavior.disabled) continue;
+      const type = String(behavior.type ?? "");
+      if (type !== REGION_PARTICLE_EFFECT_TYPE && type !== REGION_FILTER_EFFECT_TYPE) continue;
+
+      const behaviorId = fxmDocumentId(behavior) || String(behavior?.id ?? "");
+      if (!behaviorId) continue;
+
+      regionUpdates.push({ _id: behaviorId, disabled: false });
+      const entry = { region: regionId || null, behavior: behaviorId };
+      if (type === REGION_PARTICLE_EFFECT_TYPE) enabled.particles.push(entry);
+      else enabled.filters.push(entry);
+    }
+
+    if (!regionUpdates.length) continue;
+    if (regionId) touchedRegions.add(regionId);
+
+    if (typeof region?.updateEmbeddedDocuments === "function") {
+      updates.push(region.updateEmbeddedDocuments("RegionBehavior", regionUpdates));
+    } else {
+      const behaviors = collectionValues(region?.behaviors);
+      for (const update of regionUpdates) {
+        const behavior = behaviors.find((doc) => (fxmDocumentId(doc) || String(doc?.id ?? "")) === update._id);
+        if (typeof behavior?.update === "function") updates.push(behavior.update({ disabled: false }));
+      }
+    }
+  }
+
+  if (updates.length) await Promise.all(updates);
+  enabled.regions = [...touchedRegions];
+  return enabled;
+}
+
+/**
  * Build arguments for scoped convenience toggle helpers.
  *
  * @param {"particles"|"filters"} property
@@ -1412,7 +1635,7 @@ function resolvePresetLevelSelection(value, scene) {
  * Apply top-level overrides to a particle or filter options object.
  *
  * @param {object} options
- * @param {{ topDown?: boolean, belowTokens?: boolean, belowTiles?: boolean, belowForeground?: boolean, darknessActivationEnabled?: boolean, darknessActivationMin?: number, darknessActivationMax?: number, directionDeg?: number|null, soundFx?: boolean, speedScale?: number, densityScale?: number, levels?: PresetLevelsValue, }} overrides
+ * @param {{ topDown?: boolean, belowTokens?: boolean, splash?: boolean, belowTiles?: boolean, belowForeground?: boolean, darknessActivationEnabled?: boolean, darknessActivationMin?: number, darknessActivationMax?: number, directionDeg?: number|null, soundFx?: boolean, speedScale?: number, densityScale?: number, levels?: PresetLevelsValue, }} overrides
  * @param {{ plusActive: boolean, scene?: Scene|null }} ctx
  * @param {{kind?: "particles"|"filters", type?: string}} meta
  * @returns {object}
@@ -1422,6 +1645,9 @@ function applyOptionOverrides(options = {}, overrides = {}, { plusActive, scene 
 
   if (typeof overrides.topDown === "boolean") out.topDown = overrides.topDown;
   if (typeof overrides.belowTokens === "boolean") out.belowTokens = overrides.belowTokens;
+  if (meta.kind === "particles" && meta.type === "rain" && typeof overrides.splash === "boolean") {
+    out.splash = overrides.splash;
+  }
   if (typeof overrides.belowTiles === "boolean") out.belowTiles = overrides.belowTiles;
   if (typeof overrides.belowForeground === "boolean") out.belowForeground = overrides.belowForeground;
 
@@ -1452,7 +1678,7 @@ function applyOptionOverrides(options = {}, overrides = {}, { plusActive, scene 
 
   if (typeof overrides.speedScale === "number" && Number.isFinite(overrides.speedScale) && overrides.speedScale !== 1) {
     if (typeof out.speed === "number" && Number.isFinite(out.speed)) {
-      out.speed = clampAndQuantizeForEffect(meta, "speed", out.speed * overrides.speedScale);
+      out.speed = scaleRangeForEffect(meta, "speed", out.speed, overrides.speedScale);
     }
   }
   if (
@@ -1461,7 +1687,7 @@ function applyOptionOverrides(options = {}, overrides = {}, { plusActive, scene 
     overrides.densityScale !== 1
   ) {
     if (typeof out.density === "number" && Number.isFinite(out.density)) {
-      out.density = clampAndQuantizeForEffect(meta, "density", out.density * overrides.densityScale);
+      out.density = scaleRangeForEffect(meta, "density", out.density, overrides.densityScale);
     }
   }
 
@@ -1510,20 +1736,16 @@ function applyOptionOverrides(options = {}, overrides = {}, { plusActive, scene 
   if (typeof overrides.directionDeg === "number" && Number.isFinite(overrides.directionDeg)) {
     const dir = overrides.directionDeg;
 
-    /** Route direction overrides through sunlight angle conversion. */
     if (meta.kind === "filters" && meta.type === "sunlight") {
-      const parallel = typeof out.parallel === "boolean" ? out.parallel : true;
-      out.angle = sunlightAngleFromDirection(dir, parallel);
+      out.angle = sunlightAngleFromDirection(dir);
       return out;
     }
-    /** Apply direction overrides to both glitch direction channels. */
     if (meta.kind === "filters" && meta.type === "glitch") {
       out.direction = dir;
       out.glyphDirection = dir;
       return out;
     }
 
-    /** Apply the default direction override. */
     out.direction = dir;
   }
 
@@ -1627,6 +1849,7 @@ export async function playPreset(
     speed = undefined,
     density = undefined,
     belowTokens = undefined,
+    splash = true,
     belowTiles = false,
     belowForeground = false,
     darknessActivationEnabled = undefined,
@@ -1681,6 +1904,7 @@ export async function playPreset(
   const overrides = {
     topDown,
     belowTokens,
+    splash,
     belowTiles,
     belowForeground,
     darknessActivationEnabled,
@@ -1695,20 +1919,22 @@ export async function playPreset(
   };
   for (const p of particles) {
     if (!p || typeof p !== "object") continue;
+    const meta = { kind: "particles", type: p.type };
     p.options = applyOptionOverrides(
-      p.options ?? {},
+      normalizePresetOptionsToCurrentRanges(meta, p.options ?? {}),
       overrides,
       { plusActive, scene: sc },
-      { kind: "particles", type: p.type },
+      meta,
     );
   }
   for (const f of filters) {
     if (!f || typeof f !== "object") continue;
+    const meta = { kind: "filters", type: f.type };
     f.options = applyOptionOverrides(
-      f.options ?? {},
+      normalizePresetOptionsToCurrentRanges(meta, f.options ?? {}),
       overrides,
       { plusActive, scene: sc },
-      { kind: "filters", type: f.type },
+      meta,
     );
   }
 
@@ -1750,7 +1976,11 @@ export async function playPreset(
   }
   for (let i = 0; i < filters.length; i++) {
     const key = `${filterPrefix}${i}`;
-    filterUpdate[key] = filters[i];
+    const entry = filters[i];
+    if (entry?.type) {
+      entry.options = prepareFilterOptionsForSceneStorage(entry.type, entry.options ?? {}, { forceRestart: true });
+    }
+    filterUpdate[key] = entry;
   }
 
   await commitApiEffectsSceneUpdate(sc, { particleUpdate, filterUpdate, skipFading });
@@ -1932,6 +2162,15 @@ export function registerPresetApi() {
     mod.api.presets ||= {};
     mod.api.effects ||= {};
 
+    delete mod.api.stopAllEffects;
+    delete mod.api.effects.stopAll;
+
+    Object.assign(mod.api, {
+      stopSceneEffects,
+      stopRegionEffects,
+      startRegionEffects,
+    });
+
     Object.assign(mod.api.presets, {
       play: playPreset,
       stop: stopPreset,
@@ -1966,6 +2205,11 @@ export function registerPresetApi() {
     try {
       globalThis.FXMASTER ||= {};
       globalThis.FXMASTER.api ||= {};
+      delete globalThis.FXMASTER.api.stopAllEffects;
+      delete globalThis.FXMASTER.api.effects?.stopAll;
+      globalThis.FXMASTER.api.stopSceneEffects = mod.api.stopSceneEffects;
+      globalThis.FXMASTER.api.stopRegionEffects = mod.api.stopRegionEffects;
+      globalThis.FXMASTER.api.startRegionEffects = mod.api.startRegionEffects;
       globalThis.FXMASTER.api.presets = mod.api.presets;
       globalThis.FXMASTER.api.effects = mod.api.effects;
     } catch (err) {

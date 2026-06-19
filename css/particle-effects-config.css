@@ -131,3 +131,23 @@
 .fxmaster-app * {
   overflow-anchor: none;
 }
+
+.fxmaster-particle-actions {
+  display: flex;
+  flex-wrap: wrap;
+  grid-column: 1 / -1;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.fxmaster-particle-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 1.75rem;
+}
+
+.fxmaster-particle-action.fxm-active {
+  background-color: var(--color-warm-2);
+  border-color: var(--color-warm-3);
+}

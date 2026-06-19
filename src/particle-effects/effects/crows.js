@@ -33,13 +33,25 @@ export class CrowsParticleEffect extends DefaultRectangleSpawnMixin(FXMasterPart
       belowTiles: p.belowTiles,
       soundFxEnabled: p.soundFxEnabled,
       tint: p.tint,
+      orbit: { label: "FXMASTER.Params.Orbit", type: "checkbox", value: false },
+      orbitDistance: {
+        label: "FXMASTER.Params.OrbitDistance",
+        type: "range",
+        min: 0,
+        value: 0.5,
+        max: 1,
+        step: 0.01,
+        decimals: 2,
+        showWhen: { orbit: true },
+      },
       ...this.shadowParameters,
       directionalMovement: {
         label: "FXMASTER.Params.DirectionalMovement",
         type: "checkbox",
         value: false,
+        hideWhen: { orbit: true },
       },
-      direction: { ...p.direction, showWhen: { directionalMovement: true } },
+      direction: { ...p.direction, showWhen: { directionalMovement: true }, hideWhen: { orbit: true } },
       spread: {
         label: "FXMASTER.Params.Spread",
         type: "range",
@@ -49,6 +61,7 @@ export class CrowsParticleEffect extends DefaultRectangleSpawnMixin(FXMasterPart
         step: 1,
         decimals: 0,
         showWhen: { directionalMovement: true },
+        hideWhen: { orbit: true },
       },
       lateralMovement: {
         label: "FXMASTER.Params.LateralMovement",
@@ -58,11 +71,12 @@ export class CrowsParticleEffect extends DefaultRectangleSpawnMixin(FXMasterPart
         max: 1,
         step: 0.05,
         decimals: 2,
+        hideWhen: { orbit: true },
       },
       scale: p.scale,
       speed: p.speed,
       lifetime: p.lifetime,
-      density: { ...p.density, min: 0.001, value: 0.006, max: 0.01, step: 0.001, decimals: 3 },
+      density: { ...p.density, min: 0.001, value: 0.006, max: 0.05, step: 0.001, decimals: 3 },
       alpha: p.alpha,
     };
   }

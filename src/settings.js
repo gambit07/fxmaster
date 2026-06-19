@@ -70,6 +70,17 @@ export function registerSettings() {
     onChange: () => refreshCompositorGridSetting(),
   });
 
+  game.settings.register(packageId, "displayEffectsOverVision", {
+    name: "FXMASTER.Settings.DisplayEffectsOverVision",
+    hint: "FXMASTER.Settings.DisplayEffectsOverVisionHint",
+    default: false,
+    scope: "world",
+    type: Boolean,
+    config: true,
+    requiresReload: false,
+    onChange: () => refreshCompositorVisionSetting(),
+  });
+
   game.settings.register(packageId, "applyRegionBehaviorsToOverheadLevels", {
     name: "FXMASTER.Settings.ApplyRegionBehaviorsToOverheadLevels",
     hint: "FXMASTER.Settings.ApplyRegionBehaviorsToOverheadLevelsHint",
@@ -130,6 +141,34 @@ export function registerSettings() {
     config: false,
   });
 
+  game.settings.register(packageId, "directionConventionMigrationVersion", {
+    default: 0,
+    scope: "world",
+    type: Number,
+    config: false,
+  });
+
+  game.settings.register(packageId, "parameterRangeMigrationVersion", {
+    default: 0,
+    scope: "world",
+    type: Number,
+    config: false,
+  });
+
+  game.settings.register(packageId, "directionConventionPassiveMigrationVersion", {
+    default: 0,
+    scope: "world",
+    type: Number,
+    config: false,
+  });
+
+  game.settings.register(packageId, "parameterRangePassiveMigrationVersion", {
+    default: 0,
+    scope: "world",
+    type: Number,
+    config: false,
+  });
+
   game.settings.registerMenu(packageId, "patreonSupport", {
     name: "Patreon Support",
     label: "Gambit's Lounge",
@@ -142,7 +181,14 @@ export function registerSettings() {
   });
 }
 
-export { applyRegionBehaviorsToOverheadLevels, compositeGridInFxStack, isEnabled } from "./settings-access.js";
+export {
+  applyRegionBehaviorsToOverheadLevels,
+  compositeGridInFxStack,
+  displayEffectsOverVision,
+  isEnabled,
+} from "./settings-access.js";
+export { migrateDirectionConventionData } from "./migrations/direction-convention.js";
+export { migrateParameterRangeData } from "./migrations/parameter-ranges.js";
 
 /**
  * Refresh live Region runtimes and scene suppression masks after the overhead Region behavior setting changes. This is intentionally best-effort so the setting remains safe during early startup or canvas teardown.
@@ -326,6 +372,23 @@ function refreshCompositorGridSetting() {
     invalidateEffectStackCache();
     const compositor = CONFIG?.fxmaster?.getGlobalEffectsCompositor?.();
     compositor?.syncGridCompositingSetting?.();
+    compositor?.renderFrame?.();
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+  }
+}
+
+/**
+ * Refresh compositor output after the visibility presentation setting changes.
+ *
+ * @returns {void}
+ * @private
+ */
+function refreshCompositorVisionSetting() {
+  try {
+    invalidateEffectStackCache();
+    const compositor = CONFIG?.fxmaster?.getGlobalEffectsCompositor?.();
+    compositor?.syncVisionPresentationSetting?.();
     compositor?.renderFrame?.();
   } catch (err) {
     logger.debug("FXMaster:", err);

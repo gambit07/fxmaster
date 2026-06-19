@@ -18,6 +18,10 @@ export class AutumnLeavesParticleEffect extends DefaultRectangleSpawnMixin(FXMas
     return "ambient";
   }
 
+  static get orbitFacesTangent() {
+    return false;
+  }
+
   /** @override */
   static get parameters() {
     const p = super.parameters;
@@ -26,7 +30,40 @@ export class AutumnLeavesParticleEffect extends DefaultRectangleSpawnMixin(FXMas
       belowTiles: p.belowTiles,
       soundFxEnabled: p.soundFxEnabled,
       tint: p.tint,
-      topDown: { label: "FXMASTER.Params.TopDown", type: "checkbox", value: false },
+      topDown: { label: "FXMASTER.Params.TopDown", type: "checkbox", value: false, hideWhen: { orbit: true } },
+      orbit: { label: "FXMASTER.Params.Orbit", type: "checkbox", value: false, hideWhen: { topDown: true } },
+      orbitDistance: {
+        label: "FXMASTER.Params.OrbitDistance",
+        type: "range",
+        min: 0,
+        value: 0.5,
+        max: 1,
+        step: 0.01,
+        decimals: 2,
+        showWhen: { orbit: true },
+      },
+      directionalMovement: {
+        label: "FXMASTER.Params.DirectionalMovement",
+        type: "checkbox",
+        value: false,
+        hideWhen: { orbit: true, topDown: true },
+      },
+      direction: {
+        ...p.direction,
+        showWhen: { directionalMovement: true },
+        hideWhen: { orbit: true, topDown: true },
+      },
+      spread: {
+        label: "FXMASTER.Params.Spread",
+        type: "range",
+        min: 0,
+        value: 0,
+        max: 20,
+        step: 1,
+        decimals: 0,
+        showWhen: { directionalMovement: true },
+        hideWhen: { orbit: true, topDown: true },
+      },
       scale: p.scale,
       speed: p.speed,
       lifetime: p.lifetime,
@@ -101,7 +138,8 @@ export class AutumnLeavesParticleEffect extends DefaultRectangleSpawnMixin(FXMas
   /** @override */
   getParticleEmitters(options = {}) {
     options = this.constructor.mergeWithDefaults(options);
-    const topDown = !!options?.topDown?.value;
+    const orbit = !!options?.orbit?.value;
+    const topDown = !!options?.topDown?.value && !orbit;
 
     if (!topDown) {
       this._fxmCanvasPanOwnerPosEnabled = false;

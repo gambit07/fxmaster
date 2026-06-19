@@ -20,7 +20,7 @@ uniform vec2  viewSize;
 uniform vec4  inputSize;    /** xy: input size in CSS px; zw: 1/size */
 uniform vec4  outputFrame;  /** xy: offset in CSS px; zw: size */
 
-uniform vec2  camFrac;      /** (stage unsnapped) - (stage snapped) */
+uniform vec2  camFrac;
 
 uniform float hasMask;
 uniform float maskReady;

@@ -1,4 +1,5 @@
 import { FXMasterParticleEffect } from "./effect.js";
+import { geometricDirectionToCanvasVector } from "../../utils.js";
 import { logger } from "../../logger.js";
 
 /**
@@ -137,11 +138,7 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
     const minLifetime = averageDiagonalTime / offsetFactor / 2;
     const maxLifetime = averageDiagonalTime / offsetFactor;
 
-    const angle = Math.toRadians(options.direction.value);
-    const directionVector = {
-      x: Math.cos(angle),
-      y: Math.sin(angle),
-    };
+    const directionVector = geometricDirectionToCanvasVector(options.direction.value);
 
     const spawnX = d.sceneRect.x - directionVector.x * d.sceneRect.width * offsetFactor - spawnPadding;
     const spawnY = d.sceneRect.y - directionVector.y * d.sceneRect.height * offsetFactor - spawnPadding;

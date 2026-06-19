@@ -13,18 +13,21 @@ import { MAX_EDGES } from "../../../constants.js";
  * Provides option plumbing, viewport locking, mask helpers, and lifecycle. Automatically injects `uCssToWorld` uniform to lock patterns to the stage.
  */
 
+function normalizeOptionValue(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || !("value" in value)) return value;
+  if (typeof value.apply === "boolean") return { value: value.value, apply: value.apply };
+
+  const inner = value.value;
+  if (inner && typeof inner === "object" && !Array.isArray(inner) && "value" in inner)
+    return normalizeOptionValue(inner);
+  return inner;
+}
+
 export const normalize = (opts) => {
   const out = {};
   if (!opts || typeof opts !== "object") return out;
 
-  for (const [k, v] of Object.entries(opts)) {
-    if (v && typeof v === "object" && "value" in v && Object.keys(v).length <= 2 && !Array.isArray(v)) {
-      if (typeof v.apply === "boolean") out[k] = { value: v.value, apply: v.apply };
-      else out[k] = v.value;
-    } else {
-      out[k] = v;
-    }
-  }
+  for (const [k, v] of Object.entries(opts)) out[k] = normalizeOptionValue(v);
   return out;
 };
 
@@ -62,7 +65,8 @@ export function FXMasterFilterEffectMixin(Base) {
       this.autoFit = false;
       this.padding = 0;
 
-      this.options = { ...this.constructor.default, ...(options ?? {}) };
+      this._fxmStoredOptions = { ...this.constructor.default, ...(options ?? {}) };
+      this.options = normalize(this.normalizeOptionsForRuntime(this._fxmStoredOptions));
       this.applyOptions(this.options);
       this.applyOptions(this.constructor.neutral);
 
@@ -84,18 +88,26 @@ export function FXMasterFilterEffectMixin(Base) {
     }
 
     configure(options) {
-      const incoming = options ?? {};
-      this.options = { ...this.constructor.default, ...this.options, ...incoming };
-      this.options = normalize(this.options);
+      const incoming = normalize(options ?? {});
+      this._fxmStoredOptions = { ...this.constructor.default, ...(this._fxmStoredOptions ?? {}), ...incoming };
+      this.options = normalize(this.normalizeOptionsForRuntime(this._fxmStoredOptions));
     }
 
     get optionContext() {
       return this;
     }
 
+    normalizeOptionsForRuntime(options = this.options) {
+      return CONFIG.fxmaster?.normalizeEffectOptionsForRuntime?.(this.constructor, options) ?? options;
+    }
+
     applyOptions(options = this.options) {
-      const normalized = normalize(options) || {};
-      for (const [key, val] of Object.entries(normalized)) this.optionContext[key] = val;
+      const runtimeOptions = this.normalizeOptionsForRuntime(options);
+      const normalized = normalize(runtimeOptions) || {};
+      for (const [key, val] of Object.entries(normalized)) {
+        if (key.startsWith?.("__fxm")) continue;
+        this.optionContext[key] = val;
+      }
     }
 
     play(_options = {}) {

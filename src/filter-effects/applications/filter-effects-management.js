@@ -1,10 +1,29 @@
 import { FXMasterBaseFormV2 } from "../../base-form.js";
 import { packageId } from "../../constants.js";
-import { resetFlag, updateSceneControlHighlights } from "../../utils.js";
+import { prepareFilterOptionsForSceneStorage, resetFlag, updateSceneControlHighlights } from "../../utils.js";
 import { logger } from "../../logger.js";
 import { getHiddenEffectsCount, openEffectsVisibilityManager } from "../../common/effects-visibility-manager.js";
 import { buildSceneEffectUid, promoteEffectStackUids } from "../../common/effect-stack.js";
 import { FilterEffectsSceneManager } from "../filter-effects-scene-manager.js";
+
+/**
+ * Extract an effect parameter name from a management input name.
+ *
+ * @param {string|null|undefined} inputName
+ * @param {object} filterDB
+ * @returns {string|null}
+ */
+function parameterNameFromInputName(inputName, filterDB) {
+  const raw = String(inputName ?? "");
+  if (!raw) return null;
+
+  for (const paramName of Object.keys(filterDB?.parameters ?? {})) {
+    if (raw.endsWith(`_${paramName}`) || raw.endsWith(`_${paramName}_apply`)) return paramName;
+    if (raw.endsWith(`_${paramName}_min`) || raw.endsWith(`_${paramName}_max`)) return paramName;
+  }
+
+  return null;
+}
 
 export class FilterEffectsManagement extends FXMasterBaseFormV2 {
   static FXMASTER_POSITION_FLAG = "dialog-position-filtereffects";
@@ -77,7 +96,7 @@ export class FilterEffectsManagement extends FXMasterBaseFormV2 {
     const filters = Object.fromEntries(
       Object.entries(CONFIG.fxmaster.filterEffects)
         .filter(([type]) => !hiddenFilterEffects.has(type) || activeFilterTypes.has(type))
-        .sort(([, a], [, b]) => a.label.localeCompare(b.label)),
+        .sort(([, a], [, b]) => game.i18n.localize(a.label).localeCompare(game.i18n.localize(b.label))),
     );
 
     return {
@@ -194,7 +213,10 @@ export class FilterEffectsManagement extends FXMasterBaseFormV2 {
     if (scene) {
       const current = foundry.utils.duplicate(scene.getFlag(packageId, "filters") ?? {});
       if (current[effectId]) {
-        current[effectId] = { type, options: foundry.utils.deepClone(defaults) };
+        const options = prepareFilterOptionsForSceneStorage(type, foundry.utils.deepClone(defaults), {
+          forceRestart: true,
+        });
+        current[effectId] = { type, options };
         await resetFlag(scene, "filters", current);
         await FilterEffectsSceneManager.instance.update({ skipFading: true });
       }
@@ -233,7 +255,8 @@ export class FilterEffectsManagement extends FXMasterBaseFormV2 {
     const effectId = `core_${type}`;
 
     if (enabled) {
-      const options = FilterEffectsManagement.gatherFilterOptions(filtersDB, this.element);
+      const gatheredOptions = FilterEffectsManagement.gatherFilterOptions(filtersDB, this.element);
+      const options = prepareFilterOptionsForSceneStorage(type, gatheredOptions, { forceRestart: true });
       current[effectId] = { type, options };
     } else {
       delete current[effectId];
@@ -279,7 +302,10 @@ export class FilterEffectsManagement extends FXMasterBaseFormV2 {
       await new Promise(requestAnimationFrame);
     }
 
-    const options = FilterEffectsManagement.gatherFilterOptions(filterDB, this.element);
+    const previousOptions = foundry.utils.deepClone(current[`core_${type}`]?.options ?? {});
+    const gatheredOptions = FilterEffectsManagement.gatherFilterOptions(filterDB, this.element);
+    const changedParam = parameterNameFromInputName(control.name, filterDB);
+    const options = prepareFilterOptionsForSceneStorage(type, gatheredOptions, { previousOptions, changedParam });
 
     const writeOptions = async ({ sceneId, type, options, refresh = false }) => {
       try {

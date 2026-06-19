@@ -18,29 +18,48 @@ export class StarsParticleEffect extends FXMasterParticleEffect {
     return "ambient";
   }
 
+  static get orbitFacesTangent() {
+    return false;
+  }
+
   /** @override */
   static get parameters() {
-    const params = foundry.utils.mergeObject({}, super.parameters, { inplace: false });
-
-    params.density = {
-      ...params.density,
-      min: 0.05,
-      value: 0.3,
-      max: 1,
-      step: 0.05,
-      decimals: 2,
-    };
-
-    params.tint = {
-      ...params.tint,
-      value: {
-        ...(params.tint?.value ?? {}),
-        value: "#bee8ee",
+    const p = super.parameters;
+    return {
+      belowTokens: p.belowTokens,
+      belowTiles: p.belowTiles,
+      soundFxEnabled: p.soundFxEnabled,
+      tint: {
+        ...p.tint,
+        value: {
+          ...(p.tint?.value ?? {}),
+          value: "#bee8ee",
+        },
       },
+      orbit: { label: "FXMASTER.Params.Orbit", type: "checkbox", value: false },
+      orbitDistance: {
+        label: "FXMASTER.Params.OrbitDistance",
+        type: "range",
+        min: 0,
+        value: 0.5,
+        max: 1,
+        step: 0.01,
+        decimals: 2,
+        showWhen: { orbit: true },
+      },
+      scale: p.scale,
+      speed: p.speed,
+      lifetime: p.lifetime,
+      density: {
+        ...p.density,
+        min: 0.05,
+        value: 0.3,
+        max: 1,
+        step: 0.05,
+        decimals: 2,
+      },
+      alpha: p.alpha,
     };
-
-    delete params.direction;
-    return params;
   }
 
   /**

@@ -5,6 +5,7 @@ import {
   normalizeDarknessActivationRange,
 } from "../utils.js";
 import { packageId } from "../constants.js";
+import { applyLegacyRangeTolerance } from "../utils/region-schema.js";
 import { buildRegionEffectUid, promoteEffectStackUids } from "../common/effect-stack.js";
 
 export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.RegionBehaviorType {
@@ -88,6 +89,7 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
           if (cfg.min !== undefined) opts.min = cfg.min;
           if (cfg.max !== undefined) opts.max = cfg.max;
           if (cfg.step !== undefined) opts.step = cfg.step;
+          applyLegacyRangeTolerance(opts, cfg);
         } else if (cfg.type === "range-dual") {
           schema[`${type}_${param}_min`] = new foundry.data.fields.StringField({
             required: false,

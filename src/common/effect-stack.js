@@ -2,6 +2,7 @@ import { packageId } from "../constants.js";
 import { logger } from "../logger.js";
 import { compositeGridInFxStack } from "../settings-access.js";
 import { getSceneRegionDocuments } from "../utils/compat.js";
+import { collectionValues } from "../utils/object.js";
 import { fxmGetRegionBehaviorEffectDefinitions } from "../utils/foundry-public.js";
 
 const STACK_FLAG = "stack";
@@ -220,12 +221,7 @@ export function parseEffectUid(uid) {
  * @returns {object[]}
  */
 export function normalizeBehaviorDocs(behaviorDocs) {
-  if (!behaviorDocs) return [];
-  if (Array.isArray(behaviorDocs)) return behaviorDocs;
-  if (Array.isArray(behaviorDocs.contents)) return behaviorDocs.contents;
-  if (typeof behaviorDocs.toArray === "function") return behaviorDocs.toArray();
-  if (typeof behaviorDocs.values === "function") return Array.from(behaviorDocs.values());
-  return Array.from(behaviorDocs);
+  return collectionValues(behaviorDocs);
 }
 
 /**

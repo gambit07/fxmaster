@@ -8,8 +8,15 @@
 
 import { API_EFFECT_UPDATE_OPTIONS_FLAG, packageId } from "../constants.js";
 import { logger } from "../logger.js";
-import { coalesceNextFrame, updateSceneControlHighlights } from "../utils.js";
-import { cleanupLegacyAnimationData, isEnabled } from "../settings.js";
+import { coalesceNextFrame, getRegionEffectPlaceablesForCurrentView, updateSceneControlHighlights } from "../utils.js";
+import {
+  cleanupLegacyAnimationData,
+  isEnabled,
+  migrateDirectionConventionData,
+  migrateParameterRangeData,
+} from "../settings.js";
+import { DIRECTION_CONVENTION_MIGRATION_VERSION } from "../migrations/direction-convention.js";
+import { PARAMETER_RANGE_MIGRATION_VERSION } from "../migrations/parameter-ranges.js";
 import { FilterEffectsSceneManager } from "../filter-effects/filter-effects-scene-manager.js";
 import { invalidateEffectStackCache } from "../common/effect-stack.js";
 import {
@@ -49,6 +56,72 @@ function shouldSkipApiEffectFading(scene, flat) {
 }
 
 /**
+ * Determine whether a scene update removed the scene-level Screen Shake filter row.
+ *
+ * @param {object} flat Flattened updateScene data.
+ * @returns {boolean}
+ */
+function updateDeletesScreenShakeFilter(flat) {
+  const entries = Object.entries(flat ?? {});
+  const filtersFlag = `flags.${packageId}.filters`;
+  const screenShakeFlag = `${filtersFlag}.core_screenShake`;
+  const legacyDeleteFlag = `${filtersFlag}.-=core_screenShake`;
+  const legacyUnsetFiltersFlag = `flags.${packageId}.-=filters`;
+
+  for (const [key, value] of entries) {
+    if (key === legacyDeleteFlag || key === legacyUnsetFiltersFlag) return true;
+    if (key !== screenShakeFlag) continue;
+    if (value === null || value === undefined) return true;
+    if (value?.constructor?.name === "ForcedDeletion") return true;
+  }
+
+  return false;
+}
+
+/**
+ * Rebuild active canvas runtimes after document migrations update stored effect data.
+ *
+ * @param {object} ctx - Shared hook context from {@link createHookContext}.
+ * @returns {Promise<void>}
+ */
+async function refreshMigratedEffectRuntimes(ctx) {
+  if (!isEnabled() || !canvas?.scene) return;
+
+  invalidateEffectStackCache();
+
+  try {
+    await canvas.particleeffects?.drawParticleEffects?.({ soft: false });
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+  }
+
+  try {
+    await FilterEffectsSceneManager.instance.update({ skipFading: true });
+    ctx.ensurePinned?.();
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+  }
+
+  for (const region of getRegionEffectPlaceablesForCurrentView(canvas.scene)) {
+    try {
+      await canvas.particleeffects?.drawRegionParticleEffects?.(region, { soft: false });
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    try {
+      await canvas.filtereffects?.drawRegionFilterEffects?.(region, { soft: false });
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+  }
+
+  updateSceneControlHighlights();
+  ctx.scheduleLayersWindowRefresh?.();
+  ctx.scheduleOpenWindowsRefresh?.();
+}
+
+/**
  * Register scene update and camera hooks.
  *
  * @param {object} ctx - Shared hook context from {@link createHookContext}.
@@ -59,8 +132,8 @@ export function registerSceneHooks(ctx) {
     if (game.settings.get(packageId, "releaseMessage") !== version && game.user.isGM) {
       const content = `
         <div class="fxmaster-announcement" style="border:4px solid #4A90E2; border-radius:6px; padding:12px;">
-          <h3 style="margin:0;">🎉Welcome to Gambit's FXMaster V8.1.4!</h3>
-            <p style="font-size: 1em;">Resolved an edge case bug where a region with no shape data could cause a scene crash. Please check out the <a href= "https://github.com/gambit07/fxmaster/releases/latest" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Release Notes</a> for more detail.</p><p style="font-size: 1em; font-weight: bold;"><u>If you are a NEW FXMaster user:</u><br>Checkout the FXMaster Tools Overview in FXMaster Controls for some helpful information when getting started!</p><p style="font-size: 1em;">If you'd like to support my development time and get access to the <a href="https://foundryvtt.com/packages/fxmaster-plus" target="_blank" style="color: #CC66CC; text-decoration: none; font-weight: bold;">Gambit's FXMaster+</a>, <a href="https://foundryvtt.com/packages/gambitsAssetPreviewer" target="_blank" style="color: #CC66CC; text-decoration: none; font-weight: bold;">Gambit's Asset Previewer</a>, and <a href="https://foundryvtt.com/packages/gambitsImageViewer" target="_blank" style="color: #CC66CC; text-decoration: none; font-weight: bold;">Gambit's Image Viewer</a> modules, please consider supporting the project on <a href="https://patreon.com/GambitsLounge" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Patreon</a>.</p><p>FXMaster+ Effects: <ul><li><span style="color: #00c7a6; text-decoration: none; font-weight: bold;">Aurora Borealis</span></li><li><span style="color: #535353; text-decoration: none; font-weight: bold;">Wind</span></li><li><span style="color: #6e6e6e; text-decoration: none; font-weight: bold;">Wind Wisps</span></li><li><span style="color: #3276c4; text-decoration: none; font-weight: bold;">Water</span></li><li><span style="color: #7c7c7c; text-decoration: none; font-weight: bold;">Lightning Bolts</span></li><li><span style="color: #0ada64; text-decoration: none; font-weight: bold;">Glitch</span></li><li><span style="color: #017371; text-decoration: none; font-weight: bold;">Fish</span></li><li><span style="color: #3bd1ffff; text-decoration: none; font-weight: bold;">Ice</span></li><li><span style="color: #a08332ff; text-decoration: none; font-weight: bold;">Sandstorm</span></li><li><span style="color: #74653fff; text-decoration: none; font-weight: bold;">Duststorm</span></li><li><span style="color: #53c57e; text-decoration: none; font-weight: bold;">Ghosts</span></li><li><span style="color: rgb(211, 176, 0); text-decoration: none; font-weight: bold;">Sunlight</span></li><li><span style="color: #7f00ff; text-decoration: none; font-weight: bold;">Magic Crystals</span></li><li><span style="color: #d5b60a; text-decoration: none; font-weight: bold;">Fireflies</span></li><li><span style="color: #ffb7c5; text-decoration: none; font-weight: bold;">Sakura Bloom</span></li><li><span style="color: #ffb7c5; text-decoration: none; font-weight: bold;">Sakura Blossoms</span></li><li><span style="text-decoration: none; font-weight: bold;">And add your own Particle Effects!</span></li></ul></p><p>If you have any questions about the module feel free to join the <a href= "https://discord.gg/YvxHrJ4tVu" target="_blank" style="color: #4e5d94; text-decoration: none; font-weight: bold;">Discord</a>!
+          <h3 style="margin:0;">🎉Welcome to Gambit's FXMaster V8.2.0!</h3>
+            <p style="font-size: 1em;">A bunch of updates and new features including a brand new Screen Shake filter effect and a new Orbit mode for many different particle effects! This release also includes some localizations for the new FXMaster+ Fire release! Please check out the <a href= "https://github.com/gambit07/fxmaster/releases/latest" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Release Notes</a> for more detail.</p><p style="font-size: 1em; font-weight: bold;"><u>If you are a NEW FXMaster user:</u><br>Checkout the FXMaster Tools Overview in FXMaster Controls for some helpful information when getting started!</p><p style="font-size: 1em;">If you'd like to support my development time and get access to the <a href="https://foundryvtt.com/packages/fxmaster-plus" target="_blank" style="color: #CC66CC; text-decoration: none; font-weight: bold;">Gambit's FXMaster+</a>, <a href="https://foundryvtt.com/packages/gambitsAssetPreviewer" target="_blank" style="color: #CC66CC; text-decoration: none; font-weight: bold;">Gambit's Asset Previewer</a>, and <a href="https://foundryvtt.com/packages/gambitsImageViewer" target="_blank" style="color: #CC66CC; text-decoration: none; font-weight: bold;">Gambit's Image Viewer</a> modules, please consider supporting the project on <a href="https://patreon.com/GambitsLounge" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Patreon</a>.</p><p>FXMaster+ Effects: <ul><li><span style="color: #c72800; text-decoration: none; font-weight: bold;">Fire</span><li><span style="color: #00c7a6; text-decoration: none; font-weight: bold;">Aurora Borealis</span></li><li><span style="color: #535353; text-decoration: none; font-weight: bold;">Wind</span></li><li><span style="color: #6e6e6e; text-decoration: none; font-weight: bold;">Wind Wisps</span></li><li><span style="color: #3276c4; text-decoration: none; font-weight: bold;">Water</span></li><li><span style="color: #7c7c7c; text-decoration: none; font-weight: bold;">Lightning Bolts</span></li><li><span style="color: #0ada64; text-decoration: none; font-weight: bold;">Glitch</span></li><li><span style="color: #017371; text-decoration: none; font-weight: bold;">Fish</span></li><li><span style="color: #3bd1ffff; text-decoration: none; font-weight: bold;">Ice</span></li><li><span style="color: #a08332ff; text-decoration: none; font-weight: bold;">Sandstorm</span></li><li><span style="color: #74653fff; text-decoration: none; font-weight: bold;">Duststorm</span></li><li><span style="color: #53c57e; text-decoration: none; font-weight: bold;">Ghosts</span></li><li><span style="color: rgb(211, 176, 0); text-decoration: none; font-weight: bold;">Sunlight</span></li><li><span style="color: #7f00ff; text-decoration: none; font-weight: bold;">Magic Crystals</span></li><li><span style="color: #d5b60a; text-decoration: none; font-weight: bold;">Fireflies</span></li><li><span style="color: #ffb7c5; text-decoration: none; font-weight: bold;">Sakura Bloom</span></li><li><span style="color: #ffb7c5; text-decoration: none; font-weight: bold;">Sakura Blossoms</span></li><li><span style="text-decoration: none; font-weight: bold;">And add your own Particle Effects!</span></li></ul></p><p>If you have any questions about the module feel free to join the <a href= "https://discord.gg/YvxHrJ4tVu" target="_blank" style="color: #4e5d94; text-decoration: none; font-weight: bold;">Discord</a>!
           </div>
       `;
       ChatMessage.create({ content });
@@ -80,7 +153,18 @@ export function registerSceneHooks(ctx) {
       setSheet(SUPPRESS_SCENE_FILTERS, SuppressSceneFiltersRegionBehaviorConfig);
     }
 
+    const directionVersionBefore =
+      Number(game.settings.get(packageId, "directionConventionMigrationVersion") ?? 0) || 0;
+    const parameterVersionBefore = Number(game.settings.get(packageId, "parameterRangeMigrationVersion") ?? 0) || 0;
+    const migrationPending =
+      directionVersionBefore < DIRECTION_CONVENTION_MIGRATION_VERSION ||
+      parameterVersionBefore < PARAMETER_RANGE_MIGRATION_VERSION;
+
     await cleanupLegacyAnimationData();
+    await migrateDirectionConventionData();
+    await migrateParameterRangeData();
+
+    if (migrationPending) await refreshMigratedEffectRuntimes(ctx);
   });
 
   Hooks.on("updateScene", async (scene, data) => {
@@ -101,6 +185,7 @@ export function registerSceneHooks(ctx) {
     );
 
     const skipFading = shouldSkipApiEffectFading(scene, flat);
+    const screenShakeDeleted = filtersChanged && updateDeletesScreenShakeFilter(flat);
 
     if (effectsChanged || filtersChanged || stackChanged || data.active === true) invalidateEffectStackCache();
 
@@ -119,7 +204,7 @@ export function registerSceneHooks(ctx) {
     if (effectsChanged || filtersChanged || stackChanged || data.active === true) updateSceneControlHighlights();
 
     if (effectsChanged || filtersChanged || stackChanged) ctx.scheduleLayersWindowRefresh();
-    if (data.active === true) ctx.scheduleOpenWindowsRefresh();
+    if (screenShakeDeleted || data.active === true) ctx.scheduleOpenWindowsRefresh();
 
     if (data.width !== undefined || data.height !== undefined) {
       if (isEnabled()) {
