@@ -15,7 +15,17 @@
 
 **<p>Any support via the <a href="https://www.patreon.com/GambitsLounge" target="_blank" rel="nofollow noopener">Patreon</a> or <a href="https://ko-fi.com/gambit07" target="_blank" rel="nofollow noopener">Ko-fi</a> is greatly appreciated! If you are a Patreon subscriber you will receive access to the FXMaster+ module. FXMaster+ can be accessed from Patreon, and it's where I will be adding new particle effects and filters moving forward. For the month of May, it will get you access to the 🟡Fire, 🟢Aurora Borealis, ⚪Wind, ⚪Wind Wisp, 🔵Water, 🟡Lightning Bolts, 🔵Fish, 🟢Glitch, 🔵Ice, 🟤Duststorm, 🟤Sandstorm, 🟢Ghosts, 🟡Sunlight, 🟢Magic Crystals, 🟡Fireflies, 🌸Sakura Bloom, and 🌸Sakura Blossoms Effects - Effects are previewed below:</p>**
 
+  <video
+    autoplay
+    muted
+    playsinline
+    loop
+    preload="auto"
+    src="https://github.com/user-attachments/assets/8fb6ea32-4498-4f53-8ade-24006898dd73">
+  </video>
 
+<details>
+    <summary>Aurora Borealis (click to expand - Map: <a href="https://www.czepeku.com/" target="_blank" rel="nofollow noopener">Cze & Peku</a>)</summary>
   <video
     autoplay
     muted
@@ -24,6 +34,7 @@
     preload="auto"
     src="https://github.com/user-attachments/assets/b65e2a90-6e46-4f8d-a857-40773ffc2ad0">
   </video>
+</details>
 
 <details>
   <summary>Wind (click to expand - Map: <a href="https://angelamaps.com/" target="_blank" rel="nofollow noopener">Angela's Maps</a>)</summary>
