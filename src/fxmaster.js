@@ -149,8 +149,6 @@ function registerRegionBehaviorTypes() {
   return true;
 }
 
-registerRegionBehaviorTypes();
-
 /**
  * Helpers to allow particle effects to run in other renderers ie not Canvas Provides an override context on either:
  * - the effect instance: effect.__fxmParticleContext

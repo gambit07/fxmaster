@@ -25,6 +25,20 @@ export class RainParticleEffect extends FXMasterParticleEffect {
     return 0.14;
   }
 
+  /** Rain splash spritesheet paths and grid metadata. */
+  static SPLASH_SPRITESHEET = {
+    side: "modules/fxmaster/assets/particle-effects/effects/rain/drop-side.webp",
+    top: "modules/fxmaster/assets/particle-effects/effects/rain/drop-top.webp",
+    frameWidth: 256,
+    frameHeight: 256,
+    columns: 5,
+    rows: 5,
+    frames: 25,
+  };
+
+  /** @type {Map<string, PIXI.Texture[]>|undefined} */
+  static _splashTextureCache;
+
   /** @override */
   static get parameters() {
     const p = super.parameters;
@@ -117,7 +131,7 @@ export class RainParticleEffect extends FXMasterParticleEffect {
   };
 
   /**
-   * Splash config (second emitter, optional)
+   * Animated splash config for the optional second emitter.
    * @type {PIXI.particles.EmitterConfigV3}
    */
   static SPLASH_CONFIG = {
@@ -125,17 +139,116 @@ export class RainParticleEffect extends FXMasterParticleEffect {
     pos: { x: 0, y: 0 },
     behaviors: [
       { type: "moveSpeedStatic", config: { min: 0, max: 0 } },
-      { type: "scaleStatic", config: { min: 0.48, max: 0.6 } },
-      { type: "rotationStatic", config: { min: -90, max: -90 } },
+      { type: "scaleStatic", config: { min: 0.12, max: 0.15 } },
       { type: "noRotation", config: {} },
       {
-        type: "textureSingle",
+        type: "animatedSingle",
         config: {
-          texture: "modules/fxmaster/assets/particle-effects/effects/rain/drop.webp",
+          anim: {
+            framerate: -1,
+            loop: false,
+            textures: [],
+          },
         },
       },
     ],
   };
+
+  /**
+   * Build and cache splash frame textures for the selected view.
+   * @param {boolean} topDown
+   * @returns {PIXI.Texture[]}
+   * @private
+   */
+  _getSplashTextures(topDown) {
+    const mode = topDown ? "top" : "side";
+    const cache = (this.constructor._splashTextureCache ??= new Map());
+    const cached = cache.get(mode);
+    if (cached) return cached;
+
+    const metadata = this.constructor.SPLASH_SPRITESHEET;
+    const sheetTexture = PIXI.Texture.from(metadata[mode]);
+    const source = sheetTexture?.source ?? sheetTexture?.baseTexture ?? sheetTexture;
+    const usesTextureSource = !!sheetTexture?.source;
+
+    try {
+      if (source && "scaleMode" in source) source.scaleMode = PIXI.SCALE_MODES?.LINEAR ?? "linear";
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    const logicalFrame = new PIXI.Rectangle(0, 0, metadata.frameWidth, metadata.frameHeight);
+    const textures = [];
+    for (let index = 0; index < metadata.frames; index++) {
+      const frame = new PIXI.Rectangle(0, 0, 1, 1);
+      const orig = logicalFrame.clone();
+      const trim = logicalFrame.clone();
+      const texture = usesTextureSource
+        ? new PIXI.Texture({ source, frame, orig, trim })
+        : new PIXI.Texture(source, frame, orig, trim);
+      textures.push(texture);
+    }
+
+    const applyFrames = () => {
+      const sheetWidth = Number(source?.width ?? sheetTexture?.width ?? 0);
+      const sheetHeight = Number(source?.height ?? sheetTexture?.height ?? 0);
+      const frameWidth = sheetWidth / metadata.columns;
+      const frameHeight = sheetHeight / metadata.rows;
+      const widthIsIntegral = Number.isFinite(frameWidth) && Math.abs(frameWidth - Math.round(frameWidth)) < 0.001;
+      const heightIsIntegral = Number.isFinite(frameHeight) && Math.abs(frameHeight - Math.round(frameHeight)) < 0.001;
+      const expectedRatio = metadata.frameWidth / metadata.frameHeight;
+      const actualRatio = frameHeight ? frameWidth / frameHeight : 0;
+      if (!widthIsIntegral || !heightIsIntegral || Math.abs(actualRatio - expectedRatio) > 0.001) return false;
+
+      const resolvedFrameWidth = Math.round(frameWidth);
+      const resolvedFrameHeight = Math.round(frameHeight);
+      for (let index = 0; index < metadata.frames; index++) {
+        const column = index % metadata.columns;
+        const row = Math.floor(index / metadata.columns);
+        const frame = new PIXI.Rectangle(
+          column * resolvedFrameWidth,
+          row * resolvedFrameHeight,
+          resolvedFrameWidth,
+          resolvedFrameHeight,
+        );
+        const texture = textures[index];
+        texture.orig.copyFrom(logicalFrame);
+        texture.trim.copyFrom(logicalFrame);
+        if (usesTextureSource) {
+          texture.frame.copyFrom(frame);
+          texture.updateUvs();
+        } else {
+          texture.frame = frame;
+        }
+        texture.emit?.("update", texture);
+      }
+      return true;
+    };
+
+    const refreshFrames = () => {
+      if (!applyFrames()) return;
+      sheetTexture?.off?.("update", refreshFrames);
+    };
+
+    sheetTexture?.on?.("update", refreshFrames);
+    refreshFrames();
+
+    cache.set(mode, textures);
+    return textures;
+  }
+
+  /**
+   * Clone the splash config and assign its view-specific animation frames.
+   * @param {boolean} topDown
+   * @returns {PIXI.particles.EmitterConfigV3}
+   * @private
+   */
+  _createSplashConfig(topDown) {
+    const config = foundry.utils.deepClone(this.constructor.SPLASH_CONFIG);
+    const animation = config.behaviors?.find(({ type }) => type === "animatedSingle");
+    if (animation?.config?.anim) animation.config.anim.textures = this._getSplashTextures(topDown);
+    return config;
+  }
 
   /** @override */
   static get defaultConfig() {
@@ -206,7 +319,7 @@ export class RainParticleEffect extends FXMasterParticleEffect {
     const emitters = [this.createEmitter(rainConfig)];
 
     if (splashEnabled && splashIntensity > 0) {
-      const splashConfig = foundry.utils.deepClone(this.constructor.SPLASH_CONFIG);
+      const splashConfig = this._createSplashConfig(false);
 
       const splashBase = viewCells * density * splashIntensity * 0.5;
       const splashMax = Math.max(1, Math.round(Math.min(splashBase, maxParticles)));
@@ -311,7 +424,7 @@ export class RainParticleEffect extends FXMasterParticleEffect {
 
     const splashEnabled = options?.splash?.value ?? true;
     if (splashEnabled) {
-      const splashConfig = foundry.utils.deepClone(this.constructor.SPLASH_CONFIG);
+      const splashConfig = this._createSplashConfig(true);
 
       const splashBase = viewCells * density * 0.4;
       const splashMax = Math.max(1, Math.round(Math.min(splashBase, maxParticles)));

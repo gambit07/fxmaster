@@ -1,0 +1,86 @@
+{
+  "sprites": [
+    {
+      "fileName": "0000.webp",
+      "width": 1024,
+      "height": 1024,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "fileName": "0001.webp",
+      "width": 1024,
+      "height": 1024,
+      "x": 1024,
+      "y": 0
+    },
+    {
+      "fileName": "0002.webp",
+      "width": 1024,
+      "height": 1024,
+      "x": 2048,
+      "y": 0
+    },
+    {
+      "fileName": "0003.webp",
+      "width": 1024,
+      "height": 1024,
+      "x": 3072,
+      "y": 0
+    },
+    {
+      "fileName": "0004.webp",
+      "width": 1024,
+      "height": 1024,
+      "x": 0,
+      "y": 1024
+    },
+    {
+      "fileName": "0005.webp",
+      "width": 1024,
+      "height": 1024,
+      "x": 1024,
+      "y": 1024
+    },
+    {
+      "fileName": "0006.webp",
+      "width": 1024,
+      "height": 1024,
+      "x": 2048,
+      "y": 1024
+    },
+    {
+      "fileName": "0007.webp",
+      "width": 1024,
+      "height": 1024,
+      "x": 3072,
+      "y": 1024
+    },
+    {
+      "fileName": "0008.webp",
+      "width": 1024,
+      "height": 1024,
+      "x": 0,
+      "y": 2048
+    },
+    {
+      "fileName": "0009.webp",
+      "width": 1024,
+      "height": 1024,
+      "x": 1024,
+      "y": 2048
+    },
+    {
+      "fileName": "0010.webp",
+      "width": 1024,
+      "height": 1024,
+      "x": 2048,
+      "y": 2048
+    }
+  ],
+  "packMode": "grid",
+  "padding": 0,
+  "backgroundColor": "rgba(0, 0, 0, 0)",
+  "spriteSheetWidth": 4096,
+  "spriteSheetHeight": 3072
+}
