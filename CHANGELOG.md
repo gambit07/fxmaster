@@ -1,5 +1,10 @@
 # Changelog
 
+## [v8.2.1] - 2026-06-20
+- Added new animated spritesheets for the Rain particle's rain drops option. On top of being animated, rain drops also now have a dedicated top-down version while in top-down mode along with a side-view version
+- Updated pt-br localizations, thanks Kharmans!
+- Resolved region initialization issue in the SWADE system that prevented a world from starting while fxmaster was active
+
 ## [v8.2.0] - 2026-06-19
 Welcome to FXMaster V8.2.0!
 - Added new core filter effect, Screen Shake! This has a persistent or timed mode, along with an audio aware mode to allow activating based on audio bass level for things like integrating cleanly with Lightning if desired.
