@@ -139,7 +139,7 @@ export class RainParticleEffect extends FXMasterParticleEffect {
     pos: { x: 0, y: 0 },
     behaviors: [
       { type: "moveSpeedStatic", config: { min: 0, max: 0 } },
-      { type: "scaleStatic", config: { min: 0.12, max: 0.15 } },
+      { type: "scaleStatic", config: { min: 0.135, max: 0.15 } },
       { type: "noRotation", config: {} },
       {
         type: "animatedSingle",

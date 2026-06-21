@@ -72,11 +72,6 @@ function sourceFlagMigrationVersion(source) {
   return Number(source?.flags?.[packageId]?.[DOCUMENT_MIGRATION_FLAG] ?? 0) || 0;
 }
 
-function markFlagsMigrated(flags) {
-  flags[packageId] = { ...(isPlainObject(flags[packageId]) ? flags[packageId] : {}) };
-  flags[packageId][DOCUMENT_MIGRATION_FLAG] = DIRECTION_CONVENTION_MIGRATION_VERSION;
-}
-
 function migrateDirectionNumberInPlace(object, key, effectType = null, context = {}) {
   if (!isPlainObject(object) || !hasOwn(object, key)) return false;
 
@@ -165,13 +160,11 @@ function migrateRegionBehaviorSystemInPlace(system) {
   return changed;
 }
 
-function migrateRegionBehaviorFlagsInPlace(flags) {
-  if (!isPlainObject(flags)) return false;
-  let changed = false;
-  const fxmasterFlags = flags[packageId];
-  if (!isPlainObject(fxmasterFlags)) return false;
-  if (migrateSceneEffectMapInPlace(fxmasterFlags.particleEffects)) changed = true;
-  if (migrateSceneEffectMapInPlace(fxmasterFlags.filters)) changed = true;
+function migrateRegionBehaviorFlagsInPlace(fxmasterFlags) {
+  if (!isPlainObject(fxmasterFlags)) return [];
+  const changed = [];
+  if (migrateSceneEffectMapInPlace(fxmasterFlags.particleEffects)) changed.push("particleEffects");
+  if (migrateSceneEffectMapInPlace(fxmasterFlags.filters)) changed.push("filters");
   return changed;
 }
 
@@ -208,16 +201,16 @@ async function migrateRegionBehavior(behavior) {
 
   const update = {};
   const system = foundry.utils.deepClone(source.system ?? {});
-  const flags = foundry.utils.deepClone(source.flags ?? {});
+  const fxmasterFlags = foundry.utils.deepClone(source.flags?.[packageId] ?? {});
 
   const systemChanged = migrateRegionBehaviorSystemInPlace(system);
-  const flagsChanged = migrateRegionBehaviorFlagsInPlace(flags);
+  const changedFlagKeys = migrateRegionBehaviorFlagsInPlace(fxmasterFlags);
   if (systemChanged) update.system = system;
-  markFlagsMigrated(flags);
-  update.flags = flags;
+  for (const key of changedFlagKeys) update[`flags.${packageId}.${key}`] = fxmasterFlags[key];
+  update[`flags.${packageId}.${DOCUMENT_MIGRATION_FLAG}`] = DIRECTION_CONVENTION_MIGRATION_VERSION;
 
   await behavior.update(update, { diff: false, recursive: false });
-  return systemChanged || flagsChanged;
+  return systemChanged || changedFlagKeys.length > 0;
 }
 
 async function migrateRegion(region) {

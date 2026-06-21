@@ -36,11 +36,6 @@ function sourceFlagMigrationVersion(source) {
   return Number(source?.flags?.[packageId]?.[DOCUMENT_MIGRATION_FLAG] ?? 0) || 0;
 }
 
-function markFlagsMigrated(flags) {
-  flags[packageId] = { ...(isPlainObject(flags[packageId]) ? flags[packageId] : {}) };
-  flags[packageId][DOCUMENT_MIGRATION_FLAG] = PARAMETER_RANGE_MIGRATION_VERSION;
-}
-
 function isDeletionKey(key) {
   return String(key ?? "").startsWith("-=") || String(key ?? "").startsWith("==");
 }
@@ -148,9 +143,7 @@ function migrateRegionBehaviorSystemInPlace(kind, system) {
   return changed;
 }
 
-function migrateRegionBehaviorFlagsInPlace(kind, flags) {
-  if (!isPlainObject(flags)) return false;
-  const fxmasterFlags = flags[packageId];
+function migrateRegionBehaviorFlagsInPlace(kind, fxmasterFlags) {
   if (!isPlainObject(fxmasterFlags)) return false;
 
   const flagKey = kind === "particle" ? "particleEffects" : "filters";
@@ -228,17 +221,18 @@ async function migrateRegionBehavior(behavior) {
 
   const update = {};
   const system = foundry.utils.deepClone(source.system ?? {});
-  const flags = foundry.utils.deepClone(source.flags ?? {});
+  const fxmasterFlags = foundry.utils.deepClone(source.flags?.[packageId] ?? {});
   const kind = regionBehaviorEffectKind(source);
+  const flagKey = kind === "particle" ? "particleEffects" : "filters";
 
   assertNoUnknownEffects(`Region behavior ${kind} system`, unknownEnabledFlatEffectTypes(kind, system));
 
   const systemChanged = migrateRegionBehaviorSystemInPlace(kind, system);
-  const flagsChanged = migrateRegionBehaviorFlagsInPlace(kind, flags);
+  const flagsChanged = migrateRegionBehaviorFlagsInPlace(kind, fxmasterFlags);
 
   if (systemChanged) update.system = system;
-  markFlagsMigrated(flags);
-  update.flags = flags;
+  if (flagsChanged) update[`flags.${packageId}.${flagKey}`] = fxmasterFlags[flagKey];
+  update[`flags.${packageId}.${DOCUMENT_MIGRATION_FLAG}`] = PARAMETER_RANGE_MIGRATION_VERSION;
 
   await behavior.update(update, { diff: false, recursive: false });
   return systemChanged || flagsChanged;
