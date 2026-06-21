@@ -1,5 +1,9 @@
 # Changelog
 
+## [v8.2.3] - 2026-06-20
+- Resolved a nasty bug that would wipe all scene flags instead of only the FXMaster scene flags that needed normalization migration.
+- Updated rain splashes to use a small delta in size ranges so that the splashes feel more natural.
+
 ## [v8.2.2] - 2026-06-20
 - Resolved a nasty bug that would wipe all scene flags instead of only the FXMaster scene flags that needed normalization migration
 - Updated rain splashes to use a small delta in size ranges so that the splashes feel more natural
