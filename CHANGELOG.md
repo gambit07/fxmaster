@@ -1,5 +1,9 @@
 # Changelog
 
+## [v8.2.2] - 2026-06-20
+- Resolved a nasty bug that would wipe all scene flags instead of only the FXMaster scene flags that needed normalization migration
+- Updated rain splashes to use a small delta in size ranges so that the splashes feel more natural
+
 ## [v8.2.1] - 2026-06-20
 - Added new animated spritesheets for the Rain particle's rain drops option. On top of being animated, rain drops also now have a dedicated top-down version while in top-down mode along with a side-view version
 - Updated pt-br localizations, thanks Kharmans!
