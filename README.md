@@ -24,6 +24,15 @@
     src="https://github.com/user-attachments/assets/8fb6ea32-4498-4f53-8ade-24006898dd73">
   </video>
 
+  <video
+    autoplay
+    muted
+    playsinline
+    loop
+    preload="auto"
+    src="https://github.com/user-attachments/assets/089f6232-a5f5-454c-a1a0-96cd7bb3f1ed">
+  </video>
+
 <details>
     <summary>Aurora Borealis (click to expand - Map: <a href="https://www.czepeku.com/" target="_blank" rel="nofollow noopener">Cze & Peku</a>)</summary>
   <video
