@@ -1,2 +1,2 @@
-- Resolved a nasty bug that would wipe all scene flags instead of only the FXMaster scene flags that needed normalization migration
-- Updated rain splashes to use a small delta in size ranges so that the splashes feel more natural
+- Resolved a nasty bug that would wipe all scene flags instead of only the FXMaster scene flags that needed normalization migration.
+- Updated rain splashes to use a small delta in size ranges so that the splashes feel more natural.
