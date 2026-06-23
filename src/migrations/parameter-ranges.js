@@ -210,7 +210,7 @@ async function migrateScene(scene) {
   if (migrateSceneEffectMapInPlace("particle", effects)) update[`flags.${packageId}.effects`] = effects;
   if (migrateSceneEffectMapInPlace("filter", filters)) update[`flags.${packageId}.filters`] = filters;
 
-  await scene.update(update, { diff: false, recursive: false });
+  await scene.update(update, { diff: false });
   return Object.keys(update).length > 1;
 }
 
@@ -234,7 +234,7 @@ async function migrateRegionBehavior(behavior) {
   if (flagsChanged) update[`flags.${packageId}.${flagKey}`] = fxmasterFlags[flagKey];
   update[`flags.${packageId}.${DOCUMENT_MIGRATION_FLAG}`] = PARAMETER_RANGE_MIGRATION_VERSION;
 
-  await behavior.update(update, { diff: false, recursive: false });
+  await behavior.update(update, { diff: false });
   return systemChanged || flagsChanged;
 }
 

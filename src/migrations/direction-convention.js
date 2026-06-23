@@ -190,7 +190,7 @@ async function migrateScene(scene) {
       Object.assign(update, buildFlatFlagUpdate(PLUS_PACKAGE_ID, flag, placements));
   }
 
-  await scene.update(update, { diff: false, recursive: false });
+  await scene.update(update, { diff: false });
   return Object.keys(update).length > 1;
 }
 
@@ -209,7 +209,7 @@ async function migrateRegionBehavior(behavior) {
   for (const key of changedFlagKeys) update[`flags.${packageId}.${key}`] = fxmasterFlags[key];
   update[`flags.${packageId}.${DOCUMENT_MIGRATION_FLAG}`] = DIRECTION_CONVENTION_MIGRATION_VERSION;
 
-  await behavior.update(update, { diff: false, recursive: false });
+  await behavior.update(update, { diff: false });
   return systemChanged || changedFlagKeys.length > 0;
 }
 
