@@ -1,5 +1,8 @@
 # Changelog
 
+## [v8.2.4] - 2026-06-23
+- Secondary update to the scene flag-wipe bug to prevent un-migrated scenes from being effected. Make sure to update to this version if on a build between 8.2.0 - 8.2.3
+
 ## [v8.2.3] - 2026-06-20
 - Resolved a nasty bug that would wipe all scene flags instead of only the FXMaster scene flags that needed normalization migration.
 - Updated rain splashes to use a small delta in size ranges so that the splashes feel more natural.
