@@ -50,6 +50,7 @@ export class HailParticleEffect extends FXMasterParticleEffect {
       topDown: { label: "FXMASTER.Params.TopDown", type: "checkbox", value: false },
       scale: p.scale,
       direction: { ...p.direction, showWhen: { topDown: false } },
+      synchronizedDirection: { ...this.synchronizedDirectionParameter, showWhen: { topDown: false } },
       speed: { ...p.speed, min: 0.1, value: 1, max: 10, step: 0.05, decimals: 2 },
       lifetime: p.lifetime,
       density: { ...p.density, min: 0.05, value: 0.6, max: 2, step: 0.05, decimals: 2 },
@@ -219,8 +220,9 @@ export class HailParticleEffect extends FXMasterParticleEffect {
       this._fxmCanvasPanOwnerPosEnabled = false;
 
       const ctx = options?.__fxmParticleContext ?? this.__fxmParticleContext;
-      const spawnX = ctx ? d.sceneRect.x : 0;
-      const spawnY = (ctx ? d.sceneRect.y : 0) - 0.1 * d.height;
+      const scopedContext = CONFIG.fxmaster?.isScopedParticleContext?.(ctx) ?? !!ctx?.dimensions;
+      const spawnX = scopedContext ? d.sceneRect.x : 0;
+      const spawnY = (scopedContext ? d.sceneRect.y : 0) - 0.1 * d.height;
 
       config.behaviors.push({
         type: "spawnShape",
@@ -281,8 +283,9 @@ export class HailParticleEffect extends FXMasterParticleEffect {
     const emitter = withSteppedGradientColor(this.createEmitter(config), config, 8);
 
     const ctx = options?.__fxmParticleContext ?? this.__fxmParticleContext;
-    const ownerX = ctx ? 0 : canvas.stage.pivot.x - d.sceneX - d.sceneWidth / 2;
-    const ownerY = ctx ? 0 : canvas.stage.pivot.y - d.sceneY - d.sceneHeight / 2;
+    const scopedContext = CONFIG.fxmaster?.isScopedParticleContext?.(ctx) ?? !!ctx?.dimensions;
+    const ownerX = scopedContext ? 0 : canvas.stage.pivot.x - d.sceneX - d.sceneWidth / 2;
+    const ownerY = scopedContext ? 0 : canvas.stage.pivot.y - d.sceneY - d.sceneHeight / 2;
     emitter.updateOwnerPos(ownerX, ownerY);
 
     return [emitter];

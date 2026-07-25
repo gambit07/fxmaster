@@ -35,7 +35,9 @@ export class GlobalEffectsStackLayer extends BaseEffectsLayer {
       this._ticker = true;
     }
 
-    if (isEnabled()) GlobalEffectsCompositor.instance.renderFrame();
+    if (isEnabled()) {
+      GlobalEffectsCompositor.instance.renderFrame({ presyncedCoreState: false });
+    }
   }
 
   /**
@@ -60,6 +62,6 @@ export class GlobalEffectsStackLayer extends BaseEffectsLayer {
    */
   _animate() {
     super._animate();
-    GlobalEffectsCompositor.instance.renderFrame();
+    GlobalEffectsCompositor.instance.renderFrame({ presyncedCoreState: true });
   }
 }

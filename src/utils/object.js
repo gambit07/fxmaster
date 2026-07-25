@@ -2,6 +2,8 @@
  * FXMaster: Object and collection utilities.
  */
 
+import { fxmCollectionValues } from "./foundry-public.js";
+
 /**
  * Return whether a value is a non-array plain object-like value.
  *
@@ -9,6 +11,8 @@
  * @returns {boolean}
  */
 export function isPlainObject(value) {
+  const foundryImplementation = globalThis.foundry?.utils?.isPlainObject;
+  if (typeof foundryImplementation === "function" && foundryImplementation(value)) return true;
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
@@ -20,6 +24,7 @@ export function isPlainObject(value) {
  * @returns {boolean}
  */
 export function hasOwn(value, key) {
+  if (typeof Object.hasOwn === "function") return Object.hasOwn(value ?? {}, key);
   return Object.prototype.hasOwnProperty.call(value ?? {}, key);
 }
 
@@ -31,11 +36,5 @@ export function hasOwn(value, key) {
  * @returns {T[]}
  */
 export function collectionValues(collection) {
-  if (!collection) return [];
-  if (Array.isArray(collection)) return collection;
-  if (Array.isArray(collection.contents)) return collection.contents;
-  if (typeof collection.toArray === "function") return collection.toArray();
-  if (typeof collection.values === "function") return Array.from(collection.values());
-  if (typeof collection[Symbol.iterator] === "function") return Array.from(collection);
-  return [];
+  return fxmCollectionValues(collection);
 }

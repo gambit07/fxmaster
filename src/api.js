@@ -25,11 +25,13 @@ import {
   normalizeDarknessActivationRange,
   fxmDocumentId,
   collectionValues,
+  getSceneLevels,
   normalizeDirectionDegrees,
   prepareFilterOptionsForSceneStorage,
 } from "./utils.js";
 import { logger } from "./logger.js";
 import { buildSceneEffectUid, promoteEffectStackUids } from "./common/effect-stack.js";
+import { reconcileParticleBackgroundState } from "./particle-effects/backgrounds/background-state.js";
 
 const FXMASTER_PLUS_ID = "fxmaster-plus";
 const KEY_PREFIX = "apiPreset_";
@@ -63,12 +65,15 @@ const REGION_FILTER_EFFECT_TYPE = `${packageId}.filterEffectsRegion`;
  * @property {PresetRelativeLevelValue} [density] Relative density preset (`"very-low"`, `"low"`, `"medium"`, `"high"`, `"very-high"`) or an explicit numeric multiplier.
  * @property {boolean} [belowTokens] Apply the preset beneath tokens.
  * @property {boolean} [splash=true] Enable Rain splash particles when a preset includes Rain.
+ * @property {boolean} [background=false] Enable particle background surfaces when supported.
+ * @property {boolean} [tokenTrails=false] Enable token trail interaction when supported.
  * @property {boolean} [belowTiles=false] Apply the preset beneath tiles.
  * @property {boolean} [belowForeground=false] Apply the preset beneath foreground coverage.
  * @property {boolean} [darknessActivationEnabled=false] Enable or disable darkness gating explicitly.
  * @property {number} [darknessActivationMin] Minimum scene darkness level for the preset effect range. Supplying min/max without an explicit toggle enables darkness activation.
  * @property {number} [darknessActivationMax] Maximum scene darkness level for the preset effect range. Supplying min/max without an explicit toggle enables darkness activation.
  * @property {boolean} [soundFx] Enable preset-linked Sound FX when FXMaster+ is active.
+ * @property {boolean} [windPainting] Enable painted Wind movement masks for Wind filters.
  * @property {PresetLevelsValue} [levels] Scene Level id, Level name, or an array of ids/names used to restrict the preset to specific scene levels. Invalid selections fall back to all levels.
  * @property {Scene|string} [scene] Scene document or scene UUID to target.
  * @property {boolean} [silent=true] Suppress UI warnings for missing presets or invalid override values.
@@ -398,16 +403,23 @@ function scaleRangeForEffect(meta, key, value, multiplier) {
  * @param {object} options
  * @returns {object}
  */
-function normalizePresetOptionsToCurrentRanges(meta, options = {}) {
+function normalizePresetOptionsToCurrentRanges(meta, options = {}, { currentRanges = false } = {}) {
+  const raw = options && typeof options === "object" ? { ...options } : {};
+  const markerCurrentRanges = raw.__fxmPresetCurrentRanges === true;
+  delete raw.__fxmPresetCurrentRanges;
+
+  if (currentRanges || markerCurrentRanges) return raw;
+
   try {
     const kind = meta?.kind;
     const type = meta?.type;
+    if (kind === "filters" && type === "wind") return raw;
     const db = kind === "particles" ? CONFIG?.fxmaster?.particleEffects : CONFIG?.fxmaster?.filterEffects;
     const cls = db?.[type];
-    if (!cls) return options;
-    return CONFIG.fxmaster?.normalizeEffectOptionsForStorageFromLegacy?.(cls, options) ?? options;
+    if (!cls) return raw;
+    return CONFIG.fxmaster?.normalizeEffectOptionsForStorageFromLegacy?.(cls, raw) ?? raw;
   } catch {
-    return options;
+    return raw;
   }
 }
 
@@ -463,8 +475,8 @@ function sunlightAngleFromDirection(directionDeg) {
 
 /**
  * @typedef {object} PresetVariant
- * @property {Array<{type:string, options?:object}>} [particles]
- * @property {Array<{type:string, options?:object}>} [filters]
+ * @property {Array<{type:string, options?:object, currentRanges?:boolean}>} [particles]
+ * @property {Array<{type:string, options?:object, currentRanges?:boolean}>} [filters]
  */
 
 /**
@@ -679,7 +691,9 @@ function normalizeRequestedApiEffectId(kind, id) {
  * @returns {string}
  */
 function getApiEffectPayloadSignature(kind, info) {
-  return stableApiEffectStringify({ kind, info });
+  const comparable = info && typeof info === "object" ? deepClone(info) : info;
+  if (kind === "particle" && comparable && typeof comparable === "object") delete comparable.state;
+  return stableApiEffectStringify({ kind, info: comparable });
 }
 
 /**
@@ -835,6 +849,10 @@ function normalizeGenericApiEffectEntry(entry, scene) {
   );
   if (kind === "filter") {
     info.options = prepareFilterOptionsForSceneStorage(type, info.options, { forceRestart: true });
+  } else {
+    const state = reconcileParticleBackgroundState(info, info.options);
+    if (state) info.state = state;
+    else delete info.state;
   }
 
   return { kind, info, requestedId };
@@ -1490,75 +1508,6 @@ export async function toggleApiFilterEffects(filters = [], opts = {}) {
   return toggleApiEffects(buildScopedApiEffectToggleArgs("filters", filters, opts));
 }
 
-/**
- * Normalize the scene Level collection into an array.
- *
- * @param {Scene|null|undefined} scene
- * @returns {Array<any>}
- */
-function getSceneLevels(scene) {
-  const levels = [];
-  const seen = new Set();
-
-  const push = (level) => {
-    if (!level) return;
-    const id = fxmDocumentId(level);
-    const looksLikeLevel =
-      !!id || "elevation" in Object(level) || "isView" in Object(level) || "isVisible" in Object(level);
-    if (!looksLikeLevel) return;
-    const key = id || level;
-    if (seen.has(key)) return;
-    seen.add(key);
-    levels.push(level);
-  };
-
-  const pushAll = (value) => {
-    if (!value) return;
-    if (Array.isArray(value)) return value.forEach(push);
-    if (typeof value?.toArray === "function") return value.toArray().forEach(push);
-    if (typeof value?.values === "function") return Array.from(value.values()).forEach(push);
-    try {
-      return Array.from(value).forEach(push);
-    } catch (_err) {
-      push(value);
-    }
-  };
-
-  pushAll(scene?.levels?.contents ?? scene?.levels ?? null);
-
-  try {
-    pushAll(scene?.getEmbeddedCollection?.("Level"));
-  } catch (_err) {
-    /** Ignore Foundry accessors that are unavailable in older versions. */
-  }
-
-  try {
-    push(scene?.initialLevel);
-  } catch (_err) {
-    /** Ignore Foundry accessors that are unavailable in older versions. */
-  }
-
-  try {
-    push(scene?.firstLevel);
-  } catch (_err) {
-    /** Ignore Foundry accessors that are unavailable in older versions. */
-  }
-
-  try {
-    if (!scene?.id || canvas?.scene?.id === scene.id) push(canvas?.level);
-  } catch (_err) {
-    /** Ignore canvas level access when the canvas is not ready. */
-  }
-
-  try {
-    pushAll(scene?.availableLevels);
-  } catch (_err) {
-    /** Available levels are a useful V14 fallback, but may depend on user/canvas state. */
-  }
-
-  return levels;
-}
-
 function getSceneLevelIds(scene) {
   return Array.from(
     new Set(
@@ -1635,7 +1584,7 @@ function resolvePresetLevelSelection(value, scene) {
  * Apply top-level overrides to a particle or filter options object.
  *
  * @param {object} options
- * @param {{ topDown?: boolean, belowTokens?: boolean, splash?: boolean, belowTiles?: boolean, belowForeground?: boolean, darknessActivationEnabled?: boolean, darknessActivationMin?: number, darknessActivationMax?: number, directionDeg?: number|null, soundFx?: boolean, speedScale?: number, densityScale?: number, levels?: PresetLevelsValue, }} overrides
+ * @param {{ topDown?: boolean, belowTokens?: boolean, splash?: boolean, background?: boolean, tokenTrails?: boolean, belowTiles?: boolean, belowForeground?: boolean, darknessActivationEnabled?: boolean, darknessActivationMin?: number, darknessActivationMax?: number, directionDeg?: number|null, soundFx?: boolean, windPainting?: boolean, speedScale?: number, densityScale?: number, levels?: PresetLevelsValue, }} overrides
  * @param {{ plusActive: boolean, scene?: Scene|null }} ctx
  * @param {{kind?: "particles"|"filters", type?: string}} meta
  * @returns {object}
@@ -1648,6 +1597,23 @@ function applyOptionOverrides(options = {}, overrides = {}, { plusActive, scene 
   if (meta.kind === "particles" && meta.type === "rain" && typeof overrides.splash === "boolean") {
     out.splash = overrides.splash;
   }
+
+  const supportsBackground = !!getRegisteredParamDescriptor(meta, "backgroundEnabled");
+  const supportsBackgroundInteraction = !!getRegisteredParamDescriptor(meta, "backgroundInteractionEnabled");
+  const supportsBackgroundTrails = !!getRegisteredParamDescriptor(meta, "backgroundTrailsEnabled");
+  const supportsTokenTrails = !!getRegisteredParamDescriptor(meta, "tokenTrailsEnabled");
+
+  if (supportsBackground && typeof overrides.background === "boolean") {
+    out.backgroundEnabled = overrides.background;
+  }
+
+  if (typeof overrides.tokenTrails === "boolean") {
+    if (supportsTokenTrails) out.tokenTrailsEnabled = overrides.tokenTrails;
+    if (supportsBackgroundTrails) out.backgroundTrailsEnabled = overrides.tokenTrails;
+    if (supportsBackgroundInteraction) out.backgroundInteractionEnabled = overrides.tokenTrails;
+    if (supportsBackground && overrides.tokenTrails) out.backgroundEnabled = true;
+  }
+
   if (typeof overrides.belowTiles === "boolean") out.belowTiles = overrides.belowTiles;
   if (typeof overrides.belowForeground === "boolean") out.belowForeground = overrides.belowForeground;
 
@@ -1674,6 +1640,10 @@ function applyOptionOverrides(options = {}, overrides = {}, { plusActive, scene 
     out.soundFxEnabled = plusActive ? overrides.soundFx : false;
   } else if (!plusActive && "soundFxEnabled" in out) {
     out.soundFxEnabled = false;
+  }
+
+  if (meta.kind === "filters" && meta.type === "wind" && typeof overrides.windPainting === "boolean") {
+    out.manualPlacement = plusActive ? overrides.windPainting : false;
   }
 
   if (typeof overrides.speedScale === "number" && Number.isFinite(overrides.speedScale) && overrides.speedScale !== 1) {
@@ -1850,12 +1820,15 @@ export async function playPreset(
     density = undefined,
     belowTokens = undefined,
     splash = true,
+    background = false,
+    tokenTrails = false,
     belowTiles = false,
     belowForeground = false,
     darknessActivationEnabled = undefined,
     darknessActivationMin = undefined,
     darknessActivationMax = undefined,
     soundFx = undefined,
+    windPainting = undefined,
     levels = undefined,
     scene = null,
     silent = true,
@@ -1905,6 +1878,8 @@ export async function playPreset(
     topDown,
     belowTokens,
     splash,
+    background,
+    tokenTrails,
     belowTiles,
     belowForeground,
     darknessActivationEnabled,
@@ -1912,6 +1887,7 @@ export async function playPreset(
     darknessActivationMax,
     directionDeg,
     soundFx,
+    windPainting,
     levels,
     speedScale: speedScaleInfo.multiplier,
     densityScale: densityScaleInfo.multiplier,
@@ -1920,8 +1896,10 @@ export async function playPreset(
   for (const p of particles) {
     if (!p || typeof p !== "object") continue;
     const meta = { kind: "particles", type: p.type };
+    const currentRanges = p.currentRanges === true;
+    delete p.currentRanges;
     p.options = applyOptionOverrides(
-      normalizePresetOptionsToCurrentRanges(meta, p.options ?? {}),
+      normalizePresetOptionsToCurrentRanges(meta, p.options ?? {}, { currentRanges }),
       overrides,
       { plusActive, scene: sc },
       meta,
@@ -1930,8 +1908,10 @@ export async function playPreset(
   for (const f of filters) {
     if (!f || typeof f !== "object") continue;
     const meta = { kind: "filters", type: f.type };
+    const currentRanges = f.currentRanges === true;
+    delete f.currentRanges;
     f.options = applyOptionOverrides(
-      normalizePresetOptionsToCurrentRanges(meta, f.options ?? {}),
+      normalizePresetOptionsToCurrentRanges(meta, f.options ?? {}, { currentRanges }),
       overrides,
       { plusActive, scene: sc },
       meta,
@@ -1972,7 +1952,11 @@ export async function playPreset(
 
   for (let i = 0; i < particles.length; i++) {
     const key = `${particlePrefix}${i}`;
-    particleUpdate[key] = particles[i];
+    const entry = particles[i];
+    const state = reconcileParticleBackgroundState(curParticles?.[key] ?? null, entry?.options ?? {});
+    if (state) entry.state = state;
+    else delete entry.state;
+    particleUpdate[key] = entry;
   }
   for (let i = 0; i < filters.length; i++) {
     const key = `${filterPrefix}${i}`;

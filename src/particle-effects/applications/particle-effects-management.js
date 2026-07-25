@@ -4,8 +4,10 @@ import { resetFlag, updateSceneControlHighlights } from "../../utils.js";
 import { logger } from "../../logger.js";
 import { getHiddenEffectsCount, openEffectsVisibilityManager } from "../../common/effects-visibility-manager.js";
 import { buildSceneEffectUid, promoteEffectStackUids } from "../../common/effect-stack.js";
+import { reconcileParticleBackgroundState } from "../backgrounds/background-state.js";
 
 export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
+  static FXMASTER_DETACHED_WINDOW_FIT = true;
   static FXMASTER_POSITION_FLAG = "dialog-position-particleeffects";
   /** @type {ParticleEffectsManagement|undefined} */
   static #instance;
@@ -167,6 +169,9 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
     const actionDef = actions.find((entry) => entry?.action === action);
     if (!actionDef) return;
 
+    const buttonWasPressed =
+      button?.getAttribute?.("aria-pressed") === "true" || button?.classList?.contains?.("fxm-active");
+
     const getOptions = () => {
       try {
         return FXMasterBaseFormV2.gatherFilterOptions(
@@ -192,6 +197,7 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
       action,
       actionDef,
       button,
+      buttonWasPressed,
       event,
       getOptions,
       options: getOptions(),
@@ -242,7 +248,7 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
 
     this._updateHideEffectsTooltip();
 
-    const pos = game.user.getFlag(packageId, "dialog-position-particleeffects");
+    const pos = this._fxmIsDetachedHost() ? null : game.user.getFlag(packageId, "dialog-position-particleeffects");
     if (pos) {
       await new Promise((r) => requestAnimationFrame(r));
 
@@ -262,7 +268,7 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
     const liveElement = this.element;
     if (!liveElement?.isConnected) return;
 
-    this._autosizeInit();
+    if (!this._fxmIsDetachedHost()) this._autosizeInit();
 
     const content = liveElement.querySelector(".window-content") ?? liveElement;
 
@@ -342,7 +348,10 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
 
     if (enabled) {
       const options = FXMasterBaseFormV2.gatherFilterOptions(effectsDB, this.element);
-      current[effectId] = { type, options };
+      const definition = { type, options };
+      const state = reconcileParticleBackgroundState(null, options);
+      if (state) definition.state = state;
+      current[effectId] = definition;
     } else {
       delete current[effectId];
     }
@@ -367,15 +376,22 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
     const type = control.closest(".fxmaster-particle-expand")?.previousElementSibling?.dataset?.type;
     if (!type) return;
 
+    const effectDef = CONFIG.fxmaster.particleEffects[type];
+    if (!effectDef) return;
+
+    const parameterSection = control.closest(".fxmaster-particle-expand") ?? this.element;
+    const syncControl = parameterSection?.querySelector?.(`[name$="_synchronizedDirection"]`) ?? null;
+    const syncValue = syncControl?.type === "checkbox" ? syncControl.checked : syncControl?.value;
+    FXMasterBaseFormV2.refreshSynchronizedDirectionControls(parameterSection, effectDef, {
+      synchronizedDirection: syncValue,
+    });
+
     const scene = canvas.scene;
     if (!scene) return;
     const sceneId = scene.id ?? null;
     const current = foundry.utils.duplicate(scene.getFlag(packageId, "effects") ?? {});
     const isActive = !!current[`core_${type}`];
     if (!isActive) return;
-
-    const effectDef = CONFIG.fxmaster.particleEffects[type];
-    if (!effectDef) return;
 
     const isMultiSelect =
       control?.matches?.("multi-select, select[multiple]") ||
@@ -389,6 +405,11 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
     }
 
     const options = FXMasterBaseFormV2.gatherFilterOptions(effectDef, this.element);
+    FXMasterBaseFormV2.refreshSynchronizedDirectionControls(
+      control.closest(".fxmaster-particle-expand"),
+      effectDef,
+      options,
+    );
 
     const writeOptions = async ({ sceneId, type, options, refresh = false }) => {
       try {
@@ -397,16 +418,28 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
         const cur = foundry.utils.duplicate(scene.getFlag(packageId, "effects") ?? {});
         if (!cur[`core_${type}`]) return;
 
-        const prev = cur[`core_${type}`]?.options ?? {};
+        const definition = cur[`core_${type}`];
+        const prev = definition?.options ?? {};
+        const nextState = reconcileParticleBackgroundState(definition, options);
+        const previousState = definition?.state ?? null;
         const a = foundry.utils.diffObject(prev, options);
         const b = foundry.utils.diffObject(options, prev);
+        const stateA = foundry.utils.diffObject(previousState ?? {}, nextState ?? {});
+        const stateB = foundry.utils.diffObject(nextState ?? {}, previousState ?? {});
         const shouldRefresh = refresh && canvas?.scene?.id === sceneId;
-        if (foundry.utils.isEmpty(a) && foundry.utils.isEmpty(b)) {
+        if (
+          foundry.utils.isEmpty(a) &&
+          foundry.utils.isEmpty(b) &&
+          foundry.utils.isEmpty(stateA) &&
+          foundry.utils.isEmpty(stateB)
+        ) {
           if (shouldRefresh) await canvas?.particleeffects?.drawParticleEffects?.({ soft: true });
           return;
         }
 
-        cur[`core_${type}`].options = options;
+        definition.options = options;
+        if (nextState) definition.state = nextState;
+        else delete definition.state;
         await resetFlag(scene, "effects", cur);
         if (shouldRefresh) await canvas?.particleeffects?.drawParticleEffects?.({ soft: true });
       } catch (err) {

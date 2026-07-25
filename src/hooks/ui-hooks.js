@@ -43,8 +43,8 @@ export function registerUIHooks(ctx) {
     ctx.openLFx.delete(app);
   });
 
-  Hooks.on("updateSetting", (setting) => {
-    if (setting?.key !== `${packageId}.enable`) return;
+  Hooks.on("clientSettingChanged", (key) => {
+    if (key !== `${packageId}.enable`) return;
     try {
       if (isEnabled()) ctx.bind();
       else ctx.unbind();
@@ -77,5 +77,4 @@ export function registerUIHooks(ctx) {
   });
 
   Hooks.on("canvasReady", () => scheduleSceneControlHighlights());
-  Hooks.on("activateScene", () => scheduleSceneControlHighlights());
 }

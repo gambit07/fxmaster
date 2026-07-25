@@ -132,6 +132,257 @@ function fxmOptionValue(value, fallback = undefined) {
 }
 
 /**
+ * Stable token identifier used by particle token avoidance.
+ * @param {Token|object} token
+ * @returns {string}
+ */
+function fxmTokenAvoidanceId(token) {
+  return String(token?.document?.uuid ?? token?.document?.id ?? token?.id ?? token?.objectId ?? "");
+}
+
+/**
+ * Return whether a Token is a visible avoidance source.
+ * @param {Token|object} token
+ * @returns {boolean}
+ */
+function fxmTokenAvoidanceVisible(token) {
+  if (!token || token.destroyed) return false;
+  if (token.document?.hidden) return false;
+  if (token.visible === false) return false;
+  if (token.alpha === 0) return false;
+  return true;
+}
+
+/**
+ * Resolve token center in world/canvas coordinates.
+ * @param {Token|object} token
+ * @returns {{x:number,y:number}|null}
+ */
+function fxmTokenAvoidanceCenter(token) {
+  const c = token?.center;
+  const cx = Number(c?.x);
+  const cy = Number(c?.y);
+  if (Number.isFinite(cx) && Number.isFinite(cy)) return { x: cx, y: cy };
+
+  const grid = Number(canvas?.dimensions?.size) || 100;
+  const x = Number(token?.document?.x ?? token?.x);
+  const y = Number(token?.document?.y ?? token?.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+
+  const docWidth = Number(token?.document?.width);
+  const docHeight = Number(token?.document?.height);
+  const w = Number(token?.w ?? token?.width ?? (Number.isFinite(docWidth) && docWidth > 0 ? docWidth * grid : grid));
+  const h = Number(
+    token?.h ?? token?.height ?? (Number.isFinite(docHeight) && docHeight > 0 ? docHeight * grid : grid),
+  );
+  return {
+    x: x + (Number.isFinite(w) && w > 0 ? w : grid) * 0.5,
+    y: y + (Number.isFinite(h) && h > 0 ? h : grid) * 0.5,
+  };
+}
+
+/**
+ * Resolve a token footprint size in world/canvas pixels.
+ * @param {Token|object} token
+ * @returns {number}
+ */
+function fxmTokenAvoidanceFootprint(token) {
+  const grid = Number(canvas?.dimensions?.size) || 100;
+  const docWidth = Number(token?.document?.width);
+  const docHeight = Number(token?.document?.height);
+  const w = Number(token?.w ?? token?.width ?? (Number.isFinite(docWidth) && docWidth > 0 ? docWidth * grid : grid));
+  const h = Number(
+    token?.h ?? token?.height ?? (Number.isFinite(docHeight) && docHeight > 0 ? docHeight * grid : grid),
+  );
+  return Math.max(grid * 0.35, Number.isFinite(w) && w > 0 ? w : grid, Number.isFinite(h) && h > 0 ? h : grid);
+}
+
+/**
+ * Steer the actual PIXI-particles movement velocity toward a target direction.
+ *
+ * The movement behaviors rotate and then keep a velocity vector on particle.config.velocity. Visual rotation alone does not redirect native particle travel, so creature avoidance must turn that vector as well as the sprite.
+ *
+ * @param {any} particle
+ * @param {number} nx
+ * @param {number} ny
+ * @param {number} t
+ * @param {number} fallbackSpeed
+ * @returns {boolean}
+ */
+function fxmSteerParticleVelocity(particle, nx, ny, t, fallbackSpeed = 0) {
+  const velocity = particle?.config?.velocity ?? particle?.velocity ?? particle?._velocity;
+  if (!velocity || typeof velocity !== "object") return false;
+
+  const vx = Number(velocity.x);
+  const vy = Number(velocity.y);
+  let speed = Math.hypot(Number.isFinite(vx) ? vx : 0, Number.isFinite(vy) ? vy : 0);
+  if (!(speed > 0.001)) speed = Math.max(0, Number(fallbackSpeed) || 0);
+  if (!(speed > 0.001)) return false;
+
+  const curX = Number.isFinite(vx) && Number.isFinite(vy) && Math.hypot(vx, vy) > 0.001 ? vx / Math.hypot(vx, vy) : nx;
+  const curY = Number.isFinite(vx) && Number.isFinite(vy) && Math.hypot(vx, vy) > 0.001 ? vy / Math.hypot(vx, vy) : ny;
+  const blendX = curX * (1 - t) + nx * t;
+  const blendY = curY * (1 - t) + ny * t;
+  const blendLen = Math.hypot(blendX, blendY) || 1;
+  const outX = (blendX / blendLen) * speed;
+  const outY = (blendY / blendLen) * speed;
+
+  if (typeof velocity.set === "function") velocity.set(outX, outY);
+  else {
+    velocity.x = outX;
+    velocity.y = outY;
+  }
+  return true;
+}
+
+/**
+ * Read the current PIXI-particles velocity vector, if one exists.
+ * @param {any} particle
+ * @returns {{x:number,y:number,speed:number}|null}
+ */
+function fxmParticleVelocityVector(particle) {
+  const velocity = particle?.config?.velocity ?? particle?.velocity ?? particle?._velocity;
+  if (!velocity || typeof velocity !== "object") return null;
+  const vx = Number(velocity.x);
+  const vy = Number(velocity.y);
+  if (!Number.isFinite(vx) || !Number.isFinite(vy)) return null;
+  const speed = Math.hypot(vx, vy);
+  if (!(speed > 0.001)) return null;
+  return { x: vx / speed, y: vy / speed, speed };
+}
+
+/**
+ * Resolve a particle's canvas-space position.
+ * @param {any} particle
+ * @returns {{x:number,y:number}|null}
+ */
+function fxmParticlePosition(particle) {
+  const x = Number(particle?.x ?? particle?.position?.x);
+  const y = Number(particle?.y ?? particle?.position?.y);
+  return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+}
+
+/**
+ * Write a particle's canvas-space position.
+ * @param {any} particle
+ * @param {number} x
+ * @param {number} y
+ * @returns {void}
+ */
+function fxmSetParticlePosition(particle, x, y) {
+  if (!particle || !Number.isFinite(x) || !Number.isFinite(y)) return;
+  if (particle.position) {
+    particle.position.x = x;
+    particle.position.y = y;
+    return;
+  }
+  particle.x = x;
+  particle.y = y;
+}
+
+/**
+ * Steer a particle's observed displacement toward a target direction.
+ * @param {any} particle
+ * @param {number} nx
+ * @param {number} ny
+ * @param {number} t
+ * @returns {boolean}
+ */
+function fxmSteerParticleDisplacement(particle, nx, ny, t) {
+  const pos = fxmParticlePosition(particle);
+  if (!pos) return false;
+
+  const last = particle._fxmSyncLastPosition;
+  particle._fxmSyncLastPosition = { x: pos.x, y: pos.y };
+  if (!last || !Number.isFinite(last.x) || !Number.isFinite(last.y)) return false;
+
+  const dx = pos.x - last.x;
+  const dy = pos.y - last.y;
+  const distance = Math.hypot(dx, dy);
+  if (!(distance > 0.001)) return false;
+
+  const curX = dx / distance;
+  const curY = dy / distance;
+  const blendX = curX * (1 - t) + nx * t;
+  const blendY = curY * (1 - t) + ny * t;
+  const blendLen = Math.hypot(blendX, blendY) || 1;
+  const outX = last.x + (blendX / blendLen) * distance;
+  const outY = last.y + (blendY / blendLen) * distance;
+  fxmSetParticlePosition(particle, outX, outY);
+  particle._fxmSyncLastPosition = { x: outX, y: outY };
+  return true;
+}
+
+function fxmEmitterConfig(emitter) {
+  return emitter?._fxmOrbitConfig ?? emitter?._fxmSynchronizedDirectionConfig ?? null;
+}
+
+function fxmEmitterHasMovePath(config) {
+  return Array.isArray(config?.behaviors) && config.behaviors.some((b) => b?.type === "movePath");
+}
+
+function fxmRotatePointRadians(angle, x, y) {
+  const s = Math.sin(angle);
+  const c = Math.cos(angle);
+  return { x: x * c - y * s, y: x * s + y * c };
+}
+
+function fxmRetargetMovePathParticle(particle, pathBehavior, targetRadians, t) {
+  const cfg = particle?.config;
+  if (!cfg || !pathBehavior || typeof pathBehavior.path !== "function") return false;
+
+  const movement = Number(cfg.movement);
+  if (!Number.isFinite(movement)) return false;
+
+  const position = particle.position ?? particle;
+  const px = Number(position?.x);
+  const py = Number(position?.y);
+  if (!Number.isFinite(px) || !Number.isFinite(py)) return false;
+
+  const current = Number.isFinite(Number(cfg.initRotation))
+    ? Number(cfg.initRotation)
+    : Number(particle.rotation) || targetRadians;
+  const next = fxmAngleLerp(current, targetRadians, t);
+  if (Math.abs(next - current) < 1e-5) return true;
+
+  const pathY = Number(pathBehavior.path(movement));
+  if (!Number.isFinite(pathY)) return false;
+
+  const offset = fxmRotatePointRadians(next, movement, pathY);
+  cfg.initRotation = next;
+  if (!cfg.initPosition) cfg.initPosition = { x: px - offset.x, y: py - offset.y };
+  else if (typeof cfg.initPosition.set === "function") cfg.initPosition.set(px - offset.x, py - offset.y);
+  else {
+    cfg.initPosition.x = px - offset.x;
+    cfg.initPosition.y = py - offset.y;
+  }
+
+  return true;
+}
+
+function fxmRetargetEmitterRotationBehaviors(emitter, targetRadians) {
+  const rotation = typeof emitter?.getBehavior === "function" ? emitter.getBehavior("rotation") : null;
+  if (rotation && Number.isFinite(rotation.minStart) && Number.isFinite(rotation.maxStart)) {
+    rotation._fxmSynchronizedDirectionRange ??= rotation.maxStart - rotation.minStart;
+    const range = Number.isFinite(rotation._fxmSynchronizedDirectionRange)
+      ? rotation._fxmSynchronizedDirectionRange
+      : 0;
+    rotation.minStart = targetRadians - range * 0.5;
+    rotation.maxStart = targetRadians + range * 0.5;
+  }
+
+  const rotationStatic = typeof emitter?.getBehavior === "function" ? emitter.getBehavior("rotationStatic") : null;
+  if (rotationStatic && Number.isFinite(rotationStatic.min) && Number.isFinite(rotationStatic.max)) {
+    rotationStatic._fxmSynchronizedDirectionRange ??= rotationStatic.max - rotationStatic.min;
+    const range = Number.isFinite(rotationStatic._fxmSynchronizedDirectionRange)
+      ? rotationStatic._fxmSynchronizedDirectionRange
+      : 0;
+    rotationStatic.min = targetRadians - range * 0.5;
+    rotationStatic.max = targetRadians + range * 0.5;
+  }
+}
+
+/**
  * Locate the rectangle used for orbit geometry.
  *
  * @param {PIXI.particles.EmitterConfigV3|object} config
@@ -253,6 +504,7 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
         max: 360,
         step: 5,
         decimals: 0,
+        compassDirection: true,
       },
       speed: { label: "FXMASTER.Params.Speed", type: "range", min: 0.1, value: 1, max: 5, step: 0.1, decimals: 1 },
       lifetime: {
@@ -274,6 +526,16 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
         decimals: 1,
       },
       alpha: { label: "FXMASTER.Params.Opacity", type: "range", min: 0, value: 1, max: 1, step: 0.1, decimals: 1 },
+    };
+  }
+
+  /** Shared direction synchronization control used by wind-driven effects. */
+  static get synchronizedDirectionParameter() {
+    return {
+      label: "FXMASTER.Params.SynchronizedDirection",
+      type: "checkbox",
+      value: false,
+      tooltip: "FXMASTER.ParamTooltips.SynchronizedDirection",
     };
   }
 
@@ -381,6 +643,16 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
    */
   static get densityScalar() {
     return 0.25;
+  }
+
+  /** Default soft toggle fade duration used by standard particle effects. */
+  static get defaultFadeDurationMs() {
+    return 3000;
+  }
+
+  /** Whether this effect should prewarm even when it is being soft-created at alpha 0 for a fade-in. */
+  static get softFadePrewarm() {
+    return false;
   }
 
   /**
@@ -577,8 +849,10 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
     const directionalEnabled = !!options?.directionalMovement?.value;
     if (options?.directionalMovement && !directionalEnabled) return;
 
-    const direction = options.direction?.value;
+    let direction = options.direction?.value;
     if (direction === undefined) return;
+    direction =
+      CONFIG.fxmaster?.resolveSynchronizedDirection?.(options, direction, options?.__fxmParticleContext) ?? direction;
 
     const screenDirection = geometricDirectionToScreenDegrees(direction);
 
@@ -749,6 +1023,8 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
       const opts = this._fxmLastOptions ?? this.options ?? {};
       this._fxmInstallLateralMovement(emitter, opts, { wrap: true });
       this._fxmInstallOrbitMovement(emitter, opts, { wrap: true });
+      this._fxmInstallSynchronizedDirection(emitter, opts, { wrap: true });
+      this._fxmInstallTokenAvoidance(emitter, opts, { wrap: true });
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
@@ -1218,6 +1494,411 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
   }
 
   /**
+   * Install wind-source direction synchronization for directional particle travel.
+   * @param {PIXI.particles.Emitter} emitter
+   * @param {object} options
+   * @param {{wrap?: boolean}} [cfg]
+   */
+  _fxmInstallSynchronizedDirection(emitter, options = {}, { wrap = true } = {}) {
+    if (!emitter) return;
+
+    const enabled = CONFIG.fxmaster?.synchronizedDirectionOptionEnabled?.(options) ?? false;
+    if (!enabled) {
+      emitter._fxmSynchronizedDirectionUpdate = null;
+      return;
+    }
+
+    const fallbackDirection = Number(fxmOptionValue(options?.direction, this.constructor.defaultDirection ?? 0));
+    const fallback = Number.isFinite(fallbackDirection) ? fallbackDirection : 0;
+
+    emitter._fxmSynchronizedDirectionUpdate = (delta, phase = "after") => {
+      const dtRaw = fxmDeltaSeconds(delta);
+      const dt = Math.min(0.06, Math.max(0, dtRaw));
+      if (!(dt > 0)) return;
+
+      const direction =
+        CONFIG.fxmaster?.resolveSynchronizedDirection?.(options, fallback, options?.__fxmParticleContext) ?? fallback;
+      const screenRadians = (geometricDirectionToScreenDegrees(direction) * Math.PI) / 180;
+      const nx = Math.cos(screenRadians);
+      const ny = Math.sin(screenRadians);
+      const steer = Math.min(1, 1 - Math.exp(-7.5 * dt));
+      const rotate = Math.min(1, 1 - Math.exp(-8.5 * dt));
+      const grid = Math.max(1, Number(canvas?.dimensions?.size ?? 100) || 100);
+      const fallbackSpeed = grid * 1.4;
+      const pathBehavior = typeof emitter.getBehavior === "function" ? emitter.getBehavior("movePath") : null;
+      const config = fxmEmitterConfig(emitter);
+      const steerVelocity = config?._fxmSynchronizedDirectionVelocity !== false;
+      const retargetMovePath = pathBehavior && config?._fxmSynchronizedDirectionMovePath !== false;
+      const retargetAfterUpdate = config?._fxmSynchronizedDirectionMovePathAfter !== false;
+
+      fxmRetargetEmitterRotationBehaviors(emitter, screenRadians);
+      if (pathBehavior && !retargetMovePath) return;
+      if (phase === "before" && !retargetMovePath) return;
+      if (phase === "after" && retargetMovePath && !retargetAfterUpdate) return;
+
+      fxmForEachEmitterParticle(emitter, (particle) => {
+        if (!particle) return;
+        const retargetedPath = retargetMovePath
+          ? fxmRetargetMovePathParticle(particle, pathBehavior, screenRadians, rotate)
+          : false;
+        if (phase !== "before" && steerVelocity) {
+          const velocitySteered = fxmSteerParticleVelocity(particle, nx, ny, steer, fallbackSpeed);
+          if (!velocitySteered && config?._fxmSynchronizedDirectionDisplacement !== false) {
+            fxmSteerParticleDisplacement(particle, nx, ny, steer);
+          }
+        }
+
+        const rotSpeed = Number(particle?.config?.rotSpeed);
+        const preserveIndependentRotation = retargetedPath && Number.isFinite(rotSpeed) && Math.abs(rotSpeed) > 1e-4;
+        if (!preserveIndependentRotation) {
+          const currentRotation = typeof particle.rotation === "number" ? particle.rotation : screenRadians;
+          particle.rotation = fxmAngleLerp(currentRotation, screenRadians, rotate);
+        }
+
+        if (typeof particle._fxmLM_baseRot === "number")
+          particle._fxmLM_baseRot = fxmAngleLerp(particle._fxmLM_baseRot, screenRadians, rotate * 0.75);
+        if (typeof particle._fxmLM_visRot === "number")
+          particle._fxmLM_visRot = fxmAngleLerp(particle._fxmLM_visRot, screenRadians, rotate);
+      });
+    };
+
+    if (!wrap || emitter._fxmSynchronizedDirectionWrapped) return;
+
+    const wasAuto = !!emitter.autoUpdate;
+    if (wasAuto) emitter.autoUpdate = false;
+
+    const origUpdate = emitter.update.bind(emitter);
+    const config = fxmEmitterConfig(emitter);
+    const preUpdate =
+      config?._fxmSynchronizedDirectionPreUpdate === true ||
+      (fxmEmitterHasMovePath(config) && config?._fxmSynchronizedDirectionMovePath !== false);
+    emitter._fxmSynchronizedDirectionOrigUpdate = origUpdate;
+    emitter.update = (delta) => {
+      try {
+        if (preUpdate) emitter._fxmSynchronizedDirectionUpdate?.(delta, "before");
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+      origUpdate(delta);
+      try {
+        emitter._fxmSynchronizedDirectionUpdate?.(delta, "after");
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    };
+
+    emitter._fxmSynchronizedDirectionWrapped = true;
+
+    if (wasAuto) emitter.autoUpdate = true;
+  }
+
+  /**
+   * Resolve and cache the original directional movement heading for a particle.
+   *
+   * Directional avoidance uses this as the forward path so creatures can skirt
+   * around tokens without being steered backward or orbiting the token edge.
+   *
+   * @param {any} particle
+   * @param {number|null} fallbackRotation
+   * @param {{reset?: boolean}} [options]
+   * @returns {{x:number,y:number,angle:number}|null}
+   */
+  _fxmTokenAvoidanceForward(particle, fallbackRotation = null, { reset = false } = {}) {
+    if (!particle) return null;
+
+    const age = fxmGetParticleAge(particle);
+    const respawn =
+      age !== undefined &&
+      typeof particle._fxmTA_lastAge === "number" &&
+      Number.isFinite(particle._fxmTA_lastAge) &&
+      age < particle._fxmTA_lastAge;
+    if (age !== undefined) particle._fxmTA_lastAge = age;
+
+    if (
+      !reset &&
+      !respawn &&
+      typeof particle._fxmTA_forwardX === "number" &&
+      typeof particle._fxmTA_forwardY === "number"
+    ) {
+      const len = Math.hypot(particle._fxmTA_forwardX, particle._fxmTA_forwardY);
+      if (len > 0.001) {
+        const x = particle._fxmTA_forwardX / len;
+        const y = particle._fxmTA_forwardY / len;
+        return { x, y, angle: Math.atan2(y, x) };
+      }
+    }
+
+    const velocity = fxmParticleVelocityVector(particle);
+    let x = velocity?.x;
+    let y = velocity?.y;
+
+    if (!(Number.isFinite(x) && Number.isFinite(y))) {
+      const angle =
+        typeof particle.rotation === "number" && Number.isFinite(particle.rotation)
+          ? particle.rotation
+          : Number.isFinite(fallbackRotation)
+          ? fallbackRotation
+          : null;
+      if (angle === null) return null;
+      x = Math.cos(angle);
+      y = Math.sin(angle);
+    }
+
+    const len = Math.hypot(x, y);
+    if (!(len > 0.001)) return null;
+    x /= len;
+    y /= len;
+    particle._fxmTA_forwardX = x;
+    particle._fxmTA_forwardY = y;
+    return { x, y, angle: Math.atan2(y, x) };
+  }
+
+  /**
+   * Install token avoidance for creature-style particle effects.
+   *
+   * When enabled, particles are pushed away from visible tokens. By default
+   * only recently moving tokens act as avoidance sources; the optional
+   * tokenAvoidanceAtRest toggle makes stationary tokens repel particles too.
+   *
+   * @param {PIXI.particles.Emitter} emitter
+   * @param {object} options
+   * @param {{wrap?: boolean}} [cfg]
+   */
+  _fxmInstallTokenAvoidance(emitter, options = {}, { wrap = true } = {}) {
+    if (!emitter) return;
+
+    const enabled = !!fxmOptionValue(options?.tokenAvoidance, false);
+    const strength = fxmClampNumber(fxmOptionValue(options?.tokenAvoidanceStrength, 0.65), 0, 1, 0.65);
+    const radiusScale = fxmClampNumber(fxmOptionValue(options?.tokenAvoidanceRadius, 1), 0, 3, 1);
+
+    if (!enabled || strength <= 0.001 || radiusScale <= 0.001) {
+      emitter._fxmTokenAvoidanceUpdate = null;
+      return;
+    }
+
+    const includeAtRest = !!fxmOptionValue(options?.tokenAvoidanceAtRest, false);
+    const directionalMode =
+      !!fxmOptionValue(options?.directionalMovement, false) && !fxmOptionValue(options?.orbit, false);
+    const rawDirection = Number(fxmOptionValue(options?.direction, NaN));
+    const fallbackDirectionalRotation = Number.isFinite(rawDirection)
+      ? (geometricDirectionToScreenDegrees(rawDirection) * Math.PI) / 180
+      : null;
+    emitter._fxmTokenAvoidanceState ??= new Map();
+
+    emitter._fxmTokenAvoidanceUpdate = (delta) => {
+      const dtRaw = fxmDeltaSeconds(delta);
+      const dt = Math.min(0.05, Math.max(0, dtRaw));
+      if (!(dt > 0)) return;
+
+      const tokens = canvas?.tokens?.placeables ?? [];
+      if (!tokens.length) return;
+
+      const grid = Math.max(1, Number(canvas?.dimensions?.size ?? 100) || 100);
+      const now = globalThis.performance?.now?.() ?? Date.now();
+      const minMove = Math.max(0.75, grid * 0.006);
+      const movingHoldMs = 360;
+      const targets = [];
+      const seen = new Set();
+      const state = emitter._fxmTokenAvoidanceState ?? new Map();
+      emitter._fxmTokenAvoidanceState = state;
+
+      for (const token of tokens) {
+        if (!fxmTokenAvoidanceVisible(token)) continue;
+        const id = fxmTokenAvoidanceId(token);
+        if (!id) continue;
+
+        const center = fxmTokenAvoidanceCenter(token);
+        if (!center) continue;
+        seen.add(id);
+
+        const footprint = fxmTokenAvoidanceFootprint(token);
+        const previous = state.get(id);
+        const movedPx = previous ? Math.hypot(center.x - previous.x, center.y - previous.y) : 0;
+        const moving = movedPx >= minMove;
+        const activeUntil = includeAtRest
+          ? now + 1000
+          : moving
+          ? now + movingHoldMs
+          : previous?.activeUntil ?? -Infinity;
+        const velocityBoost = moving ? Math.min(1.85, 1.0 + movedPx / Math.max(grid * 0.18, 1)) : 1.0;
+
+        state.set(id, {
+          x: center.x,
+          y: center.y,
+          footprint,
+          activeUntil,
+          seenAt: now,
+        });
+
+        if (!includeAtRest && activeUntil < now) continue;
+
+        const radius = Math.max(grid * 0.35, footprint * radiusScale);
+        targets.push({
+          x: center.x,
+          y: center.y,
+          radius,
+          weight: includeAtRest && !moving ? 0.78 : velocityBoost,
+        });
+      }
+
+      for (const [id, entry] of state.entries()) {
+        if (seen.has(id)) continue;
+        if (now - (entry?.seenAt ?? now) > 1000) state.delete(id);
+      }
+
+      const baseSpeed = grid * (0.65 + 3.7 * strength);
+      const maxStep = grid * (0.014 + 0.06 * strength);
+      const turnRate = 10.0 + 18.0 * strength;
+      const velocityTurnRate = 14.0 + 30.0 * strength;
+      const restoreDirectionalParticle = (particle) => {
+        if (!directionalMode || !particle) return;
+        const forward = this._fxmTokenAvoidanceForward(particle, fallbackDirectionalRotation, { reset: false });
+        if (!forward) return;
+        const restoreT = Math.min(0.35, 1 - Math.exp(-(2.6 + 5.0 * strength) * dt));
+        fxmSteerParticleVelocity(particle, forward.x, forward.y, restoreT, baseSpeed);
+        const currentRotation = typeof particle.rotation === "number" ? particle.rotation : forward.angle;
+        const nextRotation = fxmAngleLerp(currentRotation, forward.angle, restoreT * 0.85);
+        particle.rotation = nextRotation;
+        if (typeof particle._fxmLM_baseRot === "number")
+          particle._fxmLM_baseRot = fxmAngleLerp(particle._fxmLM_baseRot, forward.angle, restoreT * 0.55);
+        if (typeof particle._fxmLM_visRot === "number")
+          particle._fxmLM_visRot = fxmAngleLerp(particle._fxmLM_visRot, forward.angle, restoreT * 0.85);
+      };
+
+      if (!targets.length) {
+        if (directionalMode) fxmForEachEmitterParticle(emitter, restoreDirectionalParticle);
+        return;
+      }
+
+      fxmForEachEmitterParticle(emitter, (particle) => {
+        if (!particle) return;
+        const px = Number(particle.x);
+        const py = Number(particle.y);
+        if (!Number.isFinite(px) || !Number.isFinite(py)) return;
+
+        let forceX = 0;
+        let forceY = 0;
+
+        for (const target of targets) {
+          let dx = px - target.x;
+          let dy = py - target.y;
+          let dist = Math.hypot(dx, dy);
+          if (dist >= target.radius) continue;
+
+          if (!(dist > 0.001)) {
+            const seed = typeof particle._fxmTA_seed === "number" ? particle._fxmTA_seed : Math.random() * Math.PI * 2;
+            particle._fxmTA_seed = seed;
+            dx = Math.cos(seed);
+            dy = Math.sin(seed);
+            dist = 1;
+          }
+
+          const t = 1 - dist / Math.max(target.radius, 1);
+          const falloff = t * t * (3 - 2 * t);
+          const weight = falloff * target.weight;
+          forceX += (dx / dist) * weight;
+          forceY += (dy / dist) * weight;
+        }
+
+        const force = Math.hypot(forceX, forceY);
+        if (!(force > 0.0005)) {
+          restoreDirectionalParticle(particle);
+          return;
+        }
+
+        const nx = forceX / force;
+        const ny = forceY / force;
+        const influence = Math.min(1.85, Math.max(0.18, force));
+        let steerX = nx;
+        let steerY = ny;
+        let pushX = nx;
+        let pushY = ny;
+        let targetRotation = Math.atan2(ny, nx);
+        let velocitySteer = Math.min(1, 1 - Math.exp(-velocityTurnRate * dt * influence));
+        let positionPushScale = 0.34;
+
+        if (directionalMode) {
+          const forward = this._fxmTokenAvoidanceForward(particle, fallbackDirectionalRotation, { reset: false });
+          if (forward) {
+            const fx = forward.x;
+            const fy = forward.y;
+            const sx = -fy;
+            const sy = fx;
+            const sideDot = nx * sx + ny * sy;
+            let sideSign = Math.sign(sideDot);
+            if (!sideSign) {
+              const seed =
+                typeof particle._fxmTA_seed === "number" ? particle._fxmTA_seed : Math.random() * Math.PI * 2;
+              particle._fxmTA_seed = seed;
+              sideSign = Math.sign(Math.sin(seed)) || 1;
+            }
+
+            const awayForward = Math.max(0, nx * fx + ny * fy);
+            const sideAmt = (0.5 + Math.min(1.35, Math.abs(sideDot) + influence * 0.32)) * (0.72 + 0.58 * strength);
+            const forwardAmt = 1.0 + awayForward * 0.26;
+            steerX = fx * forwardAmt + sx * sideSign * sideAmt;
+            steerY = fy * forwardAmt + sy * sideSign * sideAmt;
+            const steerLen = Math.hypot(steerX, steerY) || 1;
+            steerX /= steerLen;
+            steerY /= steerLen;
+
+            pushX = sx * sideSign * (0.85 + 0.4 * influence) + fx * awayForward * 0.22;
+            pushY = sy * sideSign * (0.85 + 0.4 * influence) + fy * awayForward * 0.22;
+            const pushLen = Math.hypot(pushX, pushY) || 1;
+            pushX /= pushLen;
+            pushY /= pushLen;
+
+            targetRotation = Math.atan2(steerY, steerX);
+            velocitySteer = Math.min(0.72, 1 - Math.exp(-(8.0 + 16.0 * strength) * dt * influence));
+            positionPushScale = 0.62;
+          }
+        }
+
+        const steeredVelocity = fxmSteerParticleVelocity(particle, steerX, steerY, velocitySteer, baseSpeed);
+
+        if (!directionalMode && !steeredVelocity) positionPushScale = 0.82;
+        const step = Math.min(maxStep, baseSpeed * dt * Math.min(1.35, force) * positionPushScale);
+        particle.x += pushX * step;
+        particle.y += pushY * step;
+
+        const currentRotation = typeof particle.rotation === "number" ? particle.rotation : targetRotation;
+        const steer = Math.min(1, 1 - Math.exp(-turnRate * dt * influence));
+        const nextRotation = fxmAngleLerp(currentRotation, targetRotation, steer);
+        particle.rotation = nextRotation;
+
+        if (typeof particle._fxmLM_baseRot === "number")
+          particle._fxmLM_baseRot = fxmAngleLerp(
+            particle._fxmLM_baseRot,
+            targetRotation,
+            Math.max(steer * 0.65, velocitySteer),
+          );
+        if (typeof particle._fxmLM_visRot === "number")
+          particle._fxmLM_visRot = fxmAngleLerp(particle._fxmLM_visRot, targetRotation, Math.max(steer, velocitySteer));
+      });
+    };
+
+    if (!wrap || emitter._fxmTokenAvoidanceWrapped) return;
+
+    const wasAuto = !!emitter.autoUpdate;
+    if (wasAuto) emitter.autoUpdate = false;
+
+    const origUpdate = emitter.update.bind(emitter);
+    emitter._fxmTokenAvoidanceOrigUpdate = origUpdate;
+    emitter.update = (delta) => {
+      origUpdate(delta);
+      try {
+        emitter._fxmTokenAvoidanceUpdate?.(delta);
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    };
+
+    emitter._fxmTokenAvoidanceWrapped = true;
+
+    if (wasAuto) emitter.autoUpdate = true;
+  }
+
+  /**
    * Register a canvasPan hook that keeps emitter owner positions aligned to the current view center.
    *
    * Used by any effect that spawns relative to the view center via emitter ownerPos offsets.
@@ -1227,7 +1908,8 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
     this._fxmUnregisterCanvasPanOwnerPosHook();
 
     const ctx = this.__fxmParticleContext ?? this.options?.__fxmParticleContext;
-    if (ctx) return;
+    const scopedContext = CONFIG.fxmaster?.isScopedParticleContext?.(ctx) ?? !!ctx?.dimensions;
+    if (scopedContext) return;
 
     if (!globalThis.Hooks?.on || !globalThis.canvas) return;
 
@@ -1297,11 +1979,90 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
   }
 
   /**
+   * Resolve the ticker that should drive FXMaster alpha fades.
+   *
+   * Foundry's canvas app ticker is the most reliable render-loop source in V13/V14. The fade ticker is also stored so an interrupted fade is removed from the exact ticker that owns it instead of guessing on the next fade.
+   *
+   * @returns {PIXI.Ticker|null}
+   * @protected
+   */
+  _fxmFadeTicker() {
+    return canvas?.app?.ticker ?? PIXI?.Ticker?.shared ?? null;
+  }
+
+  /**
+   * Normalize a fade timeout, falling back to the standard particle duration.
+   * @param {number|undefined|null} timeout
+   * @returns {number}
+   * @protected
+   */
+  _fxmFadeDuration(timeout) {
+    const requested = Number(timeout);
+    if (Number.isFinite(requested)) return Math.max(0, requested);
+    const fallback = Number(this.constructor?.defaultFadeDurationMs ?? 3000);
+    return Number.isFinite(fallback) ? Math.max(0, fallback) : 3000;
+  }
+
+  /**
+   * Cancel an in-flight FXMaster alpha fade.
+   * @param {{resolve?: boolean}} [options]
+   * @protected
+   */
+  _fxmCancelAlphaFade({ resolve = true } = {}) {
+    const fadeTicker = this._fadeTicker;
+    if (!fadeTicker) return;
+
+    const tickers = new Set();
+    if (this._fadeTickerSource) tickers.add(this._fadeTickerSource);
+    if (canvas?.app?.ticker) tickers.add(canvas.app.ticker);
+    if (PIXI?.Ticker?.shared) tickers.add(PIXI.Ticker.shared);
+
+    for (const ticker of tickers) {
+      try {
+        ticker?.remove?.(fadeTicker);
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    }
+
+    this._fadeTicker = null;
+    this._fadeTickerSource = null;
+
+    if (!resolve) {
+      this._fadeResolve = null;
+      return;
+    }
+
+    const r = this._fadeResolve;
+    this._fadeResolve = null;
+    try {
+      r?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+  }
+
+  /**
+   * Keep sibling background surfaces synchronized during alpha fades.
+   * Background surfaces live beside the particle container in the wrapper so
+   * they need their runtime alpha uniform refreshed when the owning effect
+   * fades, not only on the next layer animation pass.
+   * @protected
+   */
+  _fxmSyncBackgroundSurfaceAlpha() {
+    try {
+      this.__fxmBackgroundSurface?.update?.({ fx: this });
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+  }
+
+  /**
    * Fade to transparent over a timeout and resolve when complete.
    * @param {{timeout?: number}} [options]
    * @returns {Promise<void>}
    */
-  async fadeOut({ timeout = 3000 } = {}) {
+  async fadeOut({ timeout = undefined } = {}) {
     for (const emitter of this.emitters) {
       try {
         emitter.emit = false;
@@ -1310,126 +2071,85 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
       }
     }
 
-    if (this._fadeTicker && (canvas?.app?.ticker || PIXI.Ticker.shared)) {
-      const t = canvas?.app?.ticker ?? PIXI.Ticker.shared;
-      try {
-        t.remove(this._fadeTicker);
-      } catch (err) {
-        logger.debug("FXMaster:", err);
-      }
-      this._fadeTicker = null;
-      try {
-        this._fadeResolve?.();
-      } catch (err) {
-        logger.debug("FXMaster:", err);
-      }
-      this._fadeResolve = null;
-    }
+    this._fxmCancelAlphaFade({ resolve: true });
 
     const startAlpha = this.alpha ?? 1;
-    if (!timeout || timeout <= 0) {
+    const duration = this._fxmFadeDuration(timeout);
+    if (!duration) {
       this.alpha = 0;
+      this._fxmSyncBackgroundSurfaceAlpha();
       return;
     }
 
-    const ticker = PIXI.Ticker.shared;
+    const ticker = this._fxmFadeTicker();
+    if (!ticker) {
+      this.alpha = 0;
+      this._fxmSyncBackgroundSurfaceAlpha();
+      return;
+    }
+
     return new Promise((resolve) => {
       this._fadeResolve = resolve;
+      this._fadeTickerSource = ticker;
       const start = ticker.lastTime ?? performance.now();
       this._fadeTicker = () => {
         if (this.destroyed) {
-          ticker.remove(this._fadeTicker);
-          this._fadeTicker = null;
-          const r = this._fadeResolve;
-          this._fadeResolve = null;
-          try {
-            r?.();
-          } catch (err) {
-            logger.debug("FXMaster:", err);
-          }
+          this._fxmCancelAlphaFade({ resolve: true });
           return;
         }
         const now = ticker.lastTime ?? performance.now();
-        const u = Math.min(1, (now - start) / timeout);
+        const u = Math.min(1, (now - start) / duration);
         this.alpha = startAlpha * (1 - u);
-        if (u >= 1) {
-          ticker.remove(this._fadeTicker);
-          this._fadeTicker = null;
-          const r = this._fadeResolve;
-          this._fadeResolve = null;
-          try {
-            r?.();
-          } catch (err) {
-            logger.debug("FXMaster:", err);
-          }
-        }
+        this._fxmSyncBackgroundSurfaceAlpha();
+        if (u >= 1) this._fxmCancelAlphaFade({ resolve: true });
       };
       ticker.add(this._fadeTicker);
     });
   }
 
   /** Fade alpha from current value to a target over a timeout. */
-  async fadeToAlpha({ to = 1, timeout = 3000 } = {}) {
-    const ticker = PIXI.Ticker.shared;
+  async fadeToAlpha({ to = 1, timeout = undefined } = {}) {
+    const duration = this._fxmFadeDuration(timeout);
+    const target = Number(to);
+    const resolvedTarget = Number.isFinite(target) ? target : 1;
     const from = Number(this.alpha ?? 1);
-    if (!timeout || timeout <= 0) {
-      this.alpha = to;
+
+    this._fxmCancelAlphaFade({ resolve: true });
+
+    if (!duration) {
+      this.alpha = resolvedTarget;
+      this._fxmSyncBackgroundSurfaceAlpha();
       return;
     }
 
-    if (this._fadeTicker && (canvas?.app?.ticker || PIXI.Ticker.shared)) {
-      const t = canvas?.app?.ticker ?? PIXI.Ticker.shared;
-      try {
-        t.remove(this._fadeTicker);
-      } catch (err) {
-        logger.debug("FXMaster:", err);
-      }
-      this._fadeTicker = null;
-      try {
-        this._fadeResolve?.();
-      } catch (err) {
-        logger.debug("FXMaster:", err);
-      }
-      this._fadeResolve = null;
+    const ticker = this._fxmFadeTicker();
+    if (!ticker) {
+      this.alpha = resolvedTarget;
+      this._fxmSyncBackgroundSurfaceAlpha();
+      return;
     }
 
     return new Promise((resolve) => {
       this._fadeResolve = resolve;
+      this._fadeTickerSource = ticker;
       const start = ticker.lastTime ?? performance.now();
       this._fadeTicker = () => {
         if (this.destroyed) {
-          ticker.remove(this._fadeTicker);
-          this._fadeTicker = null;
-          const r = this._fadeResolve;
-          this._fadeResolve = null;
-          try {
-            r?.();
-          } catch (err) {
-            logger.debug("FXMaster:", err);
-          }
+          this._fxmCancelAlphaFade({ resolve: true });
           return;
         }
         const now = ticker.lastTime ?? performance.now();
-        const u = Math.min(1, (now - start) / timeout);
-        this.alpha = from + (to - from) * u;
-        if (u >= 1) {
-          ticker.remove(this._fadeTicker);
-          this._fadeTicker = null;
-          const r = this._fadeResolve;
-          this._fadeResolve = null;
-          try {
-            r?.();
-          } catch (err) {
-            logger.debug("FXMaster:", err);
-          }
-        }
+        const u = Math.min(1, (now - start) / duration);
+        this.alpha = from + (resolvedTarget - from) * u;
+        this._fxmSyncBackgroundSurfaceAlpha();
+        if (u >= 1) this._fxmCancelAlphaFade({ resolve: true });
       };
       ticker.add(this._fadeTicker);
     });
   }
 
   /** Symmetric fade-in helper. */
-  async fadeIn({ timeout = 3000 } = {}) {
+  async fadeIn({ timeout = undefined } = {}) {
     return this.fadeToAlpha({ to: 1, timeout });
   }
 

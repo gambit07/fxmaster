@@ -10,15 +10,20 @@ import { packageId } from "../constants.js";
 import { logger } from "../logger.js";
 import {
   coalesceNextFrame,
+  documentIncludedInLevel,
+  fxmLevelIsAbove,
+  getCanvasLevel,
+  getDocumentAssignedLevelIds,
   getRegionPlaceableOrDocumentAdapter,
   getRegionEffectPlaceablesForCurrentView,
+  getSceneLevels,
   getSceneRegionDocumentById,
   regionDocumentCanApplyInCurrentView,
   onSwitchParticleEffects,
   onUpdateParticleEffects,
   fxmDocumentId,
 } from "../utils.js";
-import { isEnabled } from "../settings.js";
+import { applyRegionBehaviorsToOverheadLevels, isEnabled } from "../settings.js";
 import { invalidateEffectStackCache, normalizeBehaviorDocs } from "../common/effect-stack.js";
 
 const PARTICLE_TYPE = `${packageId}.particleEffectsRegion`;
@@ -295,6 +300,65 @@ function refreshSuppressionForRegion(regionDoc, ctx, { deferred = false, behavio
 }
 
 /**
+ * Refresh Region shape constraints for Levels represented by active behaviors.
+ * @param {object} scene
+ * @param {Iterable<object>} regions
+ * @param {Set<string>} restrictionTypes
+ * @returns {void}
+ * @private
+ */
+function updateRestrictedRegionShapeConstraintsForView(scene, regions, restrictionTypes) {
+  const updateScene = () => scene.updateRegionShapeConstraints?.(restrictionTypes);
+  const currentLevel = getCanvasLevel();
+  const levels = getSceneLevels(scene);
+  if (!currentLevel?.id || !levels.length) {
+    updateScene();
+    return;
+  }
+
+  const levelsById = new Map(levels.map((level) => [String(level?.id ?? ""), level]));
+  const targetLevels = new Set();
+  let uncovered = false;
+  const allowOverhead = applyRegionBehaviorsToOverheadLevels();
+
+  for (const region of regions) {
+    const document = region?.document ?? region ?? null;
+    if (!document) continue;
+
+    let covered = false;
+    if (documentIncludedInLevel(document, currentLevel) !== false) {
+      targetLevels.add(currentLevel);
+      covered = true;
+    }
+
+    if (allowOverhead) {
+      for (const levelId of getDocumentAssignedLevelIds(document, scene) ?? []) {
+        const level = levelsById.get(String(levelId ?? "")) ?? null;
+        if (!level || level.id === currentLevel.id || !fxmLevelIsAbove(level, currentLevel)) continue;
+        if (documentIncludedInLevel(document, level) === false) continue;
+        targetLevels.add(level);
+        covered = true;
+      }
+    }
+
+    if (!covered) uncovered = true;
+  }
+
+  const missingLevelApi = [...targetLevels].some((level) => typeof level?.updateRegionShapeConstraints !== "function");
+  if (uncovered || !targetLevels.size || targetLevels.size >= levels.length || missingLevelApi) {
+    updateScene();
+    return;
+  }
+
+  try {
+    for (const level of targetLevels) level.updateRegionShapeConstraints(restrictionTypes);
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+    updateScene();
+  }
+}
+
+/**
  * Register region and behavior lifecycle hooks.
  *
  * @param {object} ctx - Shared hook context from {@link createHookContext}.
@@ -316,7 +380,7 @@ export function registerRegionHooks(ctx) {
 
       const restrictionTypes = new Set(regions.map((region) => region?.document?.restriction?.type).filter(Boolean));
       try {
-        scene.updateRegionShapeConstraints?.(restrictionTypes);
+        updateRestrictedRegionShapeConstraintsForView(scene, regions, restrictionTypes);
       } catch (err) {
         logger.debug("FXMaster:", err);
       }

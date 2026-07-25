@@ -24,11 +24,11 @@ export class LightningFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
     this.initFadeUniforms(u);
     this.initRegionFadeUniforms(u, { maxEdges: MAX_EDGES });
 
-    this.ensureVec4Uniform("srcFrame", [0, 0, 1, 1]);
     this.ensureVec2Uniform("camFrac", [0, 0]);
     this.ensureVec4Uniform("outputFrame", [0, 0, 1, 1]);
 
     u.brightness = typeof u.brightness === "number" ? u.brightness : 1.0;
+    if (!(u.color instanceof Float32Array) || u.color.length < 3) u.color = new Float32Array([1, 1, 1]);
 
     this._tickerFn = null;
     this._accumMS = 0;
@@ -57,6 +57,12 @@ export class LightningFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
       belowTokens: { label: "FXMASTER.Params.BelowTokens", type: "checkbox", value: false },
       belowTiles: { label: "FXMASTER.Params.BelowTiles", type: "checkbox", value: false },
       soundFxEnabled: { label: "FXMASTER.Params.SoundFxEnabled", type: "checkbox", value: false },
+      color: {
+        label: "FXMASTER.Params.Tint",
+        type: "color",
+        value: { value: "#ffffff", apply: false },
+        skipInitialAnimation: true,
+      },
       frequency: {
         label: "FXMASTER.Params.Period",
         type: "range",
@@ -381,7 +387,15 @@ export class LightningFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
 
     this.applyMaskOptionsFrom(o);
 
-    if (typeof o.brightness === "number") this.brightness = o.brightness;
+    const color = this.parseColorOption(o.color, { defaultHex: "#ffffff" }) ?? [1, 1, 1];
+    const u = this._getUniformsSafe();
+    if (u) {
+      if (!(u.color instanceof Float32Array) || u.color.length < 3) u.color = new Float32Array([1, 1, 1]);
+      u.color[0] = color[0];
+      u.color[1] = color[1];
+      u.color[2] = color[2];
+    }
+
     if (typeof o.frequency === "number") this.frequency = o.frequency;
     if (typeof o.spark_duration === "number") this.spark_duration = o.spark_duration;
 
@@ -421,7 +435,7 @@ export class LightningFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
   }
 
   /**
-   * Run a single flash animation: ease up to peak, then ease back to 1.0.
+   * Run a single flash animation with a fast strike, quick falloff, and soft residual tail.
    * @returns {Promise<void>} Resolves when the flash finishes.
    * @private
    */
@@ -432,13 +446,20 @@ export class LightningFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
     const peak = basePeak * (0.85 + Math.random() * 0.3);
     const baseDur = this.spark_duration;
     const dur = Math.max(60, baseDur * (0.9 + Math.random() * 0.2));
-    const upDur = Math.max(30, dur * 0.3);
-    const downDur = Math.max(30, dur - upDur);
+    const attackDur = Math.max(20, Math.min(45, dur * 0.12));
+    const decayDur = Math.max(30, Math.min(140, dur * 0.22));
+    const tailDur = Math.max(30, dur - attackDur - decayDur);
+    const flash = Math.max(0, peak - 1.0);
+    const afterglow = 1.0 + flash * 0.12;
 
-    return this._animateBrightness(peak, upDur, easeFunctions.OutCubic, generation)
+    return this._animateBrightness(peak, attackDur, easeFunctions.OutCubic, generation)
       .then((advanced) => {
         if (!advanced) return false;
-        return this._animateBrightness(1.0, downDur, easeFunctions.InQuad, generation);
+        return this._animateBrightness(afterglow, decayDur, easeFunctions.OutCirc, generation);
+      })
+      .then((advanced) => {
+        if (!advanced) return false;
+        return this._animateBrightness(1.0, tailDur, easeFunctions.OutSine, generation);
       })
       .catch(() => false);
   }

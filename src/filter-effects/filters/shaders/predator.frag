@@ -1,7 +1,7 @@
 /**
  * SPDX-FileCopyrightText: 2026 Gambit
  */
- 
+
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
 precision highp int;
@@ -18,7 +18,7 @@ uniform sampler2D uSampler;
 uniform sampler2D maskSampler;
 
 /** ---- Pixi pipeline frames (match Color) ---- */
-uniform vec2  viewSize;     /** CSS px of mask RT (usually screen size) */
+uniform vec2  viewSize;     /** CSS viewport size */
 uniform vec4  inputSize;    /** xy: input size in CSS px; zw: 1/size */
 uniform vec4  outputFrame;  /** xy: offset in CSS px;    zw: size */
 
@@ -30,6 +30,9 @@ uniform float hasMask;
 uniform float maskReady;
 uniform float invertMask; /** 0/1 */
 uniform float maskSoft;
+uniform float maskWorldReady;
+uniform mat3  uMaskUvFromWorld;
+uniform vec2  maskTexelUV;
 
 uniform float time;        /** seconds */
 uniform float speedPx;     /** px/s (negative => down) */
@@ -72,6 +75,27 @@ varying vec2 vTextureCoord;
 /** Shared region fade infrastructure */
 #include <region-fade-common>
 
+vec2 fxmMaskUvFromCss(vec2 cssPx) {
+  if (maskWorldReady > 0.5) {
+    vec2 world = applyCssToWorld(cssPx);
+    return (uMaskUvFromWorld * vec3(world, 1.0)).xy;
+  }
+  return cssPx / max(viewSize, vec2(1.0));
+}
+
+float fxmMaskSampleUv(vec2 uv) {
+  if (maskWorldReady > 0.5 && (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)) return 0.0;
+  return clamp(texture2D(maskSampler, clamp(uv, vec2(0.0), vec2(1.0))).r, 0.0, 1.0);
+}
+
+float fxmMaskSample(vec2 cssPx) {
+  return fxmMaskSampleUv(fxmMaskUvFromCss(cssPx));
+}
+
+vec2 fxmMaskTexel() {
+  return (maskWorldReady > 0.5) ? maskTexelUV : (1.0 / max(viewSize, vec2(1.0)));
+}
+
 void main() {
   vec4 src = texture2D(uSampler, vTextureCoord);
 
@@ -87,8 +111,7 @@ void main() {
       vec2 samplePx = (uRegionShape < 0) ? screenPx : snapPx;
 
       vec2 maskPx = floor(samplePx) + 0.5;
-      vec2 maskUV = clamp(maskPx / max(viewSize, vec2(1.0)), 0.0, 1.0);
-      float a     = clamp(texture2D(maskSampler, maskUV).r, 0.0, 1.0);
+      float a     = fxmMaskSample(maskPx);
 
       float m     = (maskSoft > 0.5) ? a : ((uRegionShape < 0) ? step(0.5, a) : smoothstep(0.48, 0.52, a));
       if (invertMask > 0.5) m = 1.0 - m;

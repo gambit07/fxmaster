@@ -334,14 +334,15 @@ function _applySuppressionMasks(layer, { syncRefresh = true } = {}) {
  * @param {object} layer - The ParticleEffectsLayer instance.
  * @param {boolean} anyBelow - Whether any effect needs belowTokens masking.
  * @param {boolean} anyBelowTiles - Whether any effect needs belowTiles masking.
+ * @param {{ presyncedLiveLevelState?: boolean }} [options]
  * @private
  */
-function _refreshAndBind(layer, anyBelow, anyBelowTiles) {
+function _refreshAndBind(layer, anyBelow, anyBelowTiles, { presyncedLiveLevelState = false } = {}) {
   let { base, cutoutTokens, cutoutTiles, cutoutCombined } = SceneMaskManager.instance.getMasks("particles");
 
   if (!base || base.destroyed) {
     try {
-      SceneMaskManager.instance.refreshSync("particles");
+      SceneMaskManager.instance.refreshSync("particles", { presyncedLiveLevelState });
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
@@ -414,9 +415,9 @@ const applySceneParticleMasksNextFrame = coalesceNextFrame(
  *
  * When `sync` is `false` and the situation does not require an immediate refresh, the heavy work is deferred to the next animation frame via {@link applySceneParticleMasksNextFrame}. Suppression-active scenes use the synchronous path so the scene allow-mask and region masks stay in lockstep while the camera moves.
  *
- * @param {{sync?: boolean}} [opts]
+ * @param {{ sync?: boolean, presyncedLiveLevelState?: boolean }} [opts]
  */
-export function refreshSceneParticlesSuppressionMasks({ sync = false } = {}) {
+export function refreshSceneParticlesSuppressionMasks({ sync = false, presyncedLiveLevelState = false } = {}) {
   try {
     const layer = canvas.particleeffects;
     if (!layer) return;
@@ -434,11 +435,11 @@ export function refreshSceneParticlesSuppressionMasks({ sync = false } = {}) {
 
     if (wantSync) {
       try {
-        SceneMaskManager.instance.refreshSync("particles");
+        SceneMaskManager.instance.refreshSync("particles", { presyncedLiveLevelState });
       } catch (err) {
         logger.debug("FXMaster:", err);
       }
-      _refreshAndBind(layer, anyBelow, anyBelowTiles);
+      _refreshAndBind(layer, anyBelow, anyBelowTiles, { presyncedLiveLevelState });
     } else {
       try {
         SceneMaskManager.instance.refresh("particles");

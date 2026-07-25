@@ -5,8 +5,9 @@ import {
   normalizeDarknessActivationRange,
 } from "../utils.js";
 import { packageId } from "../constants.js";
-import { applyLegacyRangeTolerance } from "../utils/region-schema.js";
+import { applyLegacyRangeTolerance, createRegionNumberField } from "../utils/region-schema.js";
 import { buildRegionEffectUid, promoteEffectStackUids } from "../common/effect-stack.js";
+import { reconcileParticleBackgroundState } from "./backgrounds/background-state.js";
 
 export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.RegionBehaviorType {
   static LOCALIZATION_PREFIXES = ["FXMASTER.Regions.Particle"];
@@ -131,9 +132,18 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
           opts.nullable = false;
           opts.initial = !!cfg.value;
         } else if (cfg.type === "multi-select") {
+          const manualChoices =
+            param === "soundFxManualSoundIds" &&
+            typeof CONFIG?.fxmaster?.collectSoundFxManualSoundChoices === "function"
+              ? Object.fromEntries(
+                  CONFIG.fxmaster
+                    .collectSoundFxManualSoundChoices("particle", type)
+                    .map((choice) => [choice.value, choice.label]),
+                )
+              : null;
           const elementField = new foundry.data.fields.StringField({
             required: false,
-            choices: cfg.options ?? {},
+            choices: manualChoices ?? cfg.options ?? {},
             label: cfg.label,
             localize: true,
           });
@@ -155,9 +165,19 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
             localize: true,
           });
           continue;
+        } else if (cfg.type === "number-infinity") {
+          schema[`${type}_${param}`] = new foundry.data.fields.StringField({
+            required: false,
+            nullable: true,
+            initial: "",
+            label: cfg.label,
+            localize: true,
+          });
+          continue;
         }
 
-        schema[`${type}_${param}`] = new FieldClass(opts);
+        schema[`${type}_${param}`] =
+          FieldClass === foundry.data.fields.NumberField ? createRegionNumberField(opts, cfg) : new FieldClass(opts);
       }
     }
 
@@ -194,6 +214,7 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
    */
   async _applyParticles() {
     const system = this.toObject();
+    const prevFX = this.parent.getFlag(packageId, "particleEffects") ?? {};
 
     const nextFX = Object.entries(CONFIG.fxmaster.particleEffects)
       .filter(([type]) => system[`${type}_enabled`])
@@ -222,13 +243,16 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
         for (const [key, value] of Object.entries(opts)) {
           if (value === undefined || value === null) delete opts[key];
         }
-        map[type] = { options: opts };
+
+        const definition = { options: opts };
+        const state = reconcileParticleBackgroundState(prevFX?.[type] ?? null, opts);
+        if (state) definition.state = state;
+        map[type] = definition;
         return map;
       }, {});
 
     let changedAny = false;
 
-    const prevFX = this.parent.getFlag(packageId, "particleEffects") ?? {};
     const diff1 = foundry.utils.diffObject(prevFX, nextFX);
     const diff2 = foundry.utils.diffObject(nextFX, prevFX);
     if (!foundry.utils.isEmpty(diff1) || !foundry.utils.isEmpty(diff2)) {

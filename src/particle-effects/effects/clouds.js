@@ -23,6 +23,7 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
   static get parameters() {
     return foundry.utils.mergeObject(super.parameters, {
       density: { min: 0.001, value: 0.03, max: 0.2, step: 0.001, decimals: 3 },
+      synchronizedDirection: this.synchronizedDirectionParameter,
       dropShadow: { label: "FXMASTER.Params.Shadow", type: "checkbox", value: false },
       shadowOnly: {
         label: "FXMASTER.Params.ShadowOnly",
@@ -190,6 +191,12 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
     config.autoUpdate = true;
     config.emit = false;
     const emitter = new PIXI.particles.Emitter(wrapper, config);
+
+    try {
+      this._fxmInstallSynchronizedDirection(emitter, this._fxmLastOptions ?? this.options ?? {}, { wrap: true });
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
 
     if (!config._dropShadowEnabled) return emitter;
 

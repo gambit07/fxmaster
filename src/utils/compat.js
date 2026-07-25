@@ -8,9 +8,14 @@ import { ALL_LEVELS_SELECTION, packageId } from "../constants.js";
 import { logger } from "../logger.js";
 import { applyRegionBehaviorsToOverheadLevels } from "../settings-access.js";
 import {
+  fxmCollectionValues,
+  fxmGetPrimaryLevelTextureMeshes,
+  fxmGetPrimaryTileMeshes,
+  fxmPrimaryCanvasObjectIsLive,
   fxmGetDocumentElevationWindow,
   fxmGetDocumentLevelIds,
   fxmDocumentIncludedInLevel,
+  fxmDocumentLocatedInLevel,
   fxmDocumentId,
   fxmGetLevelConfiguredImagePaths,
   fxmGetLevelTexturePlan,
@@ -75,6 +80,147 @@ export function getForcedDeletionOperator() {
  * @type {Function|null|undefined}
  */
 let _cachedReplacementFactory;
+
+const CANVAS_PAN_AFTER_HOOK_KEY = "__fxmasterCanvasPanAfterHook";
+const CANVAS_PAN_AFTER_CALLBACKS_KEY = "__fxmasterCanvasPanAfterCallbacks";
+const CANVAS_PAN_AFTER_ORIGINAL_KEY = "__fxmasterOriginalPan";
+
+let canvasPanAfterHookInstalled = false;
+const canvasPanAfterCallbacks = new Set();
+
+/**
+ * Register a callback after camera pan processing.
+ * @param {Function} callback
+ * @returns {boolean}
+ */
+export function installCanvasPanAfterHook(callback) {
+  const CanvasClass = globalThis.foundry?.canvas?.Canvas;
+  const proto = CanvasClass?.prototype ?? null;
+  const currentPan = proto?.pan;
+
+  if (currentPan?.[CANVAS_PAN_AFTER_HOOK_KEY] === true) {
+    const callbacks = currentPan[CANVAS_PAN_AFTER_CALLBACKS_KEY];
+    if (typeof callback === "function" && callbacks instanceof Set) callbacks.add(callback);
+    if (callbacks instanceof Set) {
+      canvasPanAfterHookInstalled = true;
+      return true;
+    }
+  }
+
+  if (typeof callback === "function") canvasPanAfterCallbacks.add(callback);
+  if (canvasPanAfterHookInstalled) return true;
+  if (typeof currentPan !== "function") return false;
+
+  const hasFxmasterWrapper = currentPan?.[CANVAS_PAN_AFTER_HOOK_KEY] === true;
+  const storedOriginal = currentPan?.[CANVAS_PAN_AFTER_ORIGINAL_KEY];
+  const originalPan = hasFxmasterWrapper && typeof storedOriginal === "function" ? storedOriginal : currentPan;
+
+  const wrappedPan = function fxmasterCanvasPanAfterHook(...args) {
+    let result;
+    try {
+      result = originalPan.apply(this, args);
+    } finally {
+      for (const cb of canvasPanAfterCallbacks) {
+        try {
+          cb(this, args);
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+      }
+    }
+    return result;
+  };
+
+  wrappedPan[CANVAS_PAN_AFTER_HOOK_KEY] = true;
+  wrappedPan[CANVAS_PAN_AFTER_CALLBACKS_KEY] = canvasPanAfterCallbacks;
+  wrappedPan[CANVAS_PAN_AFTER_ORIGINAL_KEY] = originalPan;
+  proto.pan = wrappedPan;
+  canvasPanAfterHookInstalled = true;
+  return true;
+}
+
+/**
+ * Dispatch the current pointer position through the active event path.
+ * @returns {boolean}
+ */
+export function dispatchCanvasPointerMoveNow() {
+  try {
+    const events = globalThis.canvas?.app?.renderer?.events ?? null;
+    const rootPointerEvent = events?.rootPointerEvent ?? null;
+    const domElement = events?.domElement ?? null;
+    const PointerEventCtor = globalThis.PointerEvent ?? null;
+    if (!events?.supportsPointerEvents || !rootPointerEvent || !domElement) return false;
+    if (events.supportsTouchEvents && rootPointerEvent.pointerType === "touch") return false;
+    if (typeof PointerEventCtor !== "function") return false;
+
+    domElement.dispatchEvent(
+      new PointerEventCtor("pointermove", {
+        pointerId: rootPointerEvent.pointerId,
+        pointerType: rootPointerEvent.pointerType,
+        isPrimary: rootPointerEvent.isPrimary,
+        clientX: rootPointerEvent.clientX,
+        clientY: rootPointerEvent.clientY,
+        pageX: rootPointerEvent.pageX,
+        pageY: rootPointerEvent.pageY,
+        altKey: rootPointerEvent.altKey,
+        ctrlKey: rootPointerEvent.ctrlKey,
+        metaKey: rootPointerEvent.metaKey,
+        shiftKey: rootPointerEvent.shiftKey,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    return true;
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+    return false;
+  }
+}
+
+let tileRefreshStateGuardInstalled = false;
+
+/**
+ * Install a defensive Tile state-refresh guard for transient canvas startup and teardown windows.
+ * @returns {boolean}
+ */
+export function installTileRefreshStateGuard() {
+  if (tileRefreshStateGuardInstalled) return true;
+  const TileClass = globalThis.CONFIG?.Tile?.objectClass;
+  const proto = TileClass?.prototype;
+  const original = proto?._refreshState;
+  if (typeof original !== "function") return false;
+  if (original.__fxmasterTileRefreshStateGuard === true) {
+    tileRefreshStateGuardInstalled = true;
+    return true;
+  }
+
+  const guardedRefreshState = function fxmasterTileRefreshStateGuard(...args) {
+    const layer = this?.layer ?? null;
+    const invalidLayer = !layer || layer.destroyed;
+    const invalidControls = !this?.controls || !this?.document;
+    if (invalidLayer || invalidControls || this?.destroyed) {
+      if (!this?.destroyed && typeof globalThis.requestAnimationFrame === "function") {
+        globalThis.requestAnimationFrame(() => {
+          try {
+            if (!this?.destroyed && this?.layer && this?.controls && this?.document) {
+              this.renderFlags?.set?.({ refreshState: true });
+            }
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
+        });
+      }
+      return undefined;
+    }
+    return original.apply(this, args);
+  };
+
+  guardedRefreshState.__fxmasterTileRefreshStateGuard = true;
+  guardedRefreshState.__fxmasterOriginalRefreshState = original;
+  proto._refreshState = guardedRefreshState;
+  tileRefreshStateGuardInstalled = true;
+  return true;
+}
 
 /**
  * Get a V14+ ForcedReplacement operator for a replacement value.
@@ -231,30 +377,6 @@ function _fxmLevelIsAbove(candidate, target) {
 }
 
 /**
- * Return collection values without assuming whether Foundry exposed an Array, Collection, Map, Set, or iterable-like object.
- *
- * @param {*} value
- * @returns {Array}
- * @private
- */
-function _fxmCollectionValues(value) {
-  if (!value) return [];
-  if (Array.isArray(value)) return value;
-  if (typeof value?.values === "function") {
-    try {
-      return Array.from(value.values());
-    } catch (_err) {
-      return [];
-    }
-  }
-  try {
-    return Array.from(value);
-  } catch (_err) {
-    return [];
-  }
-}
-
-/**
  * Return whether a display object currently contributes visible pixels.
  *
  * @param {PIXI.DisplayObject|null|undefined} object
@@ -262,7 +384,7 @@ function _fxmCollectionValues(value) {
  * @private
  */
 function _fxmDisplayObjectContributesVisiblePixels(object) {
-  if (!object || object.destroyed) return false;
+  if (!fxmPrimaryCanvasObjectIsLive(object)) return false;
   if (object.visible === false || object.renderable === false) return false;
   const alpha = Number(object.worldAlpha ?? object.alpha ?? 1);
   return !(Number.isFinite(alpha) && alpha <= 0.001);
@@ -277,9 +399,16 @@ function _fxmDisplayObjectContributesVisiblePixels(object) {
  * @private
  */
 function _fxmResolveLiveSurfaceDisplayObject(primaryObject, linkedObject) {
-  return (
-    linkedObject?.mesh ?? linkedObject?.primaryMesh ?? linkedObject?.sprite ?? primaryObject ?? linkedObject ?? null
-  );
+  for (const object of [
+    linkedObject?.mesh ?? null,
+    linkedObject?.primaryMesh ?? null,
+    linkedObject?.sprite ?? null,
+    primaryObject ?? null,
+    linkedObject ?? null,
+  ]) {
+    if (fxmPrimaryCanvasObjectIsLive(object)) return object;
+  }
+  return null;
 }
 
 /**
@@ -397,7 +526,7 @@ function _fxmLevelHasLiveVisibleCanvasSurface(level) {
   const levelId = fxmDocumentId(level);
   if (!levelId || !canvas?.primary) return false;
 
-  for (const mesh of _fxmCollectionValues(canvas.primary.levelTextures ?? [])) {
+  for (const mesh of fxmGetPrimaryLevelTextureMeshes()) {
     const object = mesh?.object ?? null;
     const liveObject = _fxmResolveLiveSurfaceDisplayObject(mesh, object);
     const captureObject = _fxmDisplayObjectContributesVisiblePixels(mesh)
@@ -420,7 +549,7 @@ function _fxmLevelHasLiveVisibleCanvasSurface(level) {
     if (_fxmLiveSurfaceTargetsLevelId({ mesh, object, document, level: surfaceLevel, elevation }, levelId)) return true;
   }
 
-  for (const mesh of _fxmCollectionValues(canvas.primary.tiles ?? [])) {
+  for (const mesh of fxmGetPrimaryTileMeshes()) {
     const tileObject = fxmLinkedPlaceableFromDisplayObject(mesh);
     const document = tileObject?.document ?? null;
     if (document?.hidden) continue;
@@ -455,17 +584,7 @@ function _fxmLevelHasLiveVisibleCanvasSurface(level) {
  * @private
  */
 function _fxmSceneRegionDocuments(scene) {
-  const regions = scene?.regions ?? null;
-  if (!regions) return [];
-  if (Array.isArray(regions?.contents)) return regions.contents.filter(Boolean);
-  if (Array.isArray(regions)) return regions.filter(Boolean);
-  if (typeof regions?.toArray === "function") return regions.toArray().filter(Boolean);
-  if (typeof regions?.values === "function") return Array.from(regions.values()).filter(Boolean);
-  try {
-    return Array.from(regions).filter(Boolean);
-  } catch (_err) {
-    return [];
-  }
+  return fxmCollectionValues(scene?.regions ?? null);
 }
 
 /**
@@ -799,7 +918,20 @@ export function documentIncludedInLevel(document, level) {
 }
 
 /**
- * Resolve Level ids using Foundry's public document ownership method.
+ * Return whether a document is authored in a specific native Level using Foundry v14.364's public location API when available.
+ *
+ * Token ownership differs from inclusion because Level visibility can include a lower-Level Token in the viewed Level without changing its source Level.
+ *
+ * @param {foundry.abstract.Document|null|undefined} document
+ * @param {foundry.documents.Level|null|undefined} level
+ * @returns {boolean|null}
+ */
+export function documentLocatedInLevel(document, level) {
+  return fxmDocumentLocatedInLevel(document, level);
+}
+
+/**
+ * Resolve Level IDs using Foundry's public document-ownership method.
  *
  * @param {foundry.abstract.Document|null|undefined} document
  * @param {foundry.documents.Scene|null|undefined} [scene=canvas?.scene ?? null]
@@ -980,6 +1112,16 @@ export function isDocumentOnCurrentCanvasLevel(document, elevation) {
 /** Small epsilon used to place level-scoped FX just inside a level boundary. */
 const OCCLUSION_EPSILON = 1e-4;
 
+/** @param {number} value @returns {number} */
+function nextElevationDown(value) {
+  return typeof Math.nextDown === "function" ? Math.nextDown(value) : value - OCCLUSION_EPSILON;
+}
+
+/** @param {number} value @returns {number} */
+function nextElevationUp(value) {
+  return typeof Math.nextUp === "function" ? Math.nextUp(value) : value + OCCLUSION_EPSILON;
+}
+
 /**
  * Return a normalized elevation window for a document or level-like source.
  *
@@ -1026,12 +1168,12 @@ function resolveOcclusionElevationFromWindow(window) {
     const lo = Math.min(min, max);
     const hi = Math.max(min, max);
     if (Math.abs(hi - lo) <= OCCLUSION_EPSILON) return hi;
-    const nearTop = hi - OCCLUSION_EPSILON;
+    const nearTop = nextElevationDown(hi);
     return nearTop > lo ? nearTop : lo + (hi - lo) * 0.5;
   }
 
-  if (Number.isFinite(max)) return max - OCCLUSION_EPSILON;
-  if (Number.isFinite(min)) return min + OCCLUSION_EPSILON;
+  if (Number.isFinite(max)) return nextElevationDown(max);
+  if (Number.isFinite(min)) return nextElevationUp(min);
   return null;
 }
 
@@ -1044,69 +1186,7 @@ function resolveOcclusionElevationFromWindow(window) {
  * @returns {foundry.documents.Level[]}
  */
 export function getSceneLevels(scene) {
-  const publicLevels = fxmGetSceneLevelsPublic(scene);
-  if (publicLevels.length) return publicLevels;
-
-  const levels = [];
-  const seen = new Set();
-
-  const push = (level) => {
-    if (!level) return;
-    const id = fxmDocumentId(level).trim();
-    const looksLikeLevel =
-      !!id || "elevation" in Object(level) || "isView" in Object(level) || "isVisible" in Object(level);
-    if (!looksLikeLevel) return;
-    const key = id || level;
-    if (seen.has(key)) return;
-    seen.add(key);
-    levels.push(level);
-  };
-
-  const pushAll = (value) => {
-    if (!value) return;
-    if (Array.isArray(value)) return value.forEach(push);
-    if (typeof value?.toArray === "function") return value.toArray().forEach(push);
-    if (typeof value?.values === "function") return Array.from(value.values()).forEach(push);
-    try {
-      return Array.from(value).forEach(push);
-    } catch (_err) {
-      push(value);
-    }
-  };
-
-  pushAll(scene?.levels?.contents ?? scene?.levels ?? null);
-
-  try {
-    pushAll(scene?.getEmbeddedCollection?.("Level"));
-  } catch (_err) {
-    /** Older Foundry versions do not expose Level as an embedded document collection. */
-  }
-
-  try {
-    push(scene?.initialLevel);
-  } catch (_err) {
-    /** Older Foundry versions do not expose this accessor. */
-  }
-
-  try {
-    push(scene?.firstLevel);
-  } catch (_err) {
-    /** Older Foundry versions do not expose this accessor. */
-  }
-
-  try {
-    if (!scene?.id || canvas?.scene?.id === scene.id) push(canvas?.level);
-  } catch (_err) {
-    /** The canvas may not be ready while flags are being prepared. */
-  }
-
-  try {
-    pushAll(scene?.availableLevels);
-  } catch (_err) {
-    /** Available levels are a useful V14 fallback, but may depend on user/canvas state. */
-  }
-
-  return levels;
+  return fxmGetSceneLevelsPublic(scene);
 }
 
 function getSceneLevelIds(scene = canvas?.scene ?? null) {
@@ -1309,7 +1389,7 @@ export function resolveDocumentOcclusionElevation(document, { fallback = Infinit
   if (preferForeground) {
     const foregroundElevation = Number(getSceneForegroundElevation(scene));
     if (Number.isFinite(foregroundElevation)) {
-      const foregroundBound = foregroundElevation - OCCLUSION_EPSILON;
+      const foregroundBound = nextElevationDown(foregroundElevation);
       return Number.isFinite(elevation) ? Math.min(elevation, foregroundBound) : foregroundBound;
     }
   }
@@ -1665,30 +1745,176 @@ export function getCanvasLiveLevelSurfaceRevealState(
 }
 
 /**
+ * Return whether a Pixi render texture can be rebound safely.
+ *
+ * @param {PIXI.RenderTexture|null|undefined} texture
+ * @returns {boolean}
+ * @private
+ */
+function fxmCanBindRenderTexture(texture) {
+  if (!texture || texture.destroyed) return false;
+  const baseTexture = texture.baseTexture ?? null;
+  if (!baseTexture || baseTexture.destroyed) return false;
+  return true;
+}
+
+/**
+ * Prepare the renderer for a manual cached-container render.
+ *
+ * @param {PIXI.Renderer|null|undefined} renderer
+ * @returns {boolean}
+ * @private
+ */
+function fxmPrepareManualCachedContainerRender(renderer) {
+  const renderTextureSystem = renderer?.renderTexture ?? null;
+  if (!renderTextureSystem || typeof renderTextureSystem.bind !== "function") return false;
+
+  const current = renderTextureSystem.current ?? null;
+  if (!current || fxmCanBindRenderTexture(current)) return true;
+
+  try {
+    renderTextureSystem.bind(null);
+    return true;
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+    return false;
+  }
+}
+
+const cachedRenderTransformOrigin = { x: 0, y: 0 };
+const cachedRenderTransformPoint = { x: 0, y: 0 };
+
+/**
+ * Refresh the display transform hierarchy before direct rendering.
+ * @param {PIXI.Container|null|undefined} container
+ * @returns {boolean}
+ * @private
+ */
+function fxmRefreshCachedContainerTransformsForRender(container) {
+  if (!container || container.destroyed || typeof container.toGlobal !== "function") return false;
+
+  try {
+    container.toGlobal(cachedRenderTransformOrigin, cachedRenderTransformPoint, false);
+    for (const child of container.children ?? []) {
+      if (!child || child.destroyed || child.visible === false) continue;
+      child.updateTransform?.();
+    }
+    return true;
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+    return false;
+  }
+}
+
+/**
  * Flush pending perception and primary surface updates before sampling live native-Level overlays.
  *
- * Suppression masks rely on the currently rendered upper-level surfaces. Hover-fade and controlled-token reveals are driven by live primary state and can lag one frame behind document state unless pending render flags are applied first.
+ * Suppression masks rely on the currently rendered upper-level surfaces. Hover-fade and controlled-token reveals are driven by live primary state and can lag one frame behind document state unless pending render flags are applied first. When Foundry's core tickers have already run, callers may skip those broader updates while still flushing the auto-render-disabled occlusion mask if it is dirty.
  *
- * @returns {void}
+ * During canvas startup, Foundry can briefly report a ready canvas while Tile placeables are not yet attached to their owning layer. Applying perception render flags in that window can call Tile._refreshState against an undefined layer and black out the canvas. In that case the sync is deferred to a later frame.
+ *
+ * @param {{ presyncedCoreState?: boolean }} [options]
+ * @returns {{ ready: boolean, occlusionChanged: boolean, occlusionRevision: number }}
  */
-export function syncCanvasLiveLevelSurfaceState() {
+export function syncCanvasLiveLevelSurfaceState({ presyncedCoreState = false } = {}) {
+  const activeCanvas = globalThis.canvas ?? null;
+  const unavailable = () => ({
+    ready: false,
+    occlusionChanged: false,
+    occlusionRevision: canvasLiveLevelSurfaceOcclusionRevision,
+  });
+
   try {
-    canvas?.perception?.applyRenderFlags?.();
+    if (!activeCanvas?.ready || !activeCanvas?.scene || !activeCanvas?.primary) return unavailable();
+
+    if (!presyncedCoreState) {
+      const tileLayer = activeCanvas?.tiles ?? null;
+      if (!activeCanvas?.perception || !tileLayer || tileLayer.destroyed) return unavailable();
+
+      for (const tile of fxmCollectionValues(tileLayer.placeables ?? [])) {
+        if (!tile || tile.destroyed) continue;
+        const ownerLayer = tile.layer ?? null;
+        if (!ownerLayer || ownerLayer.destroyed || ownerLayer !== tileLayer) return unavailable();
+        if (!tile.document || tile.document.parent !== activeCanvas.scene) return unavailable();
+      }
+
+      activeCanvas.perception.applyRenderFlags?.();
+      activeCanvas.primary.update?.();
+      activeCanvas.primary.refreshPrimarySpriteMesh?.();
+    }
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+    return unavailable();
+  }
+
+  /**
+   * CanvasOcclusionMask is a CachedContainer with autoRender disabled. Rendering occurs only when Foundry marks the mask dirty so subsequent Level-texture capture samples the same SURFACE state as the primary canvas shader. Incrementing a local revision before rendering preserves an invalidation signal after CachedContainer#render clears renderDirty, including token-aperture movement that leaves public occluded-surface membership unchanged.
+   */
+  let occlusionChanged = false;
+  try {
+    const occlusionMask = activeCanvas?.masks?.occlusion ?? null;
+    const renderer = activeCanvas?.app?.renderer ?? null;
+    if (occlusionMask?.renderDirty && renderer && typeof occlusionMask.render === "function") {
+      if (!fxmCanBindRenderTexture(occlusionMask.renderTexture)) return unavailable();
+      if (!fxmPrepareManualCachedContainerRender(renderer)) return unavailable();
+      if (!fxmRefreshCachedContainerTransformsForRender(occlusionMask)) return unavailable();
+      occlusionChanged = true;
+      canvasLiveLevelSurfaceOcclusionRevision += 1;
+      occlusionMask.render(renderer);
+    }
   } catch (err) {
     logger.debug("FXMaster:", err);
   }
 
+  return {
+    ready: true,
+    occlusionChanged,
+    occlusionRevision: canvasLiveLevelSurfaceOcclusionRevision,
+  };
+}
+
+/**
+ * Synchronize weather masks before effect sampling.
+ * @param {{ presyncedCoreState?: boolean, forceDirty?: boolean }} [options]
+ * @returns {{ ready: boolean, occlusionChanged: boolean, occlusionRevision: number, depthChanged: boolean, depthRevision: number }}
+ */
+export function syncCanvasNativeWeatherOcclusionState({ presyncedCoreState = false, forceDirty = false } = {}) {
+  const liveState = syncCanvasLiveLevelSurfaceState({ presyncedCoreState });
+  const unavailable = () => ({
+    ready: false,
+    occlusionChanged: liveState?.occlusionChanged === true,
+    occlusionRevision: Number(liveState?.occlusionRevision ?? canvasLiveLevelSurfaceOcclusionRevision),
+    depthChanged: false,
+    depthRevision: canvasNativeWeatherDepthRevision,
+  });
+
+  if (liveState?.ready !== true) return unavailable();
+
+  const activeCanvas = globalThis.canvas ?? null;
+  let depthChanged = false;
   try {
-    canvas?.primary?.update?.();
+    const depthMask = activeCanvas?.masks?.depth ?? null;
+    const renderer = activeCanvas?.app?.renderer ?? null;
+    if (forceDirty && depthMask && "renderDirty" in depthMask) depthMask.renderDirty = true;
+    depthMask?._update?.();
+    if (depthMask?.renderDirty && renderer && typeof depthMask.render === "function") {
+      if (!fxmCanBindRenderTexture(depthMask.renderTexture)) return unavailable();
+      if (!fxmPrepareManualCachedContainerRender(renderer)) return unavailable();
+      depthChanged = true;
+      canvasNativeWeatherDepthRevision += 1;
+      depthMask.render(renderer);
+    }
   } catch (err) {
     logger.debug("FXMaster:", err);
   }
 
-  try {
-    canvas?.primary?.refreshPrimarySpriteMesh?.();
-  } catch (err) {
-    logger.debug("FXMaster:", err);
-  }
+  return {
+    ready: true,
+    occlusionChanged: liveState?.occlusionChanged === true,
+    occlusionRevision: Number(liveState?.occlusionRevision ?? canvasLiveLevelSurfaceOcclusionRevision),
+    depthChanged,
+    depthRevision: canvasNativeWeatherDepthRevision,
+  };
 }
 
 /**
@@ -1918,64 +2144,87 @@ export function isLiveLevelSurfaceRevealActive({
 }
 
 /**
+ * Monotonic revision of Foundry's rendered occlusion mask.
+ *
+ * The public occluded-surface set describes membership, but a controlled-token aperture can move within the same surface without changing that set. Foundry marks CanvasOcclusionMask dirty for those updates; preserving a revision when the dirty mask is rendered gives suppression masks a compact content-change signal without using raw pointer coordinates.
+ *
+ * @type {number}
+ * @private
+ */
+let canvasLiveLevelSurfaceOcclusionRevision = 0;
+let canvasNativeWeatherDepthRevision = 0;
+
+/**
+ * Same-frame cache for the sampled native-Level surface signature.
+ *
+ * Foundry applies primary and perception updates before FXMaster's low-priority tickers. Multiple FXMaster consumers can therefore reuse one sample for the same rendered frame instead of repeating Level-texture, Tile, and reveal-state inspection.
+ *
+ * @type {{ frameTime: number, values: Map<string, { key: string, forceRefresh: boolean }> }}
+ * @private
+ */
+const canvasLiveLevelSurfaceStateFrameCache = {
+  frameTime: Number.NaN,
+  values: new Map(),
+};
+
+/**
  * Inspect the current live native-Level surface state.
  *
- * In addition to a stable signature string, this reports whether any sampled surface is still in a transient hover-fade state so callers can keep refreshing suppression masks until the fade settles. Hover-driven native Level reveal also follows the live mouse position, so the signature includes the current canvas mouse point while upper visible Levels exist.
+ * The result includes a stable signature and optional transient hover-fade state for dynamic Tile-coverage refreshes. Scene-suppression consumers disable transient fade sampling because native Level SURFACE reveals are dirty-state driven and rebuilding a full viewport suppression mask for every frame of an unrelated Tile fade is prohibitively expensive. Raw mouse coordinates are excluded because Foundry changes the occluded-surface set only when the pointer crosses a relevant Define Surface boundary, while `canvas.mousePosition` changes for every pointer event anywhere on the canvas.
  *
  * @param {Scene|null|undefined} [scene=canvas?.scene ?? null]
- * @param {{ presynced?: boolean }} [options]
+ * @param {{ presynced?: boolean, includeTransientFades?: boolean }} [options]
  * @returns {{ key: string, forceRefresh: boolean }}
  */
-export function getCanvasLiveLevelSurfaceState(scene = canvas?.scene ?? null, { presynced = false } = {}) {
-  if (!presynced) syncCanvasLiveLevelSurfaceState();
+export function getCanvasLiveLevelSurfaceState(
+  scene = canvas?.scene ?? null,
+  { presynced = false, includeTransientFades = true } = {},
+) {
+  /**
+   * Foundry's occlusion mask remains an autoRender=false CachedContainer after core tickers apply primary and perception state. Dirty-only rendering keeps surface-aware suppression synchronized with the current alpha channel without repeating broader core updates.
+   */
+  const { occlusionRevision } = syncCanvasLiveLevelSurfaceState({ presyncedCoreState: presynced });
+
+  const currentLevel = getCanvasLevel();
+  const occlusionMask = canvas?.masks?.occlusion ?? null;
+  const occludedSurfaces = Array.from(occlusionMask?.occludedSurfaces ?? []);
+  const occludedSurfaceKeys = occludedSurfaces
+    .map((surface) => {
+      const key = String(surface?.key ?? "");
+      const regionId = String(surface?.region?.id ?? surface?.region?._id ?? "");
+      const elevation = Number(surface?.elevation ?? Number.NaN);
+      const elevationKey = Number.isFinite(elevation) ? elevation.toFixed(3) : "NaN";
+      return `${key}:${regionId}:${elevationKey}`;
+    })
+    .sort();
+  const frameTime = Number(canvas?.app?.ticker?.lastTime ?? Number.NaN);
+  const frameCacheKey = Number.isFinite(frameTime)
+    ? `${scene?.id ?? ""}:${currentLevel?.id ?? ""}:${includeTransientFades ? 1 : 0}:${frameTime.toFixed(
+        3,
+      )}:${occlusionRevision}:${occludedSurfaceKeys.join(",")}`
+    : "";
+  if (presynced && frameCacheKey) {
+    if (canvasLiveLevelSurfaceStateFrameCache.frameTime !== frameTime) {
+      canvasLiveLevelSurfaceStateFrameCache.frameTime = frameTime;
+      canvasLiveLevelSurfaceStateFrameCache.values.clear();
+    }
+    const cached = canvasLiveLevelSurfaceStateFrameCache.values.get(frameCacheKey);
+    if (cached) return cached;
+  }
 
   const parts = [];
   let forceRefresh = false;
-  const currentLevel = getCanvasLevel();
   const hoverFadeElevation = getCanvasPrimaryHoverFadeElevation();
   const hoverKey = Number.isFinite(hoverFadeElevation) ? hoverFadeElevation.toFixed(3) : "NaN";
   parts.push(`scene:${scene?.id ?? ""}`);
   parts.push(`current:${currentLevel?.id ?? ""}`);
   parts.push(`hover:${hoverKey}`);
+  parts.push(`occlusion-revision:${occlusionRevision}`);
 
-  const currentBottom = Number(currentLevel?.elevation?.bottom ?? currentLevel?.bottom ?? Number.NaN);
-  const currentTop = Number(currentLevel?.elevation?.top ?? currentLevel?.top ?? Number.NaN);
-  const hasVisibleUpperLevels =
-    !!currentLevel &&
-    getSceneLevels(scene).some((level) => {
-      if (!level?.id || level.id === currentLevel.id) return false;
-      if (!(level?.isVisible || level?.isView)) return false;
-
-      const bottom = Number(level?.elevation?.bottom ?? level?.bottom ?? Number.NaN);
-      const top = Number(level?.elevation?.top ?? level?.top ?? Number.NaN);
-
-      if (Number.isFinite(bottom) && Number.isFinite(currentBottom)) return bottom > currentBottom + 1e-4;
-      if (Number.isFinite(top) && Number.isFinite(currentTop)) return top > currentTop + 1e-4;
-      if (Number.isFinite(bottom) && !Number.isFinite(currentBottom)) return true;
-      if (!Number.isFinite(bottom) && Number.isFinite(top) && !Number.isFinite(currentTop)) return true;
-      return false;
-    });
-
-  const mousePosition = canvas?.mousePosition ?? null;
-  if (hasVisibleUpperLevels && mousePosition) {
-    const mx = Number(mousePosition.x ?? Number.NaN);
-    const my = Number(mousePosition.y ?? Number.NaN);
-    if (Number.isFinite(mx) && Number.isFinite(my)) {
-      parts.push(`mouse:${Math.round(mx)}:${Math.round(my)}`);
-    }
-  }
-
-  for (const token of canvas?.tokens?.controlled ?? []) {
-    if (!token || token.destroyed || token?.document?.hidden) continue;
-    const tokenId = token?.id ?? token?.document?.id ?? "";
-    if (!tokenId) continue;
-    const center = token?.center ?? token?.bounds?.center ?? null;
-    const cx = Number(center?.x ?? token?.x ?? 0) || 0;
-    const cy = Number(center?.y ?? token?.y ?? 0) || 0;
-    const elevation = Number(token?.elevation ?? token?.document?.elevation ?? Number.NaN);
-    const elevKey = Number.isFinite(elevation) ? elevation.toFixed(3) : "NaN";
-    parts.push(`ctl:${tokenId}:${cx.toFixed(2)}:${cy.toFixed(2)}:${elevKey}`);
-  }
+  /**
+   * Foundry exposes the exact live Define Surface entries written into the CanvasOcclusionMask alpha channel. Direct key inclusion allows token selection, token movement, hover, and token-layer state to invalidate suppression masks without reconstructing core's surface-selection algorithm.
+   */
+  parts.push(`occluded-surfaces:${occludedSurfaceKeys.join(",")}`);
 
   for (const level of getSceneLevels(scene)) {
     const levelId = level?.id ?? "";
@@ -1987,27 +2236,14 @@ export function getCanvasLiveLevelSurfaceState(scene = canvas?.scene ?? null, { 
     parts.push(`lvl:${levelId}:${level?.isView ? 1 : 0}:${level?.isVisible ? 1 : 0}:${bottomKey}:${topKey}`);
   }
 
-  for (const [index, mesh] of Array.from(canvas?.primary?.levelTextures ?? []).entries()) {
+  for (const [index, mesh] of fxmGetPrimaryLevelTextureMeshes().entries()) {
     if (!mesh) continue;
     const object = mesh?.object ?? null;
     const liveMesh = object?.mesh ?? object?.primaryMesh ?? object?.sprite ?? mesh;
-    const document = mesh?.level?.document ?? mesh?.level ?? object?.document ?? object ?? null;
-    const level = mesh?.level ?? object?.level ?? document?.level ?? null;
-    const elevation = Number(
-      mesh?.elevation ??
-        document?.elevation?.bottom ??
-        document?.elevation ??
-        object?.document?.elevation?.bottom ??
-        object?.document?.elevation ??
-        Number.NaN,
-    );
-    const revealState = getCanvasLiveLevelSurfaceRevealState(liveMesh, {
-      mesh: liveMesh,
-      object,
-      document,
-      level,
-      elevation,
-    });
+    /**
+     * Foundry v14 exposes Define Surface hover and token membership through CanvasOcclusionMask#occludedSurfaces. Full-scene Level textures require per-frame sampling only for live fade state and rendered mesh properties, without repeated geometric mouse or controlled-token hit tests.
+     */
+    const hoverFadeState = fxmGetPublicHoverFadeState(liveMesh) ?? fxmGetPublicHoverFadeState(mesh) ?? null;
     const levelId =
       mesh?.level?.id ??
       mesh?.level?.document?.id ??
@@ -2020,9 +2256,18 @@ export function getCanvasLiveLevelSurfaceState(scene = canvas?.scene ?? null, { 
         liveMesh?.shader?.uniforms?.fadeOcclusion ??
         mesh?.fadeOcclusion ??
         mesh?.shader?.uniforms?.fadeOcclusion ??
-        revealState.fadeOcclusion ??
+        hoverFadeState?.occlusion ??
         0,
     );
+    const fading = hoverFadeState?.fading === true;
+    const faded = hoverFadeState?.faded === true;
+    if (
+      includeTransientFades &&
+      (fading || (Number.isFinite(fadeOcclusion) && fadeOcclusion > 0.001 && fadeOcclusion < 0.999))
+    ) {
+      forceRefresh = true;
+    }
+
     const textureId =
       liveMesh?.texture?.baseTexture?.cacheId ??
       liveMesh?.texture?.baseTexture?.resource?.url ??
@@ -2036,18 +2281,21 @@ export function getCanvasLiveLevelSurfaceState(scene = canvas?.scene ?? null, { 
     const visible = liveMesh?.visible === false ? 0 : 1;
     const renderable = liveMesh?.renderable === false ? 0 : 1;
     const alphaKey = Number.isFinite(alpha) ? alpha.toFixed(3) : "NaN";
-    const fadeKey = Number.isFinite(fadeOcclusion) ? fadeOcclusion.toFixed(3) : "NaN";
+    const fadeKey = includeTransientFades
+      ? Number.isFinite(fadeOcclusion)
+        ? fadeOcclusion.toFixed(3)
+        : "NaN"
+      : faded
+      ? "settled-faded"
+      : "settled-visible";
     parts.push(
-      `lt:${levelId}:${textureId}:${visible}:${renderable}:${alphaKey}:${fadeKey}:${revealState.revealed ? 1 : 0}:${
-        revealState.hovered ? 1 : 0
-      }:${revealState.explicit ? 1 : 0}:${revealState.faded ? 1 : 0}`,
+      `lt:${levelId}:${textureId}:${visible}:${renderable}:${alphaKey}:${fadeKey}:${
+        includeTransientFades && fading ? 1 : 0
+      }:${faded ? 1 : 0}`,
     );
   }
 
-  const tileMeshes =
-    typeof canvas?.primary?.tiles?.values === "function"
-      ? Array.from(canvas.primary.tiles.values())
-      : Array.from(canvas?.primary?.tiles ?? []);
+  const tileMeshes = fxmGetPrimaryTileMeshes();
   for (const [index, mesh] of tileMeshes.entries()) {
     if (!mesh) continue;
     const tileObject = fxmLinkedPlaceableFromDisplayObject(mesh);
@@ -2081,10 +2329,25 @@ export function getCanvasLiveLevelSurfaceState(scene = canvas?.scene ?? null, { 
         revealState.fadeOcclusion ??
         0,
     );
+    if (
+      includeTransientFades &&
+      (revealState.fading || (Number.isFinite(fadeOcclusion) && fadeOcclusion > 0.001 && fadeOcclusion < 0.999))
+    ) {
+      forceRefresh = true;
+    }
+
     const visible = liveMesh?.visible === false ? 0 : 1;
     const renderable = liveMesh?.renderable === false ? 0 : 1;
     const alphaKey = Number.isFinite(alpha) ? alpha.toFixed(3) : "NaN";
-    const fadeKey = Number.isFinite(fadeOcclusion) ? fadeOcclusion.toFixed(3) : "NaN";
+    const fadeKey = includeTransientFades
+      ? Number.isFinite(fadeOcclusion)
+        ? fadeOcclusion.toFixed(3)
+        : "NaN"
+      : revealState.faded
+      ? "settled-faded"
+      : revealState.revealed
+      ? "settled-revealed"
+      : "settled-visible";
     parts.push(
       `tile:${tileId}:${levelId}:${visible}:${renderable}:${alphaKey}:${fadeKey}:${revealState.revealed ? 1 : 0}:${
         revealState.hovered ? 1 : 0
@@ -2092,7 +2355,9 @@ export function getCanvasLiveLevelSurfaceState(scene = canvas?.scene ?? null, { 
     );
   }
 
-  return { key: parts.join("|"), forceRefresh };
+  const value = { key: parts.join("|"), forceRefresh };
+  if (presynced && frameCacheKey) canvasLiveLevelSurfaceStateFrameCache.values.set(frameCacheKey, value);
+  return value;
 }
 
 /**
@@ -2101,7 +2366,7 @@ export function getCanvasLiveLevelSurfaceState(scene = canvas?.scene ?? null, { 
  * Scene suppression masks need to refresh when visible level overlays change without a camera move, such as hover-fade reveals or controlled-token transparency on upper levels.
  *
  * @param {Scene|null|undefined} [scene=canvas?.scene ?? null]
- * @param {{ presynced?: boolean }} [options]
+ * @param {{ presynced?: boolean, includeTransientFades?: boolean }} [options]
  * @returns {string}
  */
 export function buildCanvasLiveLevelSurfaceSignature(scene = canvas?.scene ?? null, options = {}) {

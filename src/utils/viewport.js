@@ -207,6 +207,74 @@ export function snappedStageMatrix(stage = canvas.stage) {
 }
 
 /**
+ * Project a rectangle through an affine matrix into a reusable quadrilateral.
+ * @param {PIXI.Matrix} matrix
+ * @param {{x:number,y:number,width:number,height:number}} rect
+ * @param {Float32Array|number[]} [output]
+ * @returns {Float32Array|number[]}
+ */
+export function projectRectToQuad(matrix, rect, output = new Float32Array(8)) {
+  const x0 = Number(rect?.x) || 0;
+  const y0 = Number(rect?.y) || 0;
+  const x1 = x0 + (Number(rect?.width) || 0);
+  const y1 = y0 + (Number(rect?.height) || 0);
+  const M = matrix ?? PIXI.Matrix.IDENTITY;
+
+  output[0] = M.a * x0 + M.c * y0 + M.tx;
+  output[1] = M.b * x0 + M.d * y0 + M.ty;
+  output[2] = M.a * x1 + M.c * y0 + M.tx;
+  output[3] = M.b * x1 + M.d * y0 + M.ty;
+  output[4] = M.a * x1 + M.c * y1 + M.tx;
+  output[5] = M.b * x1 + M.d * y1 + M.ty;
+  output[6] = M.a * x0 + M.c * y1 + M.tx;
+  output[7] = M.b * x0 + M.d * y1 + M.ty;
+  return output;
+}
+
+/**
+ * Return axis-aligned bounds for a projected quadrilateral.
+ * @param {ArrayLike<number>} quad
+ * @param {{left?:number,top?:number,right?:number,bottom?:number,width?:number,height?:number}} [output]
+ * @returns {{left:number,top:number,right:number,bottom:number,width:number,height:number}}
+ */
+export function projectedQuadBounds(quad, output = {}) {
+  let left = Infinity;
+  let top = Infinity;
+  let right = -Infinity;
+  let bottom = -Infinity;
+
+  for (let index = 0; index < 8; index += 2) {
+    const x = Number(quad?.[index]);
+    const y = Number(quad?.[index + 1]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    left = Math.min(left, x);
+    top = Math.min(top, y);
+    right = Math.max(right, x);
+    bottom = Math.max(bottom, y);
+  }
+
+  if (![left, top, right, bottom].every(Number.isFinite)) left = top = right = bottom = 0;
+  output.left = left;
+  output.top = top;
+  output.right = right;
+  output.bottom = bottom;
+  output.width = Math.max(0, right - left);
+  output.height = Math.max(0, bottom - top);
+  return output;
+}
+
+/**
+ * Return whether a matrix keeps horizontal and vertical axes aligned.
+ * @param {PIXI.Matrix} matrix
+ * @param {number} [epsilon=1e-6]
+ * @returns {boolean}
+ */
+export function matrixPreservesAxisAlignment(matrix, epsilon = 1e-6) {
+  const M = matrix ?? PIXI.Matrix.IDENTITY;
+  return Math.abs(Number(M.b) || 0) <= epsilon && Math.abs(Number(M.c) || 0) <= epsilon;
+}
+
+/**
  * Compare two camera matrix snapshots component-wise within an epsilon tolerance. Returns `true` when any component differs by more than `eps`, or when `last` is nullish (first frame).
  * @param {{a:number, b:number, c:number, d:number, tx:number, ty:number}} current
  * @param {{a:number, b:number, c:number, d:number, tx:number, ty:number}|null|undefined} last

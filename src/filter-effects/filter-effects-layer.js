@@ -62,79 +62,6 @@ const FILTER_TYPE = `${packageId}.filterEffectsRegion`;
  */
 const _rendererRoundPixelsState = new WeakMap();
 
-/**
- * WeakMap cache for geometry keys. Keyed on the shapes array reference so the entry is automatically collected when the Foundry document updates its shapes (producing a new array object).
- * @type {WeakMap<object, string>}
- */
-const _geomKeyCache = new WeakMap();
-
-/**
- * Build a stable string key representing the geometry of a set of region shapes. The key is used to detect when an SDF texture needs rebuilding. Results are cached on the shapes array reference via a {@link WeakMap} so repeated calls during the same frame (or subsequent frames with unchanged geometry) skip the full serialisation walk.
- * @param {object[]} shapes - Array of shape descriptors from a region document.
- * @returns {string} A comma-separated canonical representation of the shapes.
- */
-function _geomKeyFromShapes(shapes) {
-  if (shapes && typeof shapes === "object" && _geomKeyCache.has(shapes)) {
-    return _geomKeyCache.get(shapes);
-  }
-
-  const parts = [];
-
-  const fmtNum = (n) => {
-    const v = Number(n);
-    if (!Number.isFinite(v)) return "";
-    return Math.round(v * 10000) / 10000;
-  };
-
-  const pushArray = (arr, prefix) => {
-    if (!Array.isArray(arr) || !arr.length) return;
-    if (typeof arr[0] === "number") {
-      parts.push(prefix);
-      for (const v of arr) parts.push(fmtNum(v));
-      return;
-    }
-    if (typeof arr[0] === "object") {
-      parts.push(prefix);
-      for (const p of arr) {
-        if (!p) continue;
-        parts.push(fmtNum(p.x), fmtNum(p.y));
-      }
-    }
-  };
-
-  const pushObjectPrimitives = (obj, prefix = "", depth = 0) => {
-    if (!obj || typeof obj !== "object") return;
-    const keys = Object.keys(obj).sort();
-    for (const k of keys) {
-      if (k === "type" || k === "hole") continue;
-      const v = obj[k];
-      if (v == null) continue;
-      const key = prefix ? `${prefix}.${k}` : k;
-      const t = typeof v;
-      if (t === "number") parts.push(key, fmtNum(v));
-      else if (t === "boolean") parts.push(key, v ? 1 : 0);
-      else if (t === "string") parts.push(key, v);
-      else if (Array.isArray(v)) pushArray(v, key);
-      else if (t === "object" && depth < 1) pushObjectPrimitives(v, key, depth + 1);
-    }
-  };
-
-  for (const s of shapes ?? []) {
-    if (!s) continue;
-    const data = typeof s.toObject === "function" ? s.toObject() : s;
-    const type = data?.type ?? s.type ?? "unknown";
-    const hole = !!(data?.hole ?? s.hole);
-    parts.push(type, hole ? 1 : 0);
-    pushObjectPrimitives(data);
-  }
-
-  const key = parts.join(",");
-  if (shapes && typeof shapes === "object") {
-    _geomKeyCache.set(shapes, key);
-  }
-  return key;
-}
-
 function _regionHasHoleShapes(placeable) {
   if (regionHasRestrictedGeometry(placeable)) return false;
   return (placeable?.document?.shapes ?? []).some((s) => !!s?.hole);
@@ -1179,7 +1106,15 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       }
 
       const options = normalize(rawOptions ?? {});
-      const filter = new FilterClass(options, id);
+      const runtimeContext = {
+        scope: "region",
+        sceneId: canvas?.scene?.id ?? null,
+        regionId,
+        behaviorId: behavior.id,
+        effectId: id,
+        type,
+      };
+      const filter = new FilterClass(options, id, runtimeContext);
       const wantBelow = _belowTokensEnabled(options?.belowTokens);
       const wantBelowTiles = _belowTilesEnabled(options?.belowTiles);
       const wantBelowForeground = _belowForegroundEnabled(options?.belowForeground);
@@ -1188,6 +1123,8 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       filter.__fxmBelowTiles = wantBelowTiles;
       filter.__fxmBelowForeground = wantBelowForeground;
       filter.__fxmStackUid = uid;
+      filter.__fxmRuntimeContext = runtimeContext;
+      filter.onFXMasterRuntimeContext?.(runtimeContext);
 
       if (filter.uniforms) {
         const u = filter.uniforms;
@@ -1205,6 +1142,9 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
         u.deviceToCss = deviceToCss;
         u.maskReady = 1.0;
         u.maskSoft = 0.0;
+        if ("maskWorldReady" in u) u.maskWorldReady = 0.0;
+        if ("uMaskUvFromWorld" in u) u.uMaskUvFromWorld = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+        if ("maskTexelUV" in u) u.maskTexelUV = new Float32Array([1 / Math.max(1, cssW), 1 / Math.max(1, cssH)]);
         filter.__fxmMaskVariants = {
           baseMaskRT: maskRT ?? null,
           cutoutTokensRT: maskCutoutTokensRT ?? null,
@@ -1634,6 +1574,9 @@ export class FilterEffectsLayer extends BaseEffectsLayer {
       u.deviceToCss = deviceToCss;
       u.maskReady = 1.0;
       u.maskSoft = 0.0;
+      if ("maskWorldReady" in u) u.maskWorldReady = 0.0;
+      if ("uMaskUvFromWorld" in u) u.uMaskUvFromWorld = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+      if ("maskTexelUV" in u) u.maskTexelUV = new Float32Array([1 / Math.max(1, cssW), 1 / Math.max(1, cssH)]);
       f.__fxmMaskVariants = {
         baseMaskRT: newRT ?? null,
         cutoutTokensRT: entry.maskCutoutTokensRT ?? null,

@@ -44,7 +44,11 @@ export function pixelsArea() {
  * @param {*} def
  * @returns {number|*}
  */
-export const clampRange = (v, lo, hi, def) => (Number.isFinite((v = Number(v))) ? Math.min(Math.max(v, lo), hi) : def);
+export const clampRange = (v, lo, hi, def) => {
+  v = Number(v);
+  if (!Number.isFinite(v)) return def;
+  return typeof Math.clamp === "function" ? Math.clamp(v, lo, hi) : Math.min(Math.max(v, lo), hi);
+};
 
 /**
  * Clamp a value to the inclusive range [0, 1].
@@ -97,6 +101,7 @@ export function normalizeDirectionDegrees(value, fallback = 0) {
   const n = Number(value);
   const base = Number.isFinite(n) ? n : Number(fallback);
   const safe = Number.isFinite(base) ? base : 0;
+  if (typeof Math.normalizeDegrees === "function") return Math.normalizeDegrees(safe);
   return ((safe % 360) + 360) % 360;
 }
 

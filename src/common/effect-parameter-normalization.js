@@ -25,6 +25,10 @@ const NORMALIZED_RANGE_KEYS = new Set([
   "scrollSpeed",
   "spin",
   "speed",
+  "backgroundLeafSize",
+  "backgroundParticleSize",
+  "splashDensity",
+  "splashScale",
   "wobbleFrequency",
 ]);
 
@@ -116,7 +120,7 @@ export function compressNormalizedRangeValue(parameter, value) {
   const internalMax = Number(range.max);
   if (![uiMin, uiMax, internalMin, internalMax].every(Number.isFinite) || internalMax <= internalMin) return raw;
 
-  if (raw === 0 && internalMin > 0) return 0;
+  if (raw === 0 && internalMin > 0 && uiMin === 0) return 0;
 
   const t = (clampRange(raw, internalMin, internalMax, internalMin) - internalMin) / (internalMax - internalMin);
   const decimals = Number(parameter.decimals ?? 3);
@@ -141,7 +145,7 @@ export function expandNormalizedRangeValue(parameter, value) {
   const internalMax = Number(range.max);
   if (![uiMin, uiMax, internalMin, internalMax].every(Number.isFinite) || internalMax <= internalMin) return raw;
 
-  if (raw === 0 && internalMin > 0) return 0;
+  if (raw === 0 && internalMin > 0 && uiMin === 0) return 0;
   if (raw > uiMax && raw <= internalMax) return raw;
 
   const t = (clampRange(raw, uiMin, uiMax, uiMin) - uiMin) / (uiMax - uiMin || 1);
@@ -161,7 +165,8 @@ function normalizeRangeParameter(key, parameter) {
   const internalMin = Number(parameter.min);
   const internalMax = Number(parameter.max);
   const internalValue = Number(parameter.value);
-  const uiMin = normalizedUiMinForInternalMin(internalMin);
+  const isGroundParticleSize = key === "backgroundLeafSize" || key === "backgroundParticleSize";
+  const uiMin = isGroundParticleSize ? 0.01 : normalizedUiMinForInternalMin(internalMin);
   const uiMax = 1;
   const { step, decimals } = normalizedUiStep(uiMin);
 
@@ -178,6 +183,7 @@ function normalizeRangeParameter(key, parameter) {
       step: Number(parameter.step),
       decimals: Number(parameter.decimals),
     },
+    ...(isGroundParticleSize ? { __fxmAcceptLegacyZero: true } : {}),
   };
 
   normalized.value = compressNormalizedRangeValue(normalized, internalValue);
@@ -287,7 +293,7 @@ export function scaleNormalizedStoredRangeValue(effectDefinition, key, value, mu
   const scale = Number(multiplier);
   if (!Number.isFinite(numeric) || !Number.isFinite(scale)) return value;
   if (!parameter?.__fxmInternalRange) return numeric * scale;
-  if (numeric === 0 && Number(parameter.__fxmInternalRange.min) > 0) return 0;
+  if (numeric === 0 && Number(parameter.__fxmInternalRange.min) > 0 && Number(parameter.min ?? 0) === 0) return 0;
 
   const internal = expandNormalizedRangeValue(parameter, numeric);
   const range = parameter.__fxmInternalRange;
@@ -370,8 +376,6 @@ function resolveStaticDescriptor(target, key) {
 /**
  * Insert missing render-order parameters in a consistent order.
  *
- * Placement controls always lead, followed by scene-only level selection, then the effect's own authored parameters, with darkness activation controls anchored at the bottom of the parameter list.
- *
  * @param {"particle"|"filter"} kind
  * @param {object|null|undefined} source
  * @returns {object}
@@ -381,9 +385,74 @@ function normalizeParameterMap(kind, source) {
   const defaults = getRenderOrderParameters(kind);
   const leadingOrder = ["belowTokens", "belowTiles", "belowForeground", "levels"];
   const trailingOrder = ["darknessActivationEnabled", "darknessActivationRange"];
-  const specialOrder = [...leadingOrder, ...trailingOrder];
+  const hasBackgroundToggle = Object.hasOwn(parameters, "backgroundEnabled");
+  const backgroundOrder = hasBackgroundToggle
+    ? [
+        "backgroundEnabled",
+        ...Object.keys(parameters).filter((key) => key !== "backgroundEnabled" && key.startsWith("background")),
+      ]
+    : [];
+  const hasSoundFxToggle = Object.hasOwn(parameters, "soundFxEnabled");
+  const soundFxOrder = hasSoundFxToggle ? ["soundFxEnabled", "soundFxManualSoundIds"] : [];
+  const hasTokenTrailsToggle = Object.hasOwn(parameters, "tokenTrailsEnabled");
+  const tokenTrailsOrder = hasTokenTrailsToggle
+    ? [
+        "tokenTrailsEnabled",
+        ...Object.keys(parameters).filter((key) => key !== "tokenTrailsEnabled" && key.startsWith("tokenTrail")),
+      ]
+    : [];
+  const hasTokenAvoidanceToggle = Object.hasOwn(parameters, "tokenAvoidance");
+  const tokenAvoidanceOrder = hasTokenAvoidanceToggle
+    ? [
+        "tokenAvoidance",
+        ...Object.keys(parameters).filter((key) => key !== "tokenAvoidance" && key.startsWith("tokenAvoidance")),
+      ]
+    : [];
+  const hasBurnTokensToggle = Object.hasOwn(parameters, "burnTokens");
+  const burnTokensOrder = hasBurnTokensToggle
+    ? ["burnTokens", ...Object.keys(parameters).filter((key) => key !== "burnTokens" && key.startsWith("burnToken"))]
+    : [];
+  const directionOrder = ["directionalMovement", "direction", "synchronizedDirection", "spread", "spawnMode"].filter(
+    (key) => Object.hasOwn(parameters, key),
+  );
+  const specialOrder = new Set([
+    ...leadingOrder,
+    ...soundFxOrder,
+    ...directionOrder,
+    ...backgroundOrder,
+    ...tokenTrailsOrder,
+    ...tokenAvoidanceOrder,
+    ...burnTokensOrder,
+    ...trailingOrder,
+  ]);
 
   const normalized = {};
+  const hasTintParameter = Object.hasOwn(parameters, "tint") || Object.hasOwn(parameters, "color");
+  let insertedSoundFx = false;
+  let insertedDirection = false;
+  const insertSoundFx = () => {
+    if (insertedSoundFx) return;
+    insertedSoundFx = true;
+    for (const key of soundFxOrder) {
+      if (Object.hasOwn(parameters, key)) normalized[key] = normalizeRangeParameter(key, parameters[key]);
+      else {
+        normalized[key] = {
+          label: "FXMASTER.Params.SoundFxManualSoundIds",
+          tooltip: "FXMASTER.ParamTooltips.SoundFxManualSoundIds",
+          type: "multi-select",
+          value: [],
+          allowEmpty: true,
+          showWhen: { soundFxEnabled: true },
+        };
+      }
+    }
+  };
+
+  const insertDirection = () => {
+    if (insertedDirection) return;
+    insertedDirection = true;
+    for (const key of directionOrder) normalized[key] = normalizeRangeParameter(key, parameters[key]);
+  };
 
   for (const key of leadingOrder) {
     if (Object.hasOwn(parameters, key)) normalized[key] = normalizeRangeParameter(key, parameters[key]);
@@ -391,8 +460,30 @@ function normalizeParameterMap(kind, source) {
   }
 
   for (const [key, value] of Object.entries(parameters)) {
-    if (specialOrder.includes(key)) continue;
+    if (specialOrder.has(key)) continue;
+    if (key === "scale") insertDirection();
+    if (!hasTintParameter && value?.type === "checkbox") insertSoundFx();
     normalized[key] = normalizeRangeParameter(key, value);
+    if (key === "tint" || key === "color") insertSoundFx();
+  }
+
+  insertSoundFx();
+  insertDirection();
+
+  for (const key of backgroundOrder) {
+    normalized[key] = normalizeRangeParameter(key, parameters[key]);
+  }
+
+  for (const key of tokenTrailsOrder) {
+    normalized[key] = normalizeRangeParameter(key, parameters[key]);
+  }
+
+  for (const key of tokenAvoidanceOrder) {
+    normalized[key] = normalizeRangeParameter(key, parameters[key]);
+  }
+
+  for (const key of burnTokensOrder) {
+    normalized[key] = normalizeRangeParameter(key, parameters[key]);
   }
 
   for (const key of trailingOrder) {
@@ -411,23 +502,32 @@ function normalizeParameterMap(kind, source) {
  * @returns {void}
  */
 function normalizeEffectDefinition(effectDefinition, kind) {
-  if (!effectDefinition || effectDefinition.__fxmRenderOrderParametersNormalized) return;
+  if (!effectDefinition || hasOwn(effectDefinition, "__fxmRenderOrderParametersNormalized")) return;
 
+  const ownDescriptor = Object.getOwnPropertyDescriptor(effectDefinition, "parameters");
   const descriptorInfo = resolveStaticDescriptor(effectDefinition, "parameters");
-  const descriptor = descriptorInfo?.descriptor ?? null;
-  const originalGetter = typeof descriptor?.get === "function" ? descriptor.get.bind(effectDefinition) : null;
+  const descriptor = ownDescriptor ?? descriptorInfo?.descriptor ?? null;
+
+  if (!ownDescriptor && descriptorInfo?.owner && hasOwn(descriptorInfo.owner, "__fxmRenderOrderParametersNormalized")) {
+    markEffectParametersNormalized(effectDefinition);
+    return;
+  }
+
+  const originalGetter = typeof descriptor?.get === "function" ? descriptor.get : null;
   const originalValue = originalGetter ? null : effectDefinition.parameters;
 
-  const readParameters = () => {
+  const readParameters = (receiver) => {
     try {
-      return originalGetter ? originalGetter() : originalValue;
+      return originalGetter ? originalGetter.call(receiver ?? effectDefinition) : originalValue;
     } catch (err) {
       logger.debug("FXMaster: failed to read effect parameters", err);
       return originalValue ?? {};
     }
   };
 
-  const getNormalizedParameters = () => normalizeParameterMap(kind, readParameters());
+  function getNormalizedParameters() {
+    return normalizeParameterMap(kind, readParameters(this));
+  }
 
   try {
     Object.defineProperty(effectDefinition, "parameters", {
@@ -438,13 +538,23 @@ function normalizeEffectDefinition(effectDefinition, kind) {
   } catch (err) {
     logger.debug("FXMaster: failed to define normalized effect parameters", err);
     try {
-      effectDefinition.parameters = getNormalizedParameters();
+      effectDefinition.parameters = getNormalizedParameters.call(effectDefinition);
     } catch (assignmentErr) {
       logger.debug("FXMaster: failed to assign normalized effect parameters", assignmentErr);
       return;
     }
   }
 
+  markEffectParametersNormalized(effectDefinition);
+}
+
+/**
+ * Mark an effect definition as normalized without inheriting a superclass marker.
+ *
+ * @param {object} effectDefinition
+ * @returns {void}
+ */
+function markEffectParametersNormalized(effectDefinition) {
   try {
     Object.defineProperty(effectDefinition, "__fxmRenderOrderParametersNormalized", {
       value: true,

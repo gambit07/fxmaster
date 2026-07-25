@@ -54,9 +54,10 @@ export function FXMasterFilterEffectMixin(Base) {
       super(...args);
       this.id = id;
       this.enabled = false;
+      this.__fxmFilterContext = options?.__fxmFilterContext ?? null;
 
       try {
-        const r = canvas?.app?.renderer;
+        const r = this.__fxmFilterContext?.renderer ?? canvas?.app?.renderer;
         this.resolution = r?.resolution || 1;
         this.filterArea = new PIXI.Rectangle(0, 0, 1, 1);
       } catch {
@@ -151,12 +152,13 @@ export function FXMasterFilterEffectMixin(Base) {
     lockViewport(opts = {}) {
       const { setCamFrac = true, setDeviceToCss = true } = opts;
 
-      const r = canvas?.app?.renderer;
+      const context = this.__fxmFilterContext ?? null;
+      const r = context?.renderer ?? canvas?.app?.renderer;
       if (!r) return;
 
-      const { cssW, cssH } = getCssViewportMetrics();
-      const viewportWidth = cssW;
-      const viewportHeight = cssH;
+      const metrics = context ? null : getCssViewportMetrics();
+      const viewportWidth = context ? Math.max(1, Number(context.width) || 1) : metrics.cssW;
+      const viewportHeight = context ? Math.max(1, Number(context.height) || 1) : metrics.cssH;
 
       const sw = Math.max(1, viewportWidth | 0);
       const sh = Math.max(1, viewportHeight | 0);
@@ -191,11 +193,23 @@ export function FXMasterFilterEffectMixin(Base) {
         u.deviceToCss = v;
       }
 
-      if (setCamFrac && "camFrac" in u && canvas?.stage?.transform) {
-        const { camFracX, camFracY } = getSnappedCameraCss();
+      if ("viewSize" in u) {
+        const arr = u.viewSize instanceof Float32Array && u.viewSize.length >= 2 ? u.viewSize : new Float32Array(2);
+        arr[0] = sw;
+        arr[1] = sh;
+        u.viewSize = arr;
+      }
+
+      if (setCamFrac && "camFrac" in u) {
         const arr = u.camFrac instanceof Float32Array && u.camFrac.length >= 2 ? u.camFrac : new Float32Array(2);
-        arr[0] = camFracX;
-        arr[1] = camFracY;
+        if (context) {
+          arr[0] = 0;
+          arr[1] = 0;
+        } else if (canvas?.stage?.transform) {
+          const { camFracX, camFracY } = getSnappedCameraCss();
+          arr[0] = camFracX;
+          arr[1] = camFracY;
+        }
         u.camFrac = arr;
       }
     }
@@ -204,9 +218,10 @@ export function FXMasterFilterEffectMixin(Base) {
       const u = this.uniforms || {};
       if (!("srcFrame" in u)) return;
 
-      const r = canvas?.app?.renderer;
-      const wCSS = Math.max(1, Number(r?.screen?.width) || 1);
-      const hCSS = Math.max(1, Number(r?.screen?.height) || 1);
+      const context = this.__fxmFilterContext ?? null;
+      const r = context?.renderer ?? canvas?.app?.renderer;
+      const wCSS = Math.max(1, Number(context?.width) || Number(r?.screen?.width) || 1);
+      const hCSS = Math.max(1, Number(context?.height) || Number(r?.screen?.height) || 1);
 
       const A = filterSystem?.activeState ?? currentState;
       const sf = A?.sourceFrame;
@@ -260,12 +275,18 @@ export function FXMasterFilterEffectMixin(Base) {
       this.lockAndSync(filterSystem, currentState, lockOpts);
 
       if (this.uniforms && "uCssToWorld" in this.uniforms) {
-        const M = canvas?.stage ? snappedStageMatrix().clone().invert() : PIXI.Matrix.IDENTITY.clone();
+        const context = this.__fxmFilterContext ?? null;
+        const M =
+          context?.cssToWorld instanceof PIXI.Matrix
+            ? context.cssToWorld
+            : canvas?.stage
+            ? snappedStageMatrix().clone().invert()
+            : PIXI.Matrix.IDENTITY.clone();
         this.uniforms.uCssToWorld = mat3FromPixi(M);
       }
 
       try {
-        const r = canvas?.app?.renderer;
+        const r = this.__fxmFilterContext?.renderer ?? canvas?.app?.renderer;
 
         const area = this.filterArea instanceof PIXI.Rectangle ? this.filterArea : r?.screen ?? { width: 1, height: 1 };
         const wCSS = Math.max(1, Number(area.width) || 1);
@@ -289,6 +310,9 @@ export function FXMasterFilterEffectMixin(Base) {
       u.hasMask = typeof u.hasMask === "number" ? u.hasMask : 0.0;
       u.maskReady = typeof u.maskReady === "number" ? u.maskReady : 0.0;
       u.maskSoft = typeof u.maskSoft === "number" ? u.maskSoft : 0.0;
+      u.maskWorldReady = typeof u.maskWorldReady === "number" ? u.maskWorldReady : 0.0;
+      u.uMaskUvFromWorld ??= new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+      u.maskTexelUV ??= new Float32Array([1, 1]);
       u.invertMask = typeof u.invertMask === "number" ? u.invertMask : 0.0;
       if (withStrength) u.strength = typeof u.strength === "number" ? u.strength : strengthDefault;
       return u;
@@ -312,6 +336,11 @@ export function FXMasterFilterEffectMixin(Base) {
       if ("hasMask" in options && typeof options.hasMask === "number") u.hasMask = options.hasMask;
       if ("maskReady" in options && typeof options.maskReady === "number") u.maskReady = options.maskReady;
       if ("maskSoft" in options && typeof options.maskSoft === "number") u.maskSoft = options.maskSoft;
+      if ("maskWorldReady" in options && typeof options.maskWorldReady === "number")
+        u.maskWorldReady = options.maskWorldReady;
+      if ("uMaskUvFromWorld" in options && options.uMaskUvFromWorld instanceof Float32Array)
+        u.uMaskUvFromWorld = options.uMaskUvFromWorld;
+      if ("maskTexelUV" in options && options.maskTexelUV instanceof Float32Array) u.maskTexelUV = options.maskTexelUV;
       if ("invertMask" in options && typeof options.invertMask === "number") u.invertMask = options.invertMask;
       if ("viewSize" in options && Array.isArray(options.viewSize) && options.viewSize.length === 2) {
         u.viewSize = new Float32Array([
@@ -327,6 +356,7 @@ export function FXMasterFilterEffectMixin(Base) {
       if ("maskReady" in u) u.maskReady = 0.0;
       if ("hasMask" in u) u.hasMask = 0.0;
       if ("maskSoft" in u) u.maskSoft = 0.0;
+      if ("maskWorldReady" in u) u.maskWorldReady = 0.0;
       if ("invertMask" in u) u.invertMask = 0.0;
       if ("maskSampler" in u) {
         try {
@@ -380,7 +410,7 @@ export function FXMasterFilterEffectMixin(Base) {
 
     addFilterTicker(cb, { priority } = {}) {
       if (typeof cb !== "function") return () => {};
-      const ticker = canvas?.app?.ticker ?? PIXI.Ticker.shared;
+      const ticker = this.__fxmFilterContext?.ticker ?? canvas?.app?.ticker ?? PIXI.Ticker.shared;
       const fn = () => {
         try {
           cb(ticker.deltaMS ?? 16.6);
@@ -399,7 +429,7 @@ export function FXMasterFilterEffectMixin(Base) {
     }
 
     removeFilterTicker(fn) {
-      const ticker = canvas?.app?.ticker ?? PIXI.Ticker.shared;
+      const ticker = this.__fxmFilterContext?.ticker ?? canvas?.app?.ticker ?? PIXI.Ticker.shared;
       try {
         ticker.remove(fn, this);
       } catch (err) {
@@ -409,7 +439,7 @@ export function FXMasterFilterEffectMixin(Base) {
     }
 
     removeAllFilterTickers() {
-      const ticker = canvas?.app?.ticker ?? PIXI.Ticker.shared;
+      const ticker = this.__fxmFilterContext?.ticker ?? canvas?.app?.ticker ?? PIXI.Ticker.shared;
       for (const { fn } of this._fxTickers || []) {
         try {
           ticker.remove(fn, this);
@@ -473,7 +503,7 @@ export function FXMasterFilterEffectMixin(Base) {
     }
 
     _startUniformFade(uniformKey, { to, durationMs, easing, onDone }) {
-      const tkr = canvas?.app?.ticker;
+      const tkr = this.__fxmFilterContext?.ticker ?? canvas?.app?.ticker;
       if (!tkr || !this.uniforms) {
         try {
           this.uniforms[uniformKey] = to;

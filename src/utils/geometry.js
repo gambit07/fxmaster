@@ -121,6 +121,33 @@ function _regionDocument(region) {
 }
 
 /**
+ * Select an elevation guaranteed to be inside a valid Foundry Region elevation window. This allows public Region point-test APIs to be used for a purely two-dimensional containment query without changing the caller contract.
+ *
+ * @param {{ bottom?: number, top?: number, topInclusive?: boolean }|null|undefined} elevation
+ * @returns {{ usable: boolean, value: number }}
+ * @private
+ */
+function _regionInteriorTestElevation(elevation) {
+  const bottom = Number(elevation?.bottom);
+  const top = Number(elevation?.top);
+
+  if (Number.isFinite(bottom) && Number.isFinite(top)) {
+    if (top > bottom) return { usable: true, value: bottom + (top - bottom) * 0.5 };
+    /** Foundry treats flat Regions as inclusive. */
+    if (top === bottom) return { usable: true, value: bottom };
+    return { usable: false, value: 0 };
+  }
+  if (Number.isFinite(bottom)) return { usable: true, value: bottom };
+  if (Number.isFinite(top)) {
+    return {
+      usable: true,
+      value: typeof Math.nextDown === "function" ? Math.nextDown(top) : top - 1e-4,
+    };
+  }
+  return { usable: true, value: 0 };
+}
+
+/**
  * Return whether a Region uses Foundry's native restricted geometry.
  * @param {PlaceableObject|foundry.documents.RegionDocument|object|null|undefined} region
  * @returns {boolean}
@@ -280,6 +307,30 @@ export function regionContainsPoint(region, point) {
   const y = Number(point?.y);
   if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
 
+  /**
+   * Foundry v14.364 exposes RegionAnimationState#testPoint for the animated polygon tree and current shape constraints. Live Region placeables use this method instead of rebuilding equivalent polygon tests, while RegionDocument#testPoint provides the same public geometry path for document-only callers. An interior elevation avoids top-exclusive boundary ambiguity.
+   */
+  const document = _regionDocument(region);
+  const animationState = region?.animationState ?? null;
+  const elevation = animationState?.elevation ?? document?.elevation ?? null;
+  const testElevation = _regionInteriorTestElevation(elevation);
+
+  if (testElevation.usable && typeof animationState?.testPoint === "function") {
+    try {
+      return !!animationState.testPoint({ x, y, elevation: testElevation.value });
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+  }
+
+  if (testElevation.usable && typeof document?.testPoint === "function") {
+    try {
+      return !!document.testPoint({ x, y, elevation: testElevation.value });
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+  }
+
   const shapes = regionMaskTraceShapes(region);
   if (!Array.isArray(shapes) || !shapes.length) return false;
 
@@ -303,7 +354,13 @@ export function regionConstrainedPolygons(region) {
   const doc = _regionDocument(region);
   if (!regionHasRestrictedGeometry(doc)) return null;
 
-  const candidates = doc?.polygons ?? doc?.polygonTree?.polygons ?? [];
+  const animationState = region?.animationState ?? null;
+  const candidates =
+    animationState?.polygons ??
+    animationState?.polygonTree?.polygons ??
+    doc?.polygons ??
+    doc?.polygonTree?.polygons ??
+    [];
   const output = [];
   for (const polygon of candidates) {
     const points = _flatPolygonPoints(polygon);
@@ -321,7 +378,7 @@ export function regionMaskTraceShapes(region) {
   const constrained = regionConstrainedPolygons(region);
   if (constrained) return constrained.length ? [{ type: "polygon", polygons: constrained }] : [];
   const doc = _regionDocument(region);
-  return Array.from(doc?.shapes ?? []);
+  return Array.from(region?.animationState?.shapes ?? doc?.shapes ?? []);
 }
 
 /**
@@ -335,8 +392,8 @@ export function regionMaskGeometrySignature(region) {
 
   const restriction = doc?.restriction ?? {};
   if (!restriction.enabled) {
-    const source = doc?.shapes;
-    if (source && typeof source === "object") {
+    const source = region?.animationState?.shapes ?? doc?.shapes;
+    if (!region?.isAnimating && source && typeof source === "object") {
       const cached = _regionMaskShapeSignatureCache.get(source);
       if (cached != null) return cached;
     }
@@ -350,28 +407,17 @@ export function regionMaskGeometrySignature(region) {
       logger.debug("FXMaster:", err);
     }
 
-    if (source && typeof source === "object") _regionMaskShapeSignatureCache.set(source, signature);
+    if (!region?.isAnimating && source && typeof source === "object")
+      _regionMaskShapeSignatureCache.set(source, signature);
     return signature;
   }
 
-  const polygonKey = regionConstrainedPolygons(doc)
+  const polygonKey = regionConstrainedPolygons(region)
     .map((polygon) => polygon.points.map((value) => Number(value || 0).toFixed(3)).join(","))
     .join(";");
-  const constraints = doc?._shapeConstraints ?? doc?._source?._shapeConstraints ?? null;
-  let constraintKey = "";
-  try {
-    constraintKey = constraints ? JSON.stringify(constraints) : "";
-  } catch (err) {
-    logger.debug("FXMaster:", err);
-  }
 
-  return [
-    "restricted",
-    restriction.type ?? "",
-    Number(restriction.priority ?? 0).toFixed(3),
-    constraintKey,
-    polygonKey,
-  ].join("|");
+  /** The public constrained polygon tree already reflects the effective shape constraints, eliminating private RegionDocument fields from this key. */
+  return ["restricted", restriction.type ?? "", Number(restriction.priority ?? 0).toFixed(3), polygonKey].join("|");
 }
 
 /**
@@ -590,9 +636,27 @@ export function traceRegionShapePath2D(ctx, s) {
  * @returns {{minX:number,minY:number,maxX:number,maxY:number}|null}
  */
 export function regionWorldBounds(placeable) {
+  const animatedBounds = placeable?.animationState?.bounds ?? null;
+  if (
+    animatedBounds &&
+    Number.isFinite(animatedBounds.x) &&
+    Number.isFinite(animatedBounds.y) &&
+    Number.isFinite(animatedBounds.width) &&
+    Number.isFinite(animatedBounds.height) &&
+    animatedBounds.width > 0 &&
+    animatedBounds.height > 0
+  ) {
+    return {
+      minX: animatedBounds.x,
+      minY: animatedBounds.y,
+      maxX: animatedBounds.x + animatedBounds.width,
+      maxY: animatedBounds.y + animatedBounds.height,
+    };
+  }
+
   const doc = _regionDocument(placeable);
-  const constrained = regionConstrainedPolygons(doc);
-  const shapes = constrained ? regionMaskTraceShapes(doc) : Array.from(doc?.shapes ?? []);
+  const constrained = regionConstrainedPolygons(placeable);
+  const shapes = constrained ? regionMaskTraceShapes(placeable) : Array.from(doc?.shapes ?? []);
   let minX = Infinity,
     minY = Infinity,
     maxX = -Infinity,
@@ -680,8 +744,10 @@ export function regionWorldBoundsAligned(placeable) {
   };
 
   const doc = _regionDocument(placeable);
-  const constrained = regionConstrainedPolygons(doc);
-  const shapes = constrained ? regionMaskTraceShapes(doc) : Array.from(doc?.shapes ?? []);
+  const constrained = regionConstrainedPolygons(placeable);
+  const shapes = constrained
+    ? regionMaskTraceShapes(placeable)
+    : Array.from(placeable?.animationState?.shapes ?? doc?.shapes ?? []);
 
   for (const s of shapes) {
     if (!s || s.hole) continue;
@@ -1184,7 +1250,7 @@ export function estimateRegionInradius(placeable) {
     }
   }
 
-  const shapes = placeable?.document?.shapes ?? [];
+  const shapes = placeable?.animationState?.shapes ?? placeable?.document?.shapes ?? [];
 
   let minR = Infinity;
   let maxR = 0;
@@ -1229,8 +1295,9 @@ export function getEventGate(placeable, behaviorType) {
 
 /**
  * Get the elevation window for a region.
+ *
  * @param {foundry.abstract.Document} doc
- * @returns {{min:number,max:number}|null}
+ * @returns {{ min: number, max: number, topInclusive: boolean|null }|null}
  */
 export function getRegionElevationWindow(doc) {
   const top = doc?.elevation?.top,
@@ -1238,13 +1305,22 @@ export function getRegionElevationWindow(doc) {
   const hasTop = top !== undefined && top !== null && `${top}`.trim() !== "";
   const hasBottom = bottom !== undefined && bottom !== null && `${bottom}`.trim() !== "";
   if (!hasTop && !hasBottom) return null;
-  return { min: hasBottom ? Number(bottom) : -Infinity, max: hasTop ? Number(top) : +Infinity };
+  return {
+    min: hasBottom ? Number(bottom) : -Infinity,
+    max: hasTop ? Number(top) : +Infinity,
+    topInclusive: typeof doc?.elevation?.topInclusive === "boolean" ? doc.elevation.topInclusive : null,
+  };
 }
 
 /**
- * Test whether an elevation lies within a window.
+ * Test whether an elevation lies within a Region window using Foundry's bottom-inclusive, optionally top-inclusive boundary semantics. Flat Regions are always inclusive at their base, matching RegionDocument#testPoint.
+ *
  * @param {number} elev
- * @param {{min:number,max:number}} win
+ * @param {{ min: number, max: number, topInclusive?: boolean|null }} win
  * @returns {boolean}
  */
-export const inRangeElev = (elev, win) => elev >= win.min && elev <= win.max;
+export function inRangeElev(elev, win) {
+  if (elev < win.min) return false;
+  if (elev === win.min) return true;
+  return win.topInclusive === false ? elev < win.max : elev <= win.max;
+}

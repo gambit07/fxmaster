@@ -23,12 +23,19 @@ import {
 import {
   getCssViewportMetrics,
   rawStageMatrix,
+  getRendererMaxTextureSize,
   safeMaskResolutionForCssArea,
   safeResolutionForCssArea,
   snappedStageMatrix,
+  projectRectToQuad,
+  projectedQuadBounds,
+  matrixPreservesAxisAlignment,
 } from "./viewport.js";
 import {
   fxmDocumentIncludedInLevel,
+  fxmGetPrimaryLevelTextureMeshes,
+  fxmGetPrimaryTileMeshes,
+  fxmPrimaryCanvasObjectIsLive,
   fxmLevelBottom,
   fxmLevelIsAbove,
   fxmLevelTop,
@@ -37,6 +44,7 @@ import {
   fxmCollectComparableSourcePaths,
   fxmLinkedPlaceableFromDisplayObject,
   fxmGetPublicHoverFadeState,
+  fxmGetCanvasLevelTextureSurfaceOcclusion,
   fxmGetPlaceableTargetAlphaCompat,
   fxmUpdateDisplayObjectWorldTransform,
   fxmDisplayObjectTransformSignature,
@@ -49,8 +57,10 @@ import {
   getDocumentLevelsSet,
   getSceneLevels,
   getTileOcclusionModes,
+  dispatchCanvasPointerMoveNow,
   inferVisibleLevelForDocument,
   isDocumentOnCurrentCanvasLevel,
+  syncCanvasNativeWeatherOcclusionState,
 } from "./compat.js";
 
 let _tmpRTCopySprite = null;
@@ -63,11 +73,17 @@ let _tmpTileRadialRevealShapeContainer = null;
 let _tmpTileRadialRevealGraphics = null;
 let _tmpTileRadialRevealSprite = null;
 let _tmpTileRadialRevealFilter = null;
+let _tmpTileRadialVisibleRT = null;
+let _tmpTileRadialVisibleSprite = null;
 let _tmpTokenMaskContainer = null;
 let _tmpComposeTilesCoverageRT = null;
 let _tmpUpperLevelCoverageRT = null;
+let _tmpUpperLevelCoverageObjectRT = null;
 let _tmpUpperLevelCoverageEraseSprite = null;
+let _tmpUpperLevelCoverageProxyContainer = null;
 let _tmpUpperLevelCoverageProxySprite = null;
+let _tmpUpperLevelCoverageSurfaceSprite = null;
+let _tmpUpperLevelCoverageSurfaceFilter = null;
 let _tmpUpperLevelCoverageCacheKey = null;
 let _tmpUpperLevelCoverageCacheValue = undefined;
 
@@ -83,10 +99,16 @@ let _sceneSuppressionSoftCache = new Map();
 let _sceneSuppressionSoftCacheTick = 0;
 
 let _sceneAllowOverlayObjectRT = null;
+let _sceneAllowOverlayObjectScratchRT = null;
 let _sceneAllowOverlayRegionRT = null;
+let _sceneAllowOverlayCoverageRT = null;
+let _sceneAllowOverlayCoverageScratchRT = null;
 let _sceneAllowOverlayCompositeRT = null;
 let _sceneAllowOverlaySprite = null;
+let _sceneAllowOverlayCoverageSprite = null;
 let _sceneAllowOverlayFilter = null;
+let _sceneAllowOverlaySurfaceSprite = null;
+let _sceneAllowOverlaySurfaceFilter = null;
 let _sceneAllowOverlayClearGfx = null;
 let _sceneAllowOverlayShapeGfx = null;
 
@@ -96,6 +118,12 @@ const SCENE_SUPPRESSION_SOFT_MAX_PIXELS_PER_WORLD = 1;
 const SCENE_SUPPRESSION_SOFT_MAX_TEXTURE_SPAN = 3072;
 /** Maximum texel budget for a cached world-space suppression mask. */
 const SCENE_SUPPRESSION_SOFT_MAX_TEXTURE_AREA = 2_000_000;
+/** Maximum device-independent pixel density used for scene-level world mask atlases. */
+const SCENE_MASK_WORLD_ATLAS_MAX_PIXELS_PER_WORLD = 1;
+/** Minimum device-independent pixel density used for scene-level world mask atlases. */
+const SCENE_MASK_WORLD_ATLAS_MIN_PIXELS_PER_WORLD = 0.125;
+/** Maximum texel budget for a scene-level world mask atlas. */
+const SCENE_MASK_WORLD_ATLAS_MAX_TEXTURE_AREA = 8_000_000;
 
 /**
  * Collect likely texture source paths from a PIXI/Foundry object graph.
@@ -217,16 +245,31 @@ function _levelSurfaceRevealExposesBelowObjectMask(reveal) {
   return Number.isFinite(fadeOcclusion) && fadeOcclusion > 0.001;
 }
 
+function _displayObjectUsesSurfaceOcclusion(object) {
+  const surfaceMode = Number(globalThis.CONST?.OCCLUSION_MODES?.SURFACE);
+  const occlusionMode = Number(object?.occlusionMode ?? 0);
+  if (Number.isFinite(surfaceMode)) return !!(occlusionMode & surfaceMode);
+  return Number(object?._occlusionState?.surface ?? 0) > 0;
+}
+
 function _displayObjectHasVisiblePixels(object) {
-  if (!object || object.destroyed) return false;
+  if (!fxmPrimaryCanvasObjectIsLive(object)) return false;
   if (object.visible === false || object.renderable === false) return false;
   const alpha = Number(object.worldAlpha ?? object.alpha ?? 1);
   return !(Number.isFinite(alpha) && alpha <= 0.001);
 }
 
 function _resolveLiveSurfaceObject(primaryObject, linkedObject) {
-  const liveObject = linkedObject?.mesh ?? linkedObject?.primaryMesh ?? linkedObject?.sprite ?? null;
-  return liveObject ?? primaryObject ?? linkedObject ?? null;
+  for (const object of [
+    linkedObject?.mesh ?? null,
+    linkedObject?.primaryMesh ?? null,
+    linkedObject?.sprite ?? null,
+    primaryObject ?? null,
+    linkedObject ?? null,
+  ]) {
+    if (fxmPrimaryCanvasObjectIsLive(object)) return object;
+  }
+  return null;
 }
 
 function _displayObjectIntersectsCssViewport(object) {
@@ -248,7 +291,7 @@ function _displayObjectIntersectsCssViewport(object) {
 }
 
 function _upperLevelCoverageFrameKey(likeRT) {
-  const stageMatrix = canvas?.stage?.worldTransform ?? null;
+  const stageMatrix = _tileMaskStageMatrix(likeRT);
   const transformKey = [
     stageMatrix?.a,
     stageMatrix?.b,
@@ -259,12 +302,21 @@ function _upperLevelCoverageFrameKey(likeRT) {
   ]
     .map((value) => (Number.isFinite(Number(value)) ? Number(value).toFixed(3) : ""))
     .join(",");
+  const atlas = getMaskRenderTextureWorldAtlas(likeRT);
+  const maskSpaceKey = atlas
+    ? ["world", atlas.bounds.x, atlas.bounds.y, atlas.bounds.width, atlas.bounds.height, atlas.pixelsPerWorld]
+        .map((value) => (typeof value === "string" ? value : Number(value).toFixed(4)))
+        .join(",")
+    : "screen";
   const hoverFadeElevation = getCanvasPrimaryHoverFadeElevation();
   const hoverKey = Number.isFinite(hoverFadeElevation) ? hoverFadeElevation.toFixed(3) : "none";
   let surfaceStateKey = "surface-state-unavailable";
   try {
     surfaceStateKey =
-      getCanvasLiveLevelSurfaceState(canvas?.scene ?? null, { presynced: true })?.key ?? surfaceStateKey;
+      getCanvasLiveLevelSurfaceState(canvas?.scene ?? null, {
+        presynced: true,
+        includeTransientFades: false,
+      })?.key ?? surfaceStateKey;
   } catch (err) {
     logger.debug("FXMaster:", err);
   }
@@ -277,6 +329,7 @@ function _upperLevelCoverageFrameKey(likeRT) {
     width,
     height,
     resolution,
+    maskSpaceKey,
     transformKey,
     hoverKey,
     surfaceStateKey,
@@ -328,7 +381,7 @@ function _ensureUpperLevelCoverageRT(outRT) {
     Math.abs(Number(_tmpUpperLevelCoverageRT.height ?? 0) - height) > 0.001 ||
     (_tmpUpperLevelCoverageRT.resolution || 1) !== resolution;
 
-  if (!bad) return _tmpUpperLevelCoverageRT;
+  if (!bad) return copyMaskRenderTextureMetadata(outRT, _tmpUpperLevelCoverageRT);
 
   const oldRT = _tmpUpperLevelCoverageRT;
   _tmpUpperLevelCoverageRT = PIXI.RenderTexture.create({ width, height, resolution, multisample: 0 });
@@ -339,7 +392,7 @@ function _ensureUpperLevelCoverageRT(outRT) {
     logger.debug("FXMaster:", err);
   }
   _destroyTextureDeferred(oldRT);
-  return _tmpUpperLevelCoverageRT;
+  return copyMaskRenderTextureMetadata(outRT, _tmpUpperLevelCoverageRT);
 }
 
 /**
@@ -377,12 +430,12 @@ function _ensureScratchRTLike(scratchRT, likeRT) {
 }
 
 /**
- * Collect live upper-level surfaces that should occlude lower-level tile masks.
- *
- * @returns {PIXI.DisplayObject[]}
+ * Collect active upper-Level surfaces that can cover lower-Level tile masks.
+ * @param {{ includeOffscreen?: boolean }} [options]
+ * @returns {object[]}
  * @private
  */
-function _collectUnrevealedUpperLevelSurfaceObjectsForCurrentView() {
+function _collectUnrevealedUpperLevelSurfaceObjectsForCurrentView({ includeOffscreen = false } = {}) {
   const currentLevel = getCanvasLevel();
   if (!canvas?.level || !currentLevel?.id || !canvas?.primary) return [];
 
@@ -405,7 +458,7 @@ function _collectUnrevealedUpperLevelSurfaceObjectsForCurrentView() {
     objects.push(object);
   };
 
-  for (const mesh of canvas.primary?.levelTextures ?? []) {
+  for (const mesh of fxmGetPrimaryLevelTextureMeshes()) {
     const object = mesh?.object ?? null;
     const liveObject = _resolveLiveSurfaceObject(mesh, object);
     const captureObject = _displayObjectHasVisiblePixels(mesh)
@@ -414,7 +467,7 @@ function _collectUnrevealedUpperLevelSurfaceObjectsForCurrentView() {
       ? liveObject
       : null;
     if (!captureObject) continue;
-    if (!_displayObjectIntersectsCssViewport(captureObject)) continue;
+    if (!includeOffscreen && !_displayObjectIntersectsCssViewport(captureObject)) continue;
 
     const document = mesh?.level?.document ?? mesh?.level ?? object?.document ?? object ?? null;
     const level = mesh?.level ?? object?.level ?? document?.level ?? null;
@@ -436,15 +489,13 @@ function _collectUnrevealedUpperLevelSurfaceObjectsForCurrentView() {
       level,
       elevation,
     });
-    if (_levelSurfaceRevealExposesBelowObjectMask(reveal)) continue;
+    if (!_displayObjectUsesSurfaceOcclusion(revealObject) && _levelSurfaceRevealExposesBelowObjectMask(reveal))
+      continue;
 
     push(captureObject);
   }
 
-  const tileMeshes =
-    typeof canvas.primary?.tiles?.values === "function"
-      ? Array.from(canvas.primary.tiles.values())
-      : Array.from(canvas.primary?.tiles ?? []);
+  const tileMeshes = fxmGetPrimaryTileMeshes();
 
   for (const mesh of tileMeshes) {
     const tileObject = _resolveTilePlaceable(mesh);
@@ -457,7 +508,7 @@ function _collectUnrevealedUpperLevelSurfaceObjectsForCurrentView() {
       ? liveObject
       : null;
     if (!captureObject) continue;
-    if (!_displayObjectIntersectsCssViewport(captureObject)) continue;
+    if (!includeOffscreen && !_displayObjectIntersectsCssViewport(captureObject)) continue;
 
     const document = tileObject.document ?? null;
     const level = mesh?.level ?? tileObject?.level ?? document?.level ?? null;
@@ -486,6 +537,13 @@ function _collectUnrevealedUpperLevelSurfaceObjectsForCurrentView() {
   return objects;
 }
 
+/**
+ * Render an upper-Level surface in the target mask coordinate space.
+ * @param {object} object
+ * @param {object} renderTexture
+ * @returns {boolean}
+ * @private
+ */
 function _renderUpperLevelSurfaceProxyIntoRT(object, renderTexture) {
   const renderer = canvas?.app?.renderer;
   const texture = object?.texture ?? null;
@@ -493,46 +551,213 @@ function _renderUpperLevelSurfaceProxyIntoRT(object, renderTexture) {
   if (object?.constructor?.name !== "PrimarySpriteMesh" && !String(object?.name ?? "").startsWith("Level."))
     return false;
 
-  let bounds = null;
+  const container = (_tmpUpperLevelCoverageProxyContainer ??= new PIXI.Container());
+  const sprite = (_tmpUpperLevelCoverageProxySprite ??= new PIXI.Sprite(PIXI.Texture.EMPTY));
   try {
-    bounds = object.getBounds?.(false) ?? object.bounds ?? null;
+    container.removeChildren();
   } catch (err) {
     logger.debug("FXMaster:", err);
   }
-  if (!(Number(bounds?.width) > 0 && Number(bounds?.height) > 0)) return false;
 
-  const sprite = (_tmpUpperLevelCoverageProxySprite ??= new PIXI.Sprite(PIXI.Texture.EMPTY));
-  const previousTexture = sprite.texture;
-  const previousBlendMode = sprite.blendMode;
-  const previousAlpha = sprite.alpha;
-  const previousFilters = sprite.filters;
+  container.transform.setFromMatrix(_tileMaskStageMatrix(renderTexture));
+  container.roundPixels = false;
   sprite.texture = texture;
-  sprite.position.set(Number(bounds.x) || 0, Number(bounds.y) || 0);
-  sprite.scale.set(1, 1);
-  sprite.rotation = 0;
-  sprite.width = Math.max(1, Number(bounds.width) || 1);
-  sprite.height = Math.max(1, Number(bounds.height) || 1);
+  sprite.anchor.set(object?.anchor?.x ?? 0, object?.anchor?.y ?? 0);
+  sprite.transform.setFromMatrix(stageLocalMatrixOf(object));
   sprite.alpha = Math.max(0, Math.min(1, Number(object?.worldAlpha ?? object?.alpha ?? 1) || 1));
   sprite.blendMode = PIXI.BLEND_MODES.NORMAL;
   sprite.roundPixels = false;
   sprite.filters = null;
+  container.addChild(sprite);
 
   try {
-    renderer.render(sprite, { renderTexture, clear: false, skipUpdateTransform: false });
+    renderer.render(container, { renderTexture, clear: false, skipUpdateTransform: false });
     return true;
   } catch (err) {
     logger.debug("FXMaster:", err);
     return false;
   } finally {
     try {
-      sprite.texture = previousTexture ?? PIXI.Texture.EMPTY;
-      sprite.blendMode = previousBlendMode;
-      sprite.alpha = previousAlpha;
-      sprite.filters = previousFilters;
+      container.removeChildren();
+      sprite.texture = PIXI.Texture.EMPTY;
+      sprite.transform.setFromMatrix(new PIXI.Matrix());
+      sprite.alpha = 1;
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
   }
+}
+
+/**
+ * Return the texture-coordinate transform used for surface visibility sampling.
+ * @param {object} renderTexture
+ * @returns {Float32Array}
+ * @private
+ */
+function _upperLevelCoverageMaskUvToScreenUv(renderTexture) {
+  const renderer = canvas?.app?.renderer ?? null;
+  const screenWidth = Math.max(1, Number(renderer?.screen?.width ?? renderTexture?.width) || 1);
+  const screenHeight = Math.max(1, Number(renderer?.screen?.height ?? renderTexture?.height) || 1);
+  const atlas = getMaskRenderTextureWorldAtlas(renderTexture);
+
+  if (!atlas) {
+    const width = Math.max(1, Number(renderTexture?.width) || screenWidth);
+    const height = Math.max(1, Number(renderTexture?.height) || screenHeight);
+    return new Float32Array([width / screenWidth, 0, 0, 0, height / screenHeight, 0, 0, 0, 1]);
+  }
+
+  const bounds = atlas.bounds;
+  const stage = rawStageMatrix();
+  return new Float32Array([
+    (stage.a * bounds.width) / screenWidth,
+    (stage.b * bounds.width) / screenHeight,
+    0,
+    (stage.c * bounds.height) / screenWidth,
+    (stage.d * bounds.height) / screenHeight,
+    0,
+    (stage.a * bounds.x + stage.c * bounds.y + stage.tx) / screenWidth,
+    (stage.b * bounds.x + stage.d * bounds.y + stage.ty) / screenHeight,
+    1,
+  ]);
+}
+
+/**
+ * Return shared resources for upper-Level visibility compositing.
+ * @returns {{ sprite: object, filter: object }}
+ * @private
+ */
+function _getUpperLevelCoverageSurfaceSprite() {
+  if (!_tmpUpperLevelCoverageSurfaceSprite) _tmpUpperLevelCoverageSurfaceSprite = new PIXI.Sprite(PIXI.Texture.EMPTY);
+  if (!_tmpUpperLevelCoverageSurfaceFilter) {
+    _tmpUpperLevelCoverageSurfaceFilter = new PIXI.Filter(
+      `
+      precision ${PIXI.Program.defaultVertexPrecision} float;
+      attribute vec2 aVertexPosition;
+      uniform mat3 projectionMatrix;
+      uniform vec4 inputSize;
+      uniform vec4 outputFrame;
+      uniform mat3 maskUvToScreenUv;
+      varying vec2 vTextureCoord;
+      varying vec2 vOcclusionCoord;
+      void main() {
+        vec2 position = aVertexPosition * max(outputFrame.zw, vec2(0.0)) + outputFrame.xy;
+        gl_Position = vec4((projectionMatrix * vec3(position, 1.0)).xy, 0.0, 1.0);
+        vTextureCoord = aVertexPosition * (outputFrame.zw * inputSize.zw);
+        vOcclusionCoord = (maskUvToScreenUv * vec3(aVertexPosition, 1.0)).xy;
+      }
+    `,
+      `
+      precision ${PIXI.Program.defaultFragmentPrecision} float;
+      varying vec2 vTextureCoord;
+      varying vec2 vOcclusionCoord;
+      uniform sampler2D uSampler;
+      uniform sampler2D occlusionSampler;
+      uniform float occlusionElevation;
+      uniform float unoccludedAlpha;
+      uniform float occludedAlpha;
+      void main() {
+        float sourceAlpha = texture2D(uSampler, vTextureCoord).a;
+        vec2 boundedUv = clamp(vOcclusionCoord, vec2(0.0), vec2(1.0));
+        float inBounds = step(0.0, vOcclusionCoord.x) * step(vOcclusionCoord.x, 1.0)
+          * step(0.0, vOcclusionCoord.y) * step(vOcclusionCoord.y, 1.0);
+        float surfaceDepth = texture2D(occlusionSampler, boundedUv).a;
+        float occluded = inBounds * step(surfaceDepth, occlusionElevation - (0.5 / 255.0));
+        float alpha = sourceAlpha * mix(unoccludedAlpha, occludedAlpha, occluded);
+        gl_FragColor = vec4(alpha, alpha, alpha, alpha);
+      }
+    `,
+      {
+        occlusionSampler: PIXI.Texture.EMPTY,
+        occlusionElevation: 1,
+        unoccludedAlpha: 1,
+        occludedAlpha: 0,
+        maskUvToScreenUv: new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]),
+      },
+    );
+  }
+
+  return { sprite: _tmpUpperLevelCoverageSurfaceSprite, filter: _tmpUpperLevelCoverageSurfaceFilter };
+}
+
+/**
+ * Composite upper-Level coverage through the current surface-visibility mask.
+ * @param {object} targetRT
+ * @param {object} sourceRT
+ * @param {object} object
+ * @param {{ texture: object, elevation: number }} surface
+ * @returns {boolean}
+ * @private
+ */
+function _compositeUpperLevelSurfaceCoverageIntoRT(targetRT, sourceRT, object, surface) {
+  const renderer = canvas?.app?.renderer;
+  if (!renderer || !targetRT || !sourceRT || !surface?.texture || !Number.isFinite(surface?.elevation)) return false;
+
+  const { sprite, filter } = _getUpperLevelCoverageSurfaceSprite();
+  sprite.texture = sourceRT;
+  sprite.position.set(0, 0);
+  sprite.width = Math.max(1, Number(targetRT.width) || 1);
+  sprite.height = Math.max(1, Number(targetRT.height) || 1);
+  sprite.alpha = 1;
+  sprite.blendMode = PIXI.BLEND_MODES.NORMAL;
+  filter.uniforms.occlusionSampler = surface.texture;
+  filter.uniforms.occlusionElevation = surface.elevation;
+  filter.uniforms.unoccludedAlpha = Math.max(0, Math.min(1, Number(object?.unoccludedAlpha ?? 1) || 0));
+  filter.uniforms.occludedAlpha = Math.max(0, Math.min(1, Number(object?.occludedAlpha ?? 0) || 0));
+  filter.uniforms.maskUvToScreenUv = _upperLevelCoverageMaskUvToScreenUv(targetRT);
+  sprite.filters = [filter];
+
+  try {
+    renderer.render(sprite, { renderTexture: targetRT, clear: false, skipUpdateTransform: false });
+    return true;
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+    return false;
+  } finally {
+    sprite.filters = null;
+    sprite.texture = PIXI.Texture.EMPTY;
+  }
+}
+
+/**
+ * Render an upper-Level surface into the shared coverage texture.
+ * @param {object} object
+ * @param {object} coverageRT
+ * @returns {boolean}
+ * @private
+ */
+function _renderUpperLevelSurfaceCoverageIntoRT(object, coverageRT) {
+  const renderer = canvas?.app?.renderer;
+  if (!renderer || !object || object.destroyed || !coverageRT) return false;
+
+  const surface = fxmGetCanvasLevelTextureSurfaceOcclusion(object);
+  const targetRT = surface
+    ? copyMaskRenderTextureMetadata(
+        coverageRT,
+        (_tmpUpperLevelCoverageObjectRT = _ensureScratchRTLike(_tmpUpperLevelCoverageObjectRT, coverageRT)),
+      )
+    : coverageRT;
+  if (!targetRT) return false;
+  if (surface) clearTileMaskRenderTexture(targetRT);
+
+  let rendered = _renderUpperLevelSurfaceProxyIntoRT(object, targetRT);
+  if (!rendered) {
+    try {
+      const parentToStage = object?.parent ? stageLocalMatrixOf(object.parent) : new PIXI.Matrix();
+      const transform = _multiplyMaskMatrices(_tileMaskStageMatrix(targetRT), parentToStage);
+      renderer.render(object, {
+        renderTexture: targetRT,
+        clear: false,
+        transform,
+        skipUpdateTransform: false,
+      });
+      rendered = true;
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+  }
+
+  if (!rendered || !surface) return rendered;
+  return _compositeUpperLevelSurfaceCoverageIntoRT(coverageRT, targetRT, object, surface);
 }
 
 /**
@@ -560,7 +785,9 @@ function _captureUnrevealedUpperLevelCoverageRT(likeRT) {
     return value ?? null;
   };
 
-  const objects = _collectUnrevealedUpperLevelSurfaceObjectsForCurrentView();
+  const objects = _collectUnrevealedUpperLevelSurfaceObjectsForCurrentView({
+    includeOffscreen: !!getMaskRenderTextureWorldAtlas(likeRT),
+  });
   if (!objects.length) return remember(null);
 
   clearTileMaskRenderTexture(coverageRT);
@@ -568,20 +795,7 @@ function _captureUnrevealedUpperLevelCoverageRT(likeRT) {
   let rendered = false;
   for (const object of objects) {
     if (!object || object.destroyed) continue;
-    if (_renderUpperLevelSurfaceProxyIntoRT(object, coverageRT)) {
-      rendered = true;
-      continue;
-    }
-    try {
-      renderer.render(object, {
-        renderTexture: coverageRT,
-        clear: false,
-        skipUpdateTransform: true,
-      });
-      rendered = true;
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
+    if (_renderUpperLevelSurfaceCoverageIntoRT(object, coverageRT)) rendered = true;
   }
 
   return remember(rendered ? coverageRT : null);
@@ -627,7 +841,7 @@ function _eraseUnrevealedUpperLevelCoverageFromMask(outRT) {
  * Ensure a reusable scene-allow overlay render texture matches the requested viewport spec.
  *
  * @param {PIXI.RenderTexture|null} reuseRT
- * @param {{width:number,height:number,resolution:number}} spec
+ * @param {{ width: number, height: number, resolution: number }} spec
  * @returns {PIXI.RenderTexture}
  * @private
  */
@@ -673,20 +887,117 @@ function _getSceneAllowOverlayRestoreSprite() {
       varying vec2 vTextureCoord;
       uniform sampler2D uSampler;
       uniform sampler2D clipSampler;
+      uniform sampler2D coverageSampler;
+      uniform float useCoverage;
       void main() {
         float srcA = texture2D(uSampler, vTextureCoord).a;
         float clipA = texture2D(clipSampler, vTextureCoord).r;
-        float outA = srcA * clipA;
+        float coverageA = mix(1.0, texture2D(coverageSampler, vTextureCoord).r, useCoverage);
+        float outA = srcA * clipA * coverageA;
         gl_FragColor = vec4(outA, outA, outA, outA);
       }
     `,
       {
         clipSampler: PIXI.Texture.EMPTY,
+        coverageSampler: PIXI.Texture.WHITE,
+        useCoverage: 0,
       },
     );
   }
 
   return { sprite: _sceneAllowOverlaySprite, filter: _sceneAllowOverlayFilter };
+}
+
+/**
+ * Return shared resources for applying surface visibility to a captured Level texture.
+ * @returns {{ sprite: object, filter: object }}
+ * @private
+ */
+function _getSceneAllowOverlaySurfaceSprite() {
+  if (!_sceneAllowOverlaySurfaceSprite) _sceneAllowOverlaySurfaceSprite = new PIXI.Sprite(PIXI.Texture.EMPTY);
+  if (!_sceneAllowOverlaySurfaceFilter) {
+    _sceneAllowOverlaySurfaceFilter = new PIXI.Filter(
+      `
+      precision ${PIXI.Program.defaultVertexPrecision} float;
+      attribute vec2 aVertexPosition;
+      uniform mat3 projectionMatrix;
+      uniform vec4 inputSize;
+      uniform vec4 outputFrame;
+      uniform vec2 screenDimensions;
+      varying vec2 vTextureCoord;
+      varying vec2 vMaskTextureCoord;
+      void main() {
+        vec2 position = aVertexPosition * max(outputFrame.zw, vec2(0.0)) + outputFrame.xy;
+        gl_Position = vec4((projectionMatrix * vec3(position, 1.0)).xy, 0.0, 1.0);
+        vTextureCoord = aVertexPosition * (outputFrame.zw * inputSize.zw);
+        vMaskTextureCoord = (aVertexPosition * outputFrame.zw + outputFrame.xy) / screenDimensions;
+      }
+    `,
+      `
+      precision ${PIXI.Program.defaultFragmentPrecision} float;
+      varying vec2 vTextureCoord;
+      varying vec2 vMaskTextureCoord;
+      uniform sampler2D uSampler;
+      uniform sampler2D occlusionSampler;
+      uniform float occlusionElevation;
+      void main() {
+        float srcA = texture2D(uSampler, vTextureCoord).a;
+        float surfaceDepth = texture2D(occlusionSampler, vMaskTextureCoord).a;
+        float occluded = step(surfaceDepth, occlusionElevation - (0.5 / 255.0));
+        float outA = srcA * (1.0 - occluded);
+        gl_FragColor = vec4(outA, outA, outA, outA);
+      }
+    `,
+      {
+        occlusionSampler: PIXI.Texture.EMPTY,
+        occlusionElevation: 1,
+        screenDimensions: [1, 1],
+      },
+    );
+  }
+
+  return { sprite: _sceneAllowOverlaySurfaceSprite, filter: _sceneAllowOverlaySurfaceFilter };
+}
+
+/**
+ * Composite a captured Level texture into the scene-allow mask with surface visibility.
+ * @param {object} targetRT
+ * @param {object} sourceRT
+ * @param {{ texture: object, elevation: number }} surface
+ * @returns {boolean}
+ * @private
+ */
+function _compositeCapturedLevelSurfaceIntoSceneAllowRT(targetRT, sourceRT, surface) {
+  const renderer = canvas?.app?.renderer;
+  if (!renderer || !targetRT || !sourceRT || !surface?.texture || !Number.isFinite(surface?.elevation)) return false;
+
+  const { sprite, filter } = _getSceneAllowOverlaySurfaceSprite();
+  const screen = renderer.screen ?? null;
+  const screenWidth = Math.max(1, Number(screen?.width ?? targetRT.width) || 1);
+  const screenHeight = Math.max(1, Number(screen?.height ?? targetRT.height) || 1);
+
+  sprite.texture = sourceRT;
+  sprite.position.set(0, 0);
+  sprite.width = Math.max(1, Number(targetRT.width) || 1);
+  sprite.height = Math.max(1, Number(targetRT.height) || 1);
+  sprite.alpha = 1;
+  sprite.blendMode = PIXI.BLEND_MODES.NORMAL;
+  filter.uniforms.occlusionSampler = surface.texture;
+  filter.uniforms.occlusionElevation = surface.elevation;
+  filter.uniforms.screenDimensions[0] = screenWidth;
+  filter.uniforms.screenDimensions[1] = screenHeight;
+  sprite.filters = [filter];
+
+  try {
+    renderer.render(sprite, { renderTexture: targetRT, clear: false });
+    return true;
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+    return false;
+  } finally {
+    sprite.filters = null;
+    sprite.texture = PIXI.Texture.EMPTY;
+  }
 }
 
 /**
@@ -737,6 +1048,22 @@ function _captureDisplayObjectsIntoSceneAllowRT(rt, objects, { forceAlpha = fals
     }
 
     try {
+      const levelSurface = fxmGetCanvasLevelTextureSurfaceOcclusion(object);
+      if (levelSurface) {
+        _sceneAllowOverlayObjectScratchRT = _ensureScratchRTLike(_sceneAllowOverlayObjectScratchRT, rt);
+        if (_sceneAllowOverlayObjectScratchRT && _clearSceneAllowOverlayRT(_sceneAllowOverlayObjectScratchRT)) {
+          renderer.render(object, {
+            renderTexture: _sceneAllowOverlayObjectScratchRT,
+            clear: false,
+            skipUpdateTransform: true,
+          });
+          if (_compositeCapturedLevelSurfaceIntoSceneAllowRT(rt, _sceneAllowOverlayObjectScratchRT, levelSurface)) {
+            rendered = true;
+            continue;
+          }
+        }
+      }
+
       renderer.render(object, {
         renderTexture: rt,
         clear: false,
@@ -758,6 +1085,139 @@ function _captureDisplayObjectsIntoSceneAllowRT(rt, objects, { forceAlpha = fals
 
   return rendered;
 }
+
+/**
+ * Render the union of multiple Region geometries into a CSS-space mask.
+ *
+ * @param {PIXI.RenderTexture} targetRT
+ * @param {PIXI.RenderTexture} scratchRT
+ * @param {Array<PlaceableObject|foundry.documents.Region|object>|null|undefined} regions
+ * @param {PIXI.Matrix} stageMatrix
+ * @returns {boolean}
+ * @private
+ */
+function _renderBinaryRegionUnionMaskRT(targetRT, scratchRT, regions, stageMatrix) {
+  const renderer = canvas?.app?.renderer;
+  if (!renderer || !targetRT || !scratchRT) return false;
+
+  const footprintRegions = Array.isArray(regions) ? regions.filter(Boolean) : [];
+  if (!footprintRegions.length) return false;
+  if (!_clearSceneAllowOverlayRT(targetRT)) return false;
+
+  const sprite = (_sceneAllowOverlayCoverageSprite ??= new PIXI.Sprite(PIXI.Texture.EMPTY));
+  let rendered = false;
+
+  try {
+    sprite.position.set(0, 0);
+    sprite.width = Math.max(1, Number(targetRT.width) || 1);
+    sprite.height = Math.max(1, Number(targetRT.height) || 1);
+    sprite.alpha = 1;
+    sprite.blendMode = PIXI.BLEND_MODES.NORMAL;
+    sprite.filters = null;
+
+    for (const region of footprintRegions) {
+      _renderBinaryRegionMaskRT(scratchRT, region, stageMatrix);
+      sprite.texture = scratchRT;
+      renderer.render(sprite, { renderTexture: targetRT, clear: false });
+      rendered = true;
+    }
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+    return false;
+  } finally {
+    sprite.texture = PIXI.Texture.EMPTY;
+    sprite.filters = null;
+    sprite.blendMode = PIXI.BLEND_MODES.NORMAL;
+  }
+
+  return rendered;
+}
+
+/**
+ * Restore Level textures inside their surface footprints and an active suppression Region.
+ * @param {object} sceneAllowRT
+ * @param {object} region
+ * @param {object} stageMatrix
+ * @param {Array<{ levelId?: string, objects?: object[], regions?: object[] }>|null|undefined} groups
+ * @param {{ width: number, height: number, resolution: number }} spec
+ * @returns {boolean}
+ * @private
+ */
+function _restorePreservedSurfaceGroupsIntoSceneAllowMask(
+  sceneAllowRT,
+  region,
+  stageMatrix,
+  groups,
+  { width, height, resolution },
+) {
+  const renderer = canvas?.app?.renderer;
+  if (!renderer || !sceneAllowRT || !region) return false;
+
+  const surfaceGroups = Array.isArray(groups)
+    ? groups.filter(
+        (group) =>
+          Array.isArray(group?.objects) &&
+          group.objects.some(Boolean) &&
+          Array.isArray(group?.regions) &&
+          group.regions.some(Boolean),
+      )
+    : [];
+  if (!surfaceGroups.length) return false;
+
+  const textureSpec = { width, height, resolution };
+  _sceneAllowOverlayObjectRT = _ensureSceneAllowOverlayRT(_sceneAllowOverlayObjectRT, textureSpec);
+  _sceneAllowOverlayRegionRT = _ensureSceneAllowOverlayRT(_sceneAllowOverlayRegionRT, textureSpec);
+  _sceneAllowOverlayCoverageRT = _ensureSceneAllowOverlayRT(_sceneAllowOverlayCoverageRT, textureSpec);
+  _sceneAllowOverlayCoverageScratchRT = _ensureSceneAllowOverlayRT(_sceneAllowOverlayCoverageScratchRT, textureSpec);
+
+  _renderBinaryRegionMaskRT(_sceneAllowOverlayRegionRT, region, stageMatrix);
+
+  const { sprite, filter } = _getSceneAllowOverlayRestoreSprite();
+  let restored = false;
+
+  try {
+    sprite.position.set(0, 0);
+    sprite.width = Math.max(1, Number(width) || 1);
+    sprite.height = Math.max(1, Number(height) || 1);
+    sprite.alpha = 1;
+    sprite.blendMode = PIXI.BLEND_MODES.NORMAL;
+    filter.uniforms.clipSampler = _sceneAllowOverlayRegionRT;
+    filter.uniforms.useCoverage = 1;
+    sprite.filters = [filter];
+
+    for (const group of surfaceGroups) {
+      const objects = group.objects.filter(Boolean);
+      const footprintRegions = group.regions.filter(Boolean);
+      if (!objects.length || !footprintRegions.length) continue;
+      if (!_captureDisplayObjectsIntoSceneAllowRT(_sceneAllowOverlayObjectRT, objects)) continue;
+      if (
+        !_renderBinaryRegionUnionMaskRT(
+          _sceneAllowOverlayCoverageRT,
+          _sceneAllowOverlayCoverageScratchRT,
+          footprintRegions,
+          stageMatrix,
+        )
+      )
+        continue;
+
+      sprite.texture = _sceneAllowOverlayObjectRT;
+      filter.uniforms.coverageSampler = _sceneAllowOverlayCoverageRT;
+      renderer.render(sprite, { renderTexture: sceneAllowRT, clear: false });
+      restored = true;
+    }
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+    return false;
+  } finally {
+    sprite.filters = null;
+    sprite.texture = PIXI.Texture.EMPTY;
+    filter.uniforms.coverageSampler = PIXI.Texture.WHITE;
+    filter.uniforms.useCoverage = 0;
+  }
+
+  return restored;
+}
+
 /**
  * Restore preserved overlay objects into a scene allow mask inside a specific region clip.
  *
@@ -767,7 +1227,7 @@ function _captureDisplayObjectsIntoSceneAllowRT(rt, objects, { forceAlpha = fals
  * @param {PlaceableObject} region
  * @param {PIXI.Matrix} stageMatrix
  * @param {PIXI.DisplayObject[]|null|undefined} objects
- * @param {{width:number,height:number,resolution:number}} spec
+ * @param {{ width: number, height: number, resolution: number }} spec
  * @returns {boolean}
  * @private
  */
@@ -800,6 +1260,8 @@ function _restorePreservedOverlayObjectsIntoSceneAllowMask(
   sprite.alpha = 1;
   sprite.blendMode = PIXI.BLEND_MODES.NORMAL;
   filter.uniforms.clipSampler = _sceneAllowOverlayRegionRT;
+  filter.uniforms.coverageSampler = PIXI.Texture.WHITE;
+  filter.uniforms.useCoverage = 0;
   sprite.filters = [filter];
 
   try {
@@ -886,7 +1348,7 @@ function _capturePreserveShapesIntoSceneAllowRT(rt, shapes, stageMatrix) {
  * @param {PlaceableObject} region
  * @param {PIXI.Matrix} stageMatrix
  * @param {Array<object>|null|undefined} shapes
- * @param {{width:number,height:number,resolution:number}} spec
+ * @param {{ width: number, height: number, resolution: number }} spec
  * @returns {boolean}
  * @private
  */
@@ -923,6 +1385,8 @@ function _restorePreservedShapesIntoSceneAllowMask(
   sprite.alpha = 1;
   sprite.blendMode = PIXI.BLEND_MODES.NORMAL;
   filter.uniforms.clipSampler = _sceneAllowOverlayRegionRT;
+  filter.uniforms.coverageSampler = PIXI.Texture.WHITE;
+  filter.uniforms.useCoverage = 0;
   sprite.filters = [filter];
 
   try {
@@ -987,6 +1451,8 @@ function _eraseSuppressedOverlayObjectsFromSceneAllowMask(
     sprite.alpha = 1;
     sprite.blendMode = PIXI.BLEND_MODES.NORMAL;
     filter.uniforms.clipSampler = _sceneAllowOverlayRegionRT;
+    filter.uniforms.coverageSampler = PIXI.Texture.WHITE;
+    filter.uniforms.useCoverage = 0;
     sprite.filters = [filter];
 
     renderer.render(sprite, { renderTexture: _sceneAllowOverlayCompositeRT, clear: false });
@@ -1360,16 +1826,18 @@ export function hasTileMaskCoverage({ mode = "visible", restrictionKind = "weath
 }
 
 /**
- * Return whether any active current-viewport tile needs a dedicated suppression mask for the requested pipeline.
+ * Return whether any active tile needs a dedicated suppression mask for the requested pipeline.
  *
  * Without restrictive tiles, the suppression tile mask is identical to the visible tile mask, so callers can reuse visible coverage and avoid an extra full-viewport repaint.
  *
  * @param {"particles"|"filters"|"weather"} [restrictionKind="weather"]
+ * @param {{ includeOffscreen?: boolean }} [opts]
  * @returns {boolean}
  */
-export function hasActiveTileRestrictionsForMask(restrictionKind = "weather") {
+export function hasActiveTileRestrictionsForMask(restrictionKind = "weather", opts = {}) {
   const kind = restrictionKind === "particles" || restrictionKind === "filters" ? restrictionKind : "weather";
-  for (const candidate of getTileMaskCandidates()) {
+  const includeOffscreen = opts.includeOffscreen === true;
+  for (const candidate of getTileMaskCandidates({ includeOffscreen })) {
     if (!tileRestrictsWeatherForMask(candidate, kind)) continue;
     const suppressionAlpha = getTileSuppressionMaskAlpha(candidate, { restrictionKind: kind });
     if (suppressionAlpha <= 0.001) continue;
@@ -1483,11 +1951,12 @@ export function collectBelowTokenMaskTokens() {
  *
  * @returns {string}
  */
-export function buildBelowTokenMaskCoverageSignature() {
+export function buildBelowTokenMaskCoverageSignature(opts = {}) {
+  const includeOffscreen = opts.includeOffscreen === true;
   const parts = [];
   for (const token of collectBelowTokenMaskTokens()) {
     if (!token || token.destroyed) continue;
-    if (!_tokenIntersectsViewportForMask(token)) continue;
+    if (!includeOffscreen && !_tokenIntersectsViewportForMask(token)) continue;
     if (!_tokenParticipatesInBelowTokenMask(token)) continue;
 
     const tokenId = token?.document?.uuid ?? token?.document?.id ?? token?.id ?? "";
@@ -1568,7 +2037,8 @@ function _buildTileOcclusionSubjectSignature() {
  *
  * @returns {string}
  */
-export function buildBelowTileMaskCoverageSignature() {
+export function buildBelowTileMaskCoverageSignature(opts = {}) {
+  const includeOffscreen = opts.includeOffscreen === true;
   const mask = canvas?.masks?.occlusion ?? null;
   const parts = [
     `mask:${mask?.renderDirty ? 1 : 0}:${mask?.vision ? 1 : 0}`,
@@ -1577,7 +2047,7 @@ export function buildBelowTileMaskCoverageSignature() {
   ];
   const tileParts = [];
 
-  for (const candidate of getTileMaskCandidates()) {
+  for (const candidate of getTileMaskCandidates({ includeOffscreen })) {
     const tile = _getTileMaskCandidateTile(candidate);
     const mesh = _getTileMaskCandidateMesh(candidate);
     if (!tile) continue;
@@ -1620,7 +2090,7 @@ export function buildBelowTileMaskCoverageSignature() {
         Number(occlusionState?.radial ?? 0).toFixed(4),
         Number(occlusionState?.vision ?? 0).toFixed(4),
         Number(occlusionState?.surface ?? 0).toFixed(4),
-        String(getTileOcclusionModes(tile?.document ?? tile ?? null)),
+        tileOcclusionModesKey(getTileOcclusionModes(tile?.document ?? tile ?? null)),
         tileDocumentRestrictsParticles(candidate) ? 1 : 0,
         tileDocumentRestrictsFilters(candidate) ? 1 : 0,
       ].join(":"),
@@ -1668,19 +2138,20 @@ export function releaseTileSprites(sprites) {
 /**
  * Collect token sprites in world space for alpha masking.
  *
- * @param {{ respectOcclusion?: boolean, excludeOccludedByTiles?: boolean, excludedTokens?: Set<Token>|null, shouldIncludeToken?: (t: Token) => boolean }} [opts]
+ * @param {{ respectOcclusion?: boolean, excludeOccludedByTiles?: boolean, excludedTokens?: Set<Token>|null, shouldIncludeToken?: (t: Token) => boolean, includeOffscreen?: boolean }} [opts]
  * @returns {PIXI.Sprite[]}
  */
 export function collectTokenAlphaSprites(opts = {}) {
   const respectOcc = !!opts.respectOcclusion;
   const excludeOccludedByTiles = !!opts.excludeOccludedByTiles;
   const shouldInclude = typeof opts.shouldIncludeToken === "function" ? opts.shouldIncludeToken : null;
+  const includeOffscreen = opts.includeOffscreen === true;
   const excludedTokens =
     opts.excludedTokens instanceof Set ? opts.excludedTokens : excludeOccludedByTiles ? getTileOccludedTokens() : null;
 
   const out = [];
   for (const t of collectBelowTokenMaskTokens()) {
-    if (!_tokenIntersectsViewportForMask(t)) continue;
+    if (!includeOffscreen && !_tokenIntersectsViewportForMask(t)) continue;
     if (!_tokenParticipatesInBelowTokenMask(t)) continue;
 
     if (t.hasDynamicRing) continue;
@@ -1743,7 +2214,7 @@ function _getTileMaskCandidateTile(candidate) {
  * @private
  */
 function _getTileMaskCandidateMesh(candidate) {
-  return candidate?.mesh ?? candidate?.tile?.mesh ?? candidate?.mesh ?? null;
+  return candidate?.mesh ?? candidate?.tile?.mesh ?? null;
 }
 
 /**
@@ -1757,10 +2228,7 @@ function _getTileMaskCandidateMesh(candidate) {
 function _getPrimaryTileMaskCandidates() {
   const candidates = [];
   const seenMeshes = new Set();
-  const primaryTileMeshes =
-    typeof canvas?.primary?.tiles?.values === "function"
-      ? Array.from(canvas.primary.tiles.values())
-      : Array.from(canvas?.primary?.tiles ?? []);
+  const primaryTileMeshes = fxmGetPrimaryTileMeshes();
 
   for (const mesh of primaryTileMeshes) {
     if (!mesh || seenMeshes.has(mesh)) continue;
@@ -2077,37 +2545,50 @@ function getTileWeatherRevealMaskAlpha(candidate, { restrictionKind = "weather" 
   return revealAlpha > 0.001 ? revealAlpha : 0;
 }
 
+function foundryGenerationAtLeast14() {
+  const value = Number(globalThis.game?.release?.generation ?? String(globalThis.game?.version ?? "").split(".")[0]);
+  return Number.isFinite(value) && value >= 14;
+}
+
+function tileOcclusionModeValues(modes) {
+  if (modes === undefined || modes === null) return [];
+  if (typeof modes === "number" || typeof modes === "string") return [modes];
+  if (Array.isArray(modes)) return modes;
+  if (typeof modes?.[Symbol.iterator] === "function") {
+    try {
+      return Array.from(modes);
+    } catch {
+      return [];
+    }
+  }
+  return [modes];
+}
+
+function tileOcclusionModesKey(modes) {
+  const values = tileOcclusionModeValues(modes)
+    .map((value) => Number(value))
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+  return values.length ? values.join(",") : "0";
+}
+
 function tileOcclusionModesInclude(modes, mode) {
   const target = Number(mode);
   if (!Number.isFinite(target) || target <= 0) return false;
 
-  const hasMode = (value) => {
+  const bitmaskMode = foundryGenerationAtLeast14();
+  const values = tileOcclusionModeValues(modes);
+  for (const value of values) {
     const n = Number(value);
-    return Number.isFinite(n) && (n & target) !== 0;
-  };
-
-  if (typeof modes === "number" || typeof modes === "string") return hasMode(modes);
-  if (Array.isArray(modes)) return modes.some(hasMode);
-
-  if (typeof modes?.has === "function") {
-    try {
-      if (modes.has(mode) || modes.has(target)) return true;
-      for (const value of modes) if (hasMode(value)) return true;
-      return false;
-    } catch {
-      return false;
+    if (!Number.isFinite(n)) continue;
+    if (bitmaskMode) {
+      if ((n & target) !== 0) return true;
+      continue;
     }
+    if (n === target) return true;
   }
 
-  if (modes && typeof modes[Symbol.iterator] === "function") {
-    try {
-      for (const value of modes) if (hasMode(value)) return true;
-    } catch {
-      return false;
-    }
-  }
-
-  return hasMode(modes);
+  return false;
 }
 
 function tileHasSpatialOcclusionMode(candidate) {
@@ -2146,6 +2627,82 @@ function tileHasRadialOcclusionMode(candidate) {
   return tileOcclusionModesInclude(modes, M.RADIAL);
 }
 
+function tileRestrictsAnyMaskKind(candidate, kind) {
+  if (kind === "all") {
+    return (
+      tileRestrictsWeatherForMask(candidate, "weather") ||
+      tileRestrictsWeatherForMask(candidate, "particles") ||
+      tileRestrictsWeatherForMask(candidate, "filters")
+    );
+  }
+  return tileRestrictsWeatherForMask(candidate, kind);
+}
+
+/**
+ * Return whether radial weather restriction requires camera-synchronized masks.
+ * @param {"particles"|"filters"|"weather"|"all"} [kind="weather"]
+ * @param {{ includeOffscreen?: boolean }} [options]
+ * @returns {boolean}
+ */
+export function hasActiveRadialRestrictWeatherTilesForMask(kind = "weather", { includeOffscreen = true } = {}) {
+  if (!foundryGenerationAtLeast14()) return false;
+
+  for (const candidate of getTileMaskCandidates({ includeOffscreen })) {
+    if (!tileRestrictsAnyMaskKind(candidate, kind)) continue;
+    if (tileHasRadialOcclusionMode(candidate)) return true;
+  }
+
+  return false;
+}
+
+/**
+ * Synchronize radial weather masks before repainting weather restrictions.
+ * @param {"particles"|"filters"|"weather"|"all"} [kind="weather"]
+ * @param {object} [options]
+ * @param {boolean} [options.includeOffscreen]
+ * @param {boolean} [options.forceDirty]
+ * @param {boolean} [options.dispatchPointerMove]
+ * @param {boolean} [options.presyncedCoreState]
+ * @returns {boolean}
+ */
+export function syncActiveRadialRestrictWeatherTileMasksForCamera(
+  kind = "weather",
+  { includeOffscreen = true, forceDirty = true, dispatchPointerMove = false, presyncedCoreState = false } = {},
+) {
+  if (!hasActiveRadialRestrictWeatherTilesForMask(kind, { includeOffscreen })) return false;
+
+  if (dispatchPointerMove) dispatchCanvasPointerMoveNow();
+
+  const activeCanvas = globalThis.canvas ?? null;
+  try {
+    activeCanvas?.perception?.update?.({
+      refreshOcclusion: true,
+      refreshOcclusionMask: true,
+      refreshOcclusionStates: true,
+    });
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+  }
+
+  if (forceDirty) {
+    try {
+      const occlusionMask = activeCanvas?.masks?.occlusion ?? null;
+      const depthMask = activeCanvas?.masks?.depth ?? null;
+      if (occlusionMask && "renderDirty" in occlusionMask) occlusionMask.renderDirty = true;
+      if (depthMask && "renderDirty" in depthMask) depthMask.renderDirty = true;
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+  }
+
+  try {
+    return syncCanvasNativeWeatherOcclusionState({ presyncedCoreState, forceDirty })?.ready === true;
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+    return false;
+  }
+}
+
 function tileHasNonRadialSpatialOcclusionReveal(candidate) {
   if (!tileHasSpatialOcclusionReveal(candidate)) return false;
 
@@ -2158,6 +2715,24 @@ function tileHasNonRadialSpatialOcclusionReveal(candidate) {
 function getTileRadialRevealMaskAlpha(candidate) {
   const visibleAlpha = getTileUnoccludedAlpha(candidate) * getTileOcclusionAlpha(candidate);
   const alpha = 1 - Math.max(0, Math.min(1, Number.isFinite(visibleAlpha) ? visibleAlpha : 1));
+  return alpha > 0.001 ? alpha : 0;
+}
+
+/**
+ * Return the fractional alpha reduction inside a radial tile aperture.
+ * @param {{ tile?: Tile|null, mesh?: PIXI.DisplayObject|null }|Tile|null|undefined} candidate
+ * @returns {number}
+ */
+function getTileRadialVisibleRevealAlpha(candidate) {
+  const unoccludedAlpha = getTileUnoccludedAlpha(candidate);
+  const occludedAlpha = getTileOcclusionAlpha(candidate);
+  const fadeAmount = getTileFadeOcclusionAmount(candidate);
+  const outsideAlpha = Number.isFinite(fadeAmount)
+    ? unoccludedAlpha * (1 - fadeAmount) + occludedAlpha * fadeAmount
+    : unoccludedAlpha;
+  if (!(outsideAlpha > 0.001)) return 0;
+
+  const alpha = 1 - Math.max(0, Math.min(1, occludedAlpha / outsideAlpha));
   return alpha > 0.001 ? alpha : 0;
 }
 
@@ -2266,7 +2841,7 @@ function collectRadialOcclusionTokensForTile(candidate, occludableTokens = colle
  * Below-tiles composition now treats every eligible scene tile as participating by default so effects can reliably render underneath all tiles on the scene. `includeBackground` is retained for API compatibility but no longer changes the default selection behavior.
  *
  * @param {{ tile?: Tile|null, mesh?: PIXI.DisplayObject|null }|Tile|null|undefined} candidate
- * @param {{ includeBackground?: boolean, shouldIncludeTile?: (t: Tile) => boolean }} [opts]
+ * @param {{ includeBackground?: boolean, shouldIncludeTile?: (t: Tile) => boolean, includeOffscreen?: boolean }} [opts]
  * @returns {boolean}
  */
 function shouldUseTileForMask(candidate, opts = {}) {
@@ -2290,9 +2865,10 @@ function getTileMaskCandidates(opts = {}) {
   const candidates = _getPrimaryTileMaskCandidates();
   const shouldInclude = typeof opts.shouldIncludeTile === "function" ? opts.shouldIncludeTile : null;
   const includeBackground = !!opts.includeBackground;
+  const includeOffscreen = opts.includeOffscreen === true;
   return candidates.filter(
     (candidate) =>
-      _tileCandidateIntersectsViewportForMask(candidate) &&
+      (includeOffscreen || _tileCandidateIntersectsViewportForMask(candidate)) &&
       shouldUseTileForMask(candidate, { includeBackground, shouldIncludeTile: shouldInclude }),
   );
 }
@@ -2315,8 +2891,8 @@ function clearTileMaskRenderTexture(outRT) {
   }
 }
 
-function _tileMaskStageMatrix() {
-  return rawStageMatrix();
+function _tileMaskStageMatrix(outRT = null) {
+  return _maskRenderTextureMatrix(outRT, rawStageMatrix());
 }
 
 /**
@@ -2337,7 +2913,7 @@ function renderTileSpritesIntoRT(outRT, sprites, { clear = true, blendMode = PIX
   } catch (err) {
     logger.debug("FXMaster:", err);
   }
-  cont.transform.setFromMatrix(_tileMaskStageMatrix());
+  cont.transform.setFromMatrix(_tileMaskStageMatrix(outRT));
   cont.roundPixels = false;
 
   for (const s of sprites ?? []) {
@@ -2371,7 +2947,11 @@ function renderTileSpritesIntoRT(outRT, sprites, { clear = true, blendMode = PIX
   return rendered;
 }
 
-function renderRadialOcclusionShapesIntoRT(outRT, circles, { clear = true } = {}) {
+function renderRadialOcclusionShapesIntoRT(
+  outRT,
+  circles,
+  { clear = true, blendMode = PIXI.BLEND_MODES.NORMAL, alpha = 1 } = {},
+) {
   const r = canvas?.app?.renderer;
   if (!r || !outRT) return false;
   if (!Array.isArray(circles) || !circles.length) {
@@ -2389,12 +2969,13 @@ function renderRadialOcclusionShapesIntoRT(outRT, circles, { clear = true } = {}
     logger.debug("FXMaster:", err);
   }
 
-  cont.transform.setFromMatrix(_tileMaskStageMatrix());
+  cont.transform.setFromMatrix(_tileMaskStageMatrix(outRT));
   cont.roundPixels = false;
   gfx.roundPixels = false;
+  gfx.blendMode = blendMode;
 
   try {
-    gfx.beginFill(0xffffff, 1);
+    gfx.beginFill(0xffffff, Math.max(0, Math.min(1, Number(alpha) || 0)));
     for (const { center, radius } of circles) {
       if (!Number.isFinite(Number(center?.x)) || !Number.isFinite(Number(center?.y))) continue;
       if (!(Number(radius) > 0.001)) continue;
@@ -2422,11 +3003,86 @@ function renderRadialOcclusionShapesIntoRT(outRT, circles, { clear = true } = {}
     try {
       cont.removeChildren();
       gfx.clear();
+      gfx.blendMode = PIXI.BLEND_MODES.NORMAL;
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
   }
 
+  return rendered;
+}
+
+/**
+ * Render radial tile visibility directly in destination mask coordinates.
+ * @param {PIXI.RenderTexture} outRT
+ * @param {Array<{ tile: Tile, mesh: PIXI.DisplayObject|null }>} candidates
+ * @param {{ clear?: boolean, restrictionKind?: "particles"|"filters"|"weather" }} [options]
+ * @returns {boolean}
+ */
+function renderV13RadialVisibleTilesIntoRT(outRT, candidates, { clear = true, restrictionKind = "weather" } = {}) {
+  const renderer = canvas?.app?.renderer;
+  if (!renderer || !outRT || !Array.isArray(candidates) || !candidates.length) {
+    if (clear) clearTileMaskRenderTexture(outRT);
+    return false;
+  }
+
+  _tmpTileRadialVisibleRT = _ensureScratchRTLike(_tmpTileRadialVisibleRT, outRT);
+  const tileRT = copyMaskRenderTextureMetadata(outRT, _tmpTileRadialVisibleRT);
+  if (!tileRT) {
+    if (clear) clearTileMaskRenderTexture(outRT);
+    return false;
+  }
+
+  const sprite = (_tmpTileRadialVisibleSprite ??= new PIXI.Sprite(PIXI.Texture.EMPTY));
+  const occludableTokens = collectTileRadialOcclusionTokens();
+  let rendered = false;
+
+  for (const candidate of candidates) {
+    const tileSprites = collectTileAlphaSpritesFromCandidates([candidate], {
+      mode: "visible",
+      restrictionKind,
+    });
+    const revealAlpha = getTileRadialVisibleRevealAlpha(candidate);
+    const circles = revealAlpha > 0.001 ? collectRadialOcclusionTokensForTile(candidate, occludableTokens) : [];
+
+    if (!circles.length) {
+      rendered =
+        renderTileSpritesIntoRT(outRT, tileSprites, {
+          clear: clear && !rendered,
+        }) || rendered;
+      continue;
+    }
+
+    if (!renderTileSpritesIntoRT(tileRT, tileSprites, { clear: true })) continue;
+    renderRadialOcclusionShapesIntoRT(tileRT, circles, {
+      clear: false,
+      blendMode: PIXI.BLEND_MODES.ERASE,
+      alpha: revealAlpha,
+    });
+
+    try {
+      sprite.texture = tileRT;
+      sprite.alpha = 1;
+      sprite.anchor.set(0, 0);
+      sprite.blendMode = PIXI.BLEND_MODES.NORMAL;
+      sprite.position.set(0, 0);
+      sprite.scale.set(1, 1);
+      sprite.rotation = 0;
+      sprite.roundPixels = false;
+      renderer.render(sprite, {
+        renderTexture: outRT,
+        clear: clear && !rendered,
+        skipUpdateTransform: false,
+      });
+      rendered = true;
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    } finally {
+      sprite.texture = PIXI.Texture.EMPTY;
+    }
+  }
+
+  if (!rendered && clear) clearTileMaskRenderTexture(outRT);
   return rendered;
 }
 
@@ -2570,7 +3226,7 @@ function renderLiveTileMeshesIntoRT(
   const tileCandidates = Array.isArray(candidates)
     ? candidates
     : getTileMaskCandidates({ includeBackground, shouldIncludeTile });
-  const stageTransform = _tileMaskStageMatrix();
+  const stageTransform = _tileMaskStageMatrix(outRT);
   let rendered = false;
 
   for (const candidate of tileCandidates) {
@@ -2683,12 +3339,13 @@ function collectTileAlphaSpritesFromCandidates(candidates, { mode = "suppression
  * - `weatherReveal`: Restricts Weather tiles contribute by their revealed amount, so only transparent portions suppress behind-tile filter rendering.
  * - `solid`: tiles contribute fully, ignoring live fade state while still respecting the source texture alpha.
  *
- * @param {{ includeBackground?: boolean, shouldIncludeTile?: (t: Tile) => boolean, mode?: "suppression"|"visible"|"weatherReveal"|"solid", restrictionKind?: "particles"|"filters"|"weather" }} [opts]
+ * @param {{ includeBackground?: boolean, shouldIncludeTile?: (t: Tile) => boolean, includeOffscreen?: boolean, mode?: "suppression"|"visible"|"weatherReveal"|"solid", restrictionKind?: "particles"|"filters"|"weather" }} [opts]
  * @returns {PIXI.Sprite[]}
  */
 export function collectTileAlphaSprites(opts = {}) {
   const includeBackground = !!opts.includeBackground;
   const shouldInclude = typeof opts.shouldIncludeTile === "function" ? opts.shouldIncludeTile : null;
+  const includeOffscreen = opts.includeOffscreen === true;
   const restrictionKind =
     opts.restrictionKind === "particles" || opts.restrictionKind === "filters" ? opts.restrictionKind : "weather";
   const mode =
@@ -2700,7 +3357,7 @@ export function collectTileAlphaSprites(opts = {}) {
       ? "solid"
       : "suppression";
 
-  const candidates = getTileMaskCandidates({ includeBackground, shouldIncludeTile: shouldInclude });
+  const candidates = getTileMaskCandidates({ includeBackground, shouldIncludeTile: shouldInclude, includeOffscreen });
   return collectTileAlphaSpritesFromCandidates(candidates, { mode, restrictionKind });
 }
 
@@ -2923,10 +3580,7 @@ function _getNearestUpperLevelTileMeshesCoveringToken(token, { ignoreHoverFadeEl
 
   let nearestElevation = Number.POSITIVE_INFINITY;
   const nearestMeshes = [];
-  const tileMeshes =
-    typeof canvas.primary?.tiles?.values === "function"
-      ? Array.from(canvas.primary.tiles.values())
-      : Array.from(canvas.primary?.tiles ?? []);
+  const tileMeshes = fxmGetPrimaryTileMeshes();
 
   for (const mesh of tileMeshes) {
     if (!mesh || mesh.destroyed || mesh.visible === false || mesh.renderable === false) continue;
@@ -2982,7 +3636,7 @@ function _getNearestUpperLevelLevelTexturesCoveringToken(token, { ignoreHoverFad
   let nearestElevation = Number.POSITIVE_INFINITY;
   const nearestMeshes = [];
 
-  for (const mesh of canvas.primary?.levelTextures ?? []) {
+  for (const mesh of fxmGetPrimaryLevelTextureMeshes()) {
     if (!mesh || mesh.destroyed || mesh.visible === false || mesh.renderable === false) continue;
 
     const meshElevation = Number(
@@ -3311,11 +3965,8 @@ function _sceneMaskContainsTokenCenter(token) {
 }
 
 /**
- * Return whether Foundry currently considers the token itself hovered.
- *
- * This is intentionally stricter than "the mouse is inside a higher-Level overlay surface." It only trusts Foundry's token-hover state, not a manual pointer hit-test, so broad/native overlay hover cannot create lower-Level token cutouts before Foundry has actually hovered that token.
- *
- * @param {Token|null|undefined} token
+ * Return whether the token is directly hovered.
+ * @param {object|null|undefined} token
  * @returns {boolean}
  * @private
  */
@@ -3663,18 +4314,20 @@ function tokensUnderTile(tileObj) {
 /**
  * Collect tokens that are currently hidden beneath non-faded occluding tiles.
  *
+ * @param {{ includeOffscreen?: boolean }} [opts]
  * @returns {Set<Token>}
  * @private
  */
-function getTileOccludedTokens() {
-  const frameKey = _belowObjectViewportFrameKey();
+function getTileOccludedTokens(opts = {}) {
+  const includeOffscreen = opts.includeOffscreen === true;
+  const frameKey = `${includeOffscreen ? "world" : "viewport"}:${_belowObjectViewportFrameKey()}`;
   if (_tileOccludedTokensFrameKey === frameKey && _tileOccludedTokensFrameValue instanceof Set) {
     return _tileOccludedTokensFrameValue;
   }
 
   const excluded = new Set();
   for (const tile of canvas?.tiles?.placeables ?? []) {
-    if (!_tileCandidateIntersectsViewportForMask(tile)) continue;
+    if (!includeOffscreen && !_tileCandidateIntersectsViewportForMask(tile)) continue;
     for (const token of tokensUnderTile(tile)) excluded.add(token);
   }
 
@@ -3701,7 +4354,9 @@ export function composeMaskMinusTokens(baseRT, { outRT } = {}) {
       resolution: baseRT.resolution || 1,
     });
 
-  const excludedTokens = getTileOccludedTokens();
+  copyMaskRenderTextureMetadata(baseRT, out);
+  const worldAtlas = getMaskRenderTextureWorldAtlas(out);
+  const excludedTokens = getTileOccludedTokens({ includeOffscreen: !!worldAtlas });
 
   const spr = (_tmpRTCopySprite ??= new PIXI.Sprite());
   spr.texture = baseRT;
@@ -3712,7 +4367,7 @@ export function composeMaskMinusTokens(baseRT, { outRT } = {}) {
   spr.rotation = 0;
   r.render(spr, { renderTexture: out, clear: true });
 
-  const Msnap = snappedStageMatrix();
+  const Msnap = _maskRenderTextureMatrix(out);
   const c = (_tmpTokenMaskContainer ??= new PIXI.Container());
   try {
     c.removeChildren();
@@ -3721,14 +4376,19 @@ export function composeMaskMinusTokens(baseRT, { outRT } = {}) {
   }
   c.transform.setFromMatrix(Msnap);
   c.roundPixels = false;
-  for (const s of collectTokenAlphaSprites({ respectOcclusion: true, excludeOccludedByTiles: true, excludedTokens })) {
+  for (const s of collectTokenAlphaSprites({
+    respectOcclusion: true,
+    excludeOccludedByTiles: true,
+    excludedTokens,
+    includeOffscreen: !!worldAtlas,
+  })) {
     s.blendMode = PIXI.BLEND_MODES.DST_OUT;
     s.roundPixels = false;
     c.addChild(s);
   }
   if (c.children.length) r.render(c, { renderTexture: out, clear: false, skipUpdateTransform: false });
 
-  subtractDynamicRingsFromRT(out, { respectOcclusion: true, excludedTokens });
+  subtractDynamicRingsFromRT(out, { respectOcclusion: true, excludedTokens, includeOffscreen: !!worldAtlas });
   const poolable = [];
   for (const child of c.children) poolable.push(child);
   try {
@@ -3744,6 +4404,7 @@ export function composeMaskMinusTokens(baseRT, { outRT } = {}) {
   } catch (err) {
     logger.debug("FXMaster:", err);
   }
+  copyMaskRenderTextureMetadata(baseRT, out);
   return out;
 }
 
@@ -3772,6 +4433,60 @@ function _withCoverageSamplingMode(rt, scaleMode, fn) {
       logger.debug("FXMaster:", err);
     }
   }
+}
+
+/**
+ * Multiply two 2D affine matrices.
+ *
+ * @param {PIXI.Matrix} left
+ * @param {PIXI.Matrix} right
+ * @returns {PIXI.Matrix}
+ * @private
+ */
+function _multiplyMaskMatrices(left, right) {
+  return new PIXI.Matrix(
+    left.a * right.a + left.c * right.b,
+    left.b * right.a + left.d * right.b,
+    left.a * right.c + left.c * right.d,
+    left.b * right.c + left.d * right.d,
+    left.a * right.tx + left.c * right.ty + left.tx,
+    left.b * right.tx + left.d * right.ty + left.ty,
+  );
+}
+
+/**
+ * Return the pixel-to-world transform for a world-atlas render texture.
+ *
+ * @param {PIXI.RenderTexture|null|undefined} rt
+ * @returns {PIXI.Matrix|null}
+ * @private
+ */
+function _maskRenderTexturePixelToWorldMatrix(rt) {
+  const atlas = getMaskRenderTextureWorldAtlas(rt);
+  if (!atlas) return null;
+  const bounds = atlas.bounds;
+  const ppw = Math.max(1e-6, Number(atlas.pixelsPerWorld) || 1);
+  return new PIXI.Matrix(1 / ppw, 0, 0, 1 / ppw, bounds.x, bounds.y);
+}
+
+/**
+ * Return a sprite transform for subtracting one mask texture from another.
+ *
+ * @param {PIXI.RenderTexture|null|undefined} outRT
+ * @param {PIXI.RenderTexture|null|undefined} coverageRT
+ * @returns {PIXI.Matrix}
+ * @private
+ */
+function _coverageComposeSpriteMatrix(outRT, coverageRT) {
+  const outAtlas = getMaskRenderTextureWorldAtlas(outRT);
+  const coverageAtlas = getMaskRenderTextureWorldAtlas(coverageRT);
+  if (!outAtlas && !coverageAtlas) return new PIXI.Matrix();
+
+  const worldToOut = outAtlas ? _maskRenderTextureWorldMatrix(outRT) : snappedStageMatrix();
+  const coverageToWorld = coverageAtlas
+    ? _maskRenderTexturePixelToWorldMatrix(coverageRT)
+    : snappedStageMatrix().invert();
+  return _multiplyMaskMatrices(worldToOut ?? new PIXI.Matrix(), coverageToWorld ?? new PIXI.Matrix());
 }
 
 function _coverageScaleModeForCompose(coverageRT) {
@@ -3803,7 +4518,7 @@ export function composeMaskMinusTiles(baseRT, { outRT, mode = "suppression", res
 /**
  * Compose a cutout mask by subtracting an existing tokens silhouette RT from a base mask.
  *
- * This is a cheaper alternative to {@link composeMaskMinusTokens} because it avoids re-collecting and re-rendering token sprites for each cutout. It assumes both RTs are in the same CSS-space viewport coordinates (e.g. produced by {@link buildSceneAllowMaskRT} and {@link repaintTokensMaskInto}).
+ * This is a cheaper alternative to {@link composeMaskMinusTokens} because it avoids re-collecting and re-rendering token sprites for each cutout. The coverage texture is projected into the base mask coordinate space before subtraction.
  *
  * @param {PIXI.RenderTexture} baseRT
  * @param {PIXI.RenderTexture} tokensRT
@@ -3822,6 +4537,8 @@ export function composeMaskMinusCoverageRT(baseRT, coverageRTs, { outRT } = {}) 
       height: Math.max(1, Number(baseRT.height) || 1),
       resolution: baseRT.resolution || 1,
     });
+
+  copyMaskRenderTextureMetadata(baseRT, out);
 
   try {
     const spr = (_tmpRTCopySprite ??= new PIXI.Sprite());
@@ -3847,6 +4564,7 @@ export function composeMaskMinusCoverageRT(baseRT, coverageRTs, { outRT } = {}) 
     if (!coverageRT) continue;
     try {
       eraseSprite.texture = coverageRT;
+      eraseSprite.transform.setFromMatrix(_coverageComposeSpriteMatrix(out, coverageRT));
       const scaleMode = _coverageScaleModeForCompose(coverageRT);
       _withCoverageSamplingMode(coverageRT, scaleMode, () =>
         r.render(eraseSprite, { renderTexture: out, clear: false }),
@@ -3856,6 +4574,9 @@ export function composeMaskMinusCoverageRT(baseRT, coverageRTs, { outRT } = {}) 
     }
   }
 
+  copyMaskRenderTextureMetadata(baseRT, out);
+  eraseSprite.transform.setFromMatrix(new PIXI.Matrix());
+  eraseSprite.texture = PIXI.Texture.EMPTY;
   return out;
 }
 
@@ -3924,8 +4645,9 @@ export function ensureCssSpaceMaskSprite(node, texture, name = "fxmaster:css-mas
 export function repaintTokensMaskInto(outRT) {
   const r = canvas?.app?.renderer;
   if (!r || !outRT) return;
-  const excludedTokens = getTileOccludedTokens();
-  const Msnap = snappedStageMatrix();
+  const worldAtlas = getMaskRenderTextureWorldAtlas(outRT);
+  const excludedTokens = getTileOccludedTokens({ includeOffscreen: !!worldAtlas });
+  const Msnap = _maskRenderTextureMatrix(outRT);
   const cont = (_tmpTokenMaskContainer ??= new PIXI.Container());
   try {
     cont.removeChildren();
@@ -3934,13 +4656,18 @@ export function repaintTokensMaskInto(outRT) {
   }
   cont.transform.setFromMatrix(Msnap);
   cont.roundPixels = false;
-  for (const s of collectTokenAlphaSprites({ respectOcclusion: true, excludeOccludedByTiles: true, excludedTokens })) {
+  for (const s of collectTokenAlphaSprites({
+    respectOcclusion: true,
+    excludeOccludedByTiles: true,
+    excludedTokens,
+    includeOffscreen: !!worldAtlas,
+  })) {
     s.blendMode = PIXI.BLEND_MODES.NORMAL;
     s.roundPixels = false;
     cont.addChild(s);
   }
   r.render(cont, { renderTexture: outRT, clear: true, skipUpdateTransform: false });
-  paintDynamicRingsInto(outRT, { respectOcclusion: true, excludedTokens });
+  paintDynamicRingsInto(outRT, { respectOcclusion: true, excludedTokens, includeOffscreen: !!worldAtlas });
   const poolable = [];
   for (const child of cont.children) poolable.push(child);
   try {
@@ -3974,6 +4701,7 @@ export function repaintTilesMaskInto(
     restrictionKind === "particles" || restrictionKind === "filters" ? restrictionKind : "weather";
 
   _markTileCoverageRT(outRT);
+  const worldAtlas = getMaskRenderTextureWorldAtlas(outRT);
 
   const combineTilePredicate = (...predicates) => {
     const list = predicates.filter((predicate) => typeof predicate === "function");
@@ -3982,25 +4710,42 @@ export function repaintTilesMaskInto(
   };
 
   const renderVisibleTileCoverageIntoRT = (renderTexture, predicate, { clear = true } = {}) => {
-    const candidates = getTileMaskCandidates({ includeBackground, shouldIncludeTile: predicate });
+    const candidates = getTileMaskCandidates({
+      includeBackground,
+      shouldIncludeTile: predicate,
+      includeOffscreen: !!worldAtlas,
+    });
+    const explicitRadialCandidates = foundryGenerationAtLeast14() ? [] : candidates.filter(tileHasRadialOcclusionMode);
+    const explicitRadialSet = new Set(explicitRadialCandidates);
+    const standardCandidates = candidates.filter((candidate) => !explicitRadialSet.has(candidate));
+
     const renderedLive = renderLiveTileMeshesIntoRT(renderTexture, {
-      candidates,
+      candidates: standardCandidates,
       clear,
       restrictionKind: resolvedRestrictionKind,
       mode: "visible",
     });
-    const fallbackCandidates = candidates.filter((candidate) => !tileCandidateHasRenderableLiveMesh(candidate));
-    if (!fallbackCandidates.length) return renderedLive;
+    const fallbackCandidates = standardCandidates.filter((candidate) => !tileCandidateHasRenderableLiveMesh(candidate));
+    const renderedFallback = fallbackCandidates.length
+      ? renderTileSpritesIntoRT(
+          renderTexture,
+          collectTileAlphaSpritesFromCandidates(fallbackCandidates, {
+            mode: "visible",
+            restrictionKind: resolvedRestrictionKind,
+          }),
+          { clear: clear && !renderedLive },
+        )
+      : false;
+    const renderedStandard = renderedLive || renderedFallback;
+    const renderedRadial = explicitRadialCandidates.length
+      ? renderV13RadialVisibleTilesIntoRT(renderTexture, explicitRadialCandidates, {
+          clear: clear && !renderedStandard,
+          restrictionKind: resolvedRestrictionKind,
+        })
+      : false;
 
-    const renderedFallback = renderTileSpritesIntoRT(
-      renderTexture,
-      collectTileAlphaSpritesFromCandidates(fallbackCandidates, {
-        mode: "visible",
-        restrictionKind: resolvedRestrictionKind,
-      }),
-      { clear: clear && !renderedLive },
-    );
-    return renderedLive || renderedFallback;
+    if (!renderedStandard && !renderedRadial && clear) clearTileMaskRenderTexture(renderTexture);
+    return renderedStandard || renderedRadial;
   };
 
   const weatherRestrictedOnly = (tile) => tileRestrictsWeatherForMask(tile, resolvedRestrictionKind);
@@ -4022,6 +4767,7 @@ export function repaintTilesMaskInto(
     const restrictedCandidates = getTileMaskCandidates({
       includeBackground,
       shouldIncludeTile: combineTilePredicate(shouldIncludeTile, weatherRestrictedOnly),
+      includeOffscreen: !!worldAtlas,
     });
     renderTileSpritesIntoRT(
       outRT,
@@ -4037,7 +4783,11 @@ export function repaintTilesMaskInto(
 
   if (mode === "weatherReveal") {
     const revealPredicate = combineTilePredicate(shouldIncludeTile, weatherRestrictedOnly);
-    const revealCandidates = getTileMaskCandidates({ includeBackground, shouldIncludeTile: revealPredicate });
+    const revealCandidates = getTileMaskCandidates({
+      includeBackground,
+      shouldIncludeTile: revealPredicate,
+      includeOffscreen: !!worldAtlas,
+    });
     const radialRevealCandidates = revealCandidates.filter(tileHasRadialOcclusionMode);
     const radialRevealSet = new Set(radialRevealCandidates);
     const nonRadialSpatialRevealSet = new Set(revealCandidates.filter(tileHasNonRadialSpatialOcclusionReveal));
@@ -4111,7 +4861,7 @@ export function repaintTilesMaskInto(
     return;
   }
 
-  const candidates = getTileMaskCandidates({ includeBackground, shouldIncludeTile });
+  const candidates = getTileMaskCandidates({ includeBackground, shouldIncludeTile, includeOffscreen: !!worldAtlas });
   renderTileSpritesIntoRT(
     outRT,
     collectTileAlphaSpritesFromCandidates(candidates, { mode, restrictionKind: resolvedRestrictionKind }),
@@ -4185,6 +4935,42 @@ function _renderBinaryRegionMaskRT(rt, region, stageMatrix) {
 
   r.render(solidsGfx, { renderTexture: rt, clear: true });
   r.render(holesGfx, { renderTexture: rt, clear: false });
+}
+
+/**
+ * Render hard scene suppression directly when the Region has no holes.
+ *
+ * @param {PIXI.RenderTexture} rt
+ * @param {object[]} shapes
+ * @param {PIXI.Matrix} stageMatrix
+ * @returns {boolean}
+ * @private
+ */
+function _renderSceneSuppressionHardRegionDirect(rt, shapes, stageMatrix) {
+  const r = canvas?.app?.renderer;
+  if (!r || !rt || !Array.isArray(shapes) || !shapes.length) return false;
+
+  const { solids: solidsGfx, holes: holesGfx } = _getRegionMaskGfx();
+  solidsGfx.clear();
+  holesGfx.clear();
+  solidsGfx.transform.setFromMatrix(stageMatrix);
+
+  solidsGfx.beginFill(0xffffff, 1.0);
+  for (const shape of shapes) {
+    if (!shape?.hole) traceRegionShapePIXI(solidsGfx, shape);
+  }
+  solidsGfx.endFill();
+  solidsGfx.blendMode = PIXI.BLEND_MODES.ERASE;
+
+  try {
+    r.render(solidsGfx, { renderTexture: rt, clear: false });
+    return true;
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+    return false;
+  } finally {
+    solidsGfx.blendMode = PIXI.BLEND_MODES.NORMAL;
+  }
 }
 
 /**
@@ -4832,6 +5618,43 @@ function _getSceneSuppressionSoftMaskEntry(region, stageMatrix, edgeFadePercent)
 }
 
 /**
+ * Return cached world-space Region edge-fade mask data.
+ * @param {PlaceableObject} region
+ * @param {number} edgeFadePercent
+ * @returns {{texture: PIXI.Texture, uvFromWorld: Float32Array, boundsWorld: {x:number,y:number,width:number,height:number}, pixelsPerWorld: number}|null}
+ */
+export function getRegionSoftMaskData(region, edgeFadePercent) {
+  const fade = Math.min(Math.max(Number(edgeFadePercent) || 0, 0), 1);
+  if (!(fade > 0)) return null;
+
+  const entry = _getSceneSuppressionSoftMaskEntry(region, snappedStageMatrix(), fade);
+  const texture = entry?.texture ?? null;
+  if (!texture || texture.destroyed) return null;
+
+  const bounds = entry.boundsWorld;
+  const pixelsPerWorld = Math.max(1e-6, Number(entry.pixelsPerWorld) || 1);
+  const width = Math.max(1, Number(texture.width) || Number(texture.baseTexture?.width) || 1);
+  const height = Math.max(1, Number(texture.height) || Number(texture.baseTexture?.height) || 1);
+  const uvFromWorld =
+    entry.uvFromWorld instanceof Float32Array && entry.uvFromWorld.length >= 9
+      ? entry.uvFromWorld
+      : new Float32Array([
+          pixelsPerWorld / width,
+          0,
+          0,
+          0,
+          pixelsPerWorld / height,
+          0,
+          (-bounds.x * pixelsPerWorld) / width,
+          (-bounds.y * pixelsPerWorld) / height,
+          1,
+        ]);
+  entry.uvFromWorld = uvFromWorld;
+
+  return { texture, uvFromWorld, boundsWorld: bounds, pixelsPerWorld };
+}
+
+/**
  * Ensure a reusable hard-suppression region mask matches the scene allow-mask render texture.
  *
  * @param {PIXI.RenderTexture} sceneAllowRT
@@ -4983,6 +5806,12 @@ function _renderSceneSuppressionHardRegion(rt, region, stageMatrix) {
   const r = canvas?.app?.renderer;
   if (!r || !rt || !region) return;
 
+  const shapes = regionMaskTraceShapes(region);
+  const hasHoles = shapes.some((shape) => !!shape?.hole);
+  const hasSolids = shapes.some((shape) => !shape?.hole);
+
+  if (hasSolids && !hasHoles && _renderSceneSuppressionHardRegionDirect(rt, shapes, stageMatrix)) return;
+
   const maskRT = _ensureSceneSuppressionHardMaskRT(rt);
   if (!maskRT) return;
 
@@ -5082,7 +5911,7 @@ export function buildRegionMaskRT(
 }
 
 /**
- * Project a CSS-space mask sprite into a container's local space (pixel-snapped). Keeps the existing "roundPixels" behavior mirrored from the particle layer.
+ * Project a mask sprite into a container's local space.
  *
  * @param {PIXI.Container} container
  * @param {PIXI.Sprite} spr
@@ -5090,9 +5919,28 @@ export function buildRegionMaskRT(
 export function applyMaskSpriteTransform(container, spr) {
   const r = canvas?.app?.renderer;
   const res = r?.resolution || window.devicePixelRatio || 1;
+  const worldAtlas = getMaskRenderTextureWorldAtlas(spr?.texture);
+  const localToStage = stageLocalMatrixOf(container);
+
+  if (worldAtlas) {
+    const stageToLocal = localToStage.invert();
+    const bounds = worldAtlas.bounds;
+    const ppw = Math.max(1e-6, Number(worldAtlas.pixelsPerWorld) || 1);
+    const worldToLocal = new PIXI.Matrix(
+      stageToLocal.a / ppw,
+      stageToLocal.b / ppw,
+      stageToLocal.c / ppw,
+      stageToLocal.d / ppw,
+      stageToLocal.a * bounds.x + stageToLocal.c * bounds.y + stageToLocal.tx,
+      stageToLocal.b * bounds.x + stageToLocal.d * bounds.y + stageToLocal.ty,
+    );
+    spr.transform.setFromMatrix(worldToLocal);
+    spr.roundPixels = false;
+    container.roundPixels = false;
+    return;
+  }
 
   const stageMatrix = snappedStageMatrix();
-  const localToStage = stageLocalMatrixOf(container);
   const localToCss = new PIXI.Matrix(
     stageMatrix.a * localToStage.a + stageMatrix.c * localToStage.b,
     stageMatrix.b * localToStage.a + stageMatrix.d * localToStage.b,
@@ -5206,22 +6054,6 @@ function _matrixCacheKey(matrix) {
 }
 
 /**
- * Safely stringify plain Region shape data for cache signatures.
- *
- * @param {unknown} value
- * @returns {string}
- * @private
- */
-function _shapeDataCacheKey(value) {
-  try {
-    return JSON.stringify(value ?? null, (_key, entry) => (typeof entry === "function" ? undefined : entry));
-  } catch (_err) {
-    if (Array.isArray(value)) return `array:${value.length}`;
-    return String(value ?? "");
-  }
-}
-
-/**
  * Return a compact signature for a preserved overlay DisplayObject.
  *
  * @param {PIXI.DisplayObject|null|undefined} object
@@ -5290,9 +6122,40 @@ function _preserveShapeCacheKey(shape, index) {
 }
 
 /**
+ * Return a compact signature for a footprint-clipped Level preservation group.
+ *
+ * @param {{ levelId?: string, objects?: PIXI.DisplayObject[], regions?: object[] }|null|undefined} group
+ * @param {number} index
+ * @returns {string}
+ * @private
+ */
+function _preserveSurfaceGroupCacheKey(group, index) {
+  if (!group) return `missing-group:${index}`;
+
+  const objects = Array.isArray(group?.objects) ? group.objects : [];
+  const regions = Array.isArray(group?.regions) ? group.regions : [];
+  const regionKey = regions
+    .map((region, regionIndex) => {
+      const document = region?.document ?? region ?? null;
+      return [
+        document?.id ?? region?.id ?? regionIndex,
+        document?.uuid ?? "",
+        regionMaskGeometrySignature(region),
+      ].join("~");
+    })
+    .join(";");
+
+  return [
+    group?.levelId ?? index,
+    objects.map((object, objectIndex) => _preserveObjectCacheKey(object, objectIndex)).join(";"),
+    regionKey,
+  ].join("^");
+}
+
+/**
  * Return a compact signature for a scene-suppression input entry.
  *
- * @param {{ region?: PlaceableObject, edgeFadePercent?: number, preserveObjects?: PIXI.DisplayObject[], preserveShapes?: object[], suppressObjects?: PIXI.DisplayObject[], suppressOnlyObjects?: boolean }|PlaceableObject} entry
+ * @param {{ region?: PlaceableObject, edgeFadePercent?: number, preserveObjects?: PIXI.DisplayObject[], preserveSurfaceGroups?: Array<{ levelId?: string, objects?: PIXI.DisplayObject[], regions?: object[] }>, preserveShapes?: object[], suppressObjects?: PIXI.DisplayObject[], suppressOnlyObjects?: boolean }|PlaceableObject} entry
  * @returns {string}
  * @private
  */
@@ -5317,6 +6180,7 @@ function _sceneSuppressionEntryCacheKey(entry) {
 
   const geometrySig = regionMaskGeometrySignature(region);
   const preserveObjects = Array.isArray(entry?.preserveObjects) ? entry.preserveObjects : [];
+  const preserveSurfaceGroups = Array.isArray(entry?.preserveSurfaceGroups) ? entry.preserveSurfaceGroups : [];
   const preserveShapes = Array.isArray(entry?.preserveShapes) ? entry.preserveShapes : [];
   const suppressObjects = Array.isArray(entry?.suppressObjects) ? entry.suppressObjects : [];
   return [
@@ -5327,6 +6191,7 @@ function _sceneSuppressionEntryCacheKey(entry) {
     _numberCacheKey(entry?.edgeFadePercent ?? 0, 4),
     entry?.suppressOnlyObjects ? 1 : 0,
     preserveObjects.map((object, index) => _preserveObjectCacheKey(object, index)).join(";"),
+    preserveSurfaceGroups.map((group, index) => _preserveSurfaceGroupCacheKey(group, index)).join(";"),
     preserveShapes.map((shape, index) => _preserveShapeCacheKey(shape, index)).join(";"),
     suppressObjects.map((object, index) => _preserveObjectCacheKey(object, index)).join(";"),
   ].join("|");
@@ -5347,6 +6212,7 @@ function _sceneAllowMaskResolution(cssW, cssH, suppressionEntries) {
   const hasPreservedSurfaces = (suppressionEntries ?? []).some((entry) => {
     return (
       (Array.isArray(entry?.preserveObjects) && entry.preserveObjects.length) ||
+      (Array.isArray(entry?.preserveSurfaceGroups) && entry.preserveSurfaceGroups.length) ||
       (Array.isArray(entry?.preserveShapes) && entry.preserveShapes.length) ||
       (Array.isArray(entry?.suppressObjects) && entry.suppressObjects.length)
     );
@@ -5369,6 +6235,7 @@ function _sceneAllowMaskCacheKey({ cssW, cssH, res, stageMatrix, suppressionEntr
   const hasPreservedObjects = suppressionEntries.some(
     (entry) =>
       (Array.isArray(entry?.preserveObjects) && entry.preserveObjects.length) ||
+      (Array.isArray(entry?.preserveSurfaceGroups) && entry.preserveSurfaceGroups.length) ||
       (Array.isArray(entry?.preserveShapes) && entry.preserveShapes.length) ||
       (Array.isArray(entry?.suppressObjects) && entry.suppressObjects.length),
   );
@@ -5376,8 +6243,11 @@ function _sceneAllowMaskCacheKey({ cssW, cssH, res, stageMatrix, suppressionEntr
   let surfaceKey = "";
   if (canvas?.level && hasPreservedObjects) {
     try {
-      const surfaceState = getCanvasLiveLevelSurfaceState(canvas?.scene ?? null, { presynced: true });
-      surfaceKey = surfaceState?.forceRefresh ? `force:${Date.now()}` : surfaceState?.key ?? "";
+      const surfaceState = getCanvasLiveLevelSurfaceState(canvas?.scene ?? null, {
+        presynced: true,
+        includeTransientFades: false,
+      });
+      surfaceKey = surfaceState?.key ?? "";
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
@@ -5403,6 +6273,348 @@ function _sceneAllowMaskCacheKey({ cssW, cssH, res, stageMatrix, suppressionEntr
 }
 
 /**
+ * Remove FXMaster world-mask atlas metadata from a render texture.
+ *
+ * @param {PIXI.RenderTexture|null|undefined} rt
+ * @returns {PIXI.RenderTexture|null|undefined}
+ */
+export function clearMaskRenderTextureMetadata(rt) {
+  if (!rt) return rt;
+  try {
+    delete rt.__fxmasterMaskSpace;
+    delete rt.__fxmasterMaskWorldBounds;
+    delete rt.__fxmasterMaskPixelsPerWorld;
+    delete rt.__fxmasterMaskUvFromWorld;
+    delete rt.__fxmasterMaskTexelUV;
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+  }
+  return rt;
+}
+
+/**
+ * Copy FXMaster world-mask atlas metadata between render textures.
+ *
+ * @param {PIXI.RenderTexture|null|undefined} source
+ * @param {PIXI.RenderTexture|null|undefined} target
+ * @returns {PIXI.RenderTexture|null|undefined}
+ */
+export function copyMaskRenderTextureMetadata(source, target) {
+  if (!target) return target;
+  clearMaskRenderTextureMetadata(target);
+  if (source?.__fxmasterMaskSpace !== "world") return target;
+
+  try {
+    target.__fxmasterMaskSpace = "world";
+    target.__fxmasterMaskWorldBounds = { ...(source.__fxmasterMaskWorldBounds ?? {}) };
+    target.__fxmasterMaskPixelsPerWorld = source.__fxmasterMaskPixelsPerWorld;
+    target.__fxmasterMaskUvFromWorld =
+      source.__fxmasterMaskUvFromWorld instanceof Float32Array
+        ? new Float32Array(source.__fxmasterMaskUvFromWorld)
+        : source.__fxmasterMaskUvFromWorld;
+    target.__fxmasterMaskTexelUV =
+      source.__fxmasterMaskTexelUV instanceof Float32Array
+        ? new Float32Array(source.__fxmasterMaskTexelUV)
+        : source.__fxmasterMaskTexelUV;
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+  }
+  return target;
+}
+
+/**
+ * Return world-mask atlas metadata stored on a render texture.
+ *
+ * @param {PIXI.RenderTexture|null|undefined} rt
+ * @returns {{ bounds: {x:number, y:number, width:number, height:number}, pixelsPerWorld: number, uvFromWorld: Float32Array, texelUV: Float32Array }|null}
+ */
+export function getMaskRenderTextureWorldAtlas(rt) {
+  if (rt?.__fxmasterMaskSpace !== "world") return null;
+  const bounds = rt.__fxmasterMaskWorldBounds ?? null;
+  const ppw = Number(rt.__fxmasterMaskPixelsPerWorld);
+  if (
+    !bounds ||
+    !Number.isFinite(bounds.x) ||
+    !Number.isFinite(bounds.y) ||
+    !(Number(bounds.width) > 0) ||
+    !(Number(bounds.height) > 0) ||
+    !(ppw > 0)
+  )
+    return null;
+
+  const width = Math.max(1, Number(rt.width) || 1);
+  const height = Math.max(1, Number(rt.height) || 1);
+  const uvFromWorld =
+    rt.__fxmasterMaskUvFromWorld instanceof Float32Array && rt.__fxmasterMaskUvFromWorld.length >= 9
+      ? rt.__fxmasterMaskUvFromWorld
+      : new Float32Array([
+          ppw / width,
+          0,
+          0,
+          0,
+          ppw / height,
+          0,
+          (-bounds.x * ppw) / width,
+          (-bounds.y * ppw) / height,
+          1,
+        ]);
+  const texelUV =
+    rt.__fxmasterMaskTexelUV instanceof Float32Array && rt.__fxmasterMaskTexelUV.length >= 2
+      ? rt.__fxmasterMaskTexelUV
+      : new Float32Array([1 / width, 1 / height]);
+
+  return { bounds, pixelsPerWorld: ppw, uvFromWorld, texelUV };
+}
+
+/**
+ * Return whether a render texture carries world-mask atlas metadata.
+ *
+ * @param {PIXI.RenderTexture|null|undefined} rt
+ * @returns {boolean}
+ */
+export function isMaskRenderTextureWorldAtlas(rt) {
+  return !!getMaskRenderTextureWorldAtlas(rt);
+}
+
+/**
+ * Attach world-mask atlas metadata to a render texture.
+ *
+ * @param {PIXI.RenderTexture} rt
+ * @param {{ bounds: {x:number, y:number, width:number, height:number}, pixelsPerWorld: number }} spec
+ * @returns {PIXI.RenderTexture}
+ * @private
+ */
+function _markSceneMaskWorldAtlasRT(rt, spec) {
+  if (!rt || !spec) return rt;
+  const bounds = spec.bounds;
+  const ppw = Math.max(1e-6, Number(spec.pixelsPerWorld) || 1);
+  const width = Math.max(1, Number(rt.width) || 1);
+  const height = Math.max(1, Number(rt.height) || 1);
+
+  try {
+    rt.__fxmasterMaskSpace = "world";
+    rt.__fxmasterMaskWorldBounds = { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
+    rt.__fxmasterMaskPixelsPerWorld = ppw;
+    rt.__fxmasterMaskUvFromWorld = new Float32Array([
+      ppw / width,
+      0,
+      0,
+      0,
+      ppw / height,
+      0,
+      (-bounds.x * ppw) / width,
+      (-bounds.y * ppw) / height,
+      1,
+    ]);
+    rt.__fxmasterMaskTexelUV = new Float32Array([1 / width, 1 / height]);
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+  }
+  return rt;
+}
+
+/**
+ * Return the transform that renders world-space geometry into a world-mask atlas.
+ *
+ * @param {PIXI.RenderTexture|null|undefined} rt
+ * @returns {PIXI.Matrix|null}
+ * @private
+ */
+function _maskRenderTextureWorldMatrix(rt) {
+  const spec = getMaskRenderTextureWorldAtlas(rt);
+  if (!spec) return null;
+  const bounds = spec.bounds;
+  const ppw = Math.max(1e-6, Number(spec.pixelsPerWorld) || 1);
+  return new PIXI.Matrix(ppw, 0, 0, ppw, -bounds.x * ppw, -bounds.y * ppw);
+}
+
+/**
+ * Return the render transform for a mask texture, using world-atlas metadata when available.
+ *
+ * @param {PIXI.RenderTexture|null|undefined} rt
+ * @param {PIXI.Matrix} [fallbackMatrix]
+ * @returns {PIXI.Matrix}
+ * @private
+ */
+function _maskRenderTextureMatrix(rt, fallbackMatrix = null) {
+  return _maskRenderTextureWorldMatrix(rt) ?? fallbackMatrix ?? snappedStageMatrix();
+}
+
+/**
+ * Return whether a scene suppression descriptor requires screen-space overlay correction.
+ *
+ * @param {object|null|undefined} entry
+ * @returns {boolean}
+ * @private
+ */
+function _sceneSuppressionEntryRequiresScreenMask(entry) {
+  return (
+    entry?.suppressOnlyObjects === true ||
+    (Array.isArray(entry?.preserveObjects) && entry.preserveObjects.length > 0) ||
+    (Array.isArray(entry?.preserveSurfaceGroups) && entry.preserveSurfaceGroups.length > 0) ||
+    (Array.isArray(entry?.preserveShapes) && entry.preserveShapes.length > 0) ||
+    (Array.isArray(entry?.suppressObjects) && entry.suppressObjects.length > 0)
+  );
+}
+
+/**
+ * Return whether scene allow-mask generation can use a camera-independent world atlas.
+ *
+ * @param {Array<object>} suppressionEntries
+ * @returns {boolean}
+ * @private
+ */
+function _canUseSceneMaskWorldAtlas(suppressionEntries) {
+  if (CONFIG?.fxmaster?.overheadPerformance?.sceneMaskWorldAtlas === false) return false;
+  if (!canvas?.dimensions?.sceneRect) return false;
+  return !(suppressionEntries ?? []).some((entry) => _sceneSuppressionEntryRequiresScreenMask(entry));
+}
+
+/**
+ * Build a world-atlas specification for a scene allow mask.
+ *
+ * @returns {{ bounds: {x:number, y:number, width:number, height:number}, pixelsPerWorld:number, width:number, height:number, resolution:number }|null}
+ * @private
+ */
+function _sceneMaskWorldAtlasSpec() {
+  const d = canvas?.dimensions;
+  const rect = d?.sceneRect ?? null;
+  if (!rect) return null;
+
+  const bounds = {
+    x: Number(rect.x) || 0,
+    y: Number(rect.y) || 0,
+    width: Math.max(1, Number(rect.width) || 1),
+    height: Math.max(1, Number(rect.height) || 1),
+  };
+  const maxTexture = Math.max(1024, Math.min(getRendererMaxTextureSize(canvas?.app?.renderer) || 8192, 8192));
+  const maxSpan = Math.max(1, maxTexture - 2);
+  const spanCap = maxSpan / Math.max(bounds.width, bounds.height, 1);
+  const areaCap = Math.sqrt(SCENE_MASK_WORLD_ATLAS_MAX_TEXTURE_AREA / Math.max(bounds.width * bounds.height, 1));
+  const ppwLimit = Math.min(SCENE_MASK_WORLD_ATLAS_MAX_PIXELS_PER_WORLD, spanCap, areaCap);
+  if (!(ppwLimit > 0)) return null;
+
+  const ppw =
+    ppwLimit < SCENE_MASK_WORLD_ATLAS_MIN_PIXELS_PER_WORLD
+      ? ppwLimit
+      : Math.max(
+          SCENE_MASK_WORLD_ATLAS_MIN_PIXELS_PER_WORLD,
+          Math.min(SCENE_MASK_WORLD_ATLAS_MAX_PIXELS_PER_WORLD, ppwLimit),
+        );
+  const width = Math.max(1, Math.min(maxSpan, Math.ceil(bounds.width * ppw)));
+  const height = Math.max(1, Math.min(maxSpan, Math.ceil(bounds.height * ppw)));
+  return { bounds, pixelsPerWorld: ppw, width, height, resolution: 1 };
+}
+
+/**
+ * Build a dirty-state cache key for a world-atlas scene allow mask.
+ *
+ * @param {{ spec: object, suppressionEntries: Array<object> }} options
+ * @returns {string}
+ * @private
+ */
+function _sceneAllowWorldAtlasCacheKey({ spec, suppressionEntries }) {
+  const bounds = spec?.bounds ?? {};
+  return [
+    "world-atlas",
+    canvas?.scene?.id ?? "scene",
+    _numberCacheKey(bounds.x, 2),
+    _numberCacheKey(bounds.y, 2),
+    _numberCacheKey(bounds.width, 2),
+    _numberCacheKey(bounds.height, 2),
+    _numberCacheKey(spec?.pixelsPerWorld ?? 1, 6),
+    Math.max(1, Number(spec?.width) || 1),
+    Math.max(1, Number(spec?.height) || 1),
+    suppressionEntries.map((entry) => _sceneSuppressionEntryCacheKey(entry)).join("#"),
+  ].join("::");
+}
+
+/**
+ * Create or repaint a camera-independent world-space scene allow mask.
+ *
+ * @param {{ suppressionEntries: Array<object>, reuseRT?: PIXI.RenderTexture|null }} options
+ * @returns {PIXI.RenderTexture|null}
+ * @private
+ */
+function _buildSceneAllowWorldAtlasRT({ suppressionEntries = [], reuseRT = null } = {}) {
+  const r = canvas?.app?.renderer;
+  const spec = _sceneMaskWorldAtlasSpec();
+  if (!r || !spec) return null;
+
+  const cacheKey = _sceneAllowWorldAtlasCacheKey({ spec, suppressionEntries });
+  let rt = reuseRT ?? null;
+  const needsNew =
+    !rt ||
+    rt.destroyed ||
+    rt.baseTexture?.destroyed ||
+    rt.__fxmasterMaskSpace !== "world" ||
+    Math.abs(Number(rt.width ?? 0) - spec.width) > 0.001 ||
+    Math.abs(Number(rt.height ?? 0) - spec.height) > 0.001 ||
+    Math.abs(Number(rt.resolution || 1) - spec.resolution) > 0.0001;
+
+  if (!needsNew && rt?.__fxmasterSceneAllowMaskCacheKey === cacheKey) return rt;
+
+  if (needsNew) {
+    const oldRT = reuseRT ?? null;
+    rt = PIXI.RenderTexture.create({
+      width: spec.width,
+      height: spec.height,
+      resolution: spec.resolution,
+      multisample: 0,
+    });
+    try {
+      rt.baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
+      rt.baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    _destroyTextureDeferred(oldRT);
+  }
+
+  _markSceneMaskWorldAtlasRT(rt, spec);
+
+  const gfx = _getSceneAllowMaskGfx().scene;
+  const bounds = spec.bounds;
+  const matrix = _maskRenderTextureWorldMatrix(rt) ?? new PIXI.Matrix();
+  try {
+    gfx.clear();
+    gfx.transform.setFromMatrix(matrix);
+    gfx.beginFill(0xffffff, 1.0);
+    gfx.drawRect(bounds.x, bounds.y, bounds.width, bounds.height);
+    gfx.endFill();
+    r.render(gfx, { renderTexture: rt, clear: true });
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+    try {
+      gfx.clear();
+      r.render(gfx, { renderTexture: rt, clear: true });
+    } catch (e) {
+      logger.debug("FXMaster:", e);
+    }
+  }
+
+  if (suppressionEntries.length) {
+    _trimSceneSuppressionSoftCache(canvas?.scene?.id ?? null);
+    for (const entry of suppressionEntries) {
+      const region = entry?.region ?? entry;
+      if (!region) continue;
+      const edgeFadePercent = Math.min(Math.max(Number(entry?.edgeFadePercent) || 0, 0), 1);
+      let renderedSoft = false;
+      if (edgeFadePercent > 0) renderedSoft = _renderSceneSuppressionSoftMask(rt, region, matrix, edgeFadePercent);
+      if (!renderedSoft) _renderSceneSuppressionHardRegion(rt, region, matrix);
+    }
+  }
+
+  try {
+    rt.__fxmasterSceneAllowMaskCacheKey = cacheKey;
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+  }
+
+  return rt;
+}
+
+/**
  * Build a scene-wide allow-mask render texture.
  *
  * Supports two per-region suppression inputs:
@@ -5411,7 +6623,7 @@ function _sceneAllowMaskCacheKey({ cssW, cssH, res, stageMatrix, suppressionEntr
  *
  * The legacy `regions` option is retained as an alias for `weatherRegions`.
  *
- * @param {{ regions?: Region[]|null, weatherRegions?: Array<Region|{ region: Region, preserveObjects?: PIXI.DisplayObject[], preserveShapes?: object[], suppressObjects?: PIXI.DisplayObject[], suppressOnlyObjects?: boolean }>|null, suppressionRegions?: Array<{ region: Region, edgeFadePercent?: number, preserveObjects?: PIXI.DisplayObject[], preserveShapes?: object[], suppressObjects?: PIXI.DisplayObject[], suppressOnlyObjects?: boolean }>, reuseRT?: PIXI.RenderTexture|null }} [opts]
+ * @param {{ regions?: Region[]|null, weatherRegions?: Array<Region|{ region: Region, preserveObjects?: PIXI.DisplayObject[], preserveSurfaceGroups?: Array<{ levelId?: string, objects?: PIXI.DisplayObject[], regions?: object[] }>, preserveShapes?: object[], suppressObjects?: PIXI.DisplayObject[], suppressOnlyObjects?: boolean }>|null, suppressionRegions?: Array<{ region: Region, edgeFadePercent?: number, preserveObjects?: PIXI.DisplayObject[], preserveSurfaceGroups?: Array<{ levelId?: string, objects?: PIXI.DisplayObject[], regions?: object[] }>, preserveShapes?: object[], suppressObjects?: PIXI.DisplayObject[], suppressOnlyObjects?: boolean }>, reuseRT?: PIXI.RenderTexture|null }} [opts]
  * @returns {PIXI.RenderTexture|null}
  */
 export function buildSceneAllowMaskRT({
@@ -5429,6 +6641,13 @@ export function buildSceneAllowMaskRT({
     .filter((entry) => !!entry?.region)
     .map((entry) => ({ ...entry, edgeFadePercent: 0 }));
   const suppressionEntries = [...hardRegionEntries, ...(Array.isArray(suppressionRegions) ? suppressionRegions : [])];
+
+  if (_canUseSceneMaskWorldAtlas(suppressionEntries)) {
+    const atlasRT = _buildSceneAllowWorldAtlasRT({ suppressionEntries, reuseRT });
+    if (atlasRT) return atlasRT;
+  }
+
+  clearMaskRenderTextureMetadata(reuseRT);
   const res = _sceneAllowMaskResolution(cssW, cssH, suppressionEntries);
   const M = snappedStageMatrix();
   const cacheKey = _sceneAllowMaskCacheKey({ cssW, cssH, res, stageMatrix: M, suppressionEntries });
@@ -5460,15 +6679,6 @@ export function buildSceneAllowMaskRT({
     _destroyTextureDeferred(oldRT);
   }
 
-  /** Paint background black (suppressed by default). */
-  {
-    const { bg } = _getSceneAllowMaskGfx();
-    bg.clear();
-    bg.beginFill(0x000000, 1).drawRect(0, 0, cssW, cssH).endFill();
-    r.render(bg, { renderTexture: rt, clear: true });
-  }
-
-  /** Paint scene area white (allowed inside scene dimensions). */
   const d = canvas.dimensions;
   if (d) {
     const { scene } = _getSceneAllowMaskGfx();
@@ -5476,40 +6686,34 @@ export function buildSceneAllowMaskRT({
 
     scene.transform.setFromMatrix(new PIXI.Matrix());
 
-    const x0w = d.sceneRect.x;
-    const y0w = d.sceneRect.y;
-    const x1w = x0w + d.sceneRect.width;
-    const y1w = y0w + d.sceneRect.height;
+    const quad = projectRectToQuad(M, d.sceneRect, new Float32Array(8));
+    const bounds = projectedQuadBounds(quad);
+    const intersectsViewport = bounds.right > 0 && bounds.bottom > 0 && bounds.left < cssW && bounds.top < cssH;
 
-    const p0 = new PIXI.Point();
-    const p1 = new PIXI.Point();
-    M.apply({ x: x0w, y: y0w }, p0);
-    M.apply({ x: x1w, y: y1w }, p1);
-
-    const minX = Math.min(p0.x, p1.x);
-    const minY = Math.min(p0.y, p1.y);
-    const maxX = Math.max(p0.x, p1.x);
-    const maxY = Math.max(p0.y, p1.y);
-
-    /**
-     * Seam prevention: avoid rounding to the nearest pixel. Rounding can shrink the transformed scene rect by 1px depending on fractional camera alignment, producing a 1px transparent seam that appears to jump between edges at different zoom levels. Bounds are expanded to cover the transformed scene rect.
-     */
-    const left = Math.floor(minX);
-    const top = Math.floor(minY);
-    const right = Math.ceil(maxX);
-    const bottom = Math.ceil(maxY);
-
-    const x = Math.max(0, Math.min(cssW, left));
-    const y = Math.max(0, Math.min(cssH, top));
-    const w = Math.max(0, Math.min(cssW, right) - x);
-    const h = Math.max(0, Math.min(cssH, bottom) - y);
-
-    if (w > 0 && h > 0) {
+    if (intersectsViewport && bounds.width > 0 && bounds.height > 0) {
       scene.beginFill(0xffffff, 1.0);
-      scene.drawRect(x, y, w, h);
+      if (matrixPreservesAxisAlignment(M)) {
+        const left = Math.floor(bounds.left);
+        const top = Math.floor(bounds.top);
+        const right = Math.ceil(bounds.right);
+        const bottom = Math.ceil(bounds.bottom);
+        const x = Math.max(0, Math.min(cssW, left));
+        const y = Math.max(0, Math.min(cssH, top));
+        const width = Math.max(0, Math.min(cssW, right) - x);
+        const height = Math.max(0, Math.min(cssH, bottom) - y);
+        if (width > 0 && height > 0) scene.drawRect(x, y, width, height);
+      } else {
+        scene.lineStyle(2, 0xffffff, 1);
+        scene.drawPolygon(...quad);
+      }
       scene.endFill();
-      r.render(scene, { renderTexture: rt, clear: false });
     }
+
+    r.render(scene, { renderTexture: rt, clear: true });
+  } else {
+    const { scene } = _getSceneAllowMaskGfx();
+    scene.clear();
+    r.render(scene, { renderTexture: rt, clear: true });
   }
 
   /** Apply each suppression region as an isolated mask so holes remain local to that region. */
@@ -5535,6 +6739,12 @@ export function buildSceneAllowMaskRT({
       if (!suppressOnlyObjects && preserveObjects.length)
         _restorePreservedOverlayObjectsIntoSceneAllowMask(rt, region, M, preserveObjects, spec);
 
+      const preserveSurfaceGroups = Array.isArray(entry?.preserveSurfaceGroups)
+        ? entry.preserveSurfaceGroups.filter(Boolean)
+        : [];
+      if (!suppressOnlyObjects && preserveSurfaceGroups.length)
+        _restorePreservedSurfaceGroupsIntoSceneAllowMask(rt, region, M, preserveSurfaceGroups, spec);
+
       const preserveShapes = Array.isArray(entry?.preserveShapes) ? entry.preserveShapes.filter(Boolean) : [];
       if (!suppressOnlyObjects && preserveShapes.length)
         _restorePreservedShapesIntoSceneAllowMask(rt, region, M, preserveShapes, spec);
@@ -5548,6 +6758,8 @@ export function buildSceneAllowMaskRT({
        */
       if (suppressOnlyObjects && preserveObjects.length)
         _restorePreservedOverlayObjectsIntoSceneAllowMask(rt, region, M, preserveObjects, spec);
+      if (suppressOnlyObjects && preserveSurfaceGroups.length)
+        _restorePreservedSurfaceGroupsIntoSceneAllowMask(rt, region, M, preserveSurfaceGroups, spec);
     }
   }
 
@@ -5638,8 +6850,8 @@ export function applyMaskUniformsToFilters(
     maskSoft = false,
   },
 ) {
-  const rtCssW = baseMaskRT ? Math.max(1, Number(baseMaskRT.width) || 1) : Math.max(1, Number(cssW) || 1);
-  const rtCssH = baseMaskRT ? Math.max(1, Number(baseMaskRT.height) || 1) : Math.max(1, Number(cssH) || 1);
+  const viewCssW = Math.max(1, Number(cssW) || 1);
+  const viewCssH = Math.max(1, Number(cssH) || 1);
 
   for (const f of filters) {
     if (!f) continue;
@@ -5658,21 +6870,34 @@ export function applyMaskUniformsToFilters(
       cutoutTilesRT: cutoutTilesRT ?? null,
       cutoutCombinedRT: cutoutCombinedRT ?? null,
       tokensMaskRT: tokensMaskRT ?? null,
-      cssW: rtCssW,
-      cssH: rtCssH,
+      cssW: viewCssW,
+      cssH: viewCssH,
       deviceToCss,
       maskSoft: !!maskSoft,
     };
+
+    const atlas = getMaskRenderTextureWorldAtlas(rt);
+    const maskTexW = rt ? Math.max(1, Number(rt.width) || 1) : viewCssW;
+    const maskTexH = rt ? Math.max(1, Number(rt.height) || 1) : viewCssH;
 
     if ("maskSampler" in u) u.maskSampler = rt;
     if ("hasMask" in u) u.hasMask = rt ? 1.0 : 0.0;
     if ("maskReady" in u) u.maskReady = rt ? 1.0 : 0.0;
     if ("maskSoft" in u) u.maskSoft = maskSoft ? 1.0 : 0.0;
+    if ("maskWorldReady" in u) u.maskWorldReady = atlas ? 1.0 : 0.0;
+    if ("uMaskUvFromWorld" in u) {
+      u.uMaskUvFromWorld =
+        atlas?.uvFromWorld instanceof Float32Array ? atlas.uvFromWorld : new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+    }
+    if ("maskTexelUV" in u) {
+      u.maskTexelUV =
+        atlas?.texelUV instanceof Float32Array ? atlas.texelUV : new Float32Array([1 / maskTexW, 1 / maskTexH]);
+    }
 
     if ("viewSize" in u) {
       const arr = u.viewSize instanceof Float32Array && u.viewSize.length >= 2 ? u.viewSize : new Float32Array(2);
-      arr[0] = rtCssW;
-      arr[1] = rtCssH;
+      arr[0] = viewCssW;
+      arr[1] = viewCssH;
       u.viewSize = arr;
     }
 
@@ -5697,15 +6922,16 @@ export function subtractDynamicRingsFromRT(outRT, opts = {}) {
   const r = canvas?.app?.renderer;
   if (!r || !outRT) return;
   const respectOcclusion = !!opts.respectOcclusion;
+  const includeOffscreen = opts.includeOffscreen === true || !!getMaskRenderTextureWorldAtlas(outRT);
   const excludedTokens =
     opts.excludedTokens instanceof Set
       ? opts.excludedTokens
       : opts.excludeOccludedByTiles
-      ? getTileOccludedTokens()
+      ? getTileOccludedTokens({ includeOffscreen })
       : null;
-  const M = snappedStageMatrix();
+  const M = _maskRenderTextureMatrix(outRT);
   for (const t of collectBelowTokenMaskTokens()) {
-    if (!_tokenIntersectsViewportForMask(t)) continue;
+    if (!includeOffscreen && !_tokenIntersectsViewportForMask(t)) continue;
     if (!_tokenParticipatesInBelowTokenMask(t)) continue;
     if (!t?.mesh || !t?.hasDynamicRing) continue;
     if (respectOcclusion && _isTokenOccludedByOverhead(t)) continue;
@@ -5732,15 +6958,16 @@ export function paintDynamicRingsInto(outRT, opts = {}) {
   const r = canvas?.app?.renderer;
   if (!r || !outRT) return;
   const respectOcclusion = !!opts.respectOcclusion;
+  const includeOffscreen = opts.includeOffscreen === true || !!getMaskRenderTextureWorldAtlas(outRT);
   const excludedTokens =
     opts.excludedTokens instanceof Set
       ? opts.excludedTokens
       : opts.excludeOccludedByTiles
-      ? getTileOccludedTokens()
+      ? getTileOccludedTokens({ includeOffscreen })
       : null;
-  const M = snappedStageMatrix();
+  const M = _maskRenderTextureMatrix(outRT);
   for (const t of collectBelowTokenMaskTokens()) {
-    if (!_tokenIntersectsViewportForMask(t)) continue;
+    if (!includeOffscreen && !_tokenIntersectsViewportForMask(t)) continue;
     if (!_tokenParticipatesInBelowTokenMask(t)) continue;
     if (!t?.mesh || !t?.hasDynamicRing) continue;
     if (respectOcclusion && _isTokenOccludedByOverhead(t)) continue;

@@ -106,28 +106,30 @@
           {{/if}}
 
           {{#each effect.parameters as |parameterConfig parameterName|}}
-            {{#unless (fxmasterIsPlacementParam parameterName)}}
-              {{#if (fxmasterShouldRenderParam "particle" ../type parameterName)}}
-                <div class="fxmaster-param-field" data-param="{{parameterName}}">
-                  {{#if (fxmasterShouldRenderParamTitle parameterConfig parameterName)}}
-                    <span class="fxmaster-param-title" {{{fxmasterParamTooltipAttrs parameterConfig}}}>{{localize parameterConfig.label}}</span>
-                  {{/if}}
+            {{#unless parameterConfig.managementOnly}}
+              {{#unless (fxmasterIsPlacementParam parameterName)}}
+                {{#if (fxmasterShouldRenderParam "particle" ../type parameterName)}}
+                  <div class="fxmaster-param-field" data-param="{{parameterName}}">
+                    {{#if (fxmasterShouldRenderParamTitle parameterConfig parameterName)}}
+                      <span class="fxmaster-param-title" {{{fxmasterParamTooltipAttrs parameterConfig}}}>{{localize parameterConfig.label}}</span>
+                    {{/if}}
 
-                  {{{fxmasterParameter
+                    {{{fxmasterParameter
+                          ../effect
+                          parameterConfig
+                          parameterName
+                          ../options
+                       }}}
+                  </div>
+                {{else}}
+                  {{{fxmasterHiddenParameter
                         ../effect
                         parameterConfig
                         parameterName
                         ../options
-                     }}}
-                </div>
-              {{else}}
-                {{{fxmasterHiddenParameter
-                      ../effect
-                      parameterConfig
-                      parameterName
-                      ../options
-                }}}
-              {{/if}}
+                  }}}
+                {{/if}}
+              {{/unless}}
             {{/unless}}
           {{/each}}
         </div>
@@ -231,27 +233,29 @@
           {{/if}}
 
           {{#each effect.parameters as |parameterConfig parameterName|}}
-            {{#unless (fxmasterIsPlacementParam parameterName)}}
-              {{#if (fxmasterShouldRenderParam "filter" ../type parameterName)}}
-                <div class="fxmaster-param-field" data-param="{{parameterName}}">
-                  {{#if (fxmasterShouldRenderParamTitle parameterConfig parameterName)}}
-                    <span class="fxmaster-param-title" {{{fxmasterParamTooltipAttrs parameterConfig}}}>{{localize parameterConfig.label}}</span>
-                  {{/if}}
-                  {{{fxmasterParameter
+            {{#unless parameterConfig.managementOnly}}
+              {{#unless (fxmasterIsPlacementParam parameterName)}}
+                {{#if (fxmasterShouldRenderParam "filter" ../type parameterName)}}
+                  <div class="fxmaster-param-field" data-param="{{parameterName}}">
+                    {{#if (fxmasterShouldRenderParamTitle parameterConfig parameterName)}}
+                      <span class="fxmaster-param-title" {{{fxmasterParamTooltipAttrs parameterConfig}}}>{{localize parameterConfig.label}}</span>
+                    {{/if}}
+                    {{{fxmasterParameter
+                          ../effect
+                          parameterConfig
+                          parameterName
+                          ../options
+                     }}}
+                  </div>
+                {{else}}
+                  {{{fxmasterHiddenParameter
                         ../effect
                         parameterConfig
                         parameterName
                         ../options
-                   }}}
-                </div>
-              {{else}}
-                {{{fxmasterHiddenParameter
-                      ../effect
-                      parameterConfig
-                      parameterName
-                      ../options
-                }}}
-              {{/if}}
+                  }}}
+                {{/if}}
+              {{/unless}}
             {{/unless}}
           {{/each}}
         </div>

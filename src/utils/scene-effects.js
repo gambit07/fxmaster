@@ -9,6 +9,7 @@ import { logger } from "../logger.js";
 import { ensureSingleSceneLevelSelection, isLegacyOperatorKey, resetFlag } from "./compat.js";
 import { omit } from "./math.js";
 import { buildSceneEffectUid, promoteEffectStackUids } from "../common/effect-stack.js";
+import { reconcileParticleBackgroundState } from "../particle-effects/backgrounds/background-state.js";
 
 /**
  * Toggle a named core particle effect in the current scene.
@@ -25,7 +26,10 @@ export async function onSwitchParticleEffects(parameters) {
     parameters.options && typeof parameters.options === "object" ? { ...parameters.options } : {},
     scene,
   );
-  const effects = disable ? omit(current, key) : { ...current, [key]: { type: parameters.type, options } };
+  const definition = { type: parameters.type, options };
+  const state = reconcileParticleBackgroundState(null, options);
+  if (state) definition.state = state;
+  const effects = disable ? omit(current, key) : { ...current, [key]: definition };
 
   if (Object.keys(effects).length === 0) await scene.unsetFlag(packageId, "effects");
   else await resetFlag(scene, "effects", effects);
@@ -51,6 +55,9 @@ export async function onUpdateParticleEffects(parametersArray) {
         info.options && typeof info.options === "object" ? { ...info.options } : {},
         scene,
       );
+      const state = reconcileParticleBackgroundState(info, info.options);
+      if (state) info.state = state;
+      else delete info.state;
       return [foundry.utils.randomID(), info];
     }),
   );

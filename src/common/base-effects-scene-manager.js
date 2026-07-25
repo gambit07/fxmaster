@@ -17,8 +17,13 @@ import { logger } from "../logger.js";
 import { applyRegionBehaviorsToOverheadLevels } from "../settings-access.js";
 import {
   buildSceneAllowMaskRT,
+  clearMaskRenderTextureMetadata,
   clearSceneSuppressionSoftMaskCache,
+  copyMaskRenderTextureMetadata,
+  getMaskRenderTextureWorldAtlas,
+  isMaskRenderTextureWorldAtlas,
   coalesceNextFrame,
+  composeMaskMinusCoverageRT,
   computeRegionGatePass,
   getCanvasLevel,
   getCanvasLiveLevelSurfaceRevealState,
@@ -39,13 +44,16 @@ import {
   repaintTokensMaskInto,
   repaintTilesMaskInto,
   buildBelowTokenMaskCoverageSignature,
+  buildBelowTileMaskCoverageSignature,
   invalidateUpperLevelCoverageCache,
   rawStageMatrix,
   safeMaskResolutionForCssArea,
   snappedStageMatrix,
+  hasActiveRadialRestrictWeatherTilesForMask,
   hasActiveTileRestrictionsForMask,
+  syncActiveRadialRestrictWeatherTileMasksForCamera,
   documentIncludedInLevel,
-  fxmGetDocumentElevationWindow,
+  documentLocatedInLevel,
   fxmGetLevelConfiguredImagePaths,
   fxmGetRegionBehaviorEdgeFadePercent,
   fxmLevelBottom,
@@ -54,17 +62,16 @@ import {
   fxmRegionBehaviorRuntimeSignature,
   fxmResolveLevelIdsFromConfiguredSources,
   fxmCollectComparableSourcePaths,
-  fxmReadDocumentSnapshotCompat,
   fxmReadDocumentSnapshotValue,
   fxmDocumentId,
+  fxmGetPrimaryLevelTextureMeshes,
+  fxmGetPrimaryTileMeshes,
+  fxmPrimaryCanvasObjectIsLive,
   fxmLinkedPlaceableFromDisplayObject,
   fxmGetPublicHoverFadeState,
+  fxmIsCanvasLevelTexture,
+  getDefinedSurfaceFootprintRegionsForLevel,
 } from "../utils.js";
-
-/** @type {PIXI.Sprite|null} */
-let _tmpBaseCopySprite = null;
-/** @type {PIXI.Sprite|null} */
-let _tmpTokensEraseSprite = null;
 
 /** @type {Map<string, { objects: PIXI.DisplayObject[], lastUsed: number }>} */
 let _upperSurfaceObjectsPersistentCache = new Map();
@@ -309,13 +316,20 @@ function getSuppressionAllowedLevelIds(document, fallbackLevel = null) {
 
   if (levels?.size) {
     const allowOverhead = applyRegionBehaviorsToOverheadLevels();
+    const currentLevelId = String(currentLevel?.id ?? "");
+    const currentLevelIsAssigned = !!currentLevelId && levels.has(currentLevelId);
     for (const levelId of levels) {
       const level = getSceneLevelById(levelId, document?.parent ?? canvas?.scene ?? null);
       if (!level) continue;
-      if (currentLevel?.id && levelId === currentLevel.id) {
+
+      /**
+       * Explicit assignment to the viewed Level protects every explicit Level assignment from the optional overhead projection setting. The setting applies only when the viewed Level is unassigned.
+       */
+      if (currentLevelIsAssigned) {
         ids.add(levelId);
         continue;
       }
+
       if (allowOverhead && currentLevel && levelIsAboveTargetLevel(level, currentLevel)) ids.add(levelId);
     }
     return ids;
@@ -370,15 +384,13 @@ function upperSurfaceObjectsPersistentCacheKey(targetLevel, protectedLevelIds) {
 
   let surfaceState = null;
   try {
-    surfaceState = getCanvasLiveLevelSurfaceState(canvas?.scene ?? null, { presynced: true });
+    surfaceState = getCanvasLiveLevelSurfaceState(canvas?.scene ?? null, {
+      presynced: true,
+      includeTransientFades: false,
+    });
   } catch (err) {
     logger.debug("FXMaster:", err);
   }
-
-  /**
-   * Avoid cross-frame reuse while Foundry is actively animating hover/reveal state. The per-refresh context cache remains active for the current call.
-   */
-  if (surfaceState?.forceRefresh) return null;
 
   return [
     canvas?.scene?.id ?? "scene",
@@ -471,10 +483,11 @@ function getProtectedLevelImagePaths(protectedLevelIds, context = null) {
 /**
  * Create per-refresh state for region suppression calculations.
  *
- * @returns {{ levelTextures: PIXI.DisplayObject[]|null, tileMeshes: PIXI.DisplayObject[]|null, protectedLevelImagePathsByKey: Map<string, Set<string>>, visibleOverlayLevelIdsByKey: Map<string, Set<string>>, visibleOverlayLevelsByKey: Map<string, Array<any>>, upperSurfaceObjectsByKey: Map<string, PIXI.DisplayObject[]>, suppressedUpperSurfaceObjectsByKey: Map<string, PIXI.DisplayObject[]>, visibleSurfaceObjectsByLevelKey: Map<string, PIXI.DisplayObject[]>, visibleLowerSurfaceObjectsByKey: Map<string, PIXI.DisplayObject[]>, visibleOtherLevelTokenPreservationByKey: Map<string, { objects: PIXI.DisplayObject[], shapes: object[] }>, currentLevelSurfaceScopedSuppressionByKey: Map<string, Set<string>>, suppressionBehaviorSummaryByDocument: WeakMap<object, object>, syncedLiveLevelSurfaceState: boolean }}
+ * @param {{ presyncedLiveLevelState?: boolean }} [options]
+ * @returns {{ levelTextures: PIXI.DisplayObject[]|null, tileMeshes: PIXI.DisplayObject[]|null, protectedLevelImagePathsByKey: Map<string, Set<string>>, visibleOverlayLevelIdsByKey: Map<string, Set<string>>, visibleOverlayLevelsByKey: Map<string, Array<any>>, upperSurfaceObjectsByKey: Map<string, PIXI.DisplayObject[]>, upperSurfacePreservationByKey: Map<string, { preserveObjects: PIXI.DisplayObject[], preserveSurfaceGroups: Array<{ levelId: string, objects: PIXI.DisplayObject[], regions: object[] }> }>, definedSurfaceFootprintRegionsByLevelKey: Map<string, object[]>, suppressedUpperSurfaceObjectsByKey: Map<string, PIXI.DisplayObject[]>, visibleSurfaceObjectsByLevelKey: Map<string, PIXI.DisplayObject[]>, visibleLowerSurfaceObjectsByKey: Map<string, PIXI.DisplayObject[]>, visibleOtherLevelTokenPreservationByKey: Map<string, { objects: PIXI.DisplayObject[], shapes: object[] }>, currentLevelSurfaceScopedSuppressionByKey: Map<string, Set<string>>, suppressionBehaviorSummaryByDocument: WeakMap<object, object>, syncedLiveLevelSurfaceState: boolean }}
  * @private
  */
-function createSuppressionRefreshContext() {
+function createSuppressionRefreshContext({ presyncedLiveLevelState = false } = {}) {
   return {
     levelTextures: null,
     tileMeshes: null,
@@ -484,13 +497,15 @@ function createSuppressionRefreshContext() {
     visibleOverlayLevelIdsByKey: new Map(),
     visibleOverlayLevelsByKey: new Map(),
     upperSurfaceObjectsByKey: new Map(),
+    upperSurfacePreservationByKey: new Map(),
+    definedSurfaceFootprintRegionsByLevelKey: new Map(),
     suppressedUpperSurfaceObjectsByKey: new Map(),
     visibleSurfaceObjectsByLevelKey: new Map(),
     visibleLowerSurfaceObjectsByKey: new Map(),
     visibleOtherLevelTokenPreservationByKey: new Map(),
     currentLevelSurfaceScopedSuppressionByKey: new Map(),
     suppressionBehaviorSummaryByDocument: new WeakMap(),
-    syncedLiveLevelSurfaceState: false,
+    syncedLiveLevelSurfaceState: !!presyncedLiveLevelState,
   };
 }
 
@@ -498,19 +513,21 @@ function createSuppressionRefreshContext() {
  * Synchronize live Level surface state once for a region suppression refresh.
  *
  * @param {object|null} context
- * @returns {void}
+ * @returns {boolean|undefined} Whether synchronization completed when required.
  * @private
  */
 function syncSuppressionLiveLevelState(context) {
   if (!canvas?.level || context?.syncedLiveLevelSurfaceState) return;
 
+  let synced = false;
   try {
-    syncCanvasLiveLevelSurfaceState();
+    synced = syncCanvasLiveLevelSurfaceState()?.ready === true;
   } catch (err) {
     logger.debug("FXMaster:", err);
   }
 
-  if (context) context.syncedLiveLevelSurfaceState = true;
+  if (context && synced) context.syncedLiveLevelSurfaceState = true;
+  return synced;
 }
 
 /**
@@ -522,7 +539,7 @@ function syncSuppressionLiveLevelState(context) {
  */
 function getSuppressionContextLevelTextures(context) {
   if (Array.isArray(context?.levelTextures)) return context.levelTextures;
-  const levelTextures = Array.from(canvas?.primary?.levelTextures ?? []);
+  const levelTextures = fxmGetPrimaryLevelTextureMeshes();
   if (context) context.levelTextures = levelTextures;
   return levelTextures;
 }
@@ -536,10 +553,7 @@ function getSuppressionContextLevelTextures(context) {
  */
 function getSuppressionContextTileMeshes(context) {
   if (Array.isArray(context?.tileMeshes)) return context.tileMeshes;
-  const tileMeshes =
-    typeof canvas?.primary?.tiles?.values === "function"
-      ? Array.from(canvas.primary.tiles.values())
-      : Array.from(canvas?.primary?.tiles ?? []);
+  const tileMeshes = fxmGetPrimaryTileMeshes();
   if (context) context.tileMeshes = tileMeshes;
   return tileMeshes;
 }
@@ -667,90 +681,6 @@ function resolveSurfaceLevelIds({ mesh = null, object = null, document = null, l
 }
 
 /**
- * Return whether a value is a Foundry document-like source whose elevation field should be trusted over a live mesh fallback. V14 level texture meshes seemingly can expose PrimaryCanvasGroup as object/document, whose elevation is not the stacked texture's actual elevation.
- *
- * @param {*} value
- * @returns {boolean}
- * @private
- */
-function isDocumentBackedSurface(value) {
-  if (!value || typeof value !== "object") return false;
-
-  const ctorName = value?.constructor?.name ?? "";
-  if (typeof value?.documentName === "string" && value.documentName.length) return true;
-  if (typeof value?.constructor?.documentName === "string" && value.constructor.documentName.length) return true;
-  if (ctorName === "Level" || ctorName.endsWith("Document")) return true;
-
-  const source = fxmReadDocumentSnapshotCompat(value);
-  if (!source || typeof source !== "object") return false;
-  return (
-    source.elevation !== undefined ||
-    source.levels !== undefined ||
-    source.level !== undefined ||
-    source.background !== undefined ||
-    source.foreground !== undefined ||
-    source.texture !== undefined
-  );
-}
-
-/**
- * Return a normalized elevation window for a surface.
- *
- * @param {foundry.abstract.Document|object|null|undefined} document
- * @param {number} [fallbackElevation=Number.NaN]
- * @returns {{min:number,max:number}|null}
- * @private
- */
-function getSurfaceElevationWindow(document, fallbackElevation = Number.NaN) {
-  const publicWindow = fxmGetDocumentElevationWindow(document, fallbackElevation);
-  if (publicWindow) return publicWindow;
-
-  const fallback = Number(fallbackElevation);
-  const trustDocumentElevation = isDocumentBackedSurface(document) || !Number.isFinite(fallback);
-  const sourceElevation = trustDocumentElevation
-    ? document?.elevation ?? fxmReadDocumentSnapshotValue(document, "elevation") ?? null
-    : null;
-  const scalarElevation = Number(sourceElevation);
-  if (Number.isFinite(scalarElevation)) return { min: scalarElevation, max: scalarElevation };
-
-  const bottom = sourceElevation?.bottom ?? fxmReadDocumentSnapshotValue(document, ["elevation", "bottom"]);
-  const top = sourceElevation?.top ?? fxmReadDocumentSnapshotValue(document, ["elevation", "top"]);
-  const hasBottom = bottom !== undefined && bottom !== null && `${bottom}`.trim() !== "";
-  const hasTop = top !== undefined && top !== null && `${top}`.trim() !== "";
-  if (hasBottom || hasTop) {
-    return {
-      min: hasBottom ? Number(bottom) : Number.NEGATIVE_INFINITY,
-      max: hasTop ? Number(top) : Number.POSITIVE_INFINITY,
-    };
-  }
-
-  if (Number.isFinite(fallback)) return { min: fallback, max: fallback };
-  return null;
-}
-
-/**
- * Return whether an elevation window overlaps a specific Scene Level window.
- *
- * @param {{min:number,max:number}|null|undefined} window
- * @param {any} level
- * @returns {boolean}
- * @private
- */
-function surfaceWindowOverlapsLevel(window, level) {
-  if (!window || !level) return false;
-
-  const levelBottom = getLevelBottom(level);
-  const levelTop = getLevelTop(level);
-  const windowMin = Number(window.min);
-  const windowMax = Number(window.max);
-
-  const reachesLevelBottom =
-    !Number.isFinite(windowMax) || !Number.isFinite(levelBottom) || windowMax >= levelBottom - 1e-4;
-  const reachesLevelTop = !Number.isFinite(windowMin) || !Number.isFinite(levelTop) || windowMin <= levelTop + 1e-4;
-  return reachesLevelBottom && reachesLevelTop;
-}
-
-/**
  * Return whether two Level id sets intersect.
  *
  * @param {Set<string>} surfaceLevelIds
@@ -840,46 +770,6 @@ function resolveSurfaceOwnerLevelIds({ mesh = null, object = null, document = nu
   ];
   for (const candidate of candidates) addSceneLevelIdsFromValue(candidate, ids);
   return ids;
-}
-
-/**
- * Return whether a surface explicitly or implicitly belongs to one of the supplied Level ids.
- *
- * @param {{ mesh?: object|null, object?: object|null, document?: foundry.abstract.Document|null, level?: object|null, elevation?: number, window?: {min:number,max:number}|null }} [surface]
- * @param {Set<string>|null|undefined} levelIds
- * @returns {boolean}
- * @private
- */
-function _surfaceTargetsLevelIds(
-  { mesh = null, object = null, document = null, level = null, elevation = Number.NaN, window = null } = {},
-  levelIds,
-) {
-  if (!(levelIds?.size > 0)) return false;
-
-  const configuredIds = resolveSurfaceConfiguredLevelIds({ mesh, object, document, level });
-  if (configuredIds.size) return surfaceLevelIdsIntersect(configuredIds, levelIds);
-
-  const ownerIds = resolveSurfaceOwnerLevelIds({ mesh, object, document, level });
-  if (ownerIds.size) return surfaceLevelIdsIntersect(ownerIds, levelIds);
-
-  const includedIds = resolveSurfaceIncludedLevelIds({ mesh, object, document, level });
-  if (includedIds.size) return surfaceLevelIdsIntersect(includedIds, levelIds);
-
-  const explicitIds = resolveSurfaceLevelIds({ mesh, object, document, level });
-  if (explicitIds.size) return surfaceLevelIdsIntersect(explicitIds, levelIds);
-
-  const inferredLevel = inferVisibleLevelForDocument(document ?? object ?? level ?? null, elevation);
-  if (inferredLevel?.id) return levelIds.has(inferredLevel.id);
-
-  const effectiveWindow = window ?? getSurfaceElevationWindow(document ?? object ?? level ?? null, elevation);
-  if (effectiveWindow) {
-    for (const levelId of levelIds) {
-      const sceneLevel = getSceneLevelById(levelId);
-      if (sceneLevel && surfaceWindowOverlapsLevel(effectiveWindow, sceneLevel)) return true;
-    }
-  }
-
-  return false;
 }
 
 /**
@@ -1127,7 +1017,7 @@ function getVisibleOverlayLevelsAboveTarget(targetLevel, { protectedLevelIds = n
  * @private
  */
 function displayObjectContributesVisiblePixels(object) {
-  if (!object || object.destroyed) return false;
+  if (!fxmPrimaryCanvasObjectIsLive(object)) return false;
   if (object.visible === false || object.renderable === false) return false;
 
   const alpha = Number(object.worldAlpha ?? object.alpha ?? 1);
@@ -1142,7 +1032,7 @@ function displayObjectContributesVisiblePixels(object) {
  * @private
  */
 function displayObjectIntersectsViewportForSuppression(object) {
-  if (!object || object.destroyed) return false;
+  if (!fxmPrimaryCanvasObjectIsLive(object)) return false;
 
   const { cssW, cssH } = getCssViewportMetrics();
   const padding = 8;
@@ -1350,6 +1240,8 @@ function getTokenSuppressionLevelIds(token, scene = canvas?.scene ?? null) {
   const directLevelId = typeof directLevel === "string" ? directLevel : fxmDocumentId(directLevel) || null;
   if (directLevelId) {
     const level = getSceneLevelById(directLevelId, sceneForLookup);
+    const located = level ? documentLocatedInLevel(document, level) : null;
+    if (located === true) return new Set([String(directLevelId)]);
     if (!level || !Number.isFinite(elevation)) return new Set([String(directLevelId)]);
 
     const bottom = getLevelBottom(level);
@@ -1357,6 +1249,19 @@ function getTokenSuppressionLevelIds(token, scene = canvas?.scene ?? null) {
     const withinBottom = !Number.isFinite(bottom) || elevation >= bottom - 1e-4;
     const withinTop = !Number.isFinite(top) || elevation <= top + 1e-4;
     if (withinBottom && withinTop) return new Set([String(directLevelId)]);
+  }
+
+  /**
+   * Foundry v14.364 exposes TokenDocument#locatedInLevel for source-Level ownership without conflating visibility from another Level. The API also supports token-like documents without a direct `level` field.
+   */
+  if (typeof document?.locatedInLevel === "function") {
+    const locatedLevelIds = new Set();
+    for (const level of getSceneLevels(sceneForLookup)) {
+      const levelId = String(fxmDocumentId(level)).trim();
+      if (!levelId) continue;
+      if (documentLocatedInLevel(document, level) === true) locatedLevelIds.add(levelId);
+    }
+    if (locatedLevelIds.size) return locatedLevelIds;
   }
 
   /**
@@ -1428,6 +1333,9 @@ function tokenElevationIsOutsideSuppressionTargets(token, targetLevelIds) {
  */
 function tokenIsOnCurrentCanvasLevelForSuppression(token) {
   if (!canvas?.level) return true;
+
+  const located = documentLocatedInLevel(token?.document ?? token ?? null, canvas.level);
+  if (located !== null) return located;
 
   const currentLevelId = String(fxmDocumentId(canvas.level)).trim();
   if (!currentLevelId)
@@ -1913,45 +1821,6 @@ function buildDynamicSuppressionPreservationSignature(regions, kinds = ["particl
 }
 
 /**
- * Collect visible lower-Level surfaces outside the Region suppression target set.
- *
- * @param {any|null|undefined} targetLevel
- * @param {{ assignedLevelIds?: Set<string>|null, protectedLevelIds?: Set<string>|null, context?: object|null }} [options]
- * @returns {PIXI.DisplayObject[]}
- * @private
- */
-function _collectLowerSurfaceObjectsForTargetLevel(
-  targetLevel,
-  { assignedLevelIds = null, protectedLevelIds = null, context = null } = {},
-) {
-  if (!targetLevel || !canvas?.level) return [];
-
-  const excludedIds = new Set(
-    Array.from(assignedLevelIds?.size ? assignedLevelIds : protectedLevelIds ?? [])
-      .map(String)
-      .filter(Boolean),
-  );
-  if (targetLevel?.id) excludedIds.add(String(targetLevel.id));
-
-  const cacheKey = `${targetLevel?.id ?? ""}:${getLevelIdsCacheKey(excludedIds)}:lower-surfaces`;
-  const cache = context?.visibleLowerSurfaceObjectsByKey ?? null;
-  if (cache?.has(cacheKey)) return cache.get(cacheKey) ?? [];
-
-  const lowerLevelIds = new Set();
-  for (const level of getSceneLevels(targetLevel?.parent ?? canvas?.scene ?? null)) {
-    const levelId = String(level?.id ?? "");
-    if (!levelId || excludedIds.has(levelId)) continue;
-    if (levelIsBelowTargetLevel(level, targetLevel)) lowerLevelIds.add(levelId);
-  }
-
-  const objects = lowerLevelIds.size
-    ? collectVisibleSurfaceObjectsForLevelIds(lowerLevelIds, { context, includeTiles: true })
-    : [];
-  cache?.set(cacheKey, objects);
-  return objects;
-}
-
-/**
  * Merge display-object lists while preserving first occurrence order.
  *
  * @param  {...Array<PIXI.DisplayObject>|null|undefined} lists
@@ -1982,8 +1851,16 @@ function mergeDisplayObjectLists(...lists) {
  * @private
  */
 function resolveLiveSurfaceDisplayObject(primaryObject, linkedObject) {
-  const liveObject = linkedObject?.mesh ?? linkedObject?.primaryMesh ?? linkedObject?.sprite ?? null;
-  return liveObject ?? primaryObject ?? linkedObject ?? null;
+  for (const object of [
+    linkedObject?.mesh ?? null,
+    linkedObject?.primaryMesh ?? null,
+    linkedObject?.sprite ?? null,
+    primaryObject ?? null,
+    linkedObject ?? null,
+  ]) {
+    if (fxmPrimaryCanvasObjectIsLive(object)) return object;
+  }
+  return null;
 }
 
 /**
@@ -1999,12 +1876,10 @@ function tileIsActiveOnCanvasForSuppression(tile) {
   if (isDocumentOnCurrentCanvasLevel(tile.document ?? null, tile.document?.elevation ?? tile?.elevation ?? Number.NaN))
     return true;
 
-  const primaryMeshes =
-    typeof canvas?.primary?.tiles?.values === "function"
-      ? Array.from(canvas.primary.tiles.values())
-      : [tile?.mesh ?? null];
-  for (const mesh of primaryMeshes) {
-    if (!mesh) continue;
+  const primaryMeshes = fxmGetPrimaryTileMeshes();
+  const meshes = primaryMeshes.length ? primaryMeshes : [tile?.mesh ?? null];
+  for (const mesh of meshes) {
+    if (!fxmPrimaryCanvasObjectIsLive(mesh)) continue;
 
     const linked = fxmLinkedPlaceableFromDisplayObject(mesh);
     const linkedId = linked?.document?.id ?? linked?.id ?? null;
@@ -2184,18 +2059,168 @@ function collectUpperSurfaceObjectsForTargetLevel(
 }
 
 /**
- * Collect visible upper-level surfaces that belong to Levels which should remain suppressed after unassigned intermediate overlays are restored.
+ * Return whether a captured display object is a prepared full-canvas Level texture or its linked live render object.
  *
- * The ordinary preservation path erases a whole Region, then restores visible unassigned upper overlays so a lower-Level suppression Region does not mask roofs/floors above it. When a Region is assigned to non-contiguous Levels (for example Level 1 and Level 3), restoring the intermediate Level 2 overlay can otherwise re-allow the final Level 3 pixel in the screen-space allow mask. This helper reuses the cached upper-surface collection and returns only the protected upper objects that need to be erased again after restoration.
+ * @param {PIXI.DisplayObject|null|undefined} object
+ * @param {object|null} [context]
+ * @returns {boolean}
+ * @private
+ */
+function isSuppressionLevelTextureDisplayObject(object, context = null) {
+  if (!object) return false;
+  if (fxmIsCanvasLevelTexture(object)) return true;
+
+  for (const texture of getSuppressionContextLevelTextures(context)) {
+    if (!texture) continue;
+    if (texture === object) return true;
+    const linked = texture?.object ?? null;
+    if (resolveLiveSurfaceDisplayObject(texture, linked) === object) return true;
+  }
+
+  return false;
+}
+
+/**
+ * Resolve the strict single-Level identity of a captured surface object.
+ *
+ * @param {PIXI.DisplayObject|null|undefined} object
+ * @returns {string|null}
+ * @private
+ */
+function getSuppressionSurfaceObjectLevelId(object) {
+  if (!object) return null;
+
+  const linkedObject = fxmLinkedPlaceableFromDisplayObject(object) ?? object?.object ?? null;
+  const document =
+    object?.level?.document ?? object?.level ?? linkedObject?.document ?? object?.document ?? linkedObject ?? null;
+  const level = object?.level ?? linkedObject?.level ?? document?.level ?? null;
+  const elevation = Number(
+    object?.elevation ?? document?.elevation?.bottom ?? document?.elevation ?? linkedObject?.elevation ?? Number.NaN,
+  );
+  const levelIds = getStrictSurfaceLevelMatchIds({
+    mesh: object,
+    object: linkedObject,
+    document,
+    level,
+    elevation,
+  });
+  if (levelIds.size !== 1) return null;
+  return String(levelIds.values().next().value ?? "") || null;
+}
+
+/**
+ * Return public Define Surface Regions that describe a Level texture's footprint in the viewed Level.
+ *
+ * Foundry's CanvasOcclusionMask alpha only describes live reveal apertures. It does not describe the full footprint of an opaque overhead floor. The RegionSurface geometry returned by Scene#getSurfaces is therefore required as a second clip before a full-canvas Level texture may restore particles.
+ *
+ * @param {string|null|undefined} levelId
+ * @param {object|null} [context]
+ * @returns {object[]}
+ * @private
+ */
+function getSuppressionSurfaceFootprintRegionsForLevel(levelId, context = null) {
+  const normalizedLevelId = String(levelId ?? "");
+  const currentLevelId = String(fxmDocumentId(getCanvasLevel()) ?? "");
+  if (!normalizedLevelId || !currentLevelId) return [];
+
+  const cacheKey = `${currentLevelId}:${normalizedLevelId}`;
+  const cache = context?.definedSurfaceFootprintRegionsByLevelKey ?? null;
+  if (cache?.has(cacheKey)) return cache.get(cacheKey) ?? [];
+
+  const regions = getDefinedSurfaceFootprintRegionsForLevel(normalizedLevelId, {
+    scene: canvas?.scene ?? null,
+    includedLevel: currentLevelId,
+    requireOcclusion: true,
+    allowExposure: false,
+    allowWindowFallback: false,
+  }).map((document) => {
+    const id = fxmDocumentId(document);
+    try {
+      return (id && canvas?.regions?.get?.(id)) || document;
+    } catch (_err) {
+      return document;
+    }
+  });
+  cache?.set(cacheKey, regions);
+  return regions;
+}
+
+/**
+ * Split upper-surface preservation into concrete display objects and full-canvas Level textures which require a public Define Surface footprint clip.
  *
  * @param {any|null|undefined} targetLevel
- * @param {{ protectedLevelIds?: Set<string>|null, preserveObjects?: PIXI.DisplayObject[]|null, context?: object|null }} [options]
+ * @param {{ protectedLevelIds?: Set<string>|null, context?: object|null, includeRevealed?: boolean }} [options]
+ * @returns {{ preserveObjects: PIXI.DisplayObject[], preserveSurfaceGroups: Array<{ levelId: string, objects: PIXI.DisplayObject[], regions: object[] }> }}
+ * @private
+ */
+function collectUpperSurfacePreservationForTargetLevel(
+  targetLevel,
+  { protectedLevelIds = null, context = null, includeRevealed = true } = {},
+) {
+  if (!targetLevel) return { preserveObjects: [], preserveSurfaceGroups: [] };
+
+  const cacheKey = `${targetLevel?.id ?? ""}:${getLevelIdsCacheKey(protectedLevelIds)}:revealed:${
+    includeRevealed ? 1 : 0
+  }`;
+  const cache = context?.upperSurfacePreservationByKey ?? null;
+  if (cache?.has(cacheKey)) return cache.get(cacheKey);
+
+  const preserveObjects = [];
+  const preserveSurfaceGroupsByLevel = new Map();
+  const upperObjects = collectUpperSurfaceObjectsForTargetLevel(targetLevel, {
+    protectedLevelIds,
+    context,
+    includeRevealed,
+  });
+
+  for (const object of upperObjects) {
+    if (!object) continue;
+
+    /**
+     * Tiles and other concrete objects carry an alpha footprint and use the existing object-preservation path.
+     */
+    if (!isSuppressionLevelTextureDisplayObject(object, context)) {
+      preserveObjects.push(object);
+      continue;
+    }
+
+    /**
+     * A full-canvas Level texture requires an exact public surface owner and a matching Define Surface footprint. Restoration without both conditions allows visible Roof and upper-Level textures to cancel suppression assigned to the viewed floor.
+     */
+    const levelId = getSuppressionSurfaceObjectLevelId(object);
+    if (!levelId) continue;
+    const regions = getSuppressionSurfaceFootprintRegionsForLevel(levelId, context);
+    if (!regions.length) continue;
+
+    let group = preserveSurfaceGroupsByLevel.get(levelId);
+    if (!group) {
+      group = { levelId, objects: [], regions };
+      preserveSurfaceGroupsByLevel.set(levelId, group);
+    }
+    group.objects.push(object);
+  }
+
+  const value = {
+    preserveObjects: mergeDisplayObjectLists(preserveObjects),
+    preserveSurfaceGroups: Array.from(preserveSurfaceGroupsByLevel.values()),
+  };
+  cache?.set(cacheKey, value);
+  return value;
+}
+
+/**
+ * Collect visible upper-level surfaces that belong to Levels which should remain suppressed after unassigned intermediate overlays are restored.
+ *
+ * The upper-Level preservation path erases a Region before restoring visible unassigned upper overlays. For non-contiguous assignments such as Levels 1 and 3, restoring the intermediate Level 2 overlay can re-allow the final Level 3 pixel in the screen-space allow mask. The cached upper-surface collection limits the result to protected upper objects that require a second erase after restoration.
+ *
+ * @param {any|null|undefined} targetLevel
+ * @param {{ protectedLevelIds?: Set<string>|null, preserveObjects?: PIXI.DisplayObject[]|null, preserveSurfaceGroups?: Array<{ objects?: PIXI.DisplayObject[] }>|null, context?: object|null }} [options]
  * @returns {PIXI.DisplayObject[]}
  * @private
  */
 function collectSuppressedUpperSurfaceObjectsForTargetLevel(
   targetLevel,
-  { protectedLevelIds = null, preserveObjects = null, context = null } = {},
+  { protectedLevelIds = null, preserveObjects = null, preserveSurfaceGroups = null, context = null } = {},
 ) {
   if (!targetLevel || !(protectedLevelIds?.size > 0) || !canvas?.level) return [];
 
@@ -2228,10 +2253,15 @@ function collectSuppressedUpperSurfaceObjectsForTargetLevel(
   const preserved = Array.isArray(preserveObjects)
     ? preserveObjects
     : collectUpperSurfaceObjectsForTargetLevel(targetLevel, { protectedLevelIds, context });
-  const preservedSet = new Set(preserved.filter(Boolean));
+  const groupedPreserved = Array.from(preserveSurfaceGroups ?? []).flatMap((group) => group?.objects ?? []);
+  const preservedSet = new Set([...preserved, ...groupedPreserved].filter(Boolean));
   if (!preservedSet.size) return remember([]);
 
-  const allUpperObjects = collectUpperSurfaceObjectsForTargetLevel(targetLevel, { protectedLevelIds: null, context });
+  const allUpperObjects = collectUpperSurfaceObjectsForTargetLevel(targetLevel, {
+    protectedLevelIds: null,
+    context,
+    includeRevealed: true,
+  });
   if (!allUpperObjects.length) return remember([]);
 
   const suppressed = allUpperObjects.filter((object) => object && !preservedSet.has(object));
@@ -2356,6 +2386,7 @@ function buildSuppressionDescriptor(
     edgeFadePercent = null,
     suppressOnlyObjects = false,
     preserveObjects = [],
+    preserveSurfaceGroups = [],
     preserveShapes = [],
     suppressObjects = [],
   } = {},
@@ -2363,6 +2394,7 @@ function buildSuppressionDescriptor(
   const descriptor = edgeFadePercent == null ? { region } : { region, edgeFadePercent };
   if (suppressOnlyObjects) descriptor.suppressOnlyObjects = true;
   if (preserveObjects?.length) descriptor.preserveObjects = preserveObjects;
+  if (preserveSurfaceGroups?.length) descriptor.preserveSurfaceGroups = preserveSurfaceGroups;
   if (preserveShapes?.length) descriptor.preserveShapes = preserveShapes;
   if (suppressObjects?.length) descriptor.suppressObjects = suppressObjects;
   return descriptor;
@@ -2389,12 +2421,19 @@ function getMaxSuppressionEdgeFadePercent(behaviors) {
  *
  * @param {PlaceableObject} region
  * @param {object|null} [context]
- * @returns {{ suppressOnlyObjects: boolean, preserveObjects: PIXI.DisplayObject[], preserveShapes: object[], suppressObjects: PIXI.DisplayObject[] }}
+ * @returns {{ suppressOnlyObjects: boolean, preserveObjects: PIXI.DisplayObject[], preserveSurfaceGroups: Array<{ levelId: string, objects: PIXI.DisplayObject[], regions: object[] }>, preserveShapes: object[], suppressObjects: PIXI.DisplayObject[] }}
  * @private
  */
 function buildSuppressionDescriptorSharedOptions(region, context = null) {
   const doc = region?.document;
-  if (!doc) return { suppressOnlyObjects: false, preserveObjects: [], preserveShapes: [], suppressObjects: [] };
+  if (!doc)
+    return {
+      suppressOnlyObjects: false,
+      preserveObjects: [],
+      preserveSurfaceGroups: [],
+      preserveShapes: [],
+      suppressObjects: [],
+    };
 
   const regionLevelIds = getDocumentAssignedLevelIds(doc, doc?.parent ?? canvas?.scene ?? null);
   const targetLevel = resolveSuppressionRegionTargetLevel(doc);
@@ -2409,6 +2448,11 @@ function buildSuppressionDescriptorSharedOptions(region, context = null) {
         defaultProtectedLevelIds,
         context,
       );
+  /**
+   * A current-Level suppression Region preserves visible, unassigned upper-Level artwork. Full-canvas Level textures require both the live SURFACE reveal mask and the public Define Surface footprint to prevent a visible Roof or upper-Level texture from restoring the entire Region.
+   *
+   * Non-current Level projection retains the existing flat object path.
+   */
   const objectOnlyLevelIds = nonCurrentObjectOnlyLevelIds.size
     ? nonCurrentObjectOnlyLevelIds
     : currentSurfaceScopedLevelIds;
@@ -2427,13 +2471,29 @@ function buildSuppressionDescriptorSharedOptions(region, context = null) {
   }
 
   const protectedLevelIds = suppressOnlyObjects ? objectOnlyLevelIds : defaultProtectedLevelIds;
-  const upperPreserveObjects = targetLevel
-    ? collectUpperSurfaceObjectsForTargetLevel(targetLevel, {
-        protectedLevelIds,
-        context,
-        includeRevealed: true,
-      })
-    : [];
+  const currentLevelId = String(fxmDocumentId(getCanvasLevel()) ?? "");
+  const targetLevelId = String(fxmDocumentId(targetLevel) ?? "");
+  const usesCurrentViewSurfacePreservation =
+    !!currentLevelId &&
+    currentLevelId === targetLevelId &&
+    regionLevelIds?.size > 0 &&
+    regionLevelIds.has(currentLevelId);
+  const upperPreservation = targetLevel
+    ? usesCurrentViewSurfacePreservation
+      ? collectUpperSurfacePreservationForTargetLevel(targetLevel, {
+          protectedLevelIds,
+          context,
+          includeRevealed: true,
+        })
+      : {
+          preserveObjects: collectUpperSurfaceObjectsForTargetLevel(targetLevel, {
+            protectedLevelIds,
+            context,
+            includeRevealed: true,
+          }),
+          preserveSurfaceGroups: [],
+        }
+    : { preserveObjects: [], preserveSurfaceGroups: [] };
   const otherLevelTokenPreservation =
     !suppressOnlyObjects && targetLevel && regionLevelIds?.size
       ? collectVisibleOtherLevelTokenPreservationForTargetLevel(targetLevel, {
@@ -2442,7 +2502,11 @@ function buildSuppressionDescriptorSharedOptions(region, context = null) {
           context,
         })
       : { objects: [], shapes: [] };
-  const preserveObjects = mergeDisplayObjectLists(upperPreserveObjects, otherLevelTokenPreservation.objects);
+  const preserveObjects = mergeDisplayObjectLists(
+    upperPreservation.preserveObjects,
+    otherLevelTokenPreservation.objects,
+  );
+  const preserveSurfaceGroups = upperPreservation.preserveSurfaceGroups ?? [];
   const preserveShapes = otherLevelTokenPreservation.shapes ?? [];
   const suppressObjects = suppressOnlyObjects
     ? objectOnlySuppressObjects
@@ -2450,11 +2514,12 @@ function buildSuppressionDescriptorSharedOptions(region, context = null) {
     ? collectSuppressedUpperSurfaceObjectsForTargetLevel(targetLevel, {
         protectedLevelIds,
         preserveObjects,
+        preserveSurfaceGroups,
         context,
       })
     : [];
 
-  return { suppressOnlyObjects, preserveObjects, preserveShapes, suppressObjects };
+  return { suppressOnlyObjects, preserveObjects, preserveSurfaceGroups, preserveShapes, suppressObjects };
 }
 
 /**
@@ -2501,12 +2566,14 @@ function collectSuppressionInputsForKinds(regions, kinds = ["particles", "filter
 
     const sharedOptions = buildSuppressionDescriptorSharedOptions(region, context);
     if (!sharedOptions) continue;
-    const { suppressOnlyObjects, preserveObjects, preserveShapes, suppressObjects } = sharedOptions;
+    const { suppressOnlyObjects, preserveObjects, preserveSurfaceGroups, preserveShapes, suppressObjects } =
+      sharedOptions;
 
     if (weatherPasses) {
       const descriptor = buildSuppressionDescriptor(region, {
         suppressOnlyObjects,
         preserveObjects,
+        preserveSurfaceGroups,
         preserveShapes,
         suppressObjects,
       });
@@ -2522,6 +2589,7 @@ function collectSuppressionInputsForKinds(regions, kinds = ["particles", "filter
           edgeFadePercent,
           suppressOnlyObjects,
           preserveObjects,
+          preserveSurfaceGroups,
           preserveShapes,
           suppressObjects,
         }),
@@ -2536,6 +2604,7 @@ function collectSuppressionInputsForKinds(regions, kinds = ["particles", "filter
           edgeFadePercent,
           suppressOnlyObjects,
           preserveObjects,
+          preserveSurfaceGroups,
           preserveShapes,
           suppressObjects,
         }),
@@ -2646,47 +2715,15 @@ function ensureRenderTexture(reuseRT, { width, height, resolution }) {
  * @private
  */
 function rebuildCutoutFromBase(baseRT, coverageRTs, reuseCutoutRT) {
-  const r = canvas?.app?.renderer;
   const list = Array.isArray(coverageRTs) ? coverageRTs.filter(Boolean) : coverageRTs ? [coverageRTs] : [];
-  if (!r || !baseRT || !list.length) return null;
+  if (!canvas?.app?.renderer || !baseRT || !list.length) return null;
 
   const W = Math.max(1, Number(baseRT.width) || 1);
   const H = Math.max(1, Number(baseRT.height) || 1);
   const res = baseRT.resolution || 1;
-
   const cutoutRT = ensureRenderTexture(reuseCutoutRT, { width: W, height: H, resolution: res });
 
-  try {
-    const spr = (_tmpBaseCopySprite ??= new PIXI.Sprite());
-    spr.texture = baseRT;
-    spr.blendMode = PIXI.BLEND_MODES.NORMAL;
-    spr.alpha = 1;
-    spr.position.set(0, 0);
-    spr.scale.set(1, 1);
-    spr.rotation = 0;
-    r.render(spr, { renderTexture: cutoutRT, clear: true });
-  } catch (err) {
-    logger.debug("FXMaster:", err);
-  }
-
-  const eraseSprite = (_tmpTokensEraseSprite ??= new PIXI.Sprite());
-  eraseSprite.blendMode = PIXI.BLEND_MODES.ERASE;
-  eraseSprite.alpha = 1;
-  eraseSprite.position.set(0, 0);
-  eraseSprite.scale.set(1, 1);
-  eraseSprite.rotation = 0;
-
-  for (const coverageRT of list) {
-    if (!coverageRT) continue;
-    try {
-      eraseSprite.texture = coverageRT;
-      r.render(eraseSprite, { renderTexture: cutoutRT, clear: false });
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
-  }
-
-  return cutoutRT;
+  return composeMaskMinusCoverageRT(baseRT, list, { outRT: cutoutRT });
 }
 
 /**
@@ -2755,6 +2792,7 @@ export class SceneMaskManager {
      * @private
      */
     this._sharedCoverageRefreshFrameKey = null;
+    this._sharedCoverageContentRevision = 0;
 
     /**
      * Dynamic signature for lower-/other-Level token reveal apertures restored into Level-scoped suppression masks.
@@ -2867,27 +2905,14 @@ export class SceneMaskManager {
    *
    * Shared tile masks sample the live primary tile meshes directly so non-zero native occlusion modes can contribute their current revealed shape. Repainting from stale primary state can leave shared masks one frame behind hover or occlusion updates.
    *
-   * @returns {void}
+   * @returns {boolean}
    * @private
    */
   _syncDynamicCoverageSources() {
-    try {
-      canvas?.perception?.applyRenderFlags?.();
-    } catch (err) {
-      logger.debug("FXMaster:", err);
+    if (hasActiveRadialRestrictWeatherTilesForMask("all", { includeOffscreen: true })) {
+      return syncActiveRadialRestrictWeatherTileMasksForCamera("all", { includeOffscreen: true }) === true;
     }
-
-    try {
-      canvas?.primary?.update?.();
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
-
-    try {
-      canvas?.primary?.refreshPrimarySpriteMesh?.();
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
+    return syncCanvasLiveLevelSurfaceState()?.ready === true;
   }
 
   /**
@@ -2971,28 +2996,109 @@ export class SceneMaskManager {
   }
 
   /**
+   * Return the active world-atlas base mask, if shared coverage should use world-space coordinates.
+   *
+   * @returns {PIXI.RenderTexture|null}
+   * @private
+   */
+  _getSharedCoverageSourceMask() {
+    if (this._belowTokensNeeded.filters) {
+      return getMaskRenderTextureWorldAtlas(this._baseFiltersRT) ? this._baseFiltersRT : null;
+    }
+    if (this._belowTokensNeeded.particles && getMaskRenderTextureWorldAtlas(this._baseParticlesRT))
+      return this._baseParticlesRT;
+
+    for (const rt of [this._baseFiltersRT, this._baseParticlesRT]) {
+      if (getMaskRenderTextureWorldAtlas(rt)) return rt;
+    }
+    return null;
+  }
+
+  /**
+   * Return whether a scene-mask bundle for the supplied kind uses world-atlas coordinates.
+   *
+   * @param {"particles"|"filters"} kind
+   * @returns {boolean}
+   */
+  usesWorldAtlas(kind) {
+    if (kind === "particles") return isMaskRenderTextureWorldAtlas(this._baseParticlesRT);
+    if (kind === "filters") return isMaskRenderTextureWorldAtlas(this._baseFiltersRT);
+    return false;
+  }
+
+  /**
+   * Return whether shared below-object coverage is currently world-atlas based.
+   *
+   * @returns {boolean}
+   */
+  usesWorldAtlasCoverage() {
+    return !!this._getSharedCoverageSourceMask();
+  }
+
+  /**
+   * Return the shared coverage texture dimensions and optional world-atlas source.
+   *
+   * @returns {{ width:number, height:number, resolution:number, sourceMask: PIXI.RenderTexture|null }}
+   * @private
+   */
+  _getSharedCoverageTextureSpec() {
+    const sourceMask = this._getSharedCoverageSourceMask();
+    if (sourceMask) {
+      return {
+        width: Math.max(1, Number(sourceMask.width) || 1),
+        height: Math.max(1, Number(sourceMask.height) || 1),
+        resolution: sourceMask.resolution || 1,
+        sourceMask,
+      };
+    }
+
+    const { cssW, cssH } = getCssViewportMetrics();
+    return {
+      width: cssW,
+      height: cssH,
+      resolution: safeMaskResolutionForCssArea(cssW, cssH, 1),
+      sourceMask: null,
+    };
+  }
+
+  /**
    * Return whether a shared coverage RenderTexture is still usable for the supplied viewport spec.
    *
    * @param {PIXI.RenderTexture|null} rt
-   * @param {{ width:number, height:number, resolution:number }} spec
+   * @param {{ width:number, height:number, resolution:number, sourceMask?: PIXI.RenderTexture|null }} spec
    * @returns {boolean}
    * @private
    */
-  _coverageTextureValid(rt, { width, height, resolution }) {
-    return (
+  _coverageTextureValid(rt, { width, height, resolution, sourceMask = null }) {
+    const dimensionsValid =
       !!rt &&
       !rt.destroyed &&
       !rt.baseTexture?.destroyed &&
       Math.abs(Number(rt.width ?? 0) - Math.max(1, Number(width) || 1)) <= 0.001 &&
       Math.abs(Number(rt.height ?? 0) - Math.max(1, Number(height) || 1)) <= 0.001 &&
-      Math.abs(Number(rt.resolution || 1) - Number(resolution || 1)) <= 0.0001
+      Math.abs(Number(rt.resolution || 1) - Number(resolution || 1)) <= 0.0001;
+    if (!dimensionsValid) return false;
+
+    const sourceAtlas = getMaskRenderTextureWorldAtlas(sourceMask);
+    const textureAtlas = getMaskRenderTextureWorldAtlas(rt);
+    if (!sourceAtlas) return !textureAtlas;
+    if (!textureAtlas) return false;
+
+    const a = sourceAtlas.bounds;
+    const b = textureAtlas.bounds;
+    return (
+      Math.abs(Number(a.x) - Number(b.x)) <= 0.001 &&
+      Math.abs(Number(a.y) - Number(b.y)) <= 0.001 &&
+      Math.abs(Number(a.width) - Number(b.width)) <= 0.001 &&
+      Math.abs(Number(a.height) - Number(b.height)) <= 0.001 &&
+      Math.abs(Number(sourceAtlas.pixelsPerWorld) - Number(textureAtlas.pixelsPerWorld)) <= 0.000001
     );
   }
 
   /**
    * Build a same-frame key for shared token/tile coverage repaints.
    *
-   * @param {{ width:number, height:number, resolution:number, needTokens:boolean, needTiles:boolean, needParticleTiles?:boolean, needFilterTiles?:boolean }} spec
+   * @param {{ width:number, height:number, resolution:number, needTokens:boolean, needTiles:boolean, needParticleTiles?:boolean, needFilterTiles?:boolean, sourceMask?:PIXI.RenderTexture|null }} spec
    * @returns {string}
    * @private
    */
@@ -3004,7 +3110,28 @@ export class SceneMaskManager {
     needTiles,
     needParticleTiles = needTiles,
     needFilterTiles = needTiles,
+    sourceMask = null,
   }) {
+    const sourceAtlas = getMaskRenderTextureWorldAtlas(sourceMask);
+    if (sourceAtlas) {
+      return [
+        canvas?.scene?.id ?? "scene",
+        "world-atlas-coverage",
+        sourceMask?.__fxmasterSceneAllowMaskCacheKey ?? "mask",
+        Number(width || 0).toFixed(3),
+        Number(height || 0).toFixed(3),
+        Number(resolution || 1).toFixed(4),
+        needTokens ? buildBelowTokenMaskCoverageSignature({ includeOffscreen: true }) : "tokens:0",
+        needTiles || needParticleTiles || needFilterTiles
+          ? buildBelowTileMaskCoverageSignature({ includeOffscreen: true })
+          : "tiles:0",
+        needTokens ? 1 : 0,
+        needTiles ? 1 : 0,
+        needParticleTiles ? 1 : 0,
+        needFilterTiles ? 1 : 0,
+      ].join("|");
+    }
+
     const r = canvas?.app?.renderer ?? null;
     const ticker = canvas?.app?.ticker ?? null;
     const frameTime = Number(ticker?.lastTime ?? 0) || 0;
@@ -3081,10 +3208,15 @@ export class SceneMaskManager {
   } = {}) {
     const needsTokens = !!needTokens;
     const needsTiles = !!needTiles;
+    const sourceMaskHint = this._getSharedCoverageSourceMask();
+    const includeOffscreenCoverage = !!sourceMaskHint;
     const wantsParticleTiles = needsTiles && !!this._belowTilesNeeded.particles;
     const wantsFilterTiles = needsTiles && !!this._belowTilesNeeded.filters;
-    const needsParticleTiles = wantsParticleTiles && hasActiveTileRestrictionsForMask("particles");
-    const needsFilterTiles = wantsFilterTiles && hasActiveTileRestrictionsForMask("filters");
+    const needsParticleTiles =
+      wantsParticleTiles &&
+      hasActiveTileRestrictionsForMask("particles", { includeOffscreen: includeOffscreenCoverage });
+    const needsFilterTiles =
+      wantsFilterTiles && hasActiveTileRestrictionsForMask("filters", { includeOffscreen: includeOffscreenCoverage });
 
     if (!needsTokens && !needsTiles) {
       this._destroySharedCoverageTexture("_tokensRT");
@@ -3095,9 +3227,11 @@ export class SceneMaskManager {
       return { cssW: 0, cssH: 0, resolution: 1, refreshed: false };
     }
 
-    const { cssW, cssH } = getCssViewportMetrics();
-    const res = safeMaskResolutionForCssArea(cssW, cssH, 1);
-    const spec = { width: cssW, height: cssH, resolution: res };
+    const spec = this._getSharedCoverageTextureSpec();
+    const width = spec.width;
+    const height = spec.height;
+    const res = spec.resolution;
+    const sourceMask = spec.sourceMask;
 
     const tokensValid = !needsTokens || this._coverageTextureValid(this._tokensRT, spec);
     const particleTilesValid = !needsParticleTiles || this._coverageTextureValid(this._tilesRT, spec);
@@ -3107,13 +3241,14 @@ export class SceneMaskManager {
 
     const dedupeEnabled = CONFIG?.fxmaster?.overheadPerformance?.sharedCoverageSameFrameDeduplication !== false;
     const frameKey = this._sharedCoverageFrameKey({
-      width: cssW,
-      height: cssH,
+      width,
+      height,
       resolution: res,
       needTokens: needsTokens,
       needTiles: needsTiles,
       needParticleTiles: needsParticleTiles,
       needFilterTiles: needsFilterTiles,
+      sourceMask,
     });
 
     if (dedupeEnabled && !force && tokensValid && tilesValid && this._sharedCoverageRefreshFrameKey === frameKey) {
@@ -3122,28 +3257,38 @@ export class SceneMaskManager {
       if (!needsFilterTiles) this._destroySharedCoverageTexture("_tilesFiltersRT");
       if (!needsTiles) this._destroySharedCoverageTexture("_tilesVisibleRT");
       this._sharedCoverageRefreshFrameKey = frameKey;
-      return { cssW, cssH, resolution: res, refreshed: false };
+      return { cssW: width, cssH: height, resolution: res, refreshed: false };
     }
 
-    if (needsTiles && !presyncedDynamicCoverage) this._syncDynamicCoverageSources();
+    if (needsTiles && !presyncedDynamicCoverage && !this._syncDynamicCoverageSources()) {
+      this._sharedCoverageRefreshFrameKey = null;
+      this._scheduleDeferredBelowObjectCoverageRefresh();
+      return { cssW: width, cssH: height, resolution: res, refreshed: false, deferred: true };
+    }
 
     if (needsTokens) {
-      this._tokensRT = ensureRenderTexture(this._tokensRT, { width: cssW, height: cssH, resolution: res });
+      this._tokensRT = ensureRenderTexture(this._tokensRT, { width, height, resolution: res });
+      if (sourceMask) copyMaskRenderTextureMetadata(sourceMask, this._tokensRT);
+      else clearMaskRenderTextureMetadata(this._tokensRT);
       repaintTokensMaskInto(this._tokensRT);
-      this._belowTokenCoverageSignature = buildBelowTokenMaskCoverageSignature();
+      this._belowTokenCoverageSignature = buildBelowTokenMaskCoverageSignature({ includeOffscreen: !!sourceMask });
     } else {
       this._destroySharedCoverageTexture("_tokensRT");
     }
 
     if (needsTiles) {
-      this._tilesVisibleRT = ensureRenderTexture(this._tilesVisibleRT, { width: cssW, height: cssH, resolution: res });
+      this._tilesVisibleRT = ensureRenderTexture(this._tilesVisibleRT, { width, height, resolution: res });
+      if (sourceMask) copyMaskRenderTextureMetadata(sourceMask, this._tilesVisibleRT);
+      else clearMaskRenderTextureMetadata(this._tilesVisibleRT);
       repaintTilesMaskInto(this._tilesVisibleRT, { mode: "visible" });
     } else {
       this._destroySharedCoverageTexture("_tilesVisibleRT");
     }
 
     if (needsParticleTiles) {
-      this._tilesRT = ensureRenderTexture(this._tilesRT, { width: cssW, height: cssH, resolution: res });
+      this._tilesRT = ensureRenderTexture(this._tilesRT, { width, height, resolution: res });
+      if (sourceMask) copyMaskRenderTextureMetadata(sourceMask, this._tilesRT);
+      else clearMaskRenderTextureMetadata(this._tilesRT);
       repaintTilesMaskInto(this._tilesRT, { mode: "suppression", restrictionKind: "particles" });
     } else {
       /**
@@ -3153,14 +3298,17 @@ export class SceneMaskManager {
     }
 
     if (needsFilterTiles) {
-      this._tilesFiltersRT = ensureRenderTexture(this._tilesFiltersRT, { width: cssW, height: cssH, resolution: res });
+      this._tilesFiltersRT = ensureRenderTexture(this._tilesFiltersRT, { width, height, resolution: res });
+      if (sourceMask) copyMaskRenderTextureMetadata(sourceMask, this._tilesFiltersRT);
+      else clearMaskRenderTextureMetadata(this._tilesFiltersRT);
       repaintTilesMaskInto(this._tilesFiltersRT, { mode: "suppression", restrictionKind: "filters" });
     } else {
       this._destroySharedCoverageTexture("_tilesFiltersRT");
     }
 
     this._sharedCoverageRefreshFrameKey = frameKey;
-    return { cssW, cssH, resolution: res, refreshed: true };
+    this._sharedCoverageContentRevision = (this._sharedCoverageContentRevision + 1) >>> 0;
+    return { cssW: width, cssH: height, resolution: res, refreshed: true };
   }
 
   /**
@@ -3296,7 +3444,8 @@ export class SceneMaskManager {
           await new Promise((resolve) => requestAnimationFrame(resolve));
           if (serial !== this._deferredBelowObjectRefreshSerial) return;
           try {
-            syncCanvasLiveLevelSurfaceState();
+            const synced = syncCanvasLiveLevelSurfaceState();
+            if (synced?.ready !== true) continue;
             invalidateUpperLevelCoverageCache();
             this.refreshTokensSync({ presyncedDynamicCoverage: true });
           } catch (err) {
@@ -3442,15 +3591,19 @@ export class SceneMaskManager {
       Number(cssW || 0).toFixed(3),
       Number(cssH || 0).toFixed(3),
       Number(res || 1).toFixed(4),
-      canvas?.stage?.worldTransform?.tx ?? 0,
-      canvas?.stage?.worldTransform?.ty ?? 0,
-      canvas?.stage?.worldTransform?.a ?? 1,
-      canvas?.stage?.worldTransform?.d ?? 1,
     ].join("|");
 
     let entry = this._stackMaskCache.get(key) ?? null;
     if (!entry) {
-      entry = { base: null, cutoutTokens: null, cutoutTiles: null, cutoutCombined: null, soft: false, lastUsed: 0 };
+      entry = {
+        base: null,
+        cutoutTokens: null,
+        cutoutTiles: null,
+        cutoutCombined: null,
+        cutoutContentKey: null,
+        soft: false,
+        lastUsed: 0,
+      };
       this._stackMaskCache.set(key, entry);
     }
 
@@ -3477,41 +3630,70 @@ export class SceneMaskManager {
         ? this._tilesFiltersRT ?? this._tilesVisibleRT
         : this._tilesRT ?? this._tilesVisibleRT;
 
-    if (entry.base && useTokens && this._tokensRT) {
-      entry.cutoutTokens = rebuildCutoutFromBase(entry.base, this._tokensRT, entry.cutoutTokens);
-    } else if (entry.cutoutTokens) {
+    const destroyEntryTexture = (key) => {
+      const texture = entry[key] ?? null;
+      if (!texture) return;
       try {
-        entry.cutoutTokens.destroy(true);
+        texture.destroy(true);
       } catch (err) {
         logger.debug("FXMaster:", err);
       }
-      entry.cutoutTokens = null;
-    }
+      entry[key] = null;
+    };
+    const cutoutTextureValid = (texture) => {
+      if (!texture || texture.destroyed || texture.baseTexture?.destroyed || !entry.base) return false;
+      return (
+        Math.abs(Number(texture.width ?? 0) - Number(entry.base.width ?? 0)) <= 0.001 &&
+        Math.abs(Number(texture.height ?? 0) - Number(entry.base.height ?? 0)) <= 0.001 &&
+        Math.abs(Number(texture.resolution || 1) - Number(entry.base.resolution || 1)) <= 0.0001
+      );
+    };
 
-    if (entry.base && useTiles && tilesRT) {
-      entry.cutoutTiles = rebuildCutoutFromBase(entry.base, tilesRT, entry.cutoutTiles);
-    } else if (entry.cutoutTiles) {
-      try {
-        entry.cutoutTiles.destroy(true);
-      } catch (err) {
-        logger.debug("FXMaster:", err);
-      }
-      entry.cutoutTiles = null;
-    }
+    const baseContentKey = String(entry.base?.__fxmasterSceneAllowMaskCacheKey ?? "");
+    const coverageContentKey = [
+      String(this._sharedCoverageRefreshFrameKey ?? ""),
+      Number(this._sharedCoverageContentRevision || 0),
+    ].join(":");
+    const tileCoverageKind =
+      tilesRT === this._tilesFiltersRT ? "filters" : tilesRT === this._tilesRT ? "particles" : "visible";
+    const cutoutContentKey =
+      entry.base && baseContentKey && coverageContentKey
+        ? [
+            normalizedKind,
+            useTokens ? 1 : 0,
+            useTiles ? 1 : 0,
+            tileCoverageKind,
+            baseContentKey,
+            coverageContentKey,
+          ].join("|")
+        : null;
+    const contentChanged = !cutoutContentKey || entry.cutoutContentKey !== cutoutContentKey;
 
     if (entry.base && useTokens && useTiles && this._tokensRT && tilesRT) {
-      entry.cutoutCombined = rebuildCombinedCutoutFromBase(entry.base, this._tokensRT, tilesRT, entry.cutoutCombined, {
-        tokensCutoutRT: entry.cutoutTokens,
-        tilesCutoutRT: entry.cutoutTiles,
-      });
-    } else if (entry.cutoutCombined) {
-      try {
-        entry.cutoutCombined.destroy(true);
-      } catch (err) {
-        logger.debug("FXMaster:", err);
+      destroyEntryTexture("cutoutTokens");
+      destroyEntryTexture("cutoutTiles");
+      if (contentChanged || !cutoutTextureValid(entry.cutoutCombined)) {
+        entry.cutoutCombined = rebuildCutoutFromBase(entry.base, [this._tokensRT, tilesRT], entry.cutoutCombined);
       }
-      entry.cutoutCombined = null;
+    } else if (entry.base && useTokens && this._tokensRT) {
+      destroyEntryTexture("cutoutTiles");
+      destroyEntryTexture("cutoutCombined");
+      if (contentChanged || !cutoutTextureValid(entry.cutoutTokens)) {
+        entry.cutoutTokens = rebuildCutoutFromBase(entry.base, this._tokensRT, entry.cutoutTokens);
+      }
+    } else if (entry.base && useTiles && tilesRT) {
+      destroyEntryTexture("cutoutTokens");
+      destroyEntryTexture("cutoutCombined");
+      if (contentChanged || !cutoutTextureValid(entry.cutoutTiles)) {
+        entry.cutoutTiles = rebuildCutoutFromBase(entry.base, tilesRT, entry.cutoutTiles);
+      }
+    } else {
+      destroyEntryTexture("cutoutTokens");
+      destroyEntryTexture("cutoutTiles");
+      destroyEntryTexture("cutoutCombined");
     }
+
+    entry.cutoutContentKey = cutoutContentKey;
 
     entry.lastUsed = globalThis.performance?.now?.() ?? Date.now();
     this._trimStackMaskCache();
@@ -3573,9 +3755,11 @@ export class SceneMaskManager {
 
   /**
    * Force an immediate, synchronous refresh of masks.
+   *
    * @param {"particles"|"filters"|"all"} [kind="all"]
+   * @param {{ presyncedLiveLevelState?: boolean }} [options]
    */
-  refreshSync(kind = "all") {
+  refreshSync(kind = "all", { presyncedLiveLevelState = false } = {}) {
     try {
       this._scheduleRefresh?.cancel?.();
     } catch (err) {
@@ -3583,7 +3767,7 @@ export class SceneMaskManager {
     }
 
     const kinds = kind === "all" ? ["particles", "filters"] : [kind];
-    this._refreshImpl(kinds);
+    this._refreshImpl(kinds, { presyncedLiveLevelState });
   }
 
   /**
@@ -3666,14 +3850,16 @@ export class SceneMaskManager {
 
   /**
    * Internal implementation of the mask refresh pipeline.
+   *
    * @param {Array<"particles"|"filters">} kinds
+   * @param {{ presyncedLiveLevelState?: boolean }} [options]
    * @private
    */
-  _refreshImpl(kinds = ["particles", "filters"]) {
+  _refreshImpl(kinds = ["particles", "filters"], { presyncedLiveLevelState = false } = {}) {
     if (!canvas?.ready) return;
 
     const regions = getRegionEffectPlaceablesForCurrentView(canvas?.scene ?? null);
-    const suppressionContext = createSuppressionRefreshContext();
+    const suppressionContext = createSuppressionRefreshContext({ presyncedLiveLevelState });
     const activeSuppressionKinds = [];
     if (kinds.includes("particles") && this._kindActive.particles) activeSuppressionKinds.push("particles");
     if (kinds.includes("filters") && this._kindActive.filters) activeSuppressionKinds.push("filters");

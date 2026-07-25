@@ -166,6 +166,7 @@ function describeRowLevels(row, scene, levelLabelMap, sceneLevelIds) {
  * Management window for the global FXMaster compositor stack.
  */
 export class FxLayersManagement extends FXMasterBaseFormV2 {
+  static FXMASTER_DETACHED_WINDOW_FIT = true;
   static FXMASTER_POSITION_FLAG = "dialog-position-effectlayers";
   /** @type {FxLayersManagement|undefined} */
   static #instance;
@@ -276,7 +277,7 @@ export class FxLayersManagement extends FXMasterBaseFormV2 {
   async _onRender(...args) {
     await super._onRender(...args);
 
-    const pos = game.user.getFlag(packageId, "dialog-position-effectlayers");
+    const pos = this._fxmIsDetachedHost() ? null : game.user.getFlag(packageId, "dialog-position-effectlayers");
     if (!pos) return;
 
     await new Promise((resolve) => requestAnimationFrame(resolve));

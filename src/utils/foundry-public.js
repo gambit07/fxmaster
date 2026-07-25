@@ -1,5 +1,5 @@
 /**
- * Foundry integration helpers for Level, Region, Token, Tile, and Scene APIs.
+ * Cross-version scene integration helpers.
  */
 
 import { packageId } from "../constants.js";
@@ -53,6 +53,97 @@ export function fxmCollectionValues(value) {
   }
 }
 
+/**
+ * Return whether a tracked scene display object is active.
+ * @param {*} object
+ * @returns {boolean}
+ */
+export function fxmPrimaryCanvasObjectIsLive(object) {
+  if (!object || typeof object !== "object" || object.destroyed === true) return false;
+  if (!("inPrimary" in object)) return true;
+  try {
+    return object.inPrimary === true;
+  } catch (_err) {
+    return false;
+  }
+}
+
+/**
+ * Return active scene display objects from the preferred registry or fallback collections.
+ * @param {{ fallbackCollections?: Iterable<*>[], predicate?: Function|null }} [options]
+ * @returns {Array}
+ */
+export function fxmGetPrimaryCanvasObjects({ fallbackCollections = [], predicate = null } = {}) {
+  const primary = fxmCanvas()?.primary ?? null;
+  if (!primary || primary.destroyed) return [];
+
+  const output = [];
+  const seen = new Set();
+  const push = (object) => {
+    if (!fxmPrimaryCanvasObjectIsLive(object) || seen.has(object)) return;
+    if (typeof predicate === "function") {
+      try {
+        if (!predicate(object)) return;
+      } catch (_err) {
+        return;
+      }
+    }
+    seen.add(object);
+    output.push(object);
+  };
+
+  if ("objects" in primary && primary.objects != null) {
+    for (const object of fxmCollectionValues(primary.objects)) push(object);
+    return output;
+  }
+
+  const collections = Array.isArray(fallbackCollections) ? fallbackCollections : [fallbackCollections];
+  for (const collection of collections) {
+    for (const object of fxmCollectionValues(collection)) push(object);
+  }
+  if (output.length) return output;
+
+  const visit = (object) => {
+    if (!object || seen.has(object)) return;
+    push(object);
+    for (const child of fxmCollectionValues(object?.children)) visit(child);
+  };
+  for (const child of fxmCollectionValues(primary.children)) visit(child);
+  return output;
+}
+
+/**
+ * Return active Tile display meshes.
+ * @returns {Array}
+ */
+export function fxmGetPrimaryTileMeshes() {
+  const primary = fxmCanvas()?.primary ?? null;
+  if (!primary || primary.destroyed) return [];
+
+  const collectionMeshes = fxmCollectionValues(primary.tiles);
+  const collectionSet = new Set(collectionMeshes);
+  return fxmGetPrimaryCanvasObjects({
+    fallbackCollections: [collectionMeshes],
+    predicate: (object) => {
+      if (collectionSet.has(object)) return true;
+      const owner = fxmLinkedPlaceableFromDisplayObject(object) ?? object?.object ?? null;
+      const document = owner?.documentName ? owner : owner?.document ?? null;
+      const documentName = document?.documentName ?? document?.constructor?.documentName ?? "";
+      return documentName === "Tile";
+    },
+  });
+}
+
+/**
+ * Return active Level texture meshes in Level order.
+ * @returns {Array}
+ */
+export function fxmGetPrimaryLevelTextureMeshes() {
+  return fxmCollectionValues(fxmCanvas()?.primary?.levelTextures ?? []).filter((object) =>
+    fxmPrimaryCanvasObjectIsLive(object),
+  );
+}
+
 /** @param {*} document @returns {string} */
 export function fxmDocumentId(document) {
   return String(document?.id ?? document?.["_id"] ?? "").trim();
@@ -86,10 +177,7 @@ export function fxmLinkedPlaceableFromDisplayObject(value) {
 }
 
 /**
- * Resolve hover-fade state for Foundry primary occludable objects.
- *
- * Foundry V13/V14 expose hover-fade behavior but not a public state accessor. The internal state fallback is intentionally centralized here.
- *
+ * Resolve hover-fade state from candidate surfaces.
  * @param {...*} candidates
  * @returns {object|null}
  */
@@ -106,7 +194,57 @@ export function fxmGetPublicHoverFadeState(...candidates) {
 }
 
 /**
- * Resolve protected PlaceableObject target alpha when public alpha values are insufficient.
+ * Return whether a display object represents a prepared full-scene Level texture.
+ * @param {*} object
+ * @returns {boolean}
+ */
+export function fxmIsCanvasLevelTexture(object) {
+  if (!object) return false;
+  return fxmGetPrimaryLevelTextureMeshes().includes(object);
+}
+
+/**
+ * Resolve surface-visibility sampling data for a prepared Level texture.
+ * @param {*} object
+ * @returns {{ texture: object, elevation: number }|null}
+ */
+export function fxmGetCanvasLevelTextureSurfaceOcclusion(object) {
+  if (!fxmIsCanvasLevelTexture(object)) return null;
+
+  const canvas = fxmCanvas();
+  const mask = canvas?.masks?.occlusion ?? null;
+  const texture = mask?.renderTexture ?? null;
+  if (!texture || typeof mask?.mapElevation !== "function") return null;
+  if (!(Number(mask?.occludedSurfaces?.size ?? 0) > 0)) return null;
+
+  const surfaceMode = Number(globalThis.CONST?.OCCLUSION_MODES?.SURFACE);
+  const occlusionMode = Number(object?.occlusionMode ?? 0);
+  const surfaceState = Number(object?._occlusionState?.surface ?? 0);
+  if (Number.isFinite(surfaceMode)) {
+    if (!(occlusionMode & surfaceMode)) return null;
+  } else if (!(surfaceState > 0)) return null;
+
+  const elevation = Number(object?.elevation);
+  if (!Number.isFinite(elevation)) return null;
+
+  const objectName = String(object?.name ?? "");
+  const sameElevation =
+    typeof object?._occludedBySameElevationSurfaces === "boolean"
+      ? object._occludedBySameElevationSurfaces
+      : !objectName.endsWith(".foreground");
+  const effectiveElevation = sameElevation
+    ? elevation
+    : typeof Math.nextDown === "function"
+    ? Math.nextDown(elevation)
+    : elevation - 1e-4;
+  const mappedElevation = Number(mask.mapElevation(effectiveElevation));
+  if (!Number.isFinite(mappedElevation)) return null;
+
+  return { texture, elevation: mappedElevation };
+}
+
+/**
+ * Resolve target opacity when rendered values are unavailable.
  * @param {*} placeable
  * @returns {number|null}
  */
@@ -231,8 +369,10 @@ export function fxmGetLevelElevationWindow(level) {
   const scalar = Number(elevation);
   if (Number.isFinite(scalar)) return { min: scalar, max: scalar };
 
-  const bottom = elevation?.bottom ?? level?.bottom;
-  const top = elevation?.top ?? level?.top;
+  const ownBottom = Object.prototype.hasOwnProperty.call(level ?? {}, "bottom") ? level.bottom : undefined;
+  const ownTop = Object.prototype.hasOwnProperty.call(level ?? {}, "top") ? level.top : undefined;
+  const bottom = elevation?.bottom ?? ownBottom;
+  const top = elevation?.top ?? ownTop;
   const hasBottom = bottom !== undefined && bottom !== null && String(bottom).trim() !== "";
   const hasTop = top !== undefined && top !== null && String(top).trim() !== "";
   if (hasBottom || hasTop) {
@@ -315,22 +455,31 @@ export function fxmGetSceneLevels(scene = fxmCanvas()?.scene ?? null) {
   };
   const pushAll = (value) => fxmCollectionValues(value).forEach(push);
 
-  pushAll(scene?.levels?.sorted ?? null);
-  pushAll(scene?.levels?.contents ?? scene?.levels ?? null);
-  try {
-    pushAll(scene?.getEmbeddedCollection?.("Level"));
-  } catch (_err) {}
-  try {
-    push(scene?.initialLevel);
-  } catch (_err) {}
-  try {
-    push(scene?.firstLevel);
-  } catch (_err) {}
+  /** Prefer the canonical embedded collection prepared by Scene#prepareEmbeddedDocuments without invoking the user-specific SceneManager availability pipeline. */
+  const preparedLevels = scene?.levels?.sorted ?? scene?.levels?.contents ?? scene?.levels ?? null;
+  pushAll(preparedLevels);
+
+  if (!levels.length) {
+    try {
+      pushAll(scene?.getEmbeddedCollection?.("Level"));
+    } catch (_err) {}
+  }
+
+  /** Retain accessor fallbacks for older or partially prepared scene-like values without touching each accessor on the common V14 path. */
+  if (!levels.length) {
+    try {
+      push(scene?.initialLevel);
+    } catch (_err) {}
+    try {
+      push(scene?.firstLevel);
+    } catch (_err) {}
+    try {
+      pushAll(scene?.availableLevels);
+    } catch (_err) {}
+  }
+
   try {
     if (!scene?.id || fxmCanvas()?.scene?.id === scene.id) push(fxmCanvas()?.level);
-  } catch (_err) {}
-  try {
-    pushAll(scene?.availableLevels);
   } catch (_err) {}
   return levels;
 }
@@ -339,6 +488,14 @@ export function fxmGetSceneLevels(scene = fxmCanvas()?.scene ?? null) {
 export function fxmGetSceneLevelById(levelId, scene = fxmCanvas()?.scene ?? null) {
   const id = String(levelId ?? "").trim();
   if (!id) return null;
+
+  try {
+    const direct = scene?.levels?.get?.(id) ?? scene?.getEmbeddedCollection?.("Level")?.get?.(id) ?? null;
+    if (direct) return direct;
+  } catch (_err) {}
+
+  const current = fxmCanvas()?.level ?? null;
+  if ((!scene?.id || fxmCanvas()?.scene?.id === scene.id) && fxmDocumentId(current) === id) return current;
   return fxmGetSceneLevels(scene).find((level) => fxmDocumentId(level) === id) ?? null;
 }
 
@@ -519,7 +676,6 @@ function levelTexturePlanSignature(scene, levels, viewedLevel) {
     const elevation = fxmGetLevelElevationWindow(level);
     const bg = fxmResolveConfiguredImageSourcePath(fxmGetLevelBackground(level));
     const fg = fxmResolveConfiguredImageSourcePath(fxmGetLevelForeground(level));
-    const textures = fxmCollectComparableSourcePaths(fxmGetLevelTextures(level), new Set());
     parts.push(
       [
         fxmDocumentId(level),
@@ -529,7 +685,6 @@ function levelTexturePlanSignature(scene, levels, viewedLevel) {
         Number.isFinite(elevation?.max) ? Number(elevation.max).toFixed(3) : "NaN",
         fxmNormalizeComparableSourcePath(bg),
         fxmNormalizeComparableSourcePath(fg),
-        Array.from(textures).sort().join(","),
       ].join("~"),
     );
   }
@@ -537,8 +692,7 @@ function levelTexturePlanSignature(scene, levels, viewedLevel) {
 }
 
 /**
- * Build a cached Level texture plan from public Level fields. This mirrors the useful public-field semantics of Foundry's internal Level texture setup while avoiding private/internal calls.
- *
+ * Build a cached Level texture plan from scene Level data.
  * @param {*} [scene]
  * @returns {{scene:*,viewedLevel:*,entries:Array,byLevelId:Map<string,Array>,byNormalizedSrc:Map<string,Array>,upperEntries:Array,upperLevelIds:Set<string>,currentLevelEntries:Array,hasAnyUpperArtwork:boolean,hasUpperForeground:boolean,hasUpperBackground:boolean}}
  */
@@ -620,28 +774,6 @@ export function fxmGetLevelTexturePlan(scene = fxmCanvas()?.scene ?? null) {
       addEntryPaths(entry, config);
       remember(entry);
     }
-
-    const extraPaths = fxmCollectComparableSourcePaths(fxmGetLevelTextures(level), new Set());
-    if (extraPaths.size) {
-      const entry = {
-        level,
-        levelId,
-        name: "textures",
-        config: fxmGetLevelTextures(level),
-        src: "",
-        normalizedSrc: "",
-        elevation: top,
-        sort: 0,
-        zIndex: 0,
-        isBackground: false,
-        isForeground: false,
-        isView,
-        isVisible,
-        isUpper: !isView && Number.isFinite(top) && Number.isFinite(viewedBottom) && top > viewedBottom + 1e-4,
-        paths: extraPaths,
-      };
-      remember(entry);
-    }
   }
 
   _levelTexturePlanCache.set(signature, plan);
@@ -673,7 +805,7 @@ export function fxmGetLevelConfiguredImagePaths(
 
   const configs = foregroundOnly
     ? [fxmGetLevelForeground(level)]
-    : [fxmGetLevelBackground(level), fxmGetLevelForeground(level), fxmGetLevelTextures(level)];
+    : [fxmGetLevelBackground(level), fxmGetLevelForeground(level)];
   for (const config of configs) {
     const direct = fxmResolveConfiguredImageSourcePath(config);
     if (direct) fxmAddComparableSourcePath(paths, direct);
@@ -744,6 +876,34 @@ export function fxmDocumentIncludedInLevel(document, level) {
   return null;
 }
 
+/**
+ * Test whether a scene document belongs to a specific Level.
+ * @param {*} document
+ * @param {*} level
+ * @returns {boolean|null}
+ */
+export function fxmDocumentLocatedInLevel(document, level) {
+  const doc = document?.document ?? document ?? null;
+  if (!doc || !level) return null;
+
+  try {
+    if (typeof doc.locatedInLevel === "function") return !!doc.locatedInLevel(level);
+  } catch (_err) {}
+
+  const levelId = fxmDocumentId(level);
+  if (!levelId) return null;
+
+  const directLevel = doc?.level ?? document?.level ?? null;
+  if (directLevel) {
+    const directId = typeof directLevel === "string" ? directLevel : fxmDocumentId(directLevel);
+    if (directId) return directId === levelId;
+  }
+
+  const ids = fxmGetDocumentLevelIds(doc) ?? fxmGetDocumentLevelIds(document);
+  if (ids?.size) return ids.has(levelId);
+  return null;
+}
+
 /** @param {*} document @param {number} [fallbackElevation] @returns {{min:number,max:number}|null} */
 export function fxmGetDocumentElevationWindow(document, fallbackElevation = Number.NaN) {
   const doc = document?.document ?? document ?? null;
@@ -751,8 +911,10 @@ export function fxmGetDocumentElevationWindow(document, fallbackElevation = Numb
   const elevation = doc?.elevation ?? document?.elevation ?? snapshot?.elevation ?? null;
   const scalar = Number(elevation);
   if (Number.isFinite(scalar)) return { min: scalar, max: scalar };
-  const bottom = elevation?.bottom ?? doc?.bottom ?? snapshot?.elevation?.bottom ?? snapshot?.bottom;
-  const top = elevation?.top ?? doc?.top ?? snapshot?.elevation?.top ?? snapshot?.top;
+  const ownBottom = Object.prototype.hasOwnProperty.call(doc ?? {}, "bottom") ? doc.bottom : undefined;
+  const ownTop = Object.prototype.hasOwnProperty.call(doc ?? {}, "top") ? doc.top : undefined;
+  const bottom = elevation?.bottom ?? ownBottom ?? snapshot?.elevation?.bottom ?? snapshot?.bottom;
+  const top = elevation?.top ?? ownTop ?? snapshot?.elevation?.top ?? snapshot?.top;
   const hasBottom = bottom !== undefined && bottom !== null && String(bottom).trim() !== "";
   const hasTop = top !== undefined && top !== null && String(top).trim() !== "";
   if (hasBottom || hasTop) {
@@ -939,7 +1101,7 @@ function buildRegionEffectDefinitionsFromSystem(behavior, kind) {
     if (!system?.[`${type}_enabled`]) continue;
     const options = {};
     const paramEntries = [
-      ...Object.entries(cls?.parameters ?? {}).filter(([, cfg]) => !cfg?.sceneOnly),
+      ...Object.entries(cls?.parameters ?? {}).filter(([, cfg]) => !cfg?.sceneOnly && cfg?.type !== "filter-actions"),
       ...Object.entries(regionOnly),
     ];
     for (const [param, cfg] of paramEntries) {
@@ -966,9 +1128,21 @@ function buildRegionEffectDefinitionsFromSystem(behavior, kind) {
 /** @param {*} behavior @param {"particle"|"filter"} kind @returns {object} */
 export function fxmGetRegionBehaviorEffectDefinitions(behavior, kind) {
   const fromSystem = buildRegionEffectDefinitionsFromSystem(behavior, kind);
-  if (fromSystem) return fromSystem;
   const flagName = kind === "filter" ? "filters" : "particleEffects";
-  return behavior?.getFlag?.(packageId, flagName) ?? {};
+  const persisted = behavior?.getFlag?.(packageId, flagName) ?? {};
+
+  if (fromSystem) {
+    if (kind === "particle") {
+      for (const [type, definition] of Object.entries(fromSystem)) {
+        const state = persisted?.[type]?.state;
+        if (!state || typeof state !== "object") continue;
+        definition.state = foundry.utils.deepClone(state);
+      }
+    }
+    return fromSystem;
+  }
+
+  return persisted;
 }
 
 /** Backwards-compatible unprefixed helpers for runtime imports. */

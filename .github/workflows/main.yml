@@ -10,34 +10,33 @@ on:
       - main
       - develop
 
+permissions:
+  contents: read
+
 env:
-  node_version: 20
+  NODE_VERSION: "24"
+  HUSKY: "0"
 
 jobs:
   lint-and-build:
     name: Lint & Build (Dev)
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: ${{ env.node_version }}
-
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: .npm
-          key: ${{ runner.OS }}-node-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.OS }}-node-
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        run: npm ci --cache .npm --prefer-offline
+        run: npm ci
 
       - name: Lint
         run: npm run lint

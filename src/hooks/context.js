@@ -397,23 +397,48 @@ export function createHookContext() {
 
   /** ---- Management window tracking ---- */
 
-  const refreshOpenFxMasterWindows = ({ hard = false } = {}) => {
-    for (const app of [...openPFx, ...openFFx, ...openAFx, ...openLFx]) {
-      try {
-        app.render(!hard);
-      } catch (err) {
-        logger.debug("FXMaster:", err);
+  const isOpenWindow = (app) => {
+    const element = app?.element?.[0] ?? app?.element ?? null;
+    return !!element?.isConnected;
+  };
+
+  const pruneOpenWindows = (...sets) => {
+    for (const set of sets) {
+      for (const app of [...set]) {
+        if (!isOpenWindow(app)) set.delete(app);
       }
     }
   };
 
+  const renderWindow = (app, force) => {
+    if (!isOpenWindow(app)) return;
+    try {
+      const rendered = app?.render?.(force);
+      if (rendered && typeof rendered.catch === "function") rendered.catch((err) => logger.debug("FXMaster:", err));
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+  };
+
+  const refreshOpenFxMasterWindows = ({ hard = false } = {}) => {
+    pruneOpenWindows(openPFx, openFFx, openAFx, openLFx);
+    for (const app of [...openPFx, ...openFFx, ...openAFx, ...openLFx]) {
+      renderWindow(app, hard);
+    }
+  };
+
+  const refreshOpenPairedSoundFxWindows = ({ hard = false } = {}) => {
+    pruneOpenWindows(openPFx, openFFx);
+    if (!openPFx.size || !openFFx.size) return;
+    for (const app of [...openPFx, ...openFFx]) {
+      renderWindow(app, hard);
+    }
+  };
+
   const refreshOpenLayersWindow = ({ hard = false } = {}) => {
+    pruneOpenWindows(openLFx);
     for (const app of [...openLFx]) {
-      try {
-        app.render(!hard);
-      } catch (err) {
-        logger.debug("FXMaster:", err);
-      }
+      renderWindow(app, hard);
     }
   };
 
@@ -422,6 +447,13 @@ export function createHookContext() {
       refreshOpenFxMasterWindows({ hard: true });
     },
     { key: "fxm:openWindowsRefresh" },
+  );
+
+  const schedulePairedSoundFxWindowsRefresh = coalesceNextFrame(
+    function schedulePairedSoundFxWindowsRefresh() {
+      refreshOpenPairedSoundFxWindows({ hard: true });
+    },
+    { key: "fxm:pairedSoundFxWindowsRefresh" },
   );
 
   const scheduleLayersWindowRefresh = coalesceNextFrame(
@@ -472,6 +504,7 @@ export function createHookContext() {
     unbind,
     ensurePinned,
     scheduleOpenWindowsRefresh,
+    schedulePairedSoundFxWindowsRefresh,
     scheduleLayersWindowRefresh,
     requestRedrawAllRegionParticles,
   };

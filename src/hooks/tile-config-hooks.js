@@ -321,7 +321,6 @@ export function registerTileConfigHooks() {
   };
 
   Hooks.on("renderTileConfig", onRender);
-  Hooks.on("renderTileConfigV2", onRender);
 
   Hooks.on("preUpdateTile", (doc, changes, _options, userId) => {
     if (userId && game.user?.id && userId !== game.user.id) return;

@@ -26,6 +26,7 @@ function parameterNameFromInputName(inputName, filterDB) {
 }
 
 export class FilterEffectsManagement extends FXMasterBaseFormV2 {
+  static FXMASTER_DETACHED_WINDOW_FIT = true;
   static FXMASTER_POSITION_FLAG = "dialog-position-filtereffects";
   /** @type {FilterEffectsManagement|undefined} */
   static #instance;
@@ -47,6 +48,7 @@ export class FilterEffectsManagement extends FXMasterBaseFormV2 {
     classes: ["fxmaster", "form-v2", "ui-control"],
     actions: {
       updateParam: FilterEffectsManagement.updateParam,
+      filterEffectAction: FilterEffectsManagement.filterEffectAction,
       openHideEffects: FilterEffectsManagement.openHideEffects,
     },
     window: {
@@ -118,6 +120,83 @@ export class FilterEffectsManagement extends FXMasterBaseFormV2 {
   }
 
   /**
+   * Invoke a filter effect-provided action from an effect option row.
+   *
+   * @param {PointerEvent} event
+   * @param {HTMLElement} button
+   * @returns {Promise<void>}
+   */
+  static async filterEffectAction(event, button) {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+
+    const action = button?.dataset?.effectAction;
+    const row = button?.closest?.(".fxmaster-filter-expand")?.previousElementSibling;
+    const type =
+      button?.dataset?.effectType ?? button?.closest?.("[data-effect-type]")?.dataset?.effectType ?? row?.dataset?.type;
+    if (!type || !action) return;
+
+    const effectDef = CONFIG.fxmaster?.filterEffects?.[type];
+    if (!effectDef) {
+      logger.warn(game.i18n.format("FXMASTER.Filters.TypeErrors.TypeNotFound", { type }));
+      return;
+    }
+
+    const parameterActions = Object.values(effectDef.parameters ?? {}).flatMap((parameter) =>
+      Array.isArray(parameter?.actions) ? parameter.actions : [],
+    );
+    const actions = [
+      ...(Array.isArray(effectDef.managementActions) ? effectDef.managementActions : []),
+      ...(Array.isArray(effectDef.filterActions) ? effectDef.filterActions : []),
+      ...parameterActions,
+    ];
+    const actionDef = actions.find((entry) => entry?.action === action);
+    if (!actionDef) return;
+
+    const getOptions = () => {
+      try {
+        return FXMasterBaseFormV2.gatherFilterOptions(
+          effectDef,
+          this?.element ?? button?.closest?.(".fxmaster-filter-expand") ?? document,
+        );
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+        try {
+          const current = canvas?.scene?.getFlag?.(packageId, "filters") ?? {};
+          return foundry.utils.deepClone(current[`core_${type}`]?.options ?? {});
+        } catch (fallbackErr) {
+          logger.debug("FXMaster:", fallbackErr);
+          return {};
+        }
+      }
+    };
+
+    const context = {
+      app: this,
+      scene: canvas?.scene ?? null,
+      type,
+      action,
+      actionDef,
+      button,
+      event,
+      getOptions,
+      options: getOptions(),
+    };
+
+    try {
+      if (typeof actionDef.handler === "string" && typeof effectDef[actionDef.handler] === "function") {
+        await effectDef[actionDef.handler](context);
+      } else if (typeof effectDef.handleManagementAction === "function") {
+        await effectDef.handleManagementAction(action, context);
+      } else if (typeof actionDef.onClick === "function") {
+        await actionDef.onClick(context);
+      }
+    } catch (err) {
+      logger.error("FXMaster | Filter effect action failed", err);
+    }
+  }
+
+  /**
    * Update the Hide Effects header control tooltip with the current hidden count.
    * @returns {void}
    */
@@ -141,7 +220,7 @@ export class FilterEffectsManagement extends FXMasterBaseFormV2 {
 
     this._updateHideEffectsTooltip();
 
-    const pos = game.user.getFlag(packageId, "dialog-position-filtereffects");
+    const pos = this._fxmIsDetachedHost() ? null : game.user.getFlag(packageId, "dialog-position-filtereffects");
     if (pos) {
       await new Promise((r) => requestAnimationFrame(r));
 
@@ -238,6 +317,15 @@ export class FilterEffectsManagement extends FXMasterBaseFormV2 {
     }
 
     game.settings.set(packageId, "passiveFilterConfig", passive);
+
+    for (const effectDef of Object.values(CONFIG.fxmaster.filterEffects ?? {})) {
+      try {
+        await effectDef?.handleManagementClose?.({ app: this, scene: this.scene ?? canvas?.scene ?? null });
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    }
+
     return super.close(options);
   }
 
@@ -281,15 +369,22 @@ export class FilterEffectsManagement extends FXMasterBaseFormV2 {
     const type = control.closest(".fxmaster-filter-expand")?.previousElementSibling?.dataset?.type;
     if (!type) return;
 
+    const filterDB = CONFIG.fxmaster.filterEffects[type];
+    if (!filterDB) return;
+
+    const parameterSection = control.closest(".fxmaster-filter-expand") ?? this.element;
+    const syncControl = parameterSection?.querySelector?.(`[name$="_synchronizedDirection"]`) ?? null;
+    const syncValue = syncControl?.type === "checkbox" ? syncControl.checked : syncControl?.value;
+    FXMasterBaseFormV2.refreshSynchronizedDirectionControls(parameterSection, filterDB, {
+      synchronizedDirection: syncValue,
+    });
+
     const scene = canvas.scene;
     if (!scene) return;
     const sceneId = scene.id ?? null;
     const current = foundry.utils.duplicate(scene.getFlag(packageId, "filters") ?? {});
     const isActive = !!current[`core_${type}`];
     if (!isActive) return;
-
-    const filterDB = CONFIG.fxmaster.filterEffects[type];
-    if (!filterDB) return;
 
     const isMultiSelect =
       control?.matches?.("multi-select, select[multiple]") ||
@@ -306,6 +401,11 @@ export class FilterEffectsManagement extends FXMasterBaseFormV2 {
     const gatheredOptions = FilterEffectsManagement.gatherFilterOptions(filterDB, this.element);
     const changedParam = parameterNameFromInputName(control.name, filterDB);
     const options = prepareFilterOptionsForSceneStorage(type, gatheredOptions, { previousOptions, changedParam });
+    FXMasterBaseFormV2.refreshSynchronizedDirectionControls(
+      control.closest(".fxmaster-filter-expand"),
+      filterDB,
+      options,
+    );
 
     const writeOptions = async ({ sceneId, type, options, refresh = false }) => {
       try {

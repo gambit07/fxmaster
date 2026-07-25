@@ -44,6 +44,7 @@ function isLegacyOperatorKey(id) {
  * Lists scene-wide particle/filter effects that were added via the API. Provides quick removal per effect, an expandable view of the stored API parameters, and an editor for a single instance.
  */
 export class ApiEffectsManagement extends FXMasterBaseFormV2 {
+  static FXMASTER_DETACHED_WINDOW_FIT = true;
   static FXMASTER_POSITION_FLAG = "dialog-position-apieffects";
   /** @type {ApiEffectsManagement|undefined} */
   static #instance;
@@ -182,7 +183,7 @@ export class ApiEffectsManagement extends FXMasterBaseFormV2 {
   async _onRender(...args) {
     await super._onRender(...args);
 
-    const pos = game.user.getFlag(packageId, "dialog-position-apieffects");
+    const pos = this._fxmIsDetachedHost() ? null : game.user.getFlag(packageId, "dialog-position-apieffects");
     if (!pos) return;
 
     await new Promise((r) => requestAnimationFrame(r));

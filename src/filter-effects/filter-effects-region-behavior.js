@@ -6,7 +6,7 @@ import {
   prepareFilterOptionsForSceneStorage,
 } from "../utils.js";
 import { packageId } from "../constants.js";
-import { applyLegacyRangeTolerance } from "../utils/region-schema.js";
+import { applyLegacyRangeTolerance, createRegionNumberField } from "../utils/region-schema.js";
 import { buildRegionEffectUid, promoteEffectStackUids } from "../common/effect-stack.js";
 
 /**
@@ -141,9 +141,18 @@ export class FilterRegionBehaviorType extends foundry.data.regionBehaviors.Regio
           opts.nullable = false;
           opts.initial = !!cfg.value;
         } else if (cfg.type === "multi-select") {
+          const manualChoices =
+            param === "soundFxManualSoundIds" &&
+            typeof CONFIG?.fxmaster?.collectSoundFxManualSoundChoices === "function"
+              ? Object.fromEntries(
+                  CONFIG.fxmaster
+                    .collectSoundFxManualSoundChoices("filter", type)
+                    .map((choice) => [choice.value, choice.label]),
+                )
+              : null;
           const elementField = new foundry.data.fields.StringField({
             required: false,
-            choices: cfg.options ?? {},
+            choices: manualChoices ?? cfg.options ?? {},
             label: cfg.label,
             localize: true,
           });
@@ -165,9 +174,19 @@ export class FilterRegionBehaviorType extends foundry.data.regionBehaviors.Regio
             localize: true,
           });
           continue;
+        } else if (cfg.type === "number-infinity") {
+          schema[`${type}_${param}`] = new foundry.data.fields.StringField({
+            required: false,
+            nullable: true,
+            initial: "",
+            label: cfg.label,
+            localize: true,
+          });
+          continue;
         }
 
-        schema[`${type}_${param}`] = new FieldClass(opts);
+        schema[`${type}_${param}`] =
+          FieldClass === foundry.data.fields.NumberField ? createRegionNumberField(opts, cfg) : new FieldClass(opts);
       }
 
       for (const [pName, cfg] of Object.entries(REGION_ONLY)) {
@@ -247,7 +266,7 @@ export class FilterRegionBehaviorType extends foundry.data.regionBehaviors.Regio
       .reduce((map, [type, cls]) => {
         const opts = {};
         const paramEntries = [
-          ...Object.entries(cls.parameters).filter(([, cfg]) => !cfg?.sceneOnly),
+          ...Object.entries(cls.parameters).filter(([, cfg]) => !cfg?.sceneOnly && cfg?.type !== "filter-actions"),
           ...Object.entries(REGION_ONLY),
         ];
         for (const [param, cfg] of paramEntries) {

@@ -1,6 +1,10 @@
 import { FXMasterParticleEffect } from "./effect.js";
 import { withSteppedGradientColor } from "./helpers/with-stepped-gradient-color.js";
 
+function hideEmbersDirectionalControls({ get }) {
+  return get("orbit") === true || get("topDown") === true;
+}
+
 /**
  * A full-screen particle effect which renders floating embers.
  */
@@ -49,6 +53,22 @@ export class EmbersParticleEffect extends FXMasterParticleEffect {
         showWhen: { orbit: true },
       },
       scale: p.scale,
+      directionalMovement: {
+        label: "FXMASTER.Params.DirectionalMovement",
+        type: "checkbox",
+        value: false,
+        hideWhen: hideEmbersDirectionalControls,
+      },
+      direction: {
+        ...p.direction,
+        showWhen: { directionalMovement: true },
+        hideWhen: hideEmbersDirectionalControls,
+      },
+      synchronizedDirection: {
+        ...this.synchronizedDirectionParameter,
+        showWhen: { directionalMovement: true },
+        hideWhen: hideEmbersDirectionalControls,
+      },
       speed: p.speed,
       lifetime: p.lifetime,
       density: { ...p.density, min: 0.05, value: 0.7, max: 1.4, step: 0.05, decimals: 2 },
@@ -132,6 +152,14 @@ export class EmbersParticleEffect extends FXMasterParticleEffect {
     options = this.constructor.mergeWithDefaults(options);
     const orbit = !!options?.orbit?.value;
     const topDown = !!options?.topDown?.value && !orbit;
+    const directionalMovement = !!options?.directionalMovement?.value && !orbit && !topDown;
+    const movementOptions = directionalMovement
+      ? options
+      : {
+          ...options,
+          directionalMovement: { ...(options?.directionalMovement ?? {}), value: false },
+          synchronizedDirection: { ...(options?.synchronizedDirection ?? {}), value: false },
+        };
 
     const d = CONFIG.fxmaster.getParticleDimensions(options);
 
@@ -163,7 +191,7 @@ export class EmbersParticleEffect extends FXMasterParticleEffect {
         },
       });
 
-      this.applyOptionsToConfig(options, config);
+      this.applyOptionsToConfig(movementOptions, config);
       const emitter = withSteppedGradientColor(this.createEmitter(config), config);
       return [emitter];
     }
@@ -175,7 +203,7 @@ export class EmbersParticleEffect extends FXMasterParticleEffect {
     config.behaviors = config.behaviors.filter((b) => b.type !== "rotation" && b.type !== "rotationStatic");
     config.behaviors.push({ type: "rotationStatic", config: { min: 180, max: 180 } });
 
-    this.applyOptionsToConfig(options, config);
+    this.applyOptionsToConfig(movementOptions, config);
 
     const ms = config.behaviors.find(({ type }) => type === "moveSpeedStatic")?.config;
     const avgSpeed = ms ? ((ms.min ?? 0) + (ms.max ?? 0)) / 2 : 0;
@@ -204,8 +232,9 @@ export class EmbersParticleEffect extends FXMasterParticleEffect {
     const emitter = withSteppedGradientColor(this.createEmitter(config), config);
 
     const ctx = options?.__fxmParticleContext ?? this.__fxmParticleContext;
-    const ownerX = ctx ? 0 : canvas.stage.pivot.x - d.sceneX - d.sceneWidth / 2;
-    const ownerY = ctx ? 0 : canvas.stage.pivot.y - d.sceneY - d.sceneHeight / 2;
+    const scopedContext = CONFIG.fxmaster?.isScopedParticleContext?.(ctx) ?? !!ctx?.dimensions;
+    const ownerX = scopedContext ? 0 : canvas.stage.pivot.x - d.sceneX - d.sceneWidth / 2;
+    const ownerY = scopedContext ? 0 : canvas.stage.pivot.y - d.sceneY - d.sceneHeight / 2;
     emitter.updateOwnerPos(ownerX, ownerY);
 
     return [emitter];

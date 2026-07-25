@@ -20,15 +20,24 @@ export function registerTokenHooks(ctx) {
     ctx.requestTokenMaskRefresh();
   });
 
-  Hooks.on("updateToken", (tokenDoc) => {
+  Hooks.on("updateToken", (tokenDoc, changed, _options, userId) => {
     if (tokenDoc?.parent !== canvas.scene) return;
     if (!isEnabled()) return;
+    canvas.particleeffects?.noteParticleTrailTokenMovement?.(tokenDoc, { changed, userId });
+    ctx.requestTokenMaskRefresh();
+  });
+
+  Hooks.on("controlToken", (placeable) => {
+    if (placeable?.document?.parent !== canvas.scene) return;
+    if (!isEnabled()) return;
+    canvas.particleeffects?.noteParticleTrailTokenControl?.(placeable);
     ctx.requestTokenMaskRefresh();
   });
 
   Hooks.on("deleteToken", (tokenDoc) => {
     if (tokenDoc?.parent !== canvas.scene) return;
     if (!isEnabled()) return;
+    canvas.particleeffects?.forgetParticleTrailToken?.(tokenDoc);
     ctx.requestTokenMaskRefresh();
   });
 

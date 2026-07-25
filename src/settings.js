@@ -170,8 +170,8 @@ export function registerSettings() {
   });
 
   game.settings.registerMenu(packageId, "patreonSupport", {
-    name: "Patreon Support",
-    label: "Gambit's Lounge",
+    name: "FXMASTER.Settings.PatreonSupportName",
+    label: "FXMASTER.Settings.PatreonSupportLabel",
     hint: "FXMASTER.Settings.PatreonSupportHint",
     icon: "fas fa-card-spade",
     scope: "world",
@@ -347,7 +347,7 @@ class PatreonSupportMenu extends foundry.applications.api.HandlebarsApplicationM
   static get defaultOptions() {
     return foundry.utils.mergeObject(super.defaultOptions, {
       id: "gambits-patreon-support",
-      title: "Patreon Support",
+      title: "FXMASTER.Settings.PatreonSupportName",
       template: "templates/blank.hbs",
       width: 1,
       height: 1,

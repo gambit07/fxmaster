@@ -6,6 +6,14 @@ import { registerGetSceneControlButtonsHook } from "./controls.js";
 import { packageId } from "./constants.js";
 import { registerPresetApi } from "./api.js";
 import { ParticleEffectsLayer } from "./particle-effects/particle-effects-layer.js";
+import { registerParticleBackgroundQueries } from "./particle-effects/backgrounds/particle-background-query-sync.js";
+import { createParticleBackgroundSurface } from "./particle-effects/backgrounds/background-surface-factory.js";
+import { createParticleBackgroundTrailStore } from "./particle-effects/backgrounds/snow-trail-store.js";
+import {
+  particleBackgroundEnabled,
+  particleBackgroundMonotonicNow,
+  particleBackgroundNow,
+} from "./particle-effects/backgrounds/background-state.js";
 import { ParticleRegionBehaviorType } from "./particle-effects/particle-effects-region-behavior.js";
 import { DefaultRectangleSpawnMixin } from "./particle-effects/effects/mixins/default-rectangle-spawn.js";
 import { FXMasterParticleEffect } from "./particle-effects/effects/effect.js";
@@ -37,6 +45,9 @@ import {
   isPlainObject,
   hasOwn,
   collectionValues,
+  computeRegionGatePass,
+  getRegionParticleEffectDefinitions,
+  installTileRefreshStateGuard,
 } from "./utils.js";
 import { FXMasterBaseFormV2 } from "./base-form.js";
 import {
@@ -47,6 +58,15 @@ import {
   expandNormalizedRangeValue,
   scaleNormalizedStoredRangeValue,
 } from "./common/effect-parameter-normalization.js";
+import {
+  SynchronizedDirectionRuntime,
+  synchronizedDirectionOptionEnabled,
+  synchronizedDirectionAvailable,
+  shortestDirectionDeltaDegrees,
+  lerpDirectionDegrees,
+  smoothDirectionBlend,
+} from "./common/synchronized-direction.js";
+import { directionDegreesToCompass, isCompassDirectionParameter } from "./common/compass-direction.js";
 import "../css/filters-config.css";
 import "../css/particle-effects-config.css";
 import "../css/common.css";
@@ -60,6 +80,11 @@ CONFIG.fxmaster.sanitizeParticleEmitterColorBehaviors =
   FXMasterParticleEffect.sanitizeParticleEmitterColorBehaviors.bind(FXMasterParticleEffect);
 CONFIG.fxmaster.FXMasterBaseFormV2 = FXMasterBaseFormV2;
 CONFIG.fxmaster.DefaultRectangleSpawnMixin = DefaultRectangleSpawnMixin;
+CONFIG.fxmaster.createParticleBackgroundSurface = createParticleBackgroundSurface;
+CONFIG.fxmaster.createParticleBackgroundTrailStore = createParticleBackgroundTrailStore;
+CONFIG.fxmaster.particleBackgroundEnabled = particleBackgroundEnabled;
+CONFIG.fxmaster.particleBackgroundNow = particleBackgroundNow;
+CONFIG.fxmaster.particleBackgroundMonotonicNow = particleBackgroundMonotonicNow;
 CONFIG.fxmaster.customVertex2D = customVertex2D;
 CONFIG.fxmaster.FXMasterFilterEffectMixin = FXMasterFilterEffectMixin;
 CONFIG.fxmaster.regionWorldBoundsAligned = regionWorldBoundsAligned;
@@ -76,14 +101,34 @@ CONFIG.fxmaster.legacyClockwiseDirectionToGeometric = legacyClockwiseDirectionTo
 CONFIG.fxmaster.geometricDirectionToScreenDegrees = geometricDirectionToScreenDegrees;
 CONFIG.fxmaster.geometricDirectionToScreenRadians = geometricDirectionToScreenRadians;
 CONFIG.fxmaster.geometricDirectionToCanvasVector = geometricDirectionToCanvasVector;
+CONFIG.fxmaster.directionDegreesToCompass = directionDegreesToCompass;
+CONFIG.fxmaster.isCompassDirectionParameter = isCompassDirectionParameter;
 CONFIG.fxmaster.isPlainObject = isPlainObject;
 CONFIG.fxmaster.hasOwn = hasOwn;
 CONFIG.fxmaster.collectionValues = collectionValues;
+CONFIG.fxmaster.computeRegionGatePass = computeRegionGatePass;
+CONFIG.fxmaster.getRegionParticleEffectDefinitions = getRegionParticleEffectDefinitions;
 CONFIG.fxmaster.normalizeEffectOptionsForRuntime = normalizeEffectOptionsForRuntime;
 CONFIG.fxmaster.normalizeEffectOptionsForStorageFromLegacy = normalizeEffectOptionsForStorageFromLegacy;
 CONFIG.fxmaster.compressNormalizedRangeValue = compressNormalizedRangeValue;
 CONFIG.fxmaster.expandNormalizedRangeValue = expandNormalizedRangeValue;
 CONFIG.fxmaster.scaleNormalizedStoredRangeValue = scaleNormalizedStoredRangeValue;
+CONFIG.fxmaster.SynchronizedDirectionRuntime = SynchronizedDirectionRuntime;
+CONFIG.fxmaster.registerSynchronizedDirectionSource =
+  SynchronizedDirectionRuntime.registerSource.bind(SynchronizedDirectionRuntime);
+CONFIG.fxmaster.unregisterSynchronizedDirectionSource =
+  SynchronizedDirectionRuntime.unregisterSource.bind(SynchronizedDirectionRuntime);
+CONFIG.fxmaster.resolveSynchronizedDirection =
+  SynchronizedDirectionRuntime.resolveDirection.bind(SynchronizedDirectionRuntime);
+CONFIG.fxmaster.getSynchronizedDirectionSourceLabel =
+  SynchronizedDirectionRuntime.getSourceLabel.bind(SynchronizedDirectionRuntime);
+CONFIG.fxmaster.hasSynchronizedDirectionSource =
+  SynchronizedDirectionRuntime.hasSource.bind(SynchronizedDirectionRuntime);
+CONFIG.fxmaster.synchronizedDirectionOptionEnabled = synchronizedDirectionOptionEnabled;
+CONFIG.fxmaster.synchronizedDirectionAvailable = synchronizedDirectionAvailable;
+CONFIG.fxmaster.shortestDirectionDeltaDegrees = shortestDirectionDeltaDegrees;
+CONFIG.fxmaster.lerpDirectionDegrees = lerpDirectionDegrees;
+CONFIG.fxmaster.smoothDirectionBlend = smoothDirectionBlend;
 CONFIG.fxmaster.GlobalEffectsCompositor = GlobalEffectsCompositor;
 CONFIG.fxmaster.SpecialEffectsLayer = SpecialEffectsLayer;
 CONFIG.fxmaster.getGlobalEffectsCompositor = () => GlobalEffectsCompositor.instance;
@@ -107,6 +152,7 @@ CONFIG.fxmaster.overheadPerformance = {
   compositorSceneParticleSuppressionIdleDelayMs:
     CONFIG.fxmaster.overheadPerformance?.compositorSceneParticleSuppressionIdleDelayMs ?? 180,
   compositorSuppressionMaskCaching: CONFIG.fxmaster.overheadPerformance?.compositorSuppressionMaskCaching ?? true,
+  sceneMaskWorldAtlas: CONFIG.fxmaster.overheadPerformance?.sceneMaskWorldAtlas ?? true,
   nativeLevelDynamicCoveragePresyncOnlyWhenMoving:
     CONFIG.fxmaster.overheadPerformance?.nativeLevelDynamicCoveragePresyncOnlyWhenMoving ?? true,
   sharedCoverageSameFrameDeduplication:
@@ -150,14 +196,41 @@ function registerRegionBehaviorTypes() {
 }
 
 /**
- * Helpers to allow particle effects to run in other renderers ie not Canvas Provides an override context on either:
- * - the effect instance: effect.__fxmParticleContext
- * - the options object passed to the effect: options.__fxmParticleContext
- * The override shape is: { dimensions: {width,height,size,sceneRect}, renderer, ticker }
+ * Resolve particle runtime context from an effect instance or options object.
+ *
+ * @param {object|null|undefined} source
+ * @returns {object|null}
  */
 CONFIG.fxmaster.getParticleContext = function (source) {
-  return source?.__fxmParticleContext ?? null;
+  return source?.__fxmParticleContext ?? source?.options?.__fxmParticleContext ?? null;
 };
+
+/**
+ * Determine whether a particle context represents a scoped non-scene renderer.
+ *
+ * @param {object|null|undefined} context
+ * @returns {boolean}
+ */
+CONFIG.fxmaster.isScopedParticleContext = function (context) {
+  if (!context || typeof context !== "object") return false;
+  if (context.dimensions || context.renderer || context.ticker) return true;
+  if (context.regionId || context.behaviorId) return true;
+  const scope = String(context.scope ?? "")
+    .trim()
+    .toLowerCase();
+  return !!scope && scope !== "scene";
+};
+
+/**
+ * Determine whether a particle source is running in a scoped non-scene renderer.
+ *
+ * @param {object|null|undefined} source
+ * @returns {boolean}
+ */
+CONFIG.fxmaster.isScopedParticleSource = function (source) {
+  return CONFIG.fxmaster.isScopedParticleContext(CONFIG.fxmaster.getParticleContext(source));
+};
+
 CONFIG.fxmaster.getParticleDimensions = function (source) {
   return CONFIG.fxmaster.getParticleContext(source)?.dimensions ?? canvas?.dimensions ?? null;
 };
@@ -184,9 +257,11 @@ function registerLayers() {
 }
 
 Hooks.once("init", function () {
+  installTileRefreshStateGuard();
   registerSettings();
   registerHooks();
   registerLayers();
+  registerParticleBackgroundQueries();
   registerHandlebarsHelpers();
   registerPresetApi();
 

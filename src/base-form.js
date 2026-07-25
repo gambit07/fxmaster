@@ -1,6 +1,13 @@
 import { getDialogColors } from "./utils.js";
 import { ALL_LEVELS_SELECTION, packageId } from "./constants.js";
 import { logger } from "./logger.js";
+import { updateCompassDirectionOutput, wireCompassDirectionOutputs } from "./common/compass-direction.js";
+import {
+  formatRangeOutputValue,
+  updateMinuteLabelOutput,
+  wireMinuteLabelOutputs,
+} from "./common/parameter-label-output.js";
+
 /**
  * Abstract FormApplication base for shared FXMaster form behavior.
  *
@@ -23,9 +30,10 @@ export class FXMasterBaseFormV2 extends Base {
     actions: {
       toggleFilter: FXMasterBaseFormV2.toggleFilter,
       toggleCollapse: FXMasterBaseFormV2.toggleCollapse,
-      updateParam: FXMasterBaseFormV2.updateParam,
     },
   };
+
+  static FXMASTER_DETACHED_WINDOW_FIT = false;
 
   /**
    * Foundry can finish an async ApplicationV2 render after a scene switch has already detached the window element. In that race, the core position update tries to read element.offsetWidth from null. Treat that case as a no-op instead of surfacing an unhandled render rejection.
@@ -79,7 +87,7 @@ export class FXMasterBaseFormV2 extends Base {
    */
   _persistPositionFlag(position) {
     const key = this._getPositionFlagKey();
-    if (!key || !position) return;
+    if (!key || !position || this._fxmShouldSkipPositionPersistence()) return;
 
     const next = {};
     if (Number.isFinite(position.top)) next.top = position.top;
@@ -95,29 +103,153 @@ export class FXMasterBaseFormV2 extends Base {
   }
 
   /**
-   * @param {HTMLElement} element  The root element to search for color inputs. Defaults to the form element.
-   * @param {Function} updateFn    The function to call when a color input changes. The update function receives the event and the changed input as arguments. It will be bound to the current instance automatically.
+   * Return whether a form event came from a color control.
+   *
+   * @param {Event|null|undefined} event
+   * @returns {boolean}
+   */
+  static _fxmIsColorControlEvent(event) {
+    const target = event?.target ?? null;
+    if (!target) return false;
+    const tag = String(target?.tagName ?? "").toLowerCase();
+    if (tag === "color-picker") return true;
+    if (target?.closest?.("color-picker")) return true;
+    const type = String(target?.type ?? target?.getAttribute?.("type") ?? "").toLowerCase();
+    return type === "color" && !!target?.closest?.(".fxmaster-input-color");
+  }
+
+  /**
+   * Wire color controls with deferred picker commits.
+   *
+   * @param {HTMLElement} element Root element to search for color controls.
+   * @param {Function} updateFn Update function called for committed changes.
    */
   wireColorInputs(element = this.element, updateFn = this.constructor.actions?.updateParam) {
     if (!element || !updateFn) return;
-    element.querySelectorAll('.fxmaster-input-color input[type="checkbox"]').forEach((cb) => {
-      cb.addEventListener("change", (e) => updateFn.call(this, e, cb));
-    });
 
-    const wire = (inp) => {
-      if (!inp) return;
-      ["input", "change", "colorchange"].forEach((evt) => {
-        try {
-          inp.addEventListener(evt, (e) => updateFn.call(this, e, inp));
-        } catch (err) {
-          logger.debug("FXMaster:", err);
-        }
-      });
+    try {
+      this._fxmColorInputAbort?.abort?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    const ac = new AbortController();
+    this._fxmColorInputAbort = ac;
+    const opts = { signal: ac.signal };
+    const colorCommitTimers = new Map();
+
+    const stopColorInputEvent = (event) => {
+      event?.stopPropagation?.();
+      event?.stopImmediatePropagation?.();
     };
 
-    element.querySelectorAll('.fxmaster-input-color input[type="color"]').forEach(wire);
-    element.querySelectorAll('.fxmaster-input-color input[type="text"]').forEach(wire);
-    element.querySelectorAll(".fxmaster-input-color color-picker").forEach(wire);
+    const invoke = (event, control) => {
+      try {
+        updateFn.call(this, event?.target ? event : { target: control }, control);
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    };
+
+    const currentControlValue = (control) => String(control?.value ?? control?.getAttribute?.("value") ?? "");
+
+    const clearColorCommitTimer = (control) => {
+      const entry = colorCommitTimers.get(control);
+      if (!entry) return;
+      entry.win.clearTimeout(entry.timer);
+      colorCommitTimers.delete(control);
+    };
+
+    ac.signal.addEventListener(
+      "abort",
+      () => {
+        for (const { timer, win } of colorCommitTimers.values()) win.clearTimeout(timer);
+        colorCommitTimers.clear();
+      },
+      { once: true },
+    );
+
+    element.addEventListener(
+      "input",
+      (event) => {
+        if (this.constructor._fxmIsColorControlEvent(event)) stopColorInputEvent(event);
+      },
+      { ...opts, capture: true },
+    );
+
+    const commitColorControl = (event, control) => {
+      clearColorCommitTimer(control);
+      if (!control?.isConnected) return;
+
+      const value = currentControlValue(control);
+      if (control.dataset.fxmColorCommittedValue === value) return;
+
+      control.dataset.fxmColorCommittedValue = value;
+      invoke(event, control);
+    };
+
+    const scheduleColorCommit = (event, control, delay = 500) => {
+      if (!control?.name) return;
+      if (control.dataset.fxmColorCommittedValue === currentControlValue(control)) return;
+
+      const win = control.ownerDocument?.defaultView ?? globalThis;
+      clearColorCommitTimer(control);
+      const timer = win.setTimeout(() => commitColorControl(event, control), delay);
+      colorCommitTimers.set(control, { timer, win });
+    };
+
+    element.querySelectorAll('.fxmaster-input-color input[type="checkbox"]').forEach((cb) => {
+      cb.addEventListener("change", (event) => invoke(event, cb), opts);
+    });
+
+    const wireCommittedInput = (input) => {
+      if (!input || input.closest?.("color-picker")) return;
+      input.dataset.fxmColorCommittedValue = currentControlValue(input);
+      input.addEventListener(
+        "change",
+        (event) => {
+          if (input.type === "color") scheduleColorCommit(event, input);
+          else invoke(event, input);
+        },
+        opts,
+      );
+      input.addEventListener(
+        "focusout",
+        (event) => {
+          if (input.type === "color") scheduleColorCommit(event, input, 250);
+        },
+        opts,
+      );
+      input.addEventListener(
+        "keydown",
+        (event) => {
+          if (event.key === "Enter") commitColorControl(event, input);
+        },
+        opts,
+      );
+    };
+
+    element.querySelectorAll('.fxmaster-input-color input[type="color"]').forEach(wireCommittedInput);
+    element.querySelectorAll('.fxmaster-input-color input[type="text"]').forEach(wireCommittedInput);
+    element.querySelectorAll(".fxmaster-input-color color-picker").forEach((picker) => {
+      picker.dataset.fxmColorCommittedValue = currentControlValue(picker);
+      picker.addEventListener(
+        "change",
+        (event) => {
+          if (event.target !== picker) return;
+          scheduleColorCommit(event, picker);
+        },
+        opts,
+      );
+      picker.addEventListener("focusout", (event) => scheduleColorCommit(event, picker, 250), opts);
+      picker.addEventListener(
+        "keydown",
+        (event) => {
+          if (event.key === "Enter") commitColorControl(event, picker);
+        },
+        opts,
+      );
+    });
   }
 
   /**
@@ -138,11 +270,19 @@ export class FXMasterBaseFormV2 extends Base {
     const ac = new AbortController();
     this._fxmMultiSelectAbort = ac;
 
-    const invoke = (e, control) => {
+    const invoke = (event, control) => {
       try {
-        updateFn.call(this, e, control);
+        updateFn.call(this, event, control);
       } catch (err) {
         logger.debug("FXMaster:", err);
+      }
+    };
+
+    const queueInvoke = (event, control) => {
+      try {
+        requestAnimationFrame(() => invoke(event, control));
+      } catch {
+        invoke(event, control);
       }
     };
 
@@ -154,33 +294,70 @@ export class FXMasterBaseFormV2 extends Base {
       return sel ?? null;
     };
 
+    const isInternalMultiSelectEvent = (event, control) => {
+      if (!control?.matches?.("multi-select[name]")) return false;
+      return event?.target !== control;
+    };
+
+    const applyQuickSelection = (button) => {
+      const wrapper = button?.closest?.(".fxmaster-input-multi");
+      const control = wrapper?.querySelector?.("multi-select[name], select[multiple][name]");
+      if (!control) return;
+
+      let values = [];
+      try {
+        values = JSON.parse(decodeURIComponent(String(button.dataset.fxmMultiValues ?? "")));
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+      if (!Array.isArray(values)) return;
+
+      if (control.matches?.("multi-select")) {
+        try {
+          control.value = values.map(String);
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+      }
+
+      const select = control.matches?.("select[multiple]") ? control : control.querySelector?.("select[multiple]");
+      if (select) {
+        const selected = new Set(values.map(String));
+        for (const option of select.options ?? []) option.selected = selected.has(String(option.value));
+      }
+
+      control.dispatchEvent(new Event("change", { bubbles: true, cancelable: true }));
+    };
+
+    element.addEventListener(
+      "click",
+      (event) => {
+        const button = event.target?.closest?.(".fxmaster-multi-select-preset[data-fxm-multi-values]");
+        if (!button || !element.contains(button)) return;
+        event.preventDefault();
+        applyQuickSelection(button);
+      },
+      { signal: ac.signal },
+    );
+
     element.addEventListener(
       "change",
-      (e) => {
-        const ctrl = findControl(e.target);
-        if (ctrl) invoke(e, ctrl);
+      (event) => {
+        const control = findControl(event.target);
+        if (!control || isInternalMultiSelectEvent(event, control)) return;
+        queueInvoke(event, control);
       },
       { capture: true, signal: ac.signal },
     );
 
     element.addEventListener(
       "input",
-      (e) => {
-        const t = e.target;
-        if (!t?.matches?.("multi-select, select[multiple]")) return;
-        const ctrl = findControl(t);
-        if (ctrl) invoke(e, ctrl);
-      },
-      { capture: true, signal: ac.signal },
-    );
-
-    element.addEventListener(
-      "click",
-      (e) => {
-        const t = e.target;
-        if (t?.matches?.("input, textarea")) return;
-        const ctrl = findControl(t);
-        if (ctrl) invoke(e, ctrl);
+      (event) => {
+        const target = event.target;
+        if (!target?.matches?.("multi-select, select[multiple]")) return;
+        const control = findControl(target);
+        if (!control || isInternalMultiSelectEvent(event, control)) return;
+        queueInvoke(event, control);
       },
       { capture: true, signal: ac.signal },
     );
@@ -319,18 +496,21 @@ export class FXMasterBaseFormV2 extends Base {
   _openPowerToggleResetMenu(button, { labelKey = "FXMASTER.Common.ResetEffectDefaults", onReset = null } = {}) {
     this._closePowerToggleResetMenu();
 
-    const menu = document.createElement("div");
+    const doc = button.ownerDocument ?? globalThis.document;
+    const win = doc.defaultView ?? globalThis.window;
+
+    const menu = doc.createElement("div");
     menu.className = "fxmaster-toggle-context-menu";
     menu.setAttribute("role", "menu");
 
-    const action = document.createElement("button");
+    const action = doc.createElement("button");
     action.type = "button";
     action.className = "fxmaster-toggle-context-menu-action";
     action.setAttribute("role", "menuitem");
     action.innerHTML = `<i class="fa-solid fa-arrow-rotate-left"></i><span>${game.i18n.localize(labelKey)}</span>`;
     menu.appendChild(action);
 
-    document.body.appendChild(menu);
+    doc.body.appendChild(menu);
     this._fxmPowerToggleContextMenu = menu;
 
     const positionMenu = () => {
@@ -338,13 +518,13 @@ export class FXMasterBaseFormV2 extends Base {
       const menuRect = menu.getBoundingClientRect();
       const margin = 6;
       const gap = 4;
-      const maxLeft = window.innerWidth - menuRect.width - margin;
+      const maxLeft = win.innerWidth - menuRect.width - margin;
 
       const preferredLeft = rect.right + gap;
       const fallbackLeft = rect.left;
       const leftSource = preferredLeft <= maxLeft ? preferredLeft : fallbackLeft;
       const left = Math.max(margin, Math.min(leftSource, maxLeft));
-      const top = Math.max(margin, Math.min(rect.bottom + gap, window.innerHeight - menuRect.height - margin));
+      const top = Math.max(margin, Math.min(rect.bottom + gap, win.innerHeight - menuRect.height - margin));
       menu.style.left = `${Math.round(left)}px`;
       menu.style.top = `${Math.round(top)}px`;
     };
@@ -398,6 +578,10 @@ export class FXMasterBaseFormV2 extends Base {
   static updateRangeOutput(input) {
     if (!input || input.type !== "range") return;
 
+    const outputRoot = input.closest?.("form") ?? input.ownerDocument ?? null;
+    updateCompassDirectionOutput(input, outputRoot);
+    updateMinuteLabelOutput(input, outputRoot);
+
     const dual = input.closest(".fxmaster-input-range-dual");
     if (dual) {
       const formatValue = (slider, rawValue) => {
@@ -432,7 +616,7 @@ export class FXMasterBaseFormV2 extends Base {
 
     const container = input.closest(".fxmaster-input-range");
     const output = container?.querySelector(".range-value");
-    if (output) output.textContent = input.value;
+    if (output) output.textContent = formatRangeOutputValue(input, input.value);
   }
 
   /**
@@ -509,6 +693,7 @@ export class FXMasterBaseFormV2 extends Base {
     const options = {};
 
     for (const [key, param] of Object.entries(filterDB.parameters)) {
+      if (param?.type === "filter-actions") continue;
       const base = `${label}_${key}`;
       const input = form.querySelector(`[name="${base}"]`);
       const apply = form.querySelector(`[name="${base}_apply"]`);
@@ -554,19 +739,47 @@ export class FXMasterBaseFormV2 extends Base {
 
         if (multi) {
           try {
-            const innerSelect =
-              multi.querySelector(`select[name="${base}"]`) || multi.querySelector("select[multiple]") || null;
-            if (innerSelect?.multiple) {
+            const mv = multi.value;
+            if (mv instanceof Set) {
               hasAuthoritativeMultiValue = true;
-              values = Array.from(innerSelect.selectedOptions)
-                .map((o) => o.value)
-                .filter(Boolean);
+              values = Array.from(mv);
+            } else if (Array.isArray(mv)) {
+              hasAuthoritativeMultiValue = true;
+              values = mv;
+            } else if (mv && typeof mv !== "string" && typeof mv[Symbol.iterator] === "function") {
+              hasAuthoritativeMultiValue = true;
+              values = Array.from(mv);
+            } else if (typeof mv === "string" && mv.trim()) {
+              hasAuthoritativeMultiValue = true;
+              const s = mv.trim();
+              try {
+                const parsed = JSON.parse(s);
+                if (Array.isArray(parsed)) values = parsed;
+                else values = s.split(",");
+              } catch {
+                values = s.split(",");
+              }
             }
           } catch (err) {
             logger.debug("FXMaster:", err);
           }
 
-          if (!values.length) {
+          if (!values.length && !hasAuthoritativeMultiValue) {
+            try {
+              const innerSelect =
+                multi.querySelector(`select[name="${base}"]`) || multi.querySelector("select[multiple]") || null;
+              if (innerSelect?.multiple) {
+                hasAuthoritativeMultiValue = true;
+                values = Array.from(innerSelect.selectedOptions)
+                  .map((o) => o.value)
+                  .filter(Boolean);
+              }
+            } catch (err) {
+              logger.debug("FXMaster:", err);
+            }
+          }
+
+          if (!values.length && !hasAuthoritativeMultiValue) {
             try {
               const checkedOptions = Array.from(multi.querySelectorAll("option:checked"));
               if (checkedOptions.length) {
@@ -578,7 +791,7 @@ export class FXMasterBaseFormV2 extends Base {
             }
           }
 
-          if (!values.length) {
+          if (!values.length && !hasAuthoritativeMultiValue) {
             try {
               const tags = Array.from(multi.querySelectorAll(".tag"));
               if (tags.length) hasAuthoritativeMultiValue = true;
@@ -701,6 +914,16 @@ export class FXMasterBaseFormV2 extends Base {
         continue;
       }
 
+      if (param.type === "number-infinity") {
+        const raw = String(input.value ?? "").trim();
+        if (/^(?:∞|inf(?:inity)?|infinite)$/i.test(raw)) options[key] = "Infinity";
+        else {
+          const numeric = Number.parseFloat(raw);
+          options[key] = Number.isFinite(numeric) ? numeric : "Infinity";
+        }
+        continue;
+      }
+
       if (input.type === "number" || param.type === "range") {
         options[key] = parseFloat(input.value);
         continue;
@@ -743,9 +966,15 @@ export class FXMasterBaseFormV2 extends Base {
 
   _onRender(options) {
     super._onRender?.(options);
+    this._fxmUpdateDetachedWindowFit();
     this.animateTitleBar(this);
     try {
       this._fxmWireConditionalVisibility?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    try {
+      this._fxmWireSynchronizedDirectionControls?.();
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
@@ -754,6 +983,58 @@ export class FXMasterBaseFormV2 extends Base {
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
+    try {
+      this._wireCompassDirectionOutputs?.(this.element);
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    try {
+      this._wireMinuteLabelOutputs?.(this.element);
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+  }
+
+  /**
+   * Initialize live eight-point compass suffixes for direction parameters.
+   *
+   * @param {HTMLElement|null|undefined} root
+   * @returns {void}
+   */
+  _wireCompassDirectionOutputs(root = this.element) {
+    try {
+      this._fxmCompassDirectionAbort?.abort?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    const element = root?.[0] ?? root ?? null;
+    if (!element) return;
+
+    const ac = new AbortController();
+    this._fxmCompassDirectionAbort = ac;
+    wireCompassDirectionOutputs(element, { signal: ac.signal });
+  }
+
+  /**
+   * Initialize live compact minute suffixes for duration parameters.
+   *
+   * @param {HTMLElement|null|undefined} root
+   * @returns {void}
+   */
+  _wireMinuteLabelOutputs(root = this.element) {
+    try {
+      this._fxmMinuteLabelAbort?.abort?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    const element = root?.[0] ?? root ?? null;
+    if (!element) return;
+
+    const ac = new AbortController();
+    this._fxmMinuteLabelAbort = ac;
+    wireMinuteLabelOutputs(element, { signal: ac.signal });
   }
 
   /**
@@ -775,9 +1056,217 @@ export class FXMasterBaseFormV2 extends Base {
     }
   }
 
+  /**
+   * Refresh synchronized-direction lock state for direction controls in an already-rendered parameter section.
+   *
+   * @param {HTMLElement|null|undefined} root
+   * @param {object|null|undefined} effectDef
+   * @param {object} [options={}]
+   * @returns {void}
+   */
+  static refreshSynchronizedDirectionControls(root, effectDef, options = {}) {
+    const element = root?.[0] ?? root ?? null;
+    if (!element || !effectDef) return;
+
+    const context = this._fxmSynchronizedDirectionContext(options);
+    const enabled = CONFIG.fxmaster?.synchronizedDirectionOptionEnabled?.(options) ?? false;
+    const source = CONFIG.fxmaster?.getSynchronizedDirectionSourceLabel?.("", context) ?? "";
+    const locked = enabled && !!source;
+    const tooltip = locked
+      ? game.i18n.format("FXMASTER.ParamTooltips.SynchronizedDirectionControlledBy", { source })
+      : "";
+    const direction = String(game?.settings?.get?.(packageId, "tooltipDirection") ?? "UP")
+      .trim()
+      .toUpperCase();
+    const tooltipDirection = ["UP", "DOWN", "LEFT", "RIGHT"].includes(direction) ? direction : "UP";
+
+    const parameters = effectDef.parameters ?? {};
+    const directionParameters = Object.keys(parameters).filter((name) =>
+      ["direction", "flowDirection", "waveDirection"].includes(String(name)),
+    );
+
+    for (const parameterName of directionParameters) {
+      const suffix = `_${parameterName}`;
+      const controls = [...(element.querySelectorAll?.("[name]") ?? [])].filter((control) => {
+        if (control.type === "hidden") return false;
+        return String(control.name ?? "").endsWith(suffix);
+      });
+
+      for (const control of controls) {
+        const name = String(control.name ?? "");
+        if (!name) continue;
+
+        const hiddenCandidates = [...(element.querySelectorAll?.('input[type="hidden"][name]') ?? [])].filter(
+          (candidate) => String(candidate.name ?? "") === name,
+        );
+        let syncedHidden =
+          hiddenCandidates.find((candidate) => candidate.dataset.fxmSyncDirectionHidden === name) ??
+          hiddenCandidates[0] ??
+          null;
+
+        if (locked) {
+          control.disabled = true;
+          control.setAttribute("aria-disabled", "true");
+          control.dataset.tooltip = tooltip;
+          control.dataset.tooltipDirection = tooltipDirection;
+          control.dataset.fxmSyncDirectionTooltip = "true";
+
+          if (!syncedHidden) {
+            syncedHidden = document.createElement("input");
+            syncedHidden.type = "hidden";
+            syncedHidden.name = name;
+            syncedHidden.dataset.fxmSyncDirectionHidden = name;
+            control.insertAdjacentElement("afterend", syncedHidden);
+          }
+          syncedHidden.value = String(control.value ?? "");
+        } else {
+          control.disabled = false;
+          control.removeAttribute("aria-disabled");
+          if (control.dataset.fxmSyncDirectionTooltip === "true") {
+            delete control.dataset.tooltip;
+            delete control.dataset.tooltipDirection;
+            delete control.dataset.fxmSyncDirectionTooltip;
+          }
+          for (const hidden of hiddenCandidates) hidden.remove?.();
+        }
+      }
+    }
+  }
+
+  /**
+   * Return whether the application is hosted in a Foundry V14 detached window.
+   *
+   * @returns {boolean}
+   */
+  _fxmIsDetachedHost() {
+    const element = this.element?.[0] ?? this.element ?? null;
+    const doc = element?.ownerDocument ?? null;
+    return !!this.window?.windowId || !!doc?.body?.classList?.contains?.("detached");
+  }
+
+  /**
+   * Return whether window position persistence should be skipped.
+   *
+   * @returns {boolean}
+   */
+  _fxmShouldSkipPositionPersistence() {
+    return (
+      this._fxmSuspendPositionPersistence === true || this._fxmIsDetachedHost() || this._fxmDetachedHostActive === true
+    );
+  }
+
+  /**
+   * Return the browser window which owns the rendered application element.
+   *
+   * @returns {Window}
+   */
+  _fxmHostWindow() {
+    const element = this.element?.[0] ?? this.element ?? null;
+    return element?.ownerDocument?.defaultView ?? globalThis.window;
+  }
+
+  /**
+   * Resize eligible applications to fill a Foundry V14 detached browser window.
+   *
+   * @returns {void}
+   */
+  _fxmUpdateDetachedWindowFit() {
+    const element = this.element?.[0] ?? this.element ?? null;
+    if (!element?.classList) return;
+
+    const enabled = this.constructor.FXMASTER_DETACHED_WINDOW_FIT === true && this._fxmIsDetachedHost();
+    if (!enabled) {
+      this._fxmDisableDetachedWindowFit();
+      return;
+    }
+
+    this._fxmDetachedHostActive = true;
+    element.classList.add("fxmaster-detached-fit");
+    const win = this._fxmHostWindow();
+
+    if (this._fxmDetachedFitWindow !== win) {
+      try {
+        this._fxmDetachedFitAbort?.abort?.();
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+      const ac = new AbortController();
+      this._fxmDetachedFitAbort = ac;
+      this._fxmDetachedFitWindow = win;
+      win.addEventListener("resize", () => this._fxmApplyDetachedWindowFit(), { passive: true, signal: ac.signal });
+    }
+
+    this._fxmApplyDetachedWindowFit();
+  }
+
+  /**
+   * Apply the current detached browser-window dimensions to the application frame.
+   *
+   * @returns {void}
+   */
+  _fxmApplyDetachedWindowFit() {
+    if (this.constructor.FXMASTER_DETACHED_WINDOW_FIT !== true || !this._fxmIsDetachedHost()) return;
+    const win = this._fxmHostWindow();
+    const width = Math.max(320, Math.floor(win?.innerWidth ?? 0));
+    const height = Math.max(240, Math.floor(win?.innerHeight ?? 0));
+    this._fxmSuspendPositionPersistence = true;
+    try {
+      this.setPosition?.({ top: 0, left: 0, width, height });
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    } finally {
+      this._fxmSuspendPositionPersistence = false;
+    }
+  }
+
+  /**
+   * Remove detached browser-window fit state.
+   *
+   * @returns {void}
+   */
+  _fxmDisableDetachedWindowFit() {
+    const element = this.element?.[0] ?? this.element ?? null;
+    element?.classList?.remove?.("fxmaster-detached-fit");
+    try {
+      this._fxmDetachedFitAbort?.abort?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    this._fxmDetachedFitAbort = null;
+    this._fxmDetachedFitWindow = null;
+  }
+
+  /** @override */
+  _onDetach(from, to) {
+    super._onDetach?.(from, to);
+    this._fxmUpdateDetachedWindowFit();
+    this.animateTitleBar(this);
+  }
+
+  /** @override */
+  _onAttach(from, to) {
+    this._fxmDetachedHostActive = false;
+    this._fxmDisableDetachedWindowFit();
+    super._onAttach?.(from, to);
+    this.animateTitleBar(this);
+  }
+
   _onClose(...args) {
+    this._fxmDisableDetachedWindowFit();
+    try {
+      const animation = this._fxmTitleBarAnimation;
+      if (animation?.frame != null) animation.win?.cancelAnimationFrame?.(animation.frame);
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    this._fxmTitleBarAnimation = null;
     try {
       this._fxmUnwireConditionalVisibility?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    try {
+      this._fxmUnwireSynchronizedDirectionControls?.();
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
@@ -792,6 +1281,11 @@ export class FXMasterBaseFormV2 extends Base {
       logger.debug("FXMaster:", err);
     }
     try {
+      this._fxmColorInputAbort?.abort?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    try {
       this._fxmRangeBehaviorAbort?.abort?.();
     } catch (err) {
       logger.debug("FXMaster:", err);
@@ -801,9 +1295,16 @@ export class FXMasterBaseFormV2 extends Base {
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
+    try {
+      this._fxmCompassDirectionAbort?.abort?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
     this._closePowerToggleResetMenu?.();
+    this._fxmColorInputAbort = null;
     this._fxmRangeBehaviorAbort = null;
     this._fxmPowerToggleResetAbort = null;
+    this._fxmCompassDirectionAbort = null;
     return super._onClose?.(...args);
   }
 
@@ -826,7 +1327,8 @@ export class FXMasterBaseFormV2 extends Base {
     const ac = new AbortController();
     this._fxmRangeBehaviorAbort = ac;
 
-    const isFocusedSlider = (slider) => slider && (document.activeElement === slider || slider.matches?.(":focus"));
+    const doc = root.ownerDocument ?? globalThis.document;
+    const isFocusedSlider = (slider) => slider && (doc.activeElement === slider || slider.matches?.(":focus"));
     const clampToStep = (slider, rawValue) => {
       const min = Number.parseFloat(slider.min);
       const max = Number.parseFloat(slider.max);
@@ -999,6 +1501,161 @@ export class FXMasterBaseFormV2 extends Base {
   }
 
   /**
+   * Remove synchronized-direction live control listeners.
+   *
+   * @returns {void}
+   */
+  _fxmUnwireSynchronizedDirectionControls() {
+    try {
+      this._fxmSynchronizedDirectionAbort?.abort?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    this._fxmSynchronizedDirectionAbort = null;
+    if (this._fxmSynchronizedDirectionHook) {
+      try {
+        globalThis.Hooks?.off?.("fxmasterSynchronizedDirectionSourceChanged", this._fxmSynchronizedDirectionHook);
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+      this._fxmSynchronizedDirectionHook = null;
+    }
+  }
+
+  /**
+   * Apply synchronized-direction disabled state without rerendering the app.
+   *
+   * @returns {void}
+   */
+  _fxmWireSynchronizedDirectionControls() {
+    this._fxmUnwireSynchronizedDirectionControls();
+
+    const root = this.element;
+    if (!root) return;
+
+    const ac = new AbortController();
+    this._fxmSynchronizedDirectionAbort = ac;
+    const apply = () => this.constructor._fxmApplySynchronizedDirectionControls(root);
+    const schedule = (event) => {
+      if (this.constructor._fxmIsColorControlEvent(event)) return;
+      requestAnimationFrame(apply);
+    };
+
+    apply();
+    root.addEventListener("change", schedule, { signal: ac.signal, capture: true });
+    root.addEventListener("input", schedule, { signal: ac.signal, capture: true });
+
+    this._fxmSynchronizedDirectionHook = schedule;
+    globalThis.Hooks?.on?.("fxmasterSynchronizedDirectionSourceChanged", schedule);
+  }
+
+  /**
+   * Resolve a synchronized-direction field prefix from a form control name.
+   *
+   * @param {string} name
+   * @returns {string|null}
+   */
+  static _fxmSynchronizedDirectionPrefix(name) {
+    const text = String(name ?? "");
+    const suffix = "_synchronizedDirection";
+    return text.endsWith(suffix) ? text.slice(0, -suffix.length) : null;
+  }
+
+  /**
+   * Resolve the synchronized-direction context for form locking.
+   *
+   * @param {object|null|undefined} [options]
+   * @returns {object|null}
+   */
+  static _fxmSynchronizedDirectionContext(options = null) {
+    const explicit = options?.__fxmRuntimeContext ?? options?.__fxmParticleContext ?? null;
+    if (explicit && typeof explicit === "object") return explicit;
+    const sceneId = canvas?.scene?.id ?? null;
+    return sceneId ? { scope: "scene", sceneId } : null;
+  }
+
+  /**
+   * Build the synchronized-direction lock tooltip.
+   *
+   * @returns {string}
+   */
+  static _fxmSynchronizedDirectionTooltip(context = null) {
+    const source = CONFIG.fxmaster?.getSynchronizedDirectionSourceLabel?.("", context) ?? "";
+    if (source) return game.i18n.format("FXMASTER.ParamTooltips.SynchronizedDirectionControlledBy", { source });
+    return "";
+  }
+
+  /**
+   * Apply direction-control enabled state for every synchronized-direction toggle in a rendered form.
+   *
+   * @param {HTMLElement|null|undefined} root
+   * @returns {void}
+   */
+  static _fxmApplySynchronizedDirectionControls(root) {
+    if (!root) return;
+
+    const directionParams = ["direction", "flowDirection", "waveDirection"];
+    const tooltipDirection = String(game?.settings?.get?.(packageId, "tooltipDirection") ?? "UP").toUpperCase();
+    const direction = ["UP", "DOWN", "LEFT", "RIGHT"].includes(tooltipDirection) ? tooltipDirection : "UP";
+
+    for (const toggle of root.querySelectorAll('input[name$="_synchronizedDirection"]')) {
+      const prefix = this._fxmSynchronizedDirectionPrefix(toggle.name);
+      if (!prefix) continue;
+      const enabled = this._fxmReadInputValue(toggle) === true;
+      const context = this._fxmSynchronizedDirectionContext();
+      const locked = enabled && (CONFIG.fxmaster?.hasSynchronizedDirectionSource?.(context) ?? false);
+      const tooltip = locked ? this._fxmSynchronizedDirectionTooltip(context) : "";
+
+      for (const param of directionParams) {
+        const name = `${prefix}_${param}`;
+        const controls = Array.from(root.querySelectorAll(`[name="${CSS.escape(name)}"]`)).filter(
+          (el) => el?.dataset?.fxmSynchronizedDirectionHidden !== "true",
+        );
+        for (const control of controls) {
+          const tag = String(control?.tagName ?? "").toLowerCase();
+          if (!["input", "select", "textarea"].includes(tag)) continue;
+          if (control.dataset.fxmOriginalTooltip === undefined)
+            control.dataset.fxmOriginalTooltip = control.dataset.tooltip ?? "";
+          if (control.dataset.fxmOriginalTooltipDirection === undefined) {
+            control.dataset.fxmOriginalTooltipDirection = control.dataset.tooltipDirection ?? "";
+          }
+
+          control.disabled = locked;
+          if (locked) {
+            control.setAttribute("aria-disabled", "true");
+            control.dataset.tooltip = tooltip;
+            control.dataset.tooltipDirection = direction;
+            let hidden = control.parentElement?.querySelector(
+              `input[type="hidden"][name="${CSS.escape(name)}"][data-fxm-synchronized-direction-hidden="true"]`,
+            );
+            if (!hidden) {
+              hidden = document.createElement("input");
+              hidden.type = "hidden";
+              hidden.name = name;
+              hidden.dataset.fxmSynchronizedDirectionHidden = "true";
+              control.insertAdjacentElement("afterend", hidden);
+            }
+            hidden.value = control.value ?? "";
+          } else {
+            control.removeAttribute("aria-disabled");
+            const originalTip = control.dataset.fxmOriginalTooltip ?? "";
+            const originalDir = control.dataset.fxmOriginalTooltipDirection ?? "";
+            if (originalTip) control.dataset.tooltip = originalTip;
+            else delete control.dataset.tooltip;
+            if (originalDir) control.dataset.tooltipDirection = originalDir;
+            else delete control.dataset.tooltipDirection;
+            for (const hidden of root.querySelectorAll(
+              `input[type="hidden"][name="${CSS.escape(name)}"][data-fxm-synchronized-direction-hidden="true"]`,
+            )) {
+              hidden.remove();
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /**
    * Remove any previously-attached conditional visibility listeners.
    */
   _fxmUnwireConditionalVisibility() {
@@ -1104,7 +1761,9 @@ export class FXMasterBaseFormV2 extends Base {
         const hideOk = r.hideWhen ? evalCond(r.hideWhen, r.label) : false;
         const regionOk = !r.regionOnly || isRegionContext;
         const sceneOk = !r.sceneOnly || !isRegionContext;
-        const visible = showOk && !hideOk && regionOk && sceneOk;
+        const syncDirectionOk =
+          r.paramName !== "synchronizedDirection" || (CONFIG.fxmaster?.synchronizedDirectionAvailable?.() ?? false);
+        const visible = showOk && !hideOk && regionOk && sceneOk && syncDirectionOk;
         r.row.style.display = visible ? "" : "none";
       }
     };
@@ -1112,7 +1771,8 @@ export class FXMasterBaseFormV2 extends Base {
     applyAll();
 
     let raf = null;
-    const schedule = () => {
+    const schedule = (event) => {
+      if (this.constructor._fxmIsColorControlEvent(event)) return;
       if (raf != null) return;
       raf = requestAnimationFrame(() => {
         raf = null;
@@ -1146,7 +1806,7 @@ export class FXMasterBaseFormV2 extends Base {
       }
 
       const inner = el?.querySelector?.("select[multiple]");
-      if (inner instanceof HTMLSelectElement) {
+      if (String(inner?.tagName ?? "").toLowerCase() === "select") {
         return Array.from(inner.selectedOptions).map((o) => o.value);
       }
 
@@ -1170,12 +1830,12 @@ export class FXMasterBaseFormV2 extends Base {
       return [];
     }
 
-    if (el instanceof HTMLSelectElement) {
+    if (tag === "select") {
       if (el.multiple) return Array.from(el.selectedOptions).map((o) => o.value);
       return el.value;
     }
 
-    if (el instanceof HTMLInputElement) {
+    if (tag === "input") {
       if (el.type === "checkbox") return !!el.checked;
       if (el.type === "range" || el.type === "number") {
         const n = Number(el.value);
@@ -1257,24 +1917,38 @@ export class FXMasterBaseFormV2 extends Base {
     const titleBackground = app?.element?.querySelector(".window-header");
     if (!titleBackground) return;
 
+    const win = titleBackground.ownerDocument?.defaultView ?? globalThis.window;
+    try {
+      const previous = app._fxmTitleBarAnimation;
+      if (previous?.frame != null) previous.win?.cancelAnimationFrame?.(previous.frame);
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
     const duration = 20000;
     let startTime = null;
+    const animation = { win, frame: null };
+    app._fxmTitleBarAnimation = animation;
 
     titleBackground.style.border = "2px solid";
     titleBackground.style.borderImageSlice = 1;
 
     const { baseColor, highlightColor } = getDialogColors();
 
-    function step(timestamp) {
+    const step = (timestamp) => {
+      if (!titleBackground.isConnected || app._fxmTitleBarAnimation !== animation) {
+        if (app._fxmTitleBarAnimation === animation) app._fxmTitleBarAnimation = null;
+        return;
+      }
       if (!startTime) startTime = timestamp;
       const elapsed = timestamp - startTime;
       const progress = (elapsed % duration) / duration;
       const angle = 360 * progress;
 
       titleBackground.style.borderImage = `linear-gradient(${angle}deg, ${baseColor}, ${highlightColor}, ${baseColor}) 1`;
-      requestAnimationFrame(step);
-    }
+      animation.frame = win.requestAnimationFrame(step);
+    };
 
-    requestAnimationFrame(step);
+    animation.frame = win.requestAnimationFrame(step);
   }
 }

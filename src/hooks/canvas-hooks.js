@@ -1,7 +1,7 @@
 /**
  * FXMaster: Canvas Lifecycle Hooks
  *
- * Handles canvasInit, canvasReady, and activateScene - the core lifecycle events that set up and tear down FXMaster's rendering pipeline.
+ * Handles canvasInit and canvasReady lifecycle events that set up and tear down FXMaster's rendering pipeline.
  *
  * @module hooks/canvas-hooks
  */
@@ -32,8 +32,9 @@ function runPostCanvasReadyMaskRefresh(ctx) {
     logger.debug("FXMaster:", err);
   }
 
+  let liveSurfaceStateSynced = false;
   try {
-    syncCanvasLiveLevelSurfaceState?.();
+    liveSurfaceStateSynced = syncCanvasLiveLevelSurfaceState?.()?.ready === true;
   } catch (err) {
     logger.debug("FXMaster:", err);
   }
@@ -45,7 +46,10 @@ function runPostCanvasReadyMaskRefresh(ctx) {
   }
 
   try {
-    SceneMaskManager.instance.refreshTokensSync?.({ force: true, presyncedDynamicCoverage: true });
+    SceneMaskManager.instance.refreshTokensSync?.({
+      force: true,
+      presyncedDynamicCoverage: liveSurfaceStateSynced,
+    });
   } catch (err) {
     logger.debug("FXMaster:", err);
   }
@@ -176,21 +180,6 @@ export function registerCanvasHooks(ctx) {
       ctx.unbind();
     } catch (err) {
       logger.debug("FXMaster:", err);
-    }
-  });
-
-  Hooks.on("activateScene", () => {
-    invalidateEffectStackCache();
-    ctx.scheduleOpenWindowsRefresh();
-    if (isEnabled()) {
-      ctx.requestSceneParticlesSuppressionRefresh();
-      ctx.requestRegionMaskRefreshAll();
-      ctx.requestTokenMaskRefresh();
-      try {
-        canvas.particleeffects?.refreshAboveSceneMask?.();
-      } catch (err) {
-        logger.debug("FXMaster:", err);
-      }
     }
   });
 

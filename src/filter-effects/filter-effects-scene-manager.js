@@ -287,12 +287,20 @@ export class FilterEffectsSceneManager {
 
     for (const key of createKeys) {
       const { type, options } = filterInfos[key];
-      const filter = new CONFIG.fxmaster.filterEffects[type](options, key);
+      const runtimeContext = {
+        scope: "scene",
+        sceneId: canvas?.scene?.id ?? null,
+        effectId: key,
+        type,
+      };
+      const filter = new CONFIG.fxmaster.filterEffects[type](options, key, runtimeContext);
       filter.__fxmBelowTokens = _belowTokensEnabled(options?.belowTokens);
       filter.__fxmBelowTiles = _belowTilesEnabled(options?.belowTiles);
       filter.__fxmBelowForeground = _belowForegroundEnabled(options?.belowForeground);
       filter.__fxmLevels = options?.levels;
       filter.__fxmOptions = options;
+      filter.__fxmRuntimeContext = runtimeContext;
+      filter.onFXMasterRuntimeContext?.(runtimeContext);
       this.filters[key] = filter;
       filter.play?.({ ...(options ?? {}), skipFading: true });
 
@@ -317,6 +325,14 @@ export class FilterEffectsSceneManager {
       f.__fxmBelowForeground = _belowForegroundEnabled(options?.belowForeground);
       f.__fxmLevels = options?.levels;
       f.__fxmOptions = options;
+      const runtimeContext = {
+        scope: "scene",
+        sceneId: canvas?.scene?.id ?? null,
+        effectId: key,
+        type: filterInfos[key]?.type ?? null,
+      };
+      f.__fxmRuntimeContext = runtimeContext;
+      f.onFXMasterRuntimeContext?.(runtimeContext);
     }
 
     for (const key of deleteKeys) {
@@ -519,6 +535,7 @@ export class FilterEffectsSceneManager {
         if ("hasMask" in u) u.hasMask = 0.0;
         if ("maskReady" in u) u.maskReady = 0.0;
         if ("maskSoft" in u) u.maskSoft = 0.0;
+        if ("maskWorldReady" in u) u.maskWorldReady = 0.0;
         if ("tokenSampler" in u) u.tokenSampler = PIXI.Texture.EMPTY;
         if ("hasTokenMask" in u) u.hasTokenMask = 0.0;
       }
@@ -527,9 +544,11 @@ export class FilterEffectsSceneManager {
 
   /**
    * Bind the current scene suppression masks into uniforms for all active and fading filters. If the base mask is missing or destroyed, a synchronous refresh is attempted before binding.
+   *
+   * @param {{ presyncedLiveLevelState?: boolean }} [options]
    * @private
    */
-  #bindSuppressMaskUniforms() {
+  #bindSuppressMaskUniforms({ presyncedLiveLevelState = false } = {}) {
     const filtersArr = this.#collectRuntimeFiltersScratch();
     if (!filtersArr.length) return;
 
@@ -541,7 +560,7 @@ export class FilterEffectsSceneManager {
 
     if (!base || base.destroyed) {
       try {
-        SceneMaskManager.instance.refreshSync("filters");
+        SceneMaskManager.instance.refreshSync("filters", { presyncedLiveLevelState });
       } catch (err) {
         logger.debug("FXMaster:", err);
       }
@@ -556,6 +575,7 @@ export class FilterEffectsSceneManager {
         if ("hasMask" in u) u.hasMask = 0.0;
         if ("maskReady" in u) u.maskReady = 0.0;
         if ("maskSoft" in u) u.maskSoft = 0.0;
+        if ("maskWorldReady" in u) u.maskWorldReady = 0.0;
         if ("tokenSampler" in u) u.tokenSampler = PIXI.Texture.EMPTY;
         if ("hasTokenMask" in u) u.hasTokenMask = 0.0;
       }
@@ -584,9 +604,10 @@ export class FilterEffectsSceneManager {
    * {@link SceneMaskManager.refresh} is animation-frame coalesced and may destroy and recreate render textures when it runs. For asynchronous refreshes, uniform binding is deferred until the next animation frame to avoid referencing textures that are replaced during refresh.
    *
    * @param {boolean} [sync=false]
+   * @param {{ presyncedLiveLevelState?: boolean }} [options]
    * @private
    */
-  #applySuppressMaskToFilters(sync = false) {
+  #applySuppressMaskToFilters(sync = false, { presyncedLiveLevelState = false } = {}) {
     const filtersArr = this.#collectRuntimeFiltersScratch();
     const hasAny = filtersArr.length > 0;
     const anyBelow = hasAny ? filtersArr.some((f) => isBelowTokensFilter(f)) : false;
@@ -618,8 +639,8 @@ export class FilterEffectsSceneManager {
       const hiDpi = (r?.resolution ?? window.devicePixelRatio ?? 1) !== 1;
 
       if (sync || hasRelevantSuppression || ((anyBelow || anyBelowTiles) && hiDpi)) {
-        SceneMaskManager.instance.refreshSync("filters");
-        this.#bindSuppressMaskUniforms();
+        SceneMaskManager.instance.refreshSync("filters", { presyncedLiveLevelState });
+        this.#bindSuppressMaskUniforms({ presyncedLiveLevelState });
       } else {
         SceneMaskManager.instance.refresh("filters");
         this._coalescedBindSceneMask ??= coalesceNextFrame(
@@ -639,9 +660,16 @@ export class FilterEffectsSceneManager {
     }
   }
 
-  #refreshSceneFilterSuppressionMasks(sync = false) {
+  /**
+   * Refresh scene-filter suppression masks.
+   *
+   * @param {boolean} [sync=false]
+   * @param {{ presyncedLiveLevelState?: boolean }} [options]
+   * @private
+   */
+  #refreshSceneFilterSuppressionMasks(sync = false, { presyncedLiveLevelState = false } = {}) {
     const hasAny = Object.keys(this.filters).length > 0 || this._dyingFilters.size > 0;
-    if (hasAny) this.#applySuppressMaskToFilters(sync);
+    if (hasAny) this.#applySuppressMaskToFilters(sync, { presyncedLiveLevelState });
     else {
       try {
         SceneMaskManager.instance.setBelowTokensNeeded?.("filters", false);
@@ -683,14 +711,6 @@ export class FilterEffectsSceneManager {
     }
 
     return out;
-  }
-
-  #anyBelowTokens() {
-    return this.#collectRuntimeFiltersScratch().some((f) => isBelowTokensFilter(f));
-  }
-
-  #anyBelowTiles() {
-    return this.#collectRuntimeFiltersScratch().some((f) => isBelowTilesFilter(f));
   }
 
   /**
@@ -761,16 +781,28 @@ export class FilterEffectsSceneManager {
       : false;
     const needsMasking = (hasRelevantSuppression && !compositorHandlesSuppression) || anyBelowTokens || anyBelowTiles;
     const maskingChanged = !!needsMasking !== (this._lastSceneSuppressionNeedsMasking === true);
+    /** Foundry's primary/perception tickers run before this low-priority FXMaster ticker. */
     const overlayState =
-      hasRelevantSuppression && !compositorHandlesSuppression ? getCanvasLiveLevelSurfaceState() : null;
+      hasRelevantSuppression && !compositorHandlesSuppression
+        ? getCanvasLiveLevelSurfaceState(canvas?.scene ?? null, {
+            presynced: true,
+            includeTransientFades: false,
+          })
+        : null;
     const overlaySignature = overlayState?.key ?? "";
     const overlayChanged =
       hasRelevantSuppression &&
       !compositorHandlesSuppression &&
-      (overlayState?.forceRefresh || overlaySignature !== this._lastSuppressionOverlaySignature);
+      overlaySignature !== this._lastSuppressionOverlaySignature;
 
+    const worldAtlasMasks = SceneMaskManager.instance.usesWorldAtlas?.("filters") === true;
     if (needsMasking && (changed || overlayChanged || maskingChanged)) {
-      this.#refreshSceneFilterSuppressionMasks(true);
+      if (changed && worldAtlasMasks && !overlayChanged && !maskingChanged) {
+        this.#bindSuppressMaskUniforms({ presyncedLiveLevelState: true });
+        this._lastRegionsMatrix = { a: M.a, b: M.b, c: M.c, d: M.d, tx: M.tx, ty: M.ty };
+      } else {
+        this.#refreshSceneFilterSuppressionMasks(true, { presyncedLiveLevelState: true });
+      }
     } else if (!needsMasking) {
       this._lastSceneSuppressionNeedsMasking = false;
       this._lastSuppressionOverlaySignature = "";
@@ -825,9 +857,15 @@ export class FilterEffectsSceneManager {
         this._lastBelowTileCoverageSignature = null;
       }
 
-      if (!changed && (fracMoved || tokenMotionChanged || tileCoverageChanged)) {
-        if (tokenMotionChanged || tileCoverageChanged) SceneMaskManager.instance.refreshTokensSync?.({ force: true });
-        else SceneMaskManager.instance.refreshTokensSync?.();
+      const worldAtlasCoverage = SceneMaskManager.instance.usesWorldAtlasCoverage?.() === true;
+      const cameraCoverageChanged = !worldAtlasCoverage && fracMoved;
+      if (tokenMotionChanged || tileCoverageChanged) {
+        SceneMaskManager.instance.refreshTokensSync?.({ force: true });
+        this.#bindSuppressMaskUniforms();
+      } else if (!changed && cameraCoverageChanged) {
+        SceneMaskManager.instance.refreshTokensSync?.();
+        this.#bindSuppressMaskUniforms();
+      } else if ((changed || fracMoved) && worldAtlasCoverage) {
         this.#bindSuppressMaskUniforms();
       }
 

@@ -189,6 +189,22 @@
   line-height: 1.25;
 }
 
+.fxmaster-direction-compass,
+.fxmaster-minute-label-output {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.22em;
+  margin-inline-start: 0.35em;
+  font-weight: 500;
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
+.fxmaster-direction-compass-icon {
+  font-size: 0.9em;
+  line-height: 1;
+}
+
 .fxmaster-param-title[data-tooltip],
 .fxmaster-param-label[data-tooltip],
 .fxmaster-api-effect-editor label[data-tooltip] {
@@ -1070,16 +1086,22 @@
 }
 
 .window-app.api-effect-editor,
-.ui-dialog.api-effect-editor {
+.ui-dialog.api-effect-editor,
+.application.api-effect-editor {
+  display: flex !important;
+  flex-direction: column !important;
   height: auto !important;
   max-height: var(--fxmaster-max-height) !important;
-  overflow: visible !important;
+  overflow: hidden !important;
 }
 
 .window-app.api-effect-editor .window-content,
-.ui-dialog.api-effect-editor .window-content {
+.ui-dialog.api-effect-editor .window-content,
+.application.api-effect-editor .window-content {
+  flex: 1 1 auto !important;
   height: auto !important;
-  max-height: var(--fxmaster-max-height) !important;
+  max-height: calc(var(--fxmaster-max-height) - 2.5rem) !important;
+  min-height: 0 !important;
   overflow-y: auto !important;
 }
 
@@ -1089,7 +1111,8 @@
   gap: 0.25rem;
   padding: 0.75rem;
   box-sizing: border-box;
-  max-height: var(--fxmaster-max-height);
+  max-height: none;
+  min-height: 0;
 }
 
 .fxmaster-api-effect-editor .fxmaster-filters-row .fxmaster-collapse-arrow {
@@ -1532,4 +1555,67 @@
 .fxmaster-tile-restriction-controls .fxmaster-tile-restriction-row > .hint {
   flex: 0 0 100%;
   margin-left: 0;
+}
+
+body.detached .fxmaster-detached-fit,
+body.detached .fxmaster-detached-fit.window-app,
+body.detached .fxmaster-detached-fit.application,
+body.detached .fxmaster-detached-fit.app {
+  box-sizing: border-box !important;
+  display: flex !important;
+  flex-direction: column !important;
+  inset: 0 auto auto 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+body.detached .fxmaster-detached-fit .window-content {
+  flex: 1 1 auto !important;
+  height: auto !important;
+  max-height: none !important;
+  min-height: 0 !important;
+  overflow: auto !important;
+}
+
+body.detached .fxmaster-detached-fit .fxmaster-filters-container,
+body.detached .fxmaster-detached-fit .fxmaster-particles-container,
+body.detached .fxmaster-detached-fit .fxmaster-api-effects-container,
+body.detached .fxmaster-detached-fit .fxmaster-layers-container,
+body.detached .fxmaster-detached-fit form.scrollable,
+body.detached .fxmaster-detached-fit .scrollable {
+  max-height: none !important;
+  min-height: 0 !important;
+}
+
+@supports (height: 100dvh) {
+  body.detached .fxmaster-detached-fit,
+  body.detached .fxmaster-detached-fit.window-app,
+  body.detached .fxmaster-detached-fit.application,
+  body.detached .fxmaster-detached-fit.app {
+    width: 100dvw !important;
+    height: 100dvh !important;
+    max-width: 100dvw !important;
+    max-height: 100dvh !important;
+  }
+}
+
+.fxmaster-multi-select-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.35rem;
+}
+
+.fxmaster-multi-select-preset {
+  flex: 0 0 auto;
+  min-height: 1.55rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.78em;
+  line-height: 1.2;
+  white-space: nowrap;
 }

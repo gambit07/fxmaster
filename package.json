@@ -1,15 +1,13 @@
 {
   "name": "fxmaster",
-  "version": "5.0.1",
+  "version": "8.3.0",
   "description": "Adds various particle and filter effects.",
   "private": true,
   "scripts": {
-    "build": "run-s clean:files build:rollup build:packs",
+    "build": "run-s clean:files build:rollup",
     "build:rollup": "rollup -c",
-    "build:packs": "fvtt package pack --type=Module --id=fxmaster --compendiumName=macros --inputDirectory=./packs/macros --outputDirectory=./dist/packs",
-    "watch": "run-p watch:rollup watch:packs",
+    "watch": "npm run watch:rollup",
     "watch:rollup": "rollup -c -w",
-    "watch:packs": "nodemon --watch ./packs -x 'npm run build:packs'",
     "link-package": "node ./tools/link-package.mjs",
     "clean": "run-p clean:files clean:link",
     "clean:files": "rimraf dist",
@@ -19,7 +17,7 @@
     "format": "prettier --write \"./**/*.(js|mjs|json|css|yml)\"",
     "get-version": "node get-version.js",
     "release": "node update-module.js",
-    "prepare": "husky install"
+    "prepare": "husky"
   },
   "repository": {
     "type": "git",

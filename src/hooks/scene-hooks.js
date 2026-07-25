@@ -8,7 +8,14 @@
 
 import { API_EFFECT_UPDATE_OPTIONS_FLAG, packageId } from "../constants.js";
 import { logger } from "../logger.js";
-import { coalesceNextFrame, getRegionEffectPlaceablesForCurrentView, updateSceneControlHighlights } from "../utils.js";
+import {
+  coalesceNextFrame,
+  getRegionEffectPlaceablesForCurrentView,
+  hasActiveRadialRestrictWeatherTilesForMask,
+  installCanvasPanAfterHook,
+  syncActiveRadialRestrictWeatherTileMasksForCamera,
+  updateSceneControlHighlights,
+} from "../utils.js";
 import {
   cleanupLegacyAnimationData,
   isEnabled,
@@ -32,6 +39,7 @@ const PARTICLE_TYPE = `${packageId}.particleEffectsRegion`;
 const FILTER_TYPE = `${packageId}.filterEffectsRegion`;
 const SUPPRESS_SCENE_FILTERS = `${packageId}.suppressSceneFilters`;
 const SUPPRESS_SCENE_PARTICLES = `${packageId}.suppressSceneParticles`;
+const POST_CANVAS_PAN_RADIAL_FOLLOWUP_DELAY_MS = 10;
 
 /**
  * Read one-shot API effect render options from the same scene update that changed the effect flags.
@@ -132,8 +140,8 @@ export function registerSceneHooks(ctx) {
     if (game.settings.get(packageId, "releaseMessage") !== version && game.user.isGM) {
       const content = `
         <div class="fxmaster-announcement" style="border:4px solid #4A90E2; border-radius:6px; padding:12px;">
-          <h3 style="margin:0;">🎉Welcome to Gambit's FXMaster V8.1.4!</h3>
-            <p style="font-size: 1em;">Resolved an edge case bug where a region with no shape data could cause a scene crash. Please check out the <a href= "https://github.com/gambit07/fxmaster/releases/latest" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Release Notes</a> for more detail.</p><p style="font-size: 1em; font-weight: bold;"><u>If you are a NEW FXMaster user:</u><br>Checkout the FXMaster Tools Overview in FXMaster Controls for some helpful information when getting started!</p><p style="font-size: 1em;">If you'd like to support my development time and get access to the <a href="https://foundryvtt.com/packages/fxmaster-plus" target="_blank" style="color: #CC66CC; text-decoration: none; font-weight: bold;">Gambit's FXMaster+</a>, <a href="https://foundryvtt.com/packages/gambitsAssetPreviewer" target="_blank" style="color: #CC66CC; text-decoration: none; font-weight: bold;">Gambit's Asset Previewer</a>, and <a href="https://foundryvtt.com/packages/gambitsImageViewer" target="_blank" style="color: #CC66CC; text-decoration: none; font-weight: bold;">Gambit's Image Viewer</a> modules, please consider supporting the project on <a href="https://patreon.com/GambitsLounge" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Patreon</a>.</p><p>FXMaster+ Effects: <ul><li><span style="color: #00c7a6; text-decoration: none; font-weight: bold;">Aurora Borealis</span></li><li><span style="color: #535353; text-decoration: none; font-weight: bold;">Wind</span></li><li><span style="color: #6e6e6e; text-decoration: none; font-weight: bold;">Wind Wisps</span></li><li><span style="color: #3276c4; text-decoration: none; font-weight: bold;">Water</span></li><li><span style="color: #7c7c7c; text-decoration: none; font-weight: bold;">Lightning Bolts</span></li><li><span style="color: #0ada64; text-decoration: none; font-weight: bold;">Glitch</span></li><li><span style="color: #017371; text-decoration: none; font-weight: bold;">Fish</span></li><li><span style="color: #3bd1ffff; text-decoration: none; font-weight: bold;">Ice</span></li><li><span style="color: #a08332ff; text-decoration: none; font-weight: bold;">Sandstorm</span></li><li><span style="color: #74653fff; text-decoration: none; font-weight: bold;">Duststorm</span></li><li><span style="color: #53c57e; text-decoration: none; font-weight: bold;">Ghosts</span></li><li><span style="color: rgb(211, 176, 0); text-decoration: none; font-weight: bold;">Sunlight</span></li><li><span style="color: #7f00ff; text-decoration: none; font-weight: bold;">Magic Crystals</span></li><li><span style="color: #d5b60a; text-decoration: none; font-weight: bold;">Fireflies</span></li><li><span style="color: #ffb7c5; text-decoration: none; font-weight: bold;">Sakura Bloom</span></li><li><span style="color: #ffb7c5; text-decoration: none; font-weight: bold;">Sakura Blossoms</span></li><li><span style="text-decoration: none; font-weight: bold;">And add your own Particle Effects!</span></li></ul></p><p>If you have any questions about the module feel free to join the <a href= "https://discord.gg/YvxHrJ4tVu" target="_blank" style="color: #4e5d94; text-decoration: none; font-weight: bold;">Discord</a>!
+          <h3 style="margin:0;">🎉Welcome to Gambit's FXMaster V8.3.0!</h3>
+            <p style="font-size: 1em;">Super exciting update! This release brings new Backgrounds and Token Interactions to many effects along with many other nice quality of life updates. Please check out the <a href= "https://github.com/gambit07/fxmaster/releases/latest" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Release Notes</a> for more detail.</p><p style="font-size: 1em; font-weight: bold;"><u>If you are a NEW FXMaster user:</u><br>Checkout the FXMaster Tools Overview in FXMaster Controls for some helpful information when getting started!</p><p style="font-size: 1em;">If you'd like to support my development time and get access to the <a href="https://foundryvtt.com/packages/fxmaster-plus" target="_blank" style="color: #CC66CC; text-decoration: none; font-weight: bold;">Gambit's FXMaster+</a>, <a href="https://foundryvtt.com/packages/gambitsAssetPreviewer" target="_blank" style="color: #CC66CC; text-decoration: none; font-weight: bold;">Gambit's Asset Previewer</a>, and <a href="https://foundryvtt.com/packages/gambitsImageViewer" target="_blank" style="color: #CC66CC; text-decoration: none; font-weight: bold;">Gambit's Image Viewer</a> modules, please consider supporting the project on <a href="https://patreon.com/GambitsLounge" target="_blank" style="color: #dd6b20; text-decoration: none; font-weight: bold;">Patreon</a>.</p><p>FXMaster+ Effects: <ul><li><span style="color: #10ff24; text-decoration: none; font-weight: bold;">Summer Leaves</span></li><li><span style="color: #ff701d; text-decoration: none; font-weight: bold;">Fire</span></li><li><span style="color: #00c7a6; text-decoration: none; font-weight: bold;">Aurora Borealis</span></li><li><span style="color: #535353; text-decoration: none; font-weight: bold;">Wind</span></li><li><span style="color: #6e6e6e; text-decoration: none; font-weight: bold;">Wind Wisps</span></li><li><span style="color: #3276c4; text-decoration: none; font-weight: bold;">Water</span></li><li><span style="color: #7c7c7c; text-decoration: none; font-weight: bold;">Lightning Bolts</span></li><li><span style="color: #0ada64; text-decoration: none; font-weight: bold;">Glitch</span></li><li><span style="color: #017371; text-decoration: none; font-weight: bold;">Fish</span></li><li><span style="color: #3bd1ffff; text-decoration: none; font-weight: bold;">Ice</span></li><li><span style="color: #a08332ff; text-decoration: none; font-weight: bold;">Sandstorm</span></li><li><span style="color: #74653fff; text-decoration: none; font-weight: bold;">Duststorm</span></li><li><span style="color: #53c57e; text-decoration: none; font-weight: bold;">Ghosts</span></li><li><span style="color: rgb(211, 176, 0); text-decoration: none; font-weight: bold;">Sunlight</span></li><li><span style="color: #7f00ff; text-decoration: none; font-weight: bold;">Magic Crystals</span></li><li><span style="color: #d5b60a; text-decoration: none; font-weight: bold;">Fireflies</span></li><li><span style="color: #ffb7c5; text-decoration: none; font-weight: bold;">Sakura Bloom</span></li><li><span style="color: #ffb7c5; text-decoration: none; font-weight: bold;">Sakura Blossoms</span></li><li><span style="text-decoration: none; font-weight: bold;">And add your own Particle Effects!</span></li></ul></p><p>If you have any questions about the module feel free to join the <a href= "https://discord.gg/YvxHrJ4tVu" target="_blank" style="color: #4e5d94; text-decoration: none; font-weight: bold;">Discord</a>!
           </div>
       `;
       ChatMessage.create({ content });
@@ -201,9 +209,12 @@ export function registerSceneHooks(ctx) {
       }
     }
 
+    const soundFxManualSelectionChanged = Object.keys(flat).some((k) => k.includes("soundFxManualSoundIds"));
+
     if (effectsChanged || filtersChanged || stackChanged || data.active === true) updateSceneControlHighlights();
 
     if (effectsChanged || filtersChanged || stackChanged) ctx.scheduleLayersWindowRefresh();
+    if (soundFxManualSelectionChanged) ctx.schedulePairedSoundFxWindowsRefresh?.();
     if (screenShakeDeleted || data.active === true) ctx.scheduleOpenWindowsRefresh();
 
     if (data.width !== undefined || data.height !== undefined) {
@@ -240,5 +251,55 @@ export function registerSceneHooks(ctx) {
     { key: "fxm:view:maskRefresh" },
   );
 
-  Hooks.on("canvasZoom", () => requestViewMaskRefresh());
+  let postCanvasPanRadialFollowupTimer = null;
+
+  const schedulePostCanvasPanRadialFollowup = () => {
+    if (postCanvasPanRadialFollowupTimer !== null) return;
+    const setTimer = globalThis.setTimeout ?? setTimeout;
+    postCanvasPanRadialFollowupTimer = setTimer(() => {
+      postCanvasPanRadialFollowupTimer = null;
+      runPostCanvasPanRadialSync({ dispatchPointerMove: false, scheduleFollowup: false });
+    }, POST_CANVAS_PAN_RADIAL_FOLLOWUP_DELAY_MS);
+  };
+
+  const runPostCanvasPanRadialSync = ({ dispatchPointerMove = true, scheduleFollowup = true } = {}) => {
+    if (!isEnabled()) return;
+    if (!hasActiveRadialRestrictWeatherTilesForMask("all", { includeOffscreen: true })) return;
+
+    try {
+      syncActiveRadialRestrictWeatherTileMasksForCamera("all", {
+        includeOffscreen: true,
+        dispatchPointerMove,
+      });
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    requestViewMaskRefresh();
+    requestViewMaskRefresh.flush?.();
+
+    if (scheduleFollowup) schedulePostCanvasPanRadialFollowup();
+  };
+
+  const requestPostCanvasPanRadialSync = () => runPostCanvasPanRadialSync();
+
+  let postCanvasPanHookInstalled = installCanvasPanAfterHook(requestPostCanvasPanRadialSync);
+
+  const handleCanvasViewChange = () => {
+    if (!isEnabled()) return;
+
+    if (postCanvasPanHookInstalled && hasActiveRadialRestrictWeatherTilesForMask("all", { includeOffscreen: true })) {
+      return;
+    }
+
+    requestViewMaskRefresh();
+  };
+
+  Hooks.on("canvasPan", handleCanvasViewChange);
+
+  Hooks.once("ready", () => {
+    if (!postCanvasPanHookInstalled) {
+      postCanvasPanHookInstalled = installCanvasPanAfterHook(requestPostCanvasPanRadialSync);
+    }
+  });
 }

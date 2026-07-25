@@ -31,7 +31,6 @@ export class UnderwaterFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
     this.initFadeUniforms(u);
     this.initRegionFadeUniforms(u, { maxEdges: MAX_EDGES });
 
-    this.ensureVec4Uniform("srcFrame", [0, 0, 1, 1]);
     this.ensureVec2Uniform("camFrac", [0, 0]);
     this.ensureVec4Uniform("outputFrame", [0, 0, 1, 1]);
 
@@ -141,8 +140,9 @@ export class UnderwaterFilter extends FXMasterFilterEffectMixin(PIXI.Filter) {
 
     if (!this._uwTick) {
       this._uwTick = this.addFilterTicker((deltaMS) => {
-        const r = canvas?.app?.renderer;
-        const wCSS = Math.max(1, r?.screen?.width | 0);
+        const context = this.__fxmFilterContext ?? null;
+        const r = context?.renderer ?? canvas?.app?.renderer;
+        const wCSS = Math.max(1, Number(context?.width) || r?.screen?.width | 0);
         const dt = (deltaMS ?? 16.6) / 1000.0;
 
         const stepX = ((this._speed || 0) * dt) / wCSS;

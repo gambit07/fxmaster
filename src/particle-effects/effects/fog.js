@@ -37,7 +37,7 @@ export class FogParticleEffect extends DefaultRectangleSpawnMixin(FXMasterPartic
       decimals: 2,
     };
 
-    delete params.direction;
+    params.synchronizedDirection = this.synchronizedDirectionParameter;
     return params;
   }
 
@@ -167,7 +167,8 @@ export class FogParticleEffect extends DefaultRectangleSpawnMixin(FXMasterPartic
 
     this.applyOptionsToConfig(options, config);
 
-    return [this.createEmitter(config)];
+    const emitter = this.createEmitter(config);
+    return [emitter];
   }
 
   /** @override */

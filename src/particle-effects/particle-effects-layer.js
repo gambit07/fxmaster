@@ -17,6 +17,7 @@ import {
   computeRegionGatePass,
   coalesceNextFrame,
   getCssViewportMetrics,
+  getSnappedCameraCss,
   rawStageMatrix,
   safeResolutionForCssArea,
   snappedStageMatrix,
@@ -34,6 +35,7 @@ import {
   getSceneDarknessLevel,
   isEffectActiveForSceneDarkness,
   isEffectActiveForCurrentOrVisibleCanvasLevel,
+  getSelectedSceneLevelIds,
   normalizeSceneLevelSelection,
   resolveDocumentOcclusionElevation,
   getCanvasLiveLevelSurfaceState,
@@ -41,15 +43,19 @@ import {
   getRegionEffectPlaceablesForCurrentView,
   getRegionPlaceableOrDocumentAdapter,
   getSceneRegionDocumentById,
+  getSceneLevels,
   regionDocumentCanApplyInCurrentView,
   isTileOverhead,
   tileHasActiveOcclusion,
   tileDocumentRestrictsParticles,
   getRegionBehaviorEdgeFadePercent,
   getRegionParticleEffectDefinitions,
+  getRegionSoftMaskData,
   fxmUpdateDisplayObjectWorldTransform,
   buildBelowTokenMaskCoverageSignature,
   buildBelowTileMaskCoverageSignature,
+  hasActiveRadialRestrictWeatherTilesForMask,
+  syncActiveRadialRestrictWeatherTileMasksForCamera,
 } from "../utils.js";
 import {
   markSceneParticleSuppressionCompositorInteraction,
@@ -67,9 +73,230 @@ import {
 } from "../common/effect-stack.js";
 import { SceneMaskManager } from "../common/base-effects-scene-manager.js";
 import { fxmForEachEmitterParticle } from "./effects/effect.js";
+import { createParticleBackgroundSurface } from "./backgrounds/background-surface-factory.js";
+import { createParticleBackgroundTrailStore } from "./backgrounds/snow-trail-store.js";
+import {
+  particleBackgroundEnabled,
+  particleBackgroundMonotonicNow,
+  particleBackgroundNow,
+} from "./backgrounds/background-state.js";
+import {
+  PARTICLE_BACKGROUND_DISTURBANCE_QUERY_VERSION,
+  PARTICLE_BACKGROUND_MOVEMENT_HISTORY_MAX_EVENTS,
+  getParticleBackgroundQueryParticipants,
+  getParticleBackgroundQueryRecipients,
+  normalizeParticleBackgroundMovementEvent,
+  particleBackgroundQueriesAvailable,
+  persistParticleBackgroundDisturbances,
+  queryParticleBackgroundDisturbances,
+  readParticleBackgroundMovementHistory,
+} from "./backgrounds/particle-background-query-sync.js";
 
 const TYPE = `${packageId}.particleEffectsRegion`;
 const ACTIVE_DARKNESS_EPSILON = 1e-4;
+const PARTICLE_TRAIL_ACTIVE_SAMPLE_INTERVAL_MS = 16;
+const PARTICLE_TRAIL_SAMPLE_INTERVAL_MS = 50;
+const PARTICLE_TRAIL_IDLE_SAMPLE_INTERVAL_MS = 160;
+const PARTICLE_TRAIL_IDLE_BACKOFF_AFTER_SAMPLES = 4;
+const PARTICLE_TRAIL_MIN_DISTANCE_GRID = 0.006;
+const PARTICLE_TRAIL_TELEPORT_GRID_SPACES = 8;
+const PARTICLE_TRAIL_QUERY_BATCH_INTERVAL_MS = 40;
+const PARTICLE_TRAIL_QUERY_MAX_SEGMENTS = 24;
+const PARTICLE_TRAIL_QUERY_MAX_PENDING_SEGMENTS = 72;
+const PARTICLE_TRAIL_QUERY_MAX_INBOUND_SEGMENTS = 48;
+const PARTICLE_TRAIL_QUERY_MAX_EVENT_AGE_MS = 2000;
+const PARTICLE_TRAIL_QUERY_DEDUPE_TTL_MS = 15000;
+const PARTICLE_TRAIL_QUERY_MAX_RECENT_EVENTS = 512;
+const PARTICLE_TRAIL_AUTHORITY_TTL_MS = 30000;
+const PARTICLE_TRAIL_ACTIVE_CANDIDATE_TTL_MS = 2000;
+const PARTICLE_TRAIL_STALE_BASELINE_MS = 750;
+const PARTICLE_TRAIL_HISTORY_CLOCK_SKEW_MS = 2000;
+
+const REGION_SURFACE_EDGE_FADE_FRAGMENT_SHADER = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+varying vec2 vTextureCoord;
+uniform sampler2D uSampler;
+uniform sampler2D uRegionFadeMask;
+uniform vec4 inputSize;
+uniform vec4 outputFrame;
+uniform vec2 camFrac;
+uniform mat3 uCssToWorld;
+uniform mat3 uMaskUvFromWorld;
+void main() {
+  vec4 color = texture2D(uSampler, vTextureCoord);
+  vec2 screenPx = outputFrame.xy + vTextureCoord * inputSize.xy;
+  vec2 snapPx = screenPx - camFrac;
+  vec2 world = (uCssToWorld * vec3(snapPx, 1.0)).xy;
+  vec2 uv = (uMaskUvFromWorld * vec3(world, 1.0)).xy;
+  float inBounds = step(0.0, uv.x) * step(0.0, uv.y) * step(uv.x, 1.0) * step(uv.y, 1.0);
+  float fade = texture2D(uRegionFadeMask, clamp(uv, vec2(0.0), vec2(1.0))).a * inBounds;
+  gl_FragColor = color * fade;
+}
+`;
+
+function writePixiMatrix3(target, matrix) {
+  const out = target instanceof Float32Array && target.length >= 9 ? target : new Float32Array(9);
+  out[0] = Number(matrix?.a ?? 1) || 0;
+  out[1] = Number(matrix?.b ?? 0) || 0;
+  out[2] = 0;
+  out[3] = Number(matrix?.c ?? 0) || 0;
+  out[4] = Number(matrix?.d ?? 1) || 0;
+  out[5] = 0;
+  out[6] = Number(matrix?.tx ?? 0) || 0;
+  out[7] = Number(matrix?.ty ?? 0) || 0;
+  out[8] = 1;
+  return out;
+}
+
+function writeRegionSoftMaskUvFromWorld(target, entry) {
+  const out = target instanceof Float32Array && target.length >= 9 ? target : new Float32Array(9);
+  const source = entry?.uvFromWorld;
+  if (source instanceof Float32Array && source.length >= 9) out.set(source.subarray(0, 9));
+  else out.set([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+  return out;
+}
+
+const _regionSurfaceCssToWorldMatrix = new PIXI.Matrix();
+const _regionSurfaceCssToWorldUniform = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+let _regionSurfaceStageA = Number.NaN;
+let _regionSurfaceStageB = Number.NaN;
+let _regionSurfaceStageC = Number.NaN;
+let _regionSurfaceStageD = Number.NaN;
+let _regionSurfaceStageTx = Number.NaN;
+let _regionSurfaceStageTy = Number.NaN;
+
+function regionSurfaceCssToWorldUniform() {
+  const source = snappedStageMatrix();
+  if (
+    source.a !== _regionSurfaceStageA ||
+    source.b !== _regionSurfaceStageB ||
+    source.c !== _regionSurfaceStageC ||
+    source.d !== _regionSurfaceStageD ||
+    source.tx !== _regionSurfaceStageTx ||
+    source.ty !== _regionSurfaceStageTy
+  ) {
+    _regionSurfaceStageA = source.a;
+    _regionSurfaceStageB = source.b;
+    _regionSurfaceStageC = source.c;
+    _regionSurfaceStageD = source.d;
+    _regionSurfaceStageTx = source.tx;
+    _regionSurfaceStageTy = source.ty;
+    const matrix = _regionSurfaceCssToWorldMatrix;
+    matrix.a = source.a;
+    matrix.b = source.b;
+    matrix.c = source.c;
+    matrix.d = source.d;
+    matrix.tx = source.tx;
+    matrix.ty = source.ty;
+    try {
+      matrix.invert();
+    } catch (_err) {
+      matrix.identity();
+    }
+    writePixiMatrix3(_regionSurfaceCssToWorldUniform, matrix);
+  }
+  return _regionSurfaceCssToWorldUniform;
+}
+
+class RegionSurfaceEdgeFadeFilter extends PIXI.Filter {
+  constructor(maskEntry) {
+    super(PIXI.Filter.defaultVertex, REGION_SURFACE_EDGE_FADE_FRAGMENT_SHADER, {
+      uRegionFadeMask: PIXI.Texture.EMPTY,
+      camFrac: new Float32Array([0, 0]),
+      uCssToWorld: new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]),
+      uMaskUvFromWorld: new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]),
+    });
+    this.padding = 0;
+    this.autoFit = false;
+    this.resolution = 1;
+    this.configure(maskEntry);
+  }
+
+  configure(maskEntry) {
+    this.uniforms.uRegionFadeMask = maskEntry?.texture ?? PIXI.Texture.EMPTY;
+    this.uniforms.uMaskUvFromWorld = writeRegionSoftMaskUvFromWorld(this.uniforms.uMaskUvFromWorld, maskEntry);
+  }
+
+  apply(filterSystem, input, output, clear, currentState) {
+    this.uniforms.uCssToWorld = regionSurfaceCssToWorldUniform();
+    const { camFracX, camFracY } = getSnappedCameraCss();
+    const camFrac =
+      this.uniforms.camFrac instanceof Float32Array && this.uniforms.camFrac.length >= 2
+        ? this.uniforms.camFrac
+        : new Float32Array(2);
+    camFrac[0] = camFracX;
+    camFrac[1] = camFracY;
+    this.uniforms.camFrac = camFrac;
+    return super.apply(filterSystem, input, output, clear, currentState);
+  }
+
+  destroy(options) {
+    this.uniforms.uRegionFadeMask = PIXI.Texture.EMPTY;
+    super.destroy(options);
+  }
+}
+
+function particleEffectFadeDurationMs(EffectClass) {
+  const duration = Number(EffectClass?.defaultFadeDurationMs ?? 3000);
+  return Number.isFinite(duration) ? Math.max(0, duration) : 3000;
+}
+
+function particleEffectUsesSoftFade(EffectClass, soft) {
+  return !!soft || EffectClass?.alwaysSoftToggleFade === true;
+}
+
+function particleEffectPrewarmForSoftFade(EffectClass, soft) {
+  if (!soft) return true;
+  return EffectClass?.softFadePrewarm === true;
+}
+
+function particleEffectPrewarmForInstanceSoftFade(fx, soft) {
+  return particleEffectPrewarmForSoftFade(fx?.constructor, soft);
+}
+
+function particleTrailFiniteNumber(value, fallback = 0) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function particleTrailClamp(value, min, max, fallback = min) {
+  return Math.max(min, Math.min(max, particleTrailFiniteNumber(value, fallback)));
+}
+
+function hashParticleTrailString32(value) {
+  const text = String(value ?? "fxmaster-particle-trail");
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index++) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function particleTrailUserCanUpdateToken(user, tokenDocument) {
+  if (!user || !tokenDocument) return false;
+  try {
+    const result = tokenDocument.canUserModify?.(user, "update");
+    if (typeof result === "boolean") return result;
+  } catch (_err) {}
+
+  try {
+    const owner = globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3;
+    return !!tokenDocument.testUserPermission?.(user, owner);
+  } catch (_err) {
+    return !!user.isGM;
+  }
+}
+
+function particleTrailPoint(value) {
+  const x = Number(value?.x);
+  const y = Number(value?.y);
+  return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+}
 
 /**
  * Return whether native weather occlusion filters can be used for stack-pass particle rendering.
@@ -193,6 +420,138 @@ function wrapStoredParticleOptions(options = {}) {
   return Object.fromEntries(
     Object.entries(options ?? {}).map(([key, value]) => [key, { value: normalizeStoredParticleOptionValue(value) }]),
   );
+}
+
+function particleTrailFirstFiniteNumber(...values) {
+  for (const value of values) {
+    const number = Number(value);
+    if (Number.isFinite(number)) return number;
+  }
+  return Number.NaN;
+}
+
+function particleTrailNormalizeGroundElevation(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function particleTrailReadBottomElevation(source) {
+  if (!source) return 0;
+
+  const elevation = source?.elevation;
+  if (elevation && typeof elevation === "object") {
+    if (hasOwn(elevation, "base")) return particleTrailNormalizeGroundElevation(elevation.base);
+    if (hasOwn(elevation, "bottom")) return particleTrailNormalizeGroundElevation(elevation.bottom);
+  }
+
+  if (hasOwn(source, "bottom")) return particleTrailNormalizeGroundElevation(source.bottom);
+  if (hasOwn(source, "elevation") && (elevation == null || typeof elevation !== "object")) {
+    return particleTrailNormalizeGroundElevation(elevation);
+  }
+
+  return 0;
+}
+
+function particleTrailReadElevationThreshold(options = {}) {
+  const raw = normalizeStoredParticleOptionValue(options?.backgroundInteractionElevationThreshold);
+  if (typeof raw === "string") {
+    const text = raw.trim();
+    if (/^(?:∞|inf(?:inity)?|infinite)$/i.test(text)) return Infinity;
+  }
+  const number = Number(raw);
+  if (number === Infinity) return Infinity;
+  if (Number.isFinite(number)) return Math.max(0, number);
+  return Infinity;
+}
+
+function particleTrailTokenElevationValue(tokenOrSnapshot) {
+  return particleTrailFirstFiniteNumber(
+    tokenOrSnapshot?.elevation,
+    tokenOrSnapshot?.document?.elevation,
+    tokenOrSnapshot?.document?.elevation?.value,
+    tokenOrSnapshot?.document?.elevation?.bottom,
+    tokenOrSnapshot?.object?.document?.elevation,
+    0,
+  );
+}
+
+function particleTrailLevelById(levelId, scene = canvas?.scene ?? null) {
+  const id = String(levelId ?? "").trim();
+  if (!id) return null;
+  try {
+    return getSceneLevels(scene).find((level) => String(level?.id ?? level?._id ?? "") === id) ?? null;
+  } catch (_err) {
+    return null;
+  }
+}
+
+function particleTrailDocumentBottom(document) {
+  return particleTrailReadBottomElevation(document);
+}
+
+function particleTrailRuntimeLevelIds(fx) {
+  const rawSelection = normalizeStoredParticleOptionValue(
+    fx?.__fxmTrailLevelIds ?? fx?.__fxmLevels ?? fx?.__fxmOptions?.levels,
+  );
+  const selected = getSelectedSceneLevelIds(rawSelection, canvas?.scene ?? null);
+  return selected?.size ? selected : null;
+}
+
+function particleTrailMatchingLevelBottom({ fx = null, tokenLevelIds = [] } = {}) {
+  const scene = canvas?.scene ?? null;
+  const selected = particleTrailRuntimeLevelIds(fx);
+  const tokenLevels = Array.isArray(tokenLevelIds) ? tokenLevelIds.map(String).filter(Boolean) : [];
+  const candidates = [];
+
+  if (selected?.size && tokenLevels.length) {
+    for (const levelId of tokenLevels) if (selected.has(levelId)) candidates.push(levelId);
+  }
+  if (!candidates.length && tokenLevels.length) candidates.push(...tokenLevels);
+  if (!candidates.length && selected?.size) candidates.push(...selected);
+
+  if (!candidates.length) {
+    const currentLevelId = String(canvas?.level?.id ?? canvas?.level?._id ?? "");
+    if (currentLevelId) candidates.push(currentLevelId);
+  }
+
+  for (const levelId of candidates) {
+    const level = particleTrailLevelById(levelId, scene);
+    if (!level) continue;
+    return particleTrailReadBottomElevation(level);
+  }
+
+  return 0;
+}
+
+function particleTrailEffectGroundElevation(fx, tokenLevelIds = []) {
+  const context = fx?.__fxmParticleContext ?? fx?.options?.__fxmParticleContext ?? null;
+  const regionId = String(context?.regionId ?? "").trim();
+  if (regionId) {
+    const regionDocument = getSceneRegionDocumentById(regionId, canvas?.scene ?? null) ?? null;
+    const regionBottom = particleTrailDocumentBottom(regionDocument);
+    if (Number.isFinite(regionBottom)) return regionBottom;
+    return 0;
+  }
+
+  try {
+    const levels = getSceneLevels(canvas?.scene ?? null);
+    if (!levels?.length) return 0;
+  } catch (_err) {
+    return 0;
+  }
+
+  return particleTrailMatchingLevelBottom({ fx, tokenLevelIds });
+}
+
+function particleTrailTokenWithinElevationThreshold(tokenOrSnapshot, fx) {
+  const threshold = particleTrailReadElevationThreshold(fx?.__fxmOptions ?? {});
+  if (threshold === Infinity) return true;
+
+  const elevation = particleTrailTokenElevationValue(tokenOrSnapshot);
+  const tokenLevelIds = Array.isArray(tokenOrSnapshot?.levelIds) ? tokenOrSnapshot.levelIds : [];
+  const ground = particleTrailEffectGroundElevation(fx, tokenLevelIds);
+  const relativeElevation = elevation - ground;
+  return relativeElevation <= threshold + 1e-6;
 }
 
 /**
@@ -349,7 +708,50 @@ function destroyParticleMaskSprite(maskSprite, container = null) {
   }
 }
 
-const PARTICLE_RUNTIME_ROUTING_OPTION_KEYS = new Set(["belowTokens", "belowTiles", "belowForeground", "levels"]);
+const PARTICLE_RUNTIME_IN_PLACE_OPTION_KEYS = new Set([
+  "belowTokens",
+  "belowTiles",
+  "belowForeground",
+  "levels",
+  "backgroundEnabled",
+  "backgroundMode",
+  "backgroundDuration",
+  "backgroundGroundMovementSpeed",
+  "backgroundOpacity",
+  "backgroundFillVariation",
+  "backgroundDriftStrength",
+  "backgroundDriftScale",
+  "backgroundSandRippleStrength",
+  "backgroundReflectionStrength",
+  "backgroundShimmerStrength",
+  "backgroundShimmerSpeed",
+  "backgroundMigrationEnabled",
+  "backgroundMigrationSpeed",
+  "backgroundTrailsEnabled",
+  "backgroundTrailRefillEnabled",
+  "backgroundTrailRefillDuration",
+  "backgroundTrailWidth",
+  "backgroundTrailStrength",
+  "backgroundCoverage",
+  "backgroundPatchSize",
+  "backgroundPileStrength",
+  "backgroundPileSize",
+  "backgroundLeafSize",
+  "backgroundParticleSize",
+  "backgroundInteractionEnabled",
+  "backgroundInteractionRadius",
+  "backgroundInteractionStrength",
+  "backgroundInteractionSwirl",
+  "backgroundInteractionLiftChance",
+  "backgroundInteractionElevationThreshold",
+  "backgroundInteractionSettleTime",
+  "backgroundInteractionSettleImpact",
+  "backgroundSweepEnabled",
+  "backgroundSweepOpacity",
+  "backgroundSweepScale",
+  "backgroundSweepSpeed",
+  "backgroundSweepStrength",
+]);
 
 function particleRoutingComparableValue(value) {
   const raw =
@@ -372,27 +774,27 @@ function particleRoutingStableString(value) {
 }
 
 /**
- * Return true when a scene-particle config edit only changes FXMaster's compositor routing/masking options. These options do not require replacing the particle emitter. Rebuilding and crossfading the runtime for a pure belowTokens/belowTiles/belowForeground/levels edit can expose the V13 full-scene allow-mask for one or more frames while mask refresh is catching up. Moving the existing runtime in-place is both cheaper and avoids that white-mask transition.
+ * Return true when a scene-particle config edit changes only FXMaster-owned runtime options: compositor routing/masking or a persistent background surface. These options do not require replacing the particle emitter. Updating the existing runtime in place is cheaper, preserves timed background progress, and avoids mask transition artifacts.
  *
  * @param {object|null|undefined} previous
  * @param {object|null|undefined} next
  * @returns {boolean}
  */
-function particleOptionsChangedOnlyRuntimeRouting(previous, next) {
+function particleOptionsChangedOnlyRuntimeRoutingOrBackground(previous, next) {
   const prev = previous && typeof previous === "object" ? previous : {};
   const cur = next && typeof next === "object" ? next : {};
   const keys = new Set([...Object.keys(prev), ...Object.keys(cur)]);
-  let sawRoutingChange = false;
+  let sawInPlaceChange = false;
 
   for (const key of keys) {
     const before = particleRoutingStableString(prev[key]);
     const after = particleRoutingStableString(cur[key]);
     if (before === after) continue;
-    if (!PARTICLE_RUNTIME_ROUTING_OPTION_KEYS.has(key)) return false;
-    sawRoutingChange = true;
+    if (!PARTICLE_RUNTIME_IN_PLACE_OPTION_KEYS.has(key)) return false;
+    sawInPlaceChange = true;
   }
 
-  return sawRoutingChange;
+  return sawInPlaceChange;
 }
 
 function particleOptionsCanUpdateInPlace(EffectClass, existing, previous, next) {
@@ -492,7 +894,1400 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     this._lastSceneDarknessSignature = "";
     this._lastRegionDarknessSignatures = new Map();
     this._lastDarknessLevel = getSceneDarknessLevel();
+
+    this._particleBackgroundTrailStores = new Map();
+    this._particleTrailTokenPositions = new Map();
+    this._particleTrailStampedTokenEnds = new Map();
+    this._particleTrailDirtyTokenIds = new Set();
+    this._particleTrailMovementDirtyTokenIds = new Set();
+    this._particleTrailActiveTokenIds = new Map();
+    this._particleTrailLastSampleTick = 0;
+    this._particleTrailIdleSamples = 0;
+    this._particleTrailForceNextSample = false;
+    this._particleTrailTokenAuthorities = new Map();
+    this._particleTrailOutboundSegments = [];
+    this._particleTrailLastQueryBatchTick = 0;
+    this._particleTrailQuerySequence = 0;
+    this._particleTrailQuerySessionId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+    this._particleTrailQueryUserStates = new Map();
+    this._particleTrailRecentQueryEvents = new Map();
+    this._particleTrailSessionEvents = new Map();
+    this._particleTrailSessionRevision = 0;
+    this._particleTrailHistoryStoreStates = new WeakMap();
+    this._particleTrailPersistedHistorySource = null;
+    this._particleTrailPersistedHistoryRevision = -1;
+    this._particleTrailPersistedHistoryEvents = [];
+    this._particleTrailLastHistoryRestoreKey = "";
+
     this.renderable = false;
+  }
+
+  _getParticleBackgroundTrailStore(descriptor, uid) {
+    const key = String(uid ?? "").trim();
+    if (!key || !descriptor) return null;
+
+    const expectedType = String(descriptor?.type ?? "");
+    let store = this._particleBackgroundTrailStores.get(key) ?? null;
+    if (store && String(store.type ?? "") !== expectedType) {
+      try {
+        store.destroy?.();
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+      this._particleBackgroundTrailStores.delete(key);
+      store = null;
+    }
+
+    if (!store) {
+      try {
+        store = createParticleBackgroundTrailStore(descriptor, { uid: key });
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+        store = null;
+      }
+      if (store) this._particleBackgroundTrailStores.set(key, store);
+    }
+
+    return store;
+  }
+
+  _disableParticleBackgroundTrailStore(uid) {
+    const key = String(uid ?? "").trim();
+    if (!key) return;
+    try {
+      this._particleBackgroundTrailStores.get(key)?.setEnabled?.(false);
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+  }
+
+  _destroyAllParticleBackgroundTrailStores() {
+    for (const store of this._particleBackgroundTrailStores.values()) {
+      try {
+        store?.destroy?.();
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    }
+    this._particleBackgroundTrailStores.clear();
+    this._particleTrailTokenPositions.clear();
+    this._particleTrailStampedTokenEnds.clear();
+    this._particleTrailDirtyTokenIds.clear();
+    this._particleTrailMovementDirtyTokenIds.clear();
+    this._particleTrailActiveTokenIds.clear();
+    this._particleTrailLastSampleTick = 0;
+    this._particleTrailIdleSamples = 0;
+    this._particleTrailForceNextSample = false;
+    this._particleTrailTokenAuthorities.clear();
+    this._particleTrailOutboundSegments.length = 0;
+    this._particleTrailLastQueryBatchTick = 0;
+    for (const state of this._particleTrailQueryUserStates.values()) state.pending.length = 0;
+    this._particleTrailQueryUserStates.clear();
+    this._particleTrailRecentQueryEvents.clear();
+    this._particleTrailSessionEvents.clear();
+    this._particleTrailSessionRevision = 0;
+    this._particleTrailHistoryStoreStates = new WeakMap();
+    this._particleTrailPersistedHistorySource = null;
+    this._particleTrailPersistedHistoryRevision = -1;
+    this._particleTrailPersistedHistoryEvents = [];
+    this._particleTrailLastHistoryRestoreKey = "";
+  }
+
+  /**
+   * Destroy the optional persistent background surface owned by a particle runtime.
+   *
+   * @param {PIXI.DisplayObject|null|undefined} fx
+   * @returns {void}
+   */
+  _destroyParticleBackgroundSurface(fx) {
+    const surface = fx?.__fxmBackgroundSurface ?? null;
+    if (!surface) return;
+
+    try {
+      surface.destroy?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    try {
+      delete fx.__fxmBackgroundSurface;
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+  }
+
+  /**
+   * Create, configure, and place a particle effect's optional persistent background surface.
+   *
+   * The surface is inserted into the same wrapper as the emitter, immediately behind it, so all
+   * existing scene/Region masks and stack routing apply to both pieces together.
+   *
+   * @param {PIXI.DisplayObject|null|undefined} fx
+   * @param {PIXI.Container|null|undefined} container
+   * @returns {object|null}
+   */
+  _syncParticleBackgroundSurface(fx, container) {
+    if (!fx || fx.destroyed || !container || container.destroyed) return null;
+
+    let descriptor = null;
+    try {
+      descriptor = fx.constructor?.backgroundSurface ?? null;
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    const backgroundUid = String(
+      fx.__fxmBackgroundUid ?? fx.id ?? fx.constructor?.label ?? descriptor?.type ?? "particle-background",
+    );
+    const enabled = !!descriptor && particleBackgroundEnabled(fx.__fxmOptions ?? {});
+    if (!enabled) {
+      this._disableParticleBackgroundTrailStore(backgroundUid);
+      this._destroyParticleBackgroundSurface(fx);
+      return null;
+    }
+
+    const expectedType = String(descriptor?.type ?? "");
+    let surfaceOptions = fx.__fxmOptions ?? {};
+    try {
+      surfaceOptions = fx.constructor?.mergeWithDefaults?.(surfaceOptions) ?? surfaceOptions;
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    const trailStore = this._getParticleBackgroundTrailStore(descriptor, backgroundUid);
+    let surface = fx.__fxmBackgroundSurface ?? null;
+    if (surface && String(surface.type ?? "") !== expectedType) {
+      this._destroyParticleBackgroundSurface(fx);
+      surface = null;
+    }
+
+    const dimensions = CONFIG.fxmaster?.getParticleDimensions?.(fx) ?? canvas?.dimensions ?? null;
+    const renderer = CONFIG.fxmaster?.getParticleRenderer?.(fx) ?? canvas?.app?.renderer ?? null;
+    if (!surface) {
+      try {
+        surface = createParticleBackgroundSurface(descriptor, {
+          uid: backgroundUid,
+          options: surfaceOptions,
+          state: fx.__fxmBackgroundState ?? {},
+          dimensions,
+          renderer,
+          trailStore,
+          owner: fx,
+        });
+        if (surface) fx.__fxmBackgroundSurface = surface;
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+        surface = null;
+      }
+    }
+
+    if (!surface) return null;
+
+    try {
+      surface.configure?.({
+        options: surfaceOptions,
+        state: fx.__fxmBackgroundState ?? {},
+        dimensions,
+        renderer,
+        trailStore,
+        owner: fx,
+      });
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    const display = surface.displayObject ?? null;
+    if (!display || display.destroyed) {
+      this._destroyParticleBackgroundSurface(fx);
+      return null;
+    }
+
+    try {
+      if (display.parent !== container) {
+        display.parent?.removeChild?.(display);
+        const fxIndex = fx.parent === container ? container.getChildIndex(fx) : container.children.length;
+        container.addChildAt(display, Math.max(1, Math.min(fxIndex, container.children.length)));
+      } else {
+        const fxIndex = fx.parent === container ? container.getChildIndex(fx) : container.children.length;
+        const desiredIndex = Math.max(1, Math.min(Math.max(1, fxIndex - 1), container.children.length - 1));
+        if (container.getChildIndex(display) !== desiredIndex) container.setChildIndex(display, desiredIndex);
+      }
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    try {
+      surface.update?.({ fx, now: particleBackgroundNow() });
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    return surface;
+  }
+
+  _destroyRegionSurfaceEdgeFadeFilter(entry) {
+    const filter = entry?.edgeFadeFilter ?? null;
+    const container = entry?.container ?? null;
+    if (filter && container && !container.destroyed) {
+      try {
+        const filters = Array.isArray(container.filters) ? container.filters.filter((item) => item !== filter) : [];
+        container.filters = filters.length ? filters : null;
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    }
+    try {
+      if (filter?.uniforms) filter.uniforms.uRegionFadeMask = PIXI.Texture.EMPTY;
+      filter?.destroy?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    if (entry) {
+      if (container && !container.destroyed && entry.edgeFadePreviousFilterAreaCaptured) {
+        try {
+          container.filterArea = entry.edgeFadePreviousFilterArea ?? null;
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+      }
+      entry.edgeFadeFilter = null;
+      entry.edgeFadeMaskEntry = null;
+      entry.edgeFadePreviousFilterArea = null;
+      entry.edgeFadePreviousFilterAreaCaptured = false;
+    }
+  }
+
+  _syncRegionSurfaceEdgeFadeFilter(entry, maskEntry) {
+    const container = entry?.container ?? null;
+    const texture = maskEntry?.texture ?? null;
+    if (!container || container.destroyed || !texture || texture.destroyed || texture.baseTexture?.destroyed) {
+      this._destroyRegionSurfaceEdgeFadeFilter(entry);
+      return false;
+    }
+
+    let filter = entry.edgeFadeFilter ?? null;
+    if (!filter || filter.destroyed) {
+      try {
+        filter = new RegionSurfaceEdgeFadeFilter(maskEntry);
+        entry.edgeFadeFilter = filter;
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+        this._destroyRegionSurfaceEdgeFadeFilter(entry);
+        return false;
+      }
+    }
+
+    try {
+      filter.configure(maskEntry);
+      const filters = Array.isArray(container.filters) ? container.filters.filter(Boolean) : [];
+      if (!filters.includes(filter)) container.filters = [...filters, filter];
+      if (!entry.edgeFadePreviousFilterAreaCaptured) {
+        entry.edgeFadePreviousFilterArea = container.filterArea ?? null;
+        entry.edgeFadePreviousFilterAreaCaptured = true;
+      }
+      const screen = canvas?.app?.renderer?.screen ?? null;
+      if (screen) container.filterArea = screen;
+      entry.edgeFadeMaskEntry = maskEntry;
+      return true;
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+      this._destroyRegionSurfaceEdgeFadeFilter(entry);
+      return false;
+    }
+  }
+
+  /**
+   * Advance every active and fading persistent particle background.
+   *
+   * @returns {void}
+   */
+  _particleTrailTokenSnapshot(token) {
+    if (!token || token.destroyed || token.isPreview) return null;
+    if (token?.document?.parent !== canvas?.scene) return null;
+    if (token?.document?.hidden || token.visible === false) return null;
+
+    const id = String(token.id ?? token?.document?.id ?? "").trim();
+    if (!id) return null;
+
+    let center = null;
+    try {
+      center = token.center ?? token.bounds?.center ?? null;
+    } catch (_err) {}
+
+    const grid = Math.max(1, Number(canvas?.dimensions?.size) || 100);
+    const width = Math.max(1, Number(token.w ?? token.bounds?.width ?? token?.document?.width * grid) || grid);
+    const height = Math.max(1, Number(token.h ?? token.bounds?.height ?? token?.document?.height * grid) || grid);
+    const x = Number(center?.x ?? Number(token.x) + width / 2);
+    const y = Number(center?.y ?? Number(token.y) + height / 2);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+
+    let levelIds = [];
+    try {
+      levelIds = Array.from(getDocumentAssignedLevelIds(token?.document ?? null, canvas?.scene ?? null))
+        .map((levelId) => String(levelId ?? "").trim())
+        .filter(Boolean)
+        .sort()
+        .slice(0, 32);
+    } catch (_err) {
+      levelIds = [];
+    }
+
+    return {
+      id,
+      x,
+      y,
+      width,
+      height,
+      elevation: particleTrailTokenElevationValue(token),
+      sceneId: String(canvas?.scene?.id ?? ""),
+      levelIds,
+    };
+  }
+
+  _particleTrailTokenMatchesRuntime(token, fx) {
+    const rawSelection = normalizeStoredParticleOptionValue(
+      fx?.__fxmTrailLevelIds ?? fx?.__fxmLevels ?? fx?.__fxmOptions?.levels,
+    );
+    const selectedLevels = getSelectedSceneLevelIds(rawSelection, canvas?.scene ?? null);
+    if (!selectedLevels?.size) return true;
+
+    const tokenLevels = getDocumentAssignedLevelIds(token?.document ?? null, canvas?.scene ?? null);
+    if (!tokenLevels?.size) return true;
+    for (const levelId of tokenLevels) {
+      if (selectedLevels.has(levelId)) return true;
+    }
+    return false;
+  }
+
+  _particleTrailEventMatchesRuntime(event, fx) {
+    const rawSelection = normalizeStoredParticleOptionValue(
+      fx?.__fxmTrailLevelIds ?? fx?.__fxmLevels ?? fx?.__fxmOptions?.levels,
+    );
+    const selectedLevels = getSelectedSceneLevelIds(rawSelection, canvas?.scene ?? null);
+    if (!selectedLevels?.size) return true;
+
+    const eventLevels = Array.isArray(event?.levelIds) ? event.levelIds : [];
+    if (!eventLevels.length) return true;
+    return eventLevels.some((levelId) => selectedLevels.has(String(levelId)));
+  }
+
+  _particleTrailHistorySignature({ surface, fx } = {}) {
+    const background = fx?.__fxmBackgroundState?.background ?? {};
+    const movement = fx?.__fxmBackgroundState?.backgroundMovement ?? {};
+    return [
+      surface?.type ?? "",
+      surface?.uid ?? fx?.__fxmBackgroundUid ?? "",
+      background.profile ?? 0,
+      background.revision ?? 0,
+      background.startedAt ?? "",
+      background.patternSeed ?? "",
+      movement.profile ?? 0,
+      movement.revision ?? 0,
+      movement.startedAt ?? "",
+    ].join(":");
+  }
+
+  _particleTrailHistoryState(record) {
+    const store = record?.surface?.trailStore ?? null;
+    if (!store) return null;
+    const signature = this._particleTrailHistorySignature(record);
+    let state = this._particleTrailHistoryStoreStates.get(store) ?? null;
+    if (!state || state.signature !== signature) {
+      state = { signature, initialized: false, applied: new Set() };
+      this._particleTrailHistoryStoreStates.set(store, state);
+    }
+    return state;
+  }
+
+  _particleTrailMovementEpoch({ fx } = {}) {
+    const movementStartedAt = Number(fx?.__fxmBackgroundState?.backgroundMovement?.startedAt);
+    if (Number.isFinite(movementStartedAt) && movementStartedAt > 0) return movementStartedAt;
+    const backgroundStartedAt = Number(fx?.__fxmBackgroundState?.background?.startedAt);
+    if (Number.isFinite(backgroundStartedAt) && backgroundStartedAt > 0) return backgroundStartedAt;
+    return 0;
+  }
+
+  _rememberParticleTrailEvent(rawEvent) {
+    const event = normalizeParticleBackgroundMovementEvent(rawEvent);
+    if (!event) return null;
+    const previous = this._particleTrailSessionEvents.get(event.eventId) ?? null;
+    this._particleTrailSessionEvents.set(event.eventId, event);
+    if (!previous) this._particleTrailSessionRevision += 1;
+
+    if (this._particleTrailSessionEvents.size > PARTICLE_BACKGROUND_MOVEMENT_HISTORY_MAX_EVENTS) {
+      const ordered = Array.from(this._particleTrailSessionEvents.values()).sort(
+        (a, b) => a.occurredAt - b.occurredAt || a.eventId.localeCompare(b.eventId),
+      );
+      const removeCount = ordered.length - PARTICLE_BACKGROUND_MOVEMENT_HISTORY_MAX_EVENTS;
+      for (let index = 0; index < removeCount; index++) {
+        this._particleTrailSessionEvents.delete(ordered[index].eventId);
+      }
+    }
+    return event;
+  }
+
+  _particleTrailMovementHistoryEvents(persistedOverride = null) {
+    const scene = canvas?.scene ?? null;
+    if (!scene) return Array.from(this._particleTrailSessionEvents.values());
+
+    const persisted = persistedOverride ?? readParticleBackgroundMovementHistory(scene);
+    if (
+      persisted.source !== this._particleTrailPersistedHistorySource ||
+      persisted.revision !== this._particleTrailPersistedHistoryRevision
+    ) {
+      this._particleTrailPersistedHistorySource = persisted.source;
+      this._particleTrailPersistedHistoryRevision = persisted.revision;
+      this._particleTrailPersistedHistoryEvents = persisted.events;
+    }
+
+    const merged = new Map();
+    for (const event of this._particleTrailSessionEvents.values()) merged.set(event.eventId, event);
+    for (const event of this._particleTrailPersistedHistoryEvents) merged.set(event.eventId, event);
+
+    const events = Array.from(merged.values()).sort(
+      (a, b) => a.occurredAt - b.occurredAt || a.eventId.localeCompare(b.eventId),
+    );
+    if (events.length > PARTICLE_BACKGROUND_MOVEMENT_HISTORY_MAX_EVENTS) {
+      events.splice(0, events.length - PARTICLE_BACKGROUND_MOVEMENT_HISTORY_MAX_EVENTS);
+    }
+    return events;
+  }
+
+  _restoreParticleBackgroundMovementHistory(records, { now, tick } = {}) {
+    const trackingRecords = this._particleTrailTrackingRecords(records);
+    if (!trackingRecords.length) return;
+
+    const scene = canvas?.scene ?? null;
+    const persisted = scene ? readParticleBackgroundMovementHistory(scene) : null;
+    const states = trackingRecords.map((record) => this._particleTrailHistoryState(record));
+    const restoreKey = [
+      trackingRecords.map((record) => this._particleTrailHistorySignature(record)).join("|"),
+      this._particleTrailSessionRevision,
+      persisted?.revision ?? -1,
+      persisted?.updatedAt ?? 0,
+      persisted?.events?.length ?? 0,
+    ].join("::");
+    if (restoreKey === this._particleTrailLastHistoryRestoreKey && states.every((state) => state?.initialized)) return;
+
+    const wallNow = Number.isFinite(Number(now)) ? Number(now) : particleBackgroundNow();
+    const currentTick = Number.isFinite(Number(tick)) ? Number(tick) : particleBackgroundMonotonicNow();
+    const events = this._particleTrailMovementHistoryEvents(persisted);
+    let flushNeeded = false;
+
+    for (let index = 0; index < trackingRecords.length; index++) {
+      const record = trackingRecords[index];
+      const { surface, fx } = record;
+      const state = states[index];
+      if (!state) continue;
+
+      const shouldRestoreHistory =
+        typeof surface?.shouldRestoreTokenTrailHistory === "function" ? surface.shouldRestoreTokenTrailHistory() : true;
+      if (!shouldRestoreHistory) {
+        state.initialized = true;
+        state.applied = new Set(events.map((event) => event.eventId));
+        continue;
+      }
+
+      const epoch = this._particleTrailMovementEpoch(record);
+      const activitySeconds =
+        typeof surface?._trailActivityDurationSeconds === "function"
+          ? Number(surface._trailActivityDurationSeconds())
+          : Infinity;
+      const historyWindowMs = Number.isFinite(activitySeconds)
+        ? Math.max(250, activitySeconds * 1000 + PARTICLE_TRAIL_HISTORY_CLOCK_SKEW_MS)
+        : Infinity;
+      const relevant = events.filter(
+        (event) =>
+          event.occurredAt + PARTICLE_TRAIL_HISTORY_CLOCK_SKEW_MS >= epoch &&
+          (!Number.isFinite(historyWindowMs) || wallNow - event.occurredAt <= historyWindowMs) &&
+          this._particleTrailEventMatchesRuntime(event, fx) &&
+          particleTrailTokenWithinElevationThreshold({ elevation: event.tokenElevation, levelIds: event.levelIds }, fx),
+      );
+      const unseen = relevant.filter((event) => !state.applied.has(event.eventId));
+
+      if (surface?.type === "scatter") {
+        if (!state.initialized || unseen.length) {
+          try {
+            surface.replayTokenTrailHistory?.(relevant, { now: wallNow, tick: currentTick });
+            state.applied = new Set(relevant.map((event) => event.eventId));
+            state.initialized = true;
+            flushNeeded = true;
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
+        }
+        continue;
+      }
+
+      for (const event of unseen) {
+        const ageMs = Math.max(0, wallNow - event.occurredAt);
+        if (surface?.trailRefillEnabled) {
+          const expirySeconds = Number.isFinite(activitySeconds)
+            ? activitySeconds
+            : Math.max(1, Number(surface.durationSeconds) || 1);
+          if (ageMs >= Math.max(0.25, expirySeconds) * 1000) {
+            state.applied.add(event.eventId);
+            continue;
+          }
+        }
+
+        try {
+          surface.stampTokenTrail?.({
+            from: event.from,
+            to: event.to,
+            tokenWidth: event.tokenWidth,
+            tokenHeight: event.tokenHeight,
+            tick: currentTick,
+            ageMs,
+            disturbanceSeed: event.seed,
+          });
+          state.applied.add(event.eventId);
+          flushNeeded = true;
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+      }
+      state.initialized = true;
+    }
+
+    this._particleTrailLastHistoryRestoreKey = restoreKey;
+    if (flushNeeded) this._flushParticleTrailSurfaces(trackingRecords);
+  }
+
+  _particleTrailRememberActiveToken(
+    tokenOrId,
+    tick = particleBackgroundMonotonicNow(),
+    ttlMs = PARTICLE_TRAIL_ACTIVE_CANDIDATE_TTL_MS,
+  ) {
+    const tokenId = String(tokenOrId?.id ?? tokenOrId?.document?.id ?? tokenOrId ?? "").trim();
+    if (!tokenId) return;
+    const currentTick = Number.isFinite(Number(tick)) ? Number(tick) : particleBackgroundMonotonicNow();
+    const expiresAt = currentTick + Math.max(100, Number(ttlMs) || PARTICLE_TRAIL_ACTIVE_CANDIDATE_TTL_MS);
+    const previous = Number(this._particleTrailActiveTokenIds.get(tokenId)) || 0;
+    this._particleTrailActiveTokenIds.set(tokenId, Math.max(previous, expiresAt));
+  }
+
+  /**
+   * Record which connected User initiated a Token document movement. The
+   * `updateToken` hook fires on every client with the requesting user id, so
+   * this creates a shared authority decision without any extra transport.
+   *
+   * @param {TokenDocument|null|undefined} tokenDocument
+   * @param {{changed?:object,userId?:string|null}} [context]
+   * @returns {void}
+   */
+  noteParticleTrailTokenMovement(tokenDocument, { changed = {}, userId = null } = {}) {
+    if (!tokenDocument || tokenDocument.parent !== canvas?.scene) return;
+    const tokenId = String(tokenDocument.id ?? "").trim();
+    const authorityUserId = String(userId ?? "").trim();
+    if (!tokenId || !authorityUserId) return;
+
+    const movementKeys = ["x", "y", "width", "height", "elevation"];
+    if (
+      changed &&
+      typeof changed === "object" &&
+      !movementKeys.some((key) => Object.prototype.hasOwnProperty.call(changed, key))
+    )
+      return;
+
+    const tick = particleBackgroundMonotonicNow();
+    this._particleTrailTokenAuthorities.set(tokenId, {
+      userId: authorityUserId,
+      expiresAt: tick + PARTICLE_TRAIL_AUTHORITY_TTL_MS,
+    });
+    this._particleTrailDirtyTokenIds.add(tokenId);
+    if (["x", "y"].some((key) => Object.prototype.hasOwnProperty.call(changed, key))) {
+      this._particleTrailMovementDirtyTokenIds.add(tokenId);
+    }
+    this._particleTrailRememberActiveToken(tokenId, tick, PARTICLE_TRAIL_ACTIVE_CANDIDATE_TTL_MS);
+    this._particleTrailForceNextSample = true;
+    this._particleTrailIdleSamples = 0;
+  }
+
+  /**
+   * Keep a recently controlled/uncontrolled Token in the trail sampling set for
+   * a short grace window. Foundry can drop a dragged Token from the controlled
+   * and moving-token collections before the last visual movement sample lands,
+   * so this preserves trail continuity through user deselection.
+   *
+   * @param {Token|TokenDocument|null|undefined} tokenOrDocument
+   * @returns {void}
+   */
+  noteParticleTrailTokenControl(tokenOrDocument) {
+    const tokenId = String(tokenOrDocument?.id ?? tokenOrDocument?.document?.id ?? "").trim();
+    if (!tokenId) return;
+
+    const tick = particleBackgroundMonotonicNow();
+    this._particleTrailDirtyTokenIds.add(tokenId);
+    this._particleTrailRememberActiveToken(tokenId, tick, PARTICLE_TRAIL_ACTIVE_CANDIDATE_TTL_MS * 1.5);
+
+    const currentUserId = String(game?.user?.id ?? "").trim();
+    if (currentUserId) {
+      this._particleTrailTokenAuthorities.set(tokenId, {
+        userId: currentUserId,
+        expiresAt: tick + PARTICLE_TRAIL_AUTHORITY_TTL_MS,
+      });
+    }
+
+    this._particleTrailForceNextSample = true;
+    this._particleTrailIdleSamples = 0;
+  }
+
+  /**
+   * Forget transient movement state for a deleted Token.
+   *
+   * @param {TokenDocument|string|null|undefined} tokenOrId
+   * @returns {void}
+   */
+  forgetParticleTrailToken(tokenOrId) {
+    const tokenId = String(tokenOrId?.id ?? tokenOrId ?? "").trim();
+    if (!tokenId) return;
+    this._particleTrailTokenAuthorities.delete(tokenId);
+    this._particleTrailDirtyTokenIds.delete(tokenId);
+    this._particleTrailMovementDirtyTokenIds.delete(tokenId);
+    this._particleTrailActiveTokenIds.delete(tokenId);
+    this._particleTrailTokenPositions.delete(tokenId);
+    this._particleTrailStampedTokenEnds.delete(tokenId);
+  }
+
+  _particleTrailFallbackAuthorityUserId(token, participants = null) {
+    const sceneId = String(canvas?.scene?.id ?? "");
+    const users = Array.isArray(participants) ? participants : getParticleBackgroundQueryParticipants(sceneId);
+    const permitted = users.filter((user) => particleTrailUserCanUpdateToken(user, token?.document));
+    permitted.sort((a, b) => {
+      const gmOrder = Number(!!b?.isActiveGM) - Number(!!a?.isActiveGM);
+      return gmOrder || String(a?.id ?? "").localeCompare(String(b?.id ?? ""));
+    });
+    return String(permitted[0]?.id ?? "");
+  }
+
+  _particleTrailUserMovesToken(user, token) {
+    const tokenId = String(token?.id ?? token?.document?.id ?? "");
+    if (!user || !tokenId) return false;
+
+    try {
+      const movingTokens = user.movingTokens ?? null;
+      if (!movingTokens) return false;
+      if (movingTokens.has?.(token?.document)) return true;
+      for (const document of movingTokens) {
+        if (String(document?.id ?? "") === tokenId) return true;
+      }
+    } catch (_err) {}
+    return false;
+  }
+
+  _particleTrailIsLocalAuthority(token, tick) {
+    if (!particleBackgroundQueriesAvailable()) return true;
+
+    const currentUserId = String(game?.user?.id ?? "");
+    const tokenId = String(token?.id ?? token?.document?.id ?? "");
+    const sceneId = String(canvas?.scene?.id ?? "");
+    if (!currentUserId || !tokenId || !sceneId) return false;
+
+    const participants = getParticleBackgroundQueryParticipants(sceneId);
+    if (participants.length <= 1) return true;
+
+    const permitted = participants.filter((user) => particleTrailUserCanUpdateToken(user, token?.document));
+    if (!permitted.length) return true;
+
+    const movingUsers = permitted.filter((user) => this._particleTrailUserMovesToken(user, token));
+    movingUsers.sort((a, b) => String(a?.id ?? "").localeCompare(String(b?.id ?? "")));
+    if (movingUsers.length) return String(movingUsers[0]?.id ?? "") === currentUserId;
+
+    const authority = this._particleTrailTokenAuthorities.get(tokenId) ?? null;
+    if (authority) {
+      if (Number(authority.expiresAt) >= Number(tick)) {
+        const authorityId = String(authority.userId ?? "");
+        if (permitted.some((user) => String(user?.id ?? "") === authorityId)) {
+          return authorityId === currentUserId;
+        }
+      } else {
+        this._particleTrailTokenAuthorities.delete(tokenId);
+      }
+    }
+
+    const fallback = this._particleTrailFallbackAuthorityUserId(token, permitted);
+    return fallback ? fallback === currentUserId : true;
+  }
+
+  _particleTrailAdjustedMovementEndpoints(previous, current, sampleTick) {
+    const from = { x: Number(previous?.x), y: Number(previous?.y) };
+    const to = { x: Number(current?.x), y: Number(current?.y) };
+    if (![from.x, from.y, to.x, to.y].every(Number.isFinite)) return { from, to };
+
+    const tokenId = String(current?.id ?? "").trim();
+    const sceneId = String(current?.sceneId ?? canvas?.scene?.id ?? "").trim();
+    const last = this._particleTrailStampedTokenEnds.get(tokenId) ?? null;
+    if (!tokenId || !last || String(last.sceneId ?? "") !== sceneId) return { from, to };
+
+    const tick = Number.isFinite(Number(sampleTick)) ? Number(sampleTick) : particleBackgroundMonotonicNow();
+    if (tick - (Number(last.tick) || 0) > PARTICLE_TRAIL_ACTIVE_CANDIDATE_TTL_MS * 3) return { from, to };
+
+    const grid = Math.max(1, Number(canvas?.dimensions?.size) || 100);
+    const footprint = Math.max(grid, Number(current?.width) || grid, Number(current?.height) || grid);
+    const fromGap = Math.hypot(from.x - last.x, from.y - last.y);
+    const toGap = Math.hypot(to.x - last.x, to.y - last.y);
+    const segmentLength = Math.hypot(to.x - from.x, to.y - from.y);
+    const snapDistance = Math.max(grid * 0.22, footprint * 0.18);
+    const nearLastEnd = Math.max(snapDistance * 2.6, Math.min(footprint * 1.2, segmentLength * 0.55));
+
+    if (fromGap > snapDistance && toGap <= nearLastEnd) {
+      return { from: { x: last.x, y: last.y }, to };
+    }
+
+    return { from, to };
+  }
+
+  _particleTrailRememberStampedTokenEnd(event, tick, ageMs = 0) {
+    const tokenId = String(event?.tokenId ?? "").trim();
+    const to = event?.to ?? null;
+    if (!tokenId || !to) return;
+
+    const x = Number(to.x);
+    const y = Number(to.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+
+    const currentTick = Number.isFinite(Number(tick)) ? Number(tick) : particleBackgroundMonotonicNow();
+    const agedTick = currentTick - Math.max(0, Number(ageMs) || 0);
+    this._particleTrailStampedTokenEnds.set(tokenId, {
+      x,
+      y,
+      tick: Math.max(0, agedTick),
+      sceneId: String(canvas?.scene?.id ?? event?.sceneId ?? ""),
+    });
+  }
+
+  _createParticleTrailDisturbance(previous, current, sampleTick) {
+    this._particleTrailQuerySequence = (this._particleTrailQuerySequence + 1) >>> 0;
+    const sceneId = String(canvas?.scene?.id ?? "");
+    const senderUserId = String(game?.user?.id ?? "");
+    const eventId = [
+      sceneId,
+      senderUserId,
+      this._particleTrailQuerySessionId,
+      this._particleTrailQuerySequence.toString(36),
+    ].join(":");
+    const endpoints = this._particleTrailAdjustedMovementEndpoints(previous, current, sampleTick);
+
+    return {
+      eventId,
+      tokenId: String(current?.id ?? ""),
+      from: endpoints.from,
+      to: endpoints.to,
+      tokenWidth: (Number(previous.width) + Number(current.width)) / 2,
+      tokenHeight: (Number(previous.height) + Number(current.height)) / 2,
+      tokenElevation: particleTrailFiniteNumber(current?.elevation, particleTrailTokenElevationValue(current)),
+      sampleTick: Number(sampleTick),
+      occurredAt: particleBackgroundNow(),
+      seed: hashParticleTrailString32(eventId),
+      levelIds: Array.isArray(current?.levelIds) ? current.levelIds.slice(0, 32) : [],
+    };
+  }
+
+  _applyParticleTrailDisturbance(records, token, disturbance, tick, { ageMs = 0, remember = true } = {}) {
+    const normalized = normalizeParticleBackgroundMovementEvent(disturbance) ?? disturbance;
+    if (remember) this._rememberParticleTrailEvent(normalized);
+    let matched = false;
+    let stamped = false;
+
+    for (const record of records) {
+      const { surface, fx } = record;
+      const hasEventLevels = Array.isArray(normalized?.levelIds) && normalized.levelIds.length > 0;
+      if (hasEventLevels) {
+        if (!this._particleTrailEventMatchesRuntime(normalized, fx)) continue;
+      } else if (token && !this._particleTrailTokenMatchesRuntime(token, fx)) continue;
+      const thresholdSource = {
+        elevation: Number.isFinite(Number(normalized?.tokenElevation))
+          ? Number(normalized.tokenElevation)
+          : particleTrailTokenElevationValue(token),
+        levelIds: Array.isArray(normalized?.levelIds) ? normalized.levelIds : [],
+      };
+      if (!particleTrailTokenWithinElevationThreshold(thresholdSource, fx)) continue;
+
+      matched = true;
+      const historyState = this._particleTrailHistoryState(record);
+      if (normalized?.eventId && historyState?.applied.has(normalized.eventId)) continue;
+      try {
+        const result = surface.stampTokenTrail?.({
+          from: normalized.from,
+          to: normalized.to,
+          tokenWidth: normalized.tokenWidth,
+          tokenHeight: normalized.tokenHeight,
+          tick,
+          ageMs,
+          disturbanceSeed: normalized.seed,
+        });
+        stamped ||= !!result;
+        if (normalized?.eventId) historyState?.applied.add(normalized.eventId);
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    }
+
+    if (stamped) this._particleTrailRememberStampedTokenEnd(normalized, tick, ageMs);
+    return { matched, stamped };
+  }
+
+  _flushParticleTrailSurfaces(records) {
+    const seen = new Set();
+    for (const { surface } of records) {
+      if (!surface || seen.has(surface)) continue;
+      seen.add(surface);
+      try {
+        surface.flushTrails?.();
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    }
+  }
+
+  _queueParticleTrailDisturbance(disturbance) {
+    if (!disturbance) return;
+    this._particleTrailOutboundSegments.push(disturbance);
+    if (this._particleTrailOutboundSegments.length > PARTICLE_TRAIL_QUERY_MAX_PENDING_SEGMENTS) {
+      this._particleTrailOutboundSegments.splice(
+        0,
+        this._particleTrailOutboundSegments.length - PARTICLE_TRAIL_QUERY_MAX_PENDING_SEGMENTS,
+      );
+    }
+  }
+
+  _queueParticleTrailQueryForUser(user, segments) {
+    const userId = String(user?.id ?? "");
+    const sceneId = String(canvas?.scene?.id ?? "");
+    if (!userId || !sceneId || !segments.length) return;
+
+    let state = this._particleTrailQueryUserStates.get(userId) ?? null;
+    if (!state) {
+      state = { user, sceneId, inFlight: false, pending: [] };
+      this._particleTrailQueryUserStates.set(userId, state);
+    }
+
+    state.user = user;
+    if (state.sceneId !== sceneId) {
+      state.sceneId = sceneId;
+      state.pending.length = 0;
+    }
+    state.pending.push(...segments);
+    if (state.pending.length > PARTICLE_TRAIL_QUERY_MAX_PENDING_SEGMENTS) {
+      state.pending.splice(0, state.pending.length - PARTICLE_TRAIL_QUERY_MAX_PENDING_SEGMENTS);
+    }
+
+    this._sendNextParticleTrailQuery(userId, state);
+  }
+
+  _sendNextParticleTrailQuery(userId, state) {
+    if (!state || state.inFlight || !state.pending.length) return;
+    if (this._particleTrailQueryUserStates.get(userId) !== state) return;
+    if (!particleBackgroundQueriesAvailable() || !state.user?.active) {
+      state.pending.length = 0;
+      this._particleTrailQueryUserStates.delete(userId);
+      return;
+    }
+
+    const sceneId = String(canvas?.scene?.id ?? "");
+    if (!sceneId || state.sceneId !== sceneId) {
+      state.pending.length = 0;
+      return;
+    }
+
+    const rawSegments = state.pending.splice(0, PARTICLE_TRAIL_QUERY_MAX_SEGMENTS);
+    const nowTick = particleBackgroundMonotonicNow();
+    const payload = {
+      version: PARTICLE_BACKGROUND_DISTURBANCE_QUERY_VERSION,
+      sceneId,
+      senderUserId: String(game?.user?.id ?? ""),
+      issuedAt: particleBackgroundNow(),
+      segments: rawSegments.map((segment) => ({
+        eventId: segment.eventId,
+        tokenId: segment.tokenId,
+        from: segment.from,
+        to: segment.to,
+        tokenWidth: segment.tokenWidth,
+        tokenHeight: segment.tokenHeight,
+        tokenElevation: segment.tokenElevation,
+        seed: segment.seed,
+        occurredAt: segment.occurredAt,
+        levelIds: segment.levelIds,
+        ageMs: particleTrailClamp(nowTick - Number(segment.sampleTick), 0, PARTICLE_TRAIL_QUERY_MAX_EVENT_AGE_MS, 0),
+      })),
+    };
+
+    state.inFlight = true;
+    void Promise.resolve(queryParticleBackgroundDisturbances(state.user, payload))
+      .catch((err) => logger.debug("FXMaster: particle-background query failed", err))
+      .finally(() => {
+        if (this._particleTrailQueryUserStates.get(userId) !== state) return;
+        state.inFlight = false;
+        if (!state.user?.active) {
+          state.pending.length = 0;
+          this._particleTrailQueryUserStates.delete(userId);
+          return;
+        }
+        if (state.pending.length) this._sendNextParticleTrailQuery(userId, state);
+      });
+  }
+
+  _flushParticleTrailQueryBroadcasts(tick, { force = false } = {}) {
+    if (!this._particleTrailOutboundSegments.length) return;
+
+    const sampleTick = Number.isFinite(Number(tick)) ? Number(tick) : particleBackgroundMonotonicNow();
+    if (!force && sampleTick - this._particleTrailLastQueryBatchTick < PARTICLE_TRAIL_QUERY_BATCH_INTERVAL_MS) return;
+    this._particleTrailLastQueryBatchTick = sampleTick;
+
+    const sceneId = String(canvas?.scene?.id ?? "");
+    if (!sceneId) {
+      this._particleTrailOutboundSegments.length = 0;
+      return;
+    }
+
+    const segments = this._particleTrailOutboundSegments.splice(0, PARTICLE_TRAIL_QUERY_MAX_PENDING_SEGMENTS);
+    const issuedAt = particleBackgroundNow();
+    const persistencePayload = {
+      version: 1,
+      sceneId,
+      senderUserId: String(game?.user?.id ?? ""),
+      issuedAt,
+      segments: segments.map((segment) => ({
+        eventId: segment.eventId,
+        tokenId: segment.tokenId,
+        from: segment.from,
+        to: segment.to,
+        tokenWidth: segment.tokenWidth,
+        tokenHeight: segment.tokenHeight,
+        tokenElevation: segment.tokenElevation,
+        seed: segment.seed,
+        occurredAt: segment.occurredAt,
+        levelIds: segment.levelIds,
+      })),
+    };
+    void Promise.resolve(persistParticleBackgroundDisturbances(persistencePayload)).catch((err) =>
+      logger.debug("FXMaster: particle-background persistence query failed", err),
+    );
+
+    if (!particleBackgroundQueriesAvailable()) return;
+    const recipients = getParticleBackgroundQueryRecipients(sceneId);
+    if (!recipients.length) return;
+    for (const user of recipients) this._queueParticleTrailQueryForUser(user, segments);
+  }
+
+  _pruneParticleTrailRecentQueryEvents(tick) {
+    const cutoff = Number(tick) - PARTICLE_TRAIL_QUERY_DEDUPE_TTL_MS;
+    for (const [eventId, observedAt] of this._particleTrailRecentQueryEvents) {
+      if (Number(observedAt) >= cutoff) continue;
+      this._particleTrailRecentQueryEvents.delete(eventId);
+    }
+    while (this._particleTrailRecentQueryEvents.size > PARTICLE_TRAIL_QUERY_MAX_RECENT_EVENTS) {
+      const oldest = this._particleTrailRecentQueryEvents.keys().next().value;
+      if (oldest === undefined) break;
+      this._particleTrailRecentQueryEvents.delete(oldest);
+    }
+  }
+
+  /**
+   * Apply a batch received through Foundry's User query system.
+   *
+   * @param {object} queryData
+   * @returns {{accepted:number}}
+   */
+  receiveParticleBackgroundDisturbanceQuery(queryData = {}) {
+    if (Number(queryData?.version) !== PARTICLE_BACKGROUND_DISTURBANCE_QUERY_VERSION) {
+      return { accepted: 0, reason: "unsupported-version" };
+    }
+
+    const sceneId = String(queryData?.sceneId ?? "");
+    if (!sceneId || sceneId !== String(canvas?.scene?.id ?? "")) return { accepted: 0 };
+
+    const senderUserId = String(queryData?.senderUserId ?? "").trim();
+    if (!senderUserId || senderUserId === String(game?.user?.id ?? "")) return { accepted: 0 };
+
+    let sender = null;
+    try {
+      sender = game?.users?.get?.(senderUserId) ?? null;
+      if (!sender) {
+        const users = Array.isArray(game?.users?.contents) ? game.users.contents : Array.from(game?.users ?? []);
+        sender = users.find((user) => String(user?.id ?? "") === senderUserId) ?? null;
+      }
+    } catch (_err) {
+      sender = null;
+    }
+    if (!sender?.active) return { accepted: 0 };
+    const senderViewedScene = String(sender.viewedScene ?? "");
+    if (senderViewedScene && senderViewedScene !== sceneId) return { accepted: 0 };
+
+    const rawSegments = Array.isArray(queryData?.segments)
+      ? queryData.segments.slice(0, PARTICLE_TRAIL_QUERY_MAX_INBOUND_SEGMENTS)
+      : [];
+    if (!rawSegments.length) return { accepted: 0 };
+
+    const records = this._collectParticleBackgroundSurfaceRecords();
+    const trackingRecords = this._particleTrailTrackingRecords(records);
+    if (!trackingRecords.length) return { accepted: 0 };
+
+    const receiptTick = particleBackgroundMonotonicNow();
+    const receiptWallTime = particleBackgroundNow();
+    const issuedAt = Number(queryData?.issuedAt);
+    const transportAgeMs = Number.isFinite(issuedAt)
+      ? particleTrailClamp(receiptWallTime - issuedAt, 0, PARTICLE_TRAIL_QUERY_MAX_EVENT_AGE_MS, 0)
+      : 0;
+    this._pruneParticleTrailRecentQueryEvents(receiptTick);
+    const grid = Math.max(1, Number(canvas?.dimensions?.size) || 100);
+    const minDistance = Math.max(0.5, grid * PARTICLE_TRAIL_MIN_DISTANCE_GRID);
+    let accepted = 0;
+
+    for (const raw of rawSegments) {
+      const eventId = String(raw?.eventId ?? "").slice(0, 192);
+      const tokenId = String(raw?.tokenId ?? "").trim();
+      if (!eventId || !tokenId || this._particleTrailRecentQueryEvents.has(eventId)) continue;
+
+      const token = canvas?.tokens?.get?.(tokenId) ?? null;
+      const snapshot = this._particleTrailTokenSnapshot(token);
+      if (!snapshot || !particleTrailUserCanUpdateToken(sender, token?.document)) continue;
+
+      const from = particleTrailPoint(raw?.from);
+      const to = particleTrailPoint(raw?.to);
+      if (!from || !to) continue;
+
+      const distance = Math.hypot(to.x - from.x, to.y - from.y);
+      const tokenWidth = particleTrailClamp(raw?.tokenWidth, grid * 0.1, grid * 20, snapshot.width);
+      const tokenHeight = particleTrailClamp(raw?.tokenHeight, grid * 0.1, grid * 20, snapshot.height);
+      const teleportThreshold = Math.max(
+        grid * PARTICLE_TRAIL_TELEPORT_GRID_SPACES,
+        Math.max(tokenWidth, tokenHeight) * PARTICLE_TRAIL_TELEPORT_GRID_SPACES,
+      );
+      if (distance < minDistance || distance > teleportThreshold) continue;
+
+      const ageMs = particleTrailClamp(
+        particleTrailFiniteNumber(raw?.ageMs, 0) + transportAgeMs,
+        0,
+        PARTICLE_TRAIL_QUERY_MAX_EVENT_AGE_MS,
+        0,
+      );
+      const rawOccurredAt = Number(raw?.occurredAt);
+      const occurredAt = Number.isFinite(rawOccurredAt)
+        ? particleTrailClamp(
+            rawOccurredAt,
+            receiptWallTime - PARTICLE_TRAIL_QUERY_MAX_EVENT_AGE_MS,
+            receiptWallTime + PARTICLE_TRAIL_HISTORY_CLOCK_SKEW_MS,
+            receiptWallTime - ageMs,
+          )
+        : receiptWallTime - ageMs;
+      const suppliedSeed = Number(raw?.seed);
+      const disturbance = {
+        eventId,
+        tokenId,
+        from,
+        to,
+        tokenWidth,
+        tokenHeight,
+        tokenElevation: snapshot.elevation,
+        occurredAt,
+        seed: Number.isFinite(suppliedSeed) ? Math.trunc(suppliedSeed) >>> 0 : hashParticleTrailString32(eventId),
+        levelIds: Array.isArray(raw?.levelIds)
+          ? raw.levelIds
+              .map((levelId) => String(levelId ?? "").trim())
+              .filter(Boolean)
+              .sort()
+              .slice(0, 32)
+          : snapshot.levelIds,
+      };
+
+      const result = this._applyParticleTrailDisturbance(trackingRecords, token, disturbance, receiptTick, { ageMs });
+      if (!result.matched) continue;
+
+      this._particleTrailRecentQueryEvents.set(eventId, receiptTick);
+      this._particleTrailTokenAuthorities.set(tokenId, {
+        userId: senderUserId,
+        expiresAt: receiptTick + PARTICLE_TRAIL_AUTHORITY_TTL_MS,
+      });
+      accepted += 1;
+    }
+
+    if (accepted) this._flushParticleTrailSurfaces(trackingRecords);
+    return { accepted };
+  }
+
+  _particleTrailTokenIsInMovingCollection(tokenId) {
+    const id = String(tokenId ?? "").trim();
+    if (!id) return false;
+
+    const hasMovingToken = (movingTokens) => {
+      if (!movingTokens) return false;
+      try {
+        for (const entry of movingTokens) {
+          const entryId = String(entry?.id ?? entry?.document?.id ?? entry ?? "").trim();
+          if (entryId === id) return true;
+        }
+      } catch (_err) {}
+      return false;
+    };
+
+    try {
+      const users = Array.isArray(game?.users?.contents) ? game.users.contents : Array.from(game?.users ?? []);
+      for (const user of users) {
+        if (hasMovingToken(user?.movingTokens)) return true;
+      }
+    } catch (_err) {
+      if (hasMovingToken(game?.user?.movingTokens)) return true;
+    }
+
+    return false;
+  }
+
+  _particleTrailBaselineCanStamp(previous, current, token, tick, movementDirtyTokenIds) {
+    if (!previous || previous.sceneId !== current?.sceneId) return false;
+    const tokenId = String(current?.id ?? "").trim();
+    if (!tokenId) return false;
+    if (movementDirtyTokenIds?.has?.(tokenId)) return true;
+    if (this._particleTrailTokenIsInMovingCollection(tokenId)) return true;
+
+    const sampledAt = Number(previous.sampledAt ?? previous.sampleTick ?? previous.seenAt ?? 0);
+    if (!Number.isFinite(sampledAt) || sampledAt <= 0) return false;
+    if (Number(tick) - sampledAt <= PARTICLE_TRAIL_STALE_BASELINE_MS) return true;
+
+    try {
+      if (token?.controlled && Number(tick) - sampledAt <= PARTICLE_TRAIL_ACTIVE_CANDIDATE_TTL_MS) return true;
+    } catch (_err) {}
+
+    return false;
+  }
+
+  _particleTrailTrackingRecords(records) {
+    const trackingRecords = [];
+    const seenStores = new Set();
+    for (const record of records) {
+      const surface = record?.surface ?? null;
+      const store = surface?.trailStore ?? null;
+      if (!surface?.trailsEnabled || !store?.enabled || surface?._destroyed || seenStores.has(store)) continue;
+      seenStores.add(store);
+      trackingRecords.push(record);
+    }
+    return trackingRecords;
+  }
+
+  _particleTrailMovementCandidateIds(tick) {
+    if (!this._particleTrailTokenPositions.size) return null;
+
+    const currentTick = Number.isFinite(Number(tick)) ? Number(tick) : particleBackgroundMonotonicNow();
+    const ids = new Set(this._particleTrailDirtyTokenIds);
+    for (const tokenId of this._particleTrailDirtyTokenIds) {
+      this._particleTrailRememberActiveToken(tokenId, currentTick, PARTICLE_TRAIL_ACTIVE_CANDIDATE_TTL_MS);
+    }
+
+    for (const [tokenId, authority] of this._particleTrailTokenAuthorities) {
+      if (Number(authority?.expiresAt) < currentTick) this._particleTrailTokenAuthorities.delete(tokenId);
+    }
+
+    for (const [tokenId, expiresAt] of this._particleTrailActiveTokenIds) {
+      if (Number(expiresAt) < currentTick || !canvas?.tokens?.get?.(tokenId)) {
+        this._particleTrailActiveTokenIds.delete(tokenId);
+        continue;
+      }
+      ids.add(tokenId);
+    }
+
+    const rememberCandidate = (tokenOrId, ttlMs = PARTICLE_TRAIL_ACTIVE_CANDIDATE_TTL_MS) => {
+      const id = String(tokenOrId?.id ?? tokenOrId?.document?.id ?? tokenOrId ?? "").trim();
+      if (!id) return;
+      ids.add(id);
+      this._particleTrailRememberActiveToken(id, currentTick, ttlMs);
+    };
+
+    const pushMovingTokens = (movingTokens) => {
+      if (!movingTokens) return;
+      try {
+        for (const document of movingTokens) rememberCandidate(document, PARTICLE_TRAIL_ACTIVE_CANDIDATE_TTL_MS * 1.5);
+      } catch (_err) {}
+    };
+
+    try {
+      const users = Array.isArray(game?.users?.contents) ? game.users.contents : Array.from(game?.users ?? []);
+      for (const user of users) pushMovingTokens(user?.movingTokens);
+    } catch (_err) {
+      pushMovingTokens(game?.user?.movingTokens);
+    }
+
+    try {
+      for (const token of canvas?.tokens?.controlled ?? []) {
+        rememberCandidate(token, PARTICLE_TRAIL_ACTIVE_CANDIDATE_TTL_MS * 1.5);
+      }
+    } catch (_err) {}
+
+    return ids;
+  }
+
+  _updateParticleTokenTrails(records, tick = particleBackgroundMonotonicNow()) {
+    const trackingRecords = this._particleTrailTrackingRecords(records);
+    if (!trackingRecords.length) {
+      this._particleTrailTokenPositions.clear();
+      this._particleTrailDirtyTokenIds.clear();
+      this._particleTrailMovementDirtyTokenIds.clear();
+      this._particleTrailActiveTokenIds.clear();
+      this._particleTrailLastSampleTick = Number(tick) || 0;
+      this._particleTrailIdleSamples = 0;
+      this._particleTrailForceNextSample = false;
+      this._particleTrailOutboundSegments.length = 0;
+      return;
+    }
+
+    const sampleTick = Number.isFinite(Number(tick)) ? Number(tick) : particleBackgroundMonotonicNow();
+    const movementDirtyTokenIdsAtSample = new Set(this._particleTrailMovementDirtyTokenIds);
+    const idleSamples = Math.max(0, Number(this._particleTrailIdleSamples) || 0);
+    const candidateIds = this._particleTrailMovementCandidateIds(sampleTick);
+    const sampleInterval =
+      candidateIds !== null && candidateIds.size
+        ? PARTICLE_TRAIL_ACTIVE_SAMPLE_INTERVAL_MS
+        : idleSamples >= PARTICLE_TRAIL_IDLE_BACKOFF_AFTER_SAMPLES
+        ? PARTICLE_TRAIL_IDLE_SAMPLE_INTERVAL_MS
+        : PARTICLE_TRAIL_SAMPLE_INTERVAL_MS;
+    if (!this._particleTrailForceNextSample && sampleTick - this._particleTrailLastSampleTick < sampleInterval) {
+      this._flushParticleTrailQueryBroadcasts(sampleTick);
+      return;
+    }
+    this._particleTrailLastSampleTick = sampleTick;
+    this._particleTrailForceNextSample = false;
+
+    if (candidateIds !== null && !candidateIds.size) {
+      this._particleTrailIdleSamples = Math.min(1000, idleSamples + 1);
+      this._flushParticleTrailQueryBroadcasts(sampleTick);
+      return;
+    }
+
+    const sourceTokens =
+      candidateIds === null
+        ? Array.from(canvas?.tokens?.placeables ?? [])
+        : Array.from(candidateIds)
+            .map((tokenId) => canvas?.tokens?.get?.(tokenId) ?? null)
+            .filter(Boolean);
+    if (candidateIds !== null) {
+      for (const tokenId of candidateIds) {
+        if (!canvas?.tokens?.get?.(tokenId)) {
+          this._particleTrailDirtyTokenIds.delete(String(tokenId));
+          this._particleTrailMovementDirtyTokenIds.delete(String(tokenId));
+        }
+      }
+    }
+
+    const nextPositions = candidateIds === null ? new Map() : new Map(this._particleTrailTokenPositions);
+    const grid = Math.max(1, Number(canvas?.dimensions?.size) || 100);
+    const minDistance = Math.max(0.5, grid * PARTICLE_TRAIL_MIN_DISTANCE_GRID);
+    let stampedLocally = false;
+    let movementObserved = false;
+
+    for (const token of sourceTokens) {
+      const current = this._particleTrailTokenSnapshot(token);
+      if (!current) {
+        const tokenId = String(token?.id ?? token?.document?.id ?? "").trim();
+        if (tokenId) {
+          this._particleTrailDirtyTokenIds.delete(tokenId);
+          this._particleTrailMovementDirtyTokenIds.delete(tokenId);
+        }
+        continue;
+      }
+
+      const previous = this._particleTrailTokenPositions.get(current.id) ?? null;
+      if (!previous || previous.sceneId !== current.sceneId) {
+        nextPositions.set(current.id, { ...current, sampledAt: sampleTick });
+        this._particleTrailDirtyTokenIds.delete(current.id);
+        this._particleTrailMovementDirtyTokenIds.delete(current.id);
+        continue;
+      }
+
+      const dx = current.x - previous.x;
+      const dy = current.y - previous.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance >= minDistance) {
+        movementObserved = true;
+        this._particleTrailRememberActiveToken(current.id, sampleTick, PARTICLE_TRAIL_ACTIVE_CANDIDATE_TTL_MS);
+      }
+      if (distance < minDistance) {
+        nextPositions.set(current.id, { ...current, x: previous.x, y: previous.y, sampledAt: sampleTick });
+        this._particleTrailDirtyTokenIds.delete(current.id);
+        this._particleTrailMovementDirtyTokenIds.delete(current.id);
+        continue;
+      }
+
+      const teleportThreshold = Math.max(
+        grid * PARTICLE_TRAIL_TELEPORT_GRID_SPACES,
+        Math.max(current.width, current.height) * PARTICLE_TRAIL_TELEPORT_GRID_SPACES,
+      );
+      const canStampFromPrevious = this._particleTrailBaselineCanStamp(
+        previous,
+        current,
+        token,
+        sampleTick,
+        movementDirtyTokenIdsAtSample,
+      );
+      if (!canStampFromPrevious) {
+        nextPositions.set(current.id, { ...current, sampledAt: sampleTick });
+        this._particleTrailDirtyTokenIds.delete(current.id);
+        this._particleTrailMovementDirtyTokenIds.delete(current.id);
+        continue;
+      }
+
+      if (distance <= teleportThreshold && this._particleTrailIsLocalAuthority(token, sampleTick)) {
+        const disturbance = this._createParticleTrailDisturbance(previous, current, sampleTick);
+        const result = this._applyParticleTrailDisturbance(trackingRecords, token, disturbance, sampleTick);
+        if (result.matched) {
+          stampedLocally ||= result.stamped;
+          this._queueParticleTrailDisturbance(disturbance);
+        }
+      }
+
+      nextPositions.set(current.id, { ...current, sampledAt: sampleTick });
+      this._particleTrailDirtyTokenIds.delete(current.id);
+      this._particleTrailMovementDirtyTokenIds.delete(current.id);
+    }
+
+    this._particleTrailTokenPositions = nextPositions;
+    if (movementObserved || stampedLocally) this._particleTrailIdleSamples = 0;
+    else this._particleTrailIdleSamples = Math.min(1000, idleSamples + 1);
+    if (stampedLocally) this._flushParticleTrailSurfaces(trackingRecords);
+    this._flushParticleTrailQueryBroadcasts(sampleTick);
+  }
+
+  _collectParticleBackgroundSurfaceRecords() {
+    const seenSurfaces = new Set();
+    const records = [];
+
+    const collect = (fx) => {
+      const surface = fx?.__fxmBackgroundSurface ?? null;
+      if (!surface || seenSurfaces.has(surface)) return;
+      seenSurfaces.add(surface);
+      records.push({ surface, fx });
+    };
+
+    for (const fx of this.particleEffects.values()) collect(fx);
+    for (const fx of this._dyingSceneEffects) collect(fx);
+    for (const entries of this.regionEffects.values()) {
+      for (const entry of entries) collect(entry?.fx ?? null);
+    }
+
+    return records;
+  }
+
+  _updateParticleBackgroundSurfaces() {
+    const records = this._collectParticleBackgroundSurfaceRecords();
+    if (!records.length) {
+      if (this._particleBackgroundRuntimeActive) {
+        this._particleBackgroundRuntimeActive = false;
+        this._updateParticleTokenTrails([], particleBackgroundMonotonicNow());
+      }
+      return;
+    }
+
+    this._particleBackgroundRuntimeActive = true;
+    const now = particleBackgroundNow();
+    const tick = particleBackgroundMonotonicNow();
+    this._restoreParticleBackgroundMovementHistory(records, { now, tick });
+    this._updateParticleTokenTrails(records, tick);
+
+    for (const { surface, fx } of records) {
+      try {
+        surface.update?.({ fx, now, tick });
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+    }
   }
 
   /**
@@ -1275,6 +3070,9 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         const container = entry?.container ?? null;
         const maskSprite = entry?.maskSprite ?? null;
 
+        this._destroyRegionSurfaceEdgeFadeFilter(entry);
+        this._destroyParticleBackgroundSurface(fx);
+
         try {
           fx?.stop?.();
         } catch (err) {
@@ -1329,6 +3127,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       logger.debug("FXMaster:", err);
     }
     this._regionMaskRTs.clear?.();
+    this._destroyAllParticleBackgroundTrailStores();
   }
 
   /**
@@ -1397,8 +3196,10 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     }
 
     const M = anyBelowTiles ? rawStageMatrix() : this._currentCameraMatrix ?? snappedStageMatrix();
+    const worldAtlasCoverage = SceneMaskManager.instance.usesWorldAtlasCoverage?.() === true;
     const cameraMoved =
-      !this._lastBelowObjectCoverageMatrix || cameraMatrixChanged(M, this._lastBelowObjectCoverageMatrix);
+      !worldAtlasCoverage &&
+      (!this._lastBelowObjectCoverageMatrix || cameraMatrixChanged(M, this._lastBelowObjectCoverageMatrix));
     let tokenMotionChanged = false;
     if (anyBelowTokens) {
       const tokenSignature = buildBelowTokenMaskCoverageSignature();
@@ -1699,6 +3500,8 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
   _destroySceneParticleContainer(fx, { destroyFx = false } = {}) {
     if (!fx) return;
 
+    this._destroyParticleBackgroundSurface(fx);
+
     const container = fx.__fxmSceneContainer ?? null;
     const maskSprite = fx.__fxmSceneMaskSprite ?? null;
 
@@ -1880,10 +3683,15 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     }
 
     let hasSuppression = sceneParticlesHaveRelevantSuppressionRegions(this);
-    const overlayState = hasSuppression ? getCanvasLiveLevelSurfaceState() : null;
+    /** Foundry's primary/perception tickers run before this low-priority FXMaster ticker. */
+    const overlayState = hasSuppression
+      ? getCanvasLiveLevelSurfaceState(canvas?.scene ?? null, {
+          presynced: true,
+          includeTransientFades: false,
+        })
+      : null;
     const overlaySignature = overlayState?.key ?? "";
-    const overlayChanged =
-      hasSuppression && (overlayState?.forceRefresh || overlaySignature !== this._lastSceneSuppressionOverlaySignature);
+    const overlayChanged = hasSuppression && overlaySignature !== this._lastSceneSuppressionOverlaySignature;
 
     if (overlayChanged) {
       markSceneParticleSuppressionCompositorInteraction(this, { reason: "overlay" });
@@ -1891,6 +3699,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     }
 
     const maskingChanged = !!hasSuppression !== (this._lastSceneSuppressionNeedsMasking === true);
+    const worldAtlasMasks = SceneMaskManager.instance.usesWorldAtlas?.("particles") === true;
 
     if (!hasSuppression) this._lastSceneSuppressionOverlaySignature = "";
     if (!cameraChanged && !overlayChanged && !maskingChanged) return;
@@ -1901,6 +3710,8 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       this._lastSceneMaskMatrix = { a: M.a, b: M.b, c: M.c, d: M.d, tx: M.tx, ty: M.ty };
     }
 
+    if (cameraChanged && worldAtlasMasks && !overlayChanged && !maskingChanged) return;
+
     try {
       this._coalescedSceneSuppressionRefresh?.cancel?.();
     } catch (err) {
@@ -1908,7 +3719,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     }
 
     try {
-      refreshSceneParticlesSuppressionMasks({ sync: true });
+      refreshSceneParticlesSuppressionMasks({ sync: true, presyncedLiveLevelState: true });
     } catch (err) {
       logger?.error?.(err);
     }
@@ -1989,7 +3800,8 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     for (const [id, fx] of cur) {
       if (!(id in activeFlags)) {
         const runtimeUid = buildSceneEffectUid("particle", id);
-        const transientUid = soft && fx?.fadeOut ? this._promoteSceneRuntimeToTransient(runtimeUid) : null;
+        const useSoftFade = particleEffectUsesSoftFade(fx?.constructor, soft);
+        const transientUid = useSoftFade && fx?.fadeOut ? this._promoteSceneRuntimeToTransient(runtimeUid) : null;
         if (!transientUid) this._unregisterStackSlot(runtimeUid);
 
         this._dyingSceneEffects.add(fx);
@@ -1998,7 +3810,8 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         removalPromises.push(
           (async () => {
             try {
-              if (soft && fx.fadeOut) await fx.fadeOut({ timeout: 3000 });
+              if (useSoftFade && fx.fadeOut)
+                await fx.fadeOut({ timeout: particleEffectFadeDurationMs(fx.constructor) });
               else fx.stop?.();
             } catch (err) {
               logger.debug("FXMaster:", err);
@@ -2028,14 +3841,21 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     flags = canvas.scene?.getFlag(packageId, "effects") ?? {};
 
     let zIndex = 0;
-    for (const [id, { type, options: flagOptions }] of Object.entries(activeFlags)) {
+    for (const [id, { type, options: flagOptions, state: flagState }] of Object.entries(activeFlags)) {
       if (!(type in CONFIG.fxmaster.particleEffects)) {
         logger.warn(game.i18n.format("FXMASTER.Particles.TypeErrors.TypeUnknown", { id, type: flags[id]?.type }));
         continue;
       }
 
       const options = wrapStoredParticleOptions(flagOptions);
+      options.__fxmParticleContext = {
+        scope: "scene",
+        sceneId: canvas?.scene?.id ?? null,
+        effectId: id,
+        type,
+      };
       const EffectClass = CONFIG.fxmaster.particleEffects[type];
+      const useSoftFade = particleEffectUsesSoftFade(EffectClass, soft);
       const defaultBlend = EffectClass?.defaultConfig?.blendMode ?? PIXI.BLEND_MODES.NORMAL;
       const existing = cur.get(id);
 
@@ -2043,6 +3863,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       const belowTiles = particleBelowTilesEnabled(options?.belowTiles);
       const belowForeground = particleBelowForegroundEnabled(options?.belowForeground);
       const runtimeUid = buildSceneEffectUid("particle", id);
+      const backgroundState = flagState && typeof flagState === "object" ? flagState : {};
 
       const addToLayer = (fx) => {
         const { layerLevel = "belowDarkness" } = EffectClass.defaultConfig || {};
@@ -2051,6 +3872,8 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         fx.__fxmBelowForeground = belowForeground;
         fx.__fxmLevels = options?.levels;
         fx.__fxmOptions = options;
+        fx.__fxmBackgroundState = backgroundState;
+        fx.__fxmBackgroundUid = runtimeUid;
         this._ensureSceneParticleContainer(fx, { layerLevel, belowTokens, belowTiles, zIndex: fx.zIndex ?? zIndex });
       };
 
@@ -2064,6 +3887,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         });
         const root = layerLevel === "aboveDarkness" ? this._aboveContent : this._belowContainer;
         const slot = container ?? fx;
+        const backgroundSurface = this._syncParticleBackgroundSurface(fx, container);
         this._registerStackSlot(runtimeUid, root ?? slot, slot, {
           effectId: id,
           scope: "scene",
@@ -2076,11 +3900,12 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
           levels: options?.levels,
           container,
           maskSprite,
+          backgroundSurface,
         });
       };
 
       if (existing) {
-        const XFADE_MS = 3000;
+        const XFADE_MS = particleEffectFadeDurationMs(EffectClass);
         try {
           existing.zIndex = zIndex++;
         } catch (err) {
@@ -2097,6 +3922,8 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         existing.__fxmBelowForeground = belowForeground;
         existing.__fxmLevels = options?.levels;
         existing.__fxmOptions = options;
+        existing.__fxmBackgroundState = backgroundState;
+        existing.__fxmBackgroundUid = runtimeUid;
 
         const prev = existing._fxmOptsCache ?? {};
         const diff = foundry.utils.diffObject(prev, options);
@@ -2112,7 +3939,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
           continue;
         }
 
-        if (particleOptionsChangedOnlyRuntimeRouting(prev, options)) {
+        if (particleOptionsChangedOnlyRuntimeRoutingOrBackground(prev, options)) {
           try {
             existing._fxmOptsCache = foundry.utils.deepClone(options);
           } catch (_err) {
@@ -2145,7 +3972,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
           }
         }
 
-        if (soft) {
+        if (soft && EffectClass?.softOptionTransition !== false) {
           const transientUid = this._promoteSceneRuntimeToTransient(runtimeUid);
           const ec = new EffectClass(options);
           ec.zIndex = existing.zIndex ?? zIndex - 1;
@@ -2214,10 +4041,16 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         ec.zIndex = existing.zIndex ?? zIndex - 1;
         ec.blendMode = defaultBlend;
         ec._fxmOptsCache = foundry.utils.deepClone(options);
+        if (useSoftFade && typeof ec.fadeIn === "function") ec.alpha = 0;
         addToLayer(ec);
         cur.set(id, ec);
         registerRuntime(ec);
-        ec.play({ prewarm: !soft });
+        ec.play({ prewarm: particleEffectPrewarmForSoftFade(EffectClass, useSoftFade) });
+        if (useSoftFade && typeof ec.fadeIn === "function") {
+          void ec
+            .fadeIn({ timeout: particleEffectFadeDurationMs(EffectClass) })
+            .catch((err) => logger.debug("FXMaster:", err));
+        }
         continue;
       }
 
@@ -2229,10 +4062,16 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         logger.debug("FXMaster:", err);
       }
       ec._fxmOptsCache = foundry.utils.deepClone(options);
+      if (useSoftFade && typeof ec.fadeIn === "function") ec.alpha = 0;
       addToLayer(ec);
       cur.set(id, ec);
       registerRuntime(ec);
-      ec.play({ prewarm: !soft });
+      ec.play({ prewarm: particleEffectPrewarmForSoftFade(EffectClass, useSoftFade) });
+      if (useSoftFade && typeof ec.fadeIn === "function") {
+        void ec
+          .fadeIn({ timeout: particleEffectFadeDurationMs(EffectClass) })
+          .catch((err) => logger.debug("FXMaster:", err));
+      }
     }
 
     try {
@@ -2280,6 +4119,8 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       old.map(async (entry) => {
         if (entry?.uid) this._unregisterStackSlot(entry.uid);
         const fx = entry?.fx ?? entry;
+        this._destroyRegionSurfaceEdgeFadeFilter(entry);
+        this._destroyParticleBackgroundSurface(fx);
         try {
           fx?.stop?.();
         } catch (err) {
@@ -2344,6 +4185,17 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
 
     const edgeFadePercent = this._getRegionEdgeFadePercent(placeable, activeBehaviors);
     const edgeFadeCtx = this._buildPerParticleEdgeFadeContext(placeable, edgeFadePercent);
+    const surfaceEdgeFadeCapable = ({ EffectClass, params }) => {
+      if (EffectClass?.usesRegionSurfaceEdgeFade === true) return true;
+      try {
+        return !!EffectClass?.backgroundSurface && particleBackgroundEnabled(params?.options ?? {});
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+        return false;
+      }
+    };
+    const needsSurfaceEdgeFade = edgeFadePercent > 0 && activeParticleSpecs.some(surfaceEdgeFadeCapable);
+    const surfaceEdgeFadeMask = needsSurfaceEdgeFade ? getRegionSoftMaskData(placeable, edgeFadePercent) : null;
     const regionParticleContext = buildRegionParticleContext(placeable);
 
     let shared = this._regionMaskRTs.get(regionId);
@@ -2417,12 +4269,16 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     } of activeParticleSpecs) {
       const { layerLevel = "belowDarkness" } = EffectClass?.defaultConfig || {};
       const defaultBM = EffectClass?.defaultConfig?.blendMode ?? PIXI.BLEND_MODES.NORMAL;
+      const useSoftFade = particleEffectUsesSoftFade(EffectClass, soft);
 
       const effectOptions = wrapStoredParticleOptions(params?.options ?? {});
       const scopedParticleContext = regionParticleContext
         ? { ...regionParticleContext, regionId, behaviorId: behavior?.id ?? null }
         : null;
       if (scopedParticleContext) effectOptions.__fxmParticleContext = scopedParticleContext;
+      const uid = buildRegionEffectUid("particle", regionId, behavior.id, type);
+      const surfaceFadeCapable = surfaceEdgeFadeCapable({ EffectClass, params });
+      const useSurfaceEdgeFade = surfaceFadeCapable && !!surfaceEdgeFadeMask;
 
       const container = new PIXI.Container();
       container.sortableChildren = true;
@@ -2436,7 +4292,11 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       container.addChild(spr);
 
       const fx = new EffectClass(effectOptions);
+      if (useSoftFade && typeof fx.fadeIn === "function") fx.alpha = 0;
       if (scopedParticleContext) fx.__fxmParticleContext = scopedParticleContext;
+      fx.__fxmOptions = effectOptions;
+      fx.__fxmBackgroundState = params?.state && typeof params.state === "object" ? params.state : {};
+      fx.__fxmBackgroundUid = uid;
       try {
         fx.blendMode = defaultBM;
       } catch (err) {
@@ -2444,9 +4304,6 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       }
       container.addChild(fx);
 
-      if (edgeFadeCtx) this._applyPerParticleEdgeFadeToEffect(fx, edgeFadeCtx);
-
-      const uid = buildRegionEffectUid("particle", regionId, behavior.id, type);
       if (layerLevel === "aboveDarkness") this._aboveContent.addChild(container);
       else this._belowContainer.addChild(container);
 
@@ -2478,8 +4335,9 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       container.mask = spr;
 
       applyMaskSpriteTransform(container, spr);
+      const backgroundSurface = this._syncParticleBackgroundSurface(fx, container);
 
-      this.regionEffects.get(regionId).push({
+      const entry = {
         uid,
         scope: "region",
         fx,
@@ -2489,13 +4347,23 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         belowTokens,
         belowTiles,
         belowForeground,
-      });
+        backgroundSurface,
+        surfaceEdgeFadeCapable: surfaceFadeCapable,
+        edgeFadeFilter: null,
+        edgeFadeMaskEntry: null,
+        edgeFadePreviousFilterArea: null,
+        edgeFadePreviousFilterAreaCaptured: false,
+      };
+      this._syncRegionSurfaceEdgeFadeFilter(entry, useSurfaceEdgeFade ? surfaceEdgeFadeMask : null);
+      if (edgeFadeCtx && !useSurfaceEdgeFade) this._applyPerParticleEdgeFadeToEffect(fx, edgeFadeCtx);
+      this.regionEffects.get(regionId).push(entry);
       const root = layerLevel === "aboveDarkness" ? this._aboveContent : this._belowContainer;
       const regionLevels = getDocumentAssignedLevelIds(
         placeable?.document ?? null,
         placeable?.document?.parent ?? canvas?.scene ?? null,
       );
       const regionLevelList = regionLevels?.size ? Array.from(regionLevels) : null;
+      fx.__fxmTrailLevelIds = regionLevelList;
       this._registerStackSlot(uid, root ?? container, container, {
         regionId,
         scope: "region",
@@ -2512,8 +4380,14 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
         maskSprite: spr,
         maskBundle: shared,
         document: placeable?.document ?? null,
+        backgroundSurface,
       });
-      fx.play({ prewarm: !soft });
+      fx.play({ prewarm: particleEffectPrewarmForInstanceSoftFade(fx, useSoftFade) });
+      if (useSoftFade && typeof fx.fadeIn === "function") {
+        void fx
+          .fadeIn({ timeout: particleEffectFadeDurationMs(EffectClass) })
+          .catch((err) => logger.debug("FXMaster:", err));
+      }
 
       fx.__fxmBelowTokens = belowTokens;
       fx.__fxmBelowTiles = belowTiles;
@@ -2638,6 +4512,9 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       const fx = entry?.fx ?? entry;
       const container = entry?.container;
       const maskSprite = entry?.maskSprite;
+
+      this._destroyRegionSurfaceEdgeFadeFilter(entry);
+      this._destroyParticleBackgroundSurface(fx);
 
       try {
         fx?.stop?.();
@@ -3109,6 +4986,9 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
       cutoutCombined: null,
     };
     const oldBase = shared.base ?? null;
+    const edgeFadePercent = this._getRegionEdgeFadePercent(placeable);
+    const needsSurfaceEdgeFade = edgeFadePercent > 0 && entries.some((entry) => entry?.surfaceEdgeFadeCapable === true);
+    const surfaceEdgeFadeMask = needsSurfaceEdgeFade ? getRegionSoftMaskData(placeable, edgeFadePercent) : null;
     const newBase = buildRegionMaskRT(placeable, {
       rtPool: this._rtPool,
       resolution: regionMaskResolution,
@@ -3215,6 +5095,7 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
           logger.debug("FXMaster:", err);
         }
       }
+      this._syncRegionSurfaceEdgeFadeFilter(entry, entry?.surfaceEdgeFadeCapable ? surfaceEdgeFadeMask : null);
     }
 
     if (oldBase && oldBase !== newBase) this._releaseRT(oldBase);
@@ -3657,6 +5538,12 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     super._animate();
 
     try {
+      this._updateParticleBackgroundSurfaces();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    try {
       this._refreshBelowObjectCoverageForCamera();
     } catch (err) {
       logger.debug("FXMaster:", err);
@@ -3820,6 +5707,13 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     }
 
     const canUseNativeWeatherOcclusion = canUseNativeWeatherOcclusionStackPass();
+    const hasRadialWeatherTiles =
+      canUseNativeWeatherOcclusion &&
+      hasActiveRadialRestrictWeatherTilesForMask("particles", { includeOffscreen: true });
+    if (hasRadialWeatherTiles) {
+      this._weatherOcclusionTilePresence = null;
+      syncActiveRadialRestrictWeatherTileMasksForCamera("particles", { includeOffscreen: true });
+    }
     const hasWeatherOcclusionTiles = canUseNativeWeatherOcclusion ? this._sceneHasWeatherOcclusionTiles() : false;
 
     if (this._belowOccl) {
@@ -3998,7 +5892,20 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     if (!canvas?.scene) return;
 
     const M = this._currentCameraMatrix ?? snappedStageMatrix();
-    this.#updateSceneParticlesSuppressionForCamera(M);
+
+    try {
+      if (hasActiveRadialRestrictWeatherTilesForMask("particles", { includeOffscreen: true })) {
+        this._weatherOcclusionTilePresence = null;
+        syncActiveRadialRestrictWeatherTileMasksForCamera("particles", { includeOffscreen: true });
+        this._updateOcclusionGates();
+      }
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+
+    /**
+     * Scene suppression is sampled later in the same low-priority animation callback after Foundry applies primary and perception state. A second camera and surface check during the same pan frame is redundant.
+     */
 
     try {
       const { anyBelowTokens, anyBelowTiles } = this._collectBelowObjectCoverageNeeds();

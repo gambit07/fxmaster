@@ -324,7 +324,7 @@ export class FxMasterInfo extends FXMasterBaseFormV2 {
   #canOpenFxMasterPlusManager() {
     if (hasFxmasterPlus()) return true;
 
-    ui.notifications?.warn?.("FXMaster+ must be installed and active in this world to open this manager.");
+    ui.notifications?.warn?.(game.i18n.localize("FXMASTER.Info.Errors.PlusRequired"));
     return false;
   }
 
@@ -375,7 +375,7 @@ export class FxMasterInfo extends FXMasterBaseFormV2 {
     const title = preview.dataset.fxmasterPreviewLabel || game.i18n.localize("FXMASTER.Info.Title");
     const ImagePopoutClass = globalThis.foundry?.applications?.apps?.ImagePopout ?? globalThis.ImagePopout;
     if (!ImagePopoutClass) {
-      ui.notifications?.warn?.("FXMaster | Unable to open preview: Foundry ImagePopout is not available.");
+      ui.notifications?.warn?.(game.i18n.localize("FXMASTER.Info.Errors.ImagePopoutUnavailable"));
       return;
     }
 
@@ -385,7 +385,7 @@ export class FxMasterInfo extends FXMasterBaseFormV2 {
       this.#enableImagePopoutControls(popout, preview);
     } catch (err) {
       console.warn("FXMaster | Unable to open preview media", { src, err });
-      ui.notifications?.warn?.("FXMaster | Unable to open preview media.");
+      ui.notifications?.warn?.(game.i18n.localize("FXMASTER.Info.Errors.PreviewMediaOpenFailed"));
     }
   }
 
@@ -435,7 +435,7 @@ export class FxMasterInfo extends FXMasterBaseFormV2 {
   #openExternalPreview(src) {
     const url = this.#normalizeYouTubeUrl(src);
     if (!url) {
-      ui.notifications?.warn?.("FXMaster | Unable to open preview link.");
+      ui.notifications?.warn?.(game.i18n.localize("FXMASTER.Info.Errors.PreviewLinkOpenFailed"));
       return;
     }
 
@@ -454,7 +454,7 @@ export class FxMasterInfo extends FXMasterBaseFormV2 {
 
     const opened = globalThis.open?.(url, "_blank");
     if (opened) opened.opener = null;
-    else return;
+    else ui.notifications?.warn?.(game.i18n.localize("FXMASTER.Info.Errors.PreviewLinkOpenFailed"));
   }
 
   /**

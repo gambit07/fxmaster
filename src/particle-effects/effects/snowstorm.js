@@ -1,4 +1,5 @@
 import { FXMasterParticleEffect } from "./effect.js";
+import { SnowstormProceduralSurface } from "./snowstorm-procedural-surface.js";
 import { logger } from "../../logger.js";
 
 /**
@@ -9,18 +10,96 @@ export class SnowstormParticleEffect extends FXMasterParticleEffect {
   static label = "FXMASTER.Particles.Effects.Snowstorm";
 
   /**
-   * Snowstorm's top-down presentation reads more naturally with a smaller deadzone than other effects. This reduces the size of the empty center "hole" while still avoiding a full vortex-like convergence.
+   * Top-down snowstorm uses the same view-aware center coverage as top-down rain.
    */
   static get topDownDeadzoneFactor() {
-    return 0.035;
+    return 0.12;
   }
 
   static get topDownDeadzoneMinGrid() {
-    return 0.25;
+    return 1.5;
   }
 
   static get topDownDeadzoneMaxGrid() {
-    return 2.0;
+    return 5.5;
+  }
+
+  /**
+   * Resolve the top-down center opening in scene pixels, matching top-down rain's
+   * pan/zoom-aware deadzone coverage.
+   *
+   * @param {object} d Particle dimension object from CONFIG.fxmaster.getParticleDimensions(...)
+   * @param {{visibleMinGrid?:number}} [view]
+   * @returns {number}
+   */
+  getTopDownDeadzoneRadius(d, view = {}) {
+    const grid = Math.max(1, Number(d?.size ?? canvas?.dimensions?.size ?? 100) || 100);
+    const baseGrid = super.getTopDownDeadzoneRadius(d) / grid;
+
+    const gridDensity = this.constructor._clampNumber(Math.pow(grid / 100, 0.76), 0.4, 1.98, 1);
+    const lowGridTrim = 0.58 + 0.42 * this.constructor._smoothstep(90, 150, grid);
+    let radiusGrid = baseGrid * gridDensity * lowGridTrim;
+
+    const visibleMinGrid = Number(view?.visibleMinGrid);
+    if (Number.isFinite(visibleMinGrid) && visibleMinGrid > 0) {
+      const gridNorm = this.constructor._smoothstep(96, 200, grid);
+      const visibleSpanAdjust = this.constructor._clampNumber(Math.pow(visibleMinGrid / 18, 0.18), 0.78, 1.24, 1);
+      const maxVisibleFraction = 0.12 + gridNorm * 0.435;
+      const minVisibleFraction = 0.008 + gridNorm * 0.145;
+      const maxVisibleGrid = this.constructor._clampNumber(visibleMinGrid * maxVisibleFraction, 0.4, 13.8, 5.5);
+      const minVisibleGrid = this.constructor._clampNumber(visibleMinGrid * minVisibleFraction, 0.3, 6.8, 1.5);
+      radiusGrid = this.constructor._clampNumber(
+        radiusGrid * visibleSpanAdjust,
+        minVisibleGrid,
+        maxVisibleGrid,
+        radiusGrid,
+      );
+
+      const sceneMinPx = Math.max(
+        1,
+        Math.min(
+          Number(d?.sceneWidth ?? d?.width ?? canvas?.dimensions?.sceneWidth ?? canvas?.dimensions?.width ?? 1) || 1,
+          Number(d?.sceneHeight ?? d?.height ?? canvas?.dimensions?.sceneHeight ?? canvas?.dimensions?.height ?? 1) ||
+            1,
+        ),
+      );
+      const compactScene = 1 - this.constructor._smoothstep(3600, 7200, sceneMinPx);
+      if (compactScene > 0.001) {
+        const closeZoom = 1 - this.constructor._smoothstep(5.5, 15, visibleMinGrid);
+        const farZoom = this.constructor._smoothstep(12, 34, visibleMinGrid);
+        const farTrim = 1 - compactScene * farZoom * 0.64;
+        const closeBoost = 1 + compactScene * closeZoom * 0.12;
+        radiusGrid *= farTrim * closeBoost;
+
+        if (closeZoom > 0.001) {
+          const closeMaxFraction = 0.28 + 0.07 * (1 - closeZoom);
+          const closeMaxGrid = Math.max(0.46, visibleMinGrid * closeMaxFraction);
+          radiusGrid = Math.min(radiusGrid, closeMaxGrid);
+        }
+
+        const closeMinGrid = 0.34 + compactScene * closeZoom * 0.22;
+        radiusGrid = Math.max(radiusGrid, closeMinGrid);
+      }
+    }
+
+    return radiusGrid * grid;
+  }
+
+  /** @private */
+  static _smoothstep(edge0, edge1, value) {
+    const lo = Number(edge0);
+    const hi = Number(edge1);
+    const x = Number(value);
+    if (!Number.isFinite(lo) || !Number.isFinite(hi) || !Number.isFinite(x) || lo === hi) return x >= hi ? 1 : 0;
+    const t = this._clampNumber((x - lo) / (hi - lo), 0, 1, 0);
+    return t * t * (3 - 2 * t);
+  }
+
+  /** @private */
+  static _clampNumber(value, min, max, fallback = min) {
+    const number = Number(value);
+    const safe = Number.isFinite(number) ? number : fallback;
+    return Math.max(min, Math.min(max, safe));
   }
 
   /** @override */
@@ -50,19 +129,222 @@ export class SnowstormParticleEffect extends FXMasterParticleEffect {
         label: "FXMASTER.Params.RotationStrength",
         type: "range",
         min: 0,
-        value: 3,
-        max: 5,
+        value: 0.35,
+        max: 1,
+        step: 0.01,
+        decimals: 2,
+        showWhen: { topDown: true },
+        tooltip: "FXMASTER.ParamTooltips.RotationStrength",
+      },
+      scale: { ...p.scale, value: 2.5 },
+      direction: { ...p.direction, showWhen: { topDown: false } },
+      synchronizedDirection: { ...this.synchronizedDirectionParameter, showWhen: { topDown: false } },
+      speed: { ...p.speed, min: 0.1, max: 10, value: 8, step: 0.05, decimals: 2 },
+      lifetime: p.lifetime,
+      density: { ...p.density, min: 0, value: 0.72, max: 2.4, step: 0.01, decimals: 2 },
+      alpha: p.alpha,
+      backgroundEnabled: {
+        label: "FXMASTER.Params.Background",
+        type: "checkbox",
+        value: false,
+        tooltip: "FXMASTER.ParamTooltips.SnowstormBackground",
+      },
+      backgroundMode: {
+        label: "FXMASTER.Params.BackgroundMode",
+        type: "select",
+        value: "accumulate",
+        options: {
+          full: "FXMASTER.Params.BackgroundModeFull",
+          accumulate: "FXMASTER.Params.BackgroundModeAccumulate",
+        },
+        showWhen: { backgroundEnabled: true },
+        tooltip: "FXMASTER.ParamTooltips.BackgroundMode",
+      },
+      backgroundDuration: {
+        label: "FXMASTER.Params.BackgroundDuration",
+        type: "range",
+        min: 10,
+        value: 180,
+        max: 3600,
+        step: 10,
+        decimals: 0,
+        labelOutput: "minutes",
+        showWhen: { backgroundEnabled: true, backgroundMode: "accumulate" },
+        tooltip: "FXMASTER.ParamTooltips.SnowstormBackgroundDuration",
+      },
+      backgroundOpacity: {
+        label: "FXMASTER.Params.BackgroundOpacity",
+        type: "range",
+        min: 0,
+        value: 0.2,
+        max: 1,
+        step: 0.01,
+        decimals: 2,
+        showWhen: { backgroundEnabled: true },
+        tooltip: "FXMASTER.ParamTooltips.SnowstormBackgroundOpacity",
+      },
+      backgroundFillVariation: {
+        label: "FXMASTER.Params.BackgroundFillVariation",
+        type: "range",
+        min: 0,
+        value: 0.75,
+        max: 1,
+        step: 0.05,
+        decimals: 2,
+        showWhen: { backgroundEnabled: true, backgroundMode: "accumulate" },
+        tooltip: "FXMASTER.ParamTooltips.BackgroundFillVariation",
+      },
+      backgroundDriftStrength: {
+        label: "FXMASTER.Params.BackgroundDriftStrength",
+        type: "range",
+        min: 0,
+        value: 0,
+        max: 1,
+        step: 0.05,
+        decimals: 2,
+        showWhen: { backgroundEnabled: true },
+        tooltip: "FXMASTER.ParamTooltips.BackgroundDriftStrength",
+      },
+      backgroundDriftScale: {
+        label: "FXMASTER.Params.BackgroundDriftScale",
+        type: "range",
+        min: 0.05,
+        value: 0.1,
+        max: 12,
+        step: 0.05,
+        decimals: 2,
+        showWhen: { backgroundEnabled: true },
+        tooltip: "FXMASTER.ParamTooltips.BackgroundDriftScale",
+      },
+      backgroundSweepEnabled: {
+        label: "FXMASTER.Params.BackgroundSweep",
+        type: "checkbox",
+        value: true,
+        showWhen: { backgroundEnabled: true },
+        tooltip: "FXMASTER.ParamTooltips.SnowstormBackgroundSweep",
+      },
+      backgroundSweepOpacity: {
+        label: "FXMASTER.Params.BackgroundSweepOpacity",
+        type: "range",
+        min: 0,
+        value: 0.4,
+        max: 1,
+        step: 0.01,
+        decimals: 2,
+        showWhen: { backgroundEnabled: true, backgroundSweepEnabled: true },
+        tooltip: "FXMASTER.ParamTooltips.SnowstormBackgroundSweepOpacity",
+      },
+      backgroundSweepScale: {
+        label: "FXMASTER.Params.BackgroundSweepScale",
+        type: "range",
+        min: 0,
+        value: 1,
+        max: 1,
+        step: 0.01,
+        decimals: 2,
+        showWhen: { backgroundEnabled: true, backgroundSweepEnabled: true },
+        tooltip: "FXMASTER.ParamTooltips.SnowstormBackgroundSweepScale",
+      },
+      backgroundSweepSpeed: {
+        label: "FXMASTER.Params.BackgroundSweepSpeed",
+        type: "range",
+        min: 0,
+        value: 0.8,
+        max: 1,
+        step: 0.01,
+        decimals: 2,
+        showWhen: { backgroundEnabled: true, backgroundSweepEnabled: true },
+        tooltip: "FXMASTER.ParamTooltips.SnowstormBackgroundSweepSpeed",
+      },
+      backgroundSweepStrength: {
+        label: "FXMASTER.Params.BackgroundSweepStrength",
+        type: "range",
+        min: 0,
+        value: 1,
+        max: 1,
+        step: 0.01,
+        decimals: 2,
+        showWhen: { backgroundEnabled: true, backgroundSweepEnabled: true },
+        tooltip: "FXMASTER.ParamTooltips.SnowstormBackgroundSweepStrength",
+      },
+      backgroundTrailsEnabled: {
+        label: "FXMASTER.Params.BackgroundTrails",
+        type: "checkbox",
+        value: false,
+        showWhen: { backgroundEnabled: true },
+        tooltip: "FXMASTER.ParamTooltips.BackgroundTrails",
+      },
+      backgroundTrailRefillEnabled: {
+        label: "FXMASTER.Params.BackgroundTrailRefill",
+        type: "checkbox",
+        value: true,
+        showWhen: { backgroundEnabled: true, backgroundTrailsEnabled: true },
+        tooltip: "FXMASTER.ParamTooltips.BackgroundTrailRefill",
+      },
+      backgroundTrailRefillDuration: {
+        label: "FXMASTER.Params.BackgroundTrailRefillDuration",
+        type: "range",
+        min: 10,
+        value: 90,
+        max: 3600,
+        step: 10,
+        decimals: 0,
+        labelOutput: "minutes",
+        showWhen: { backgroundEnabled: true, backgroundTrailsEnabled: true, backgroundTrailRefillEnabled: true },
+        tooltip: "FXMASTER.ParamTooltips.BackgroundTrailRefillDuration",
+      },
+      backgroundTrailWidth: {
+        label: "FXMASTER.Params.BackgroundTrailWidth",
+        type: "range",
+        min: 0,
+        value: 0.5,
+        max: 2,
+        step: 0.05,
+        decimals: 2,
+        showWhen: { backgroundEnabled: true, backgroundTrailsEnabled: true },
+        tooltip: "FXMASTER.ParamTooltips.BackgroundTrailWidth",
+      },
+      backgroundTrailStrength: {
+        label: "FXMASTER.Params.BackgroundTrailStrength",
+        type: "range",
+        min: 0,
+        value: 0.25,
+        max: 1,
+        step: 0.01,
+        decimals: 2,
+        showWhen: { backgroundEnabled: true, backgroundTrailsEnabled: true },
+        tooltip: "FXMASTER.ParamTooltips.BackgroundTrailStrength",
+      },
+      backgroundInteractionElevationThreshold: {
+        label: "FXMASTER.Params.BackgroundInteractionElevationThreshold",
+        type: "number-infinity",
+        min: 0,
+        value: 5,
+        max: "Infinity",
         step: 0.5,
         decimals: 1,
-        showWhen: { topDown: true },
+        showWhen: { backgroundEnabled: true, backgroundTrailsEnabled: true },
+        tooltip: "FXMASTER.ParamTooltips.BackgroundTrailElevationThreshold",
       },
-      scale: p.scale,
-      direction: { ...p.direction, showWhen: { topDown: false } },
-      speed: { ...p.speed, min: 0.1, max: 10, value: 5, step: 0.05, decimals: 2 },
-      lifetime: p.lifetime,
-      density: { ...p.density, min: 0.05, value: 0.6, max: 1, step: 0.05, decimals: 2 },
-      alpha: p.alpha,
     };
+  }
+
+  /** @override */
+  static get backgroundSurface() {
+    return { type: "snowstorm" };
+  }
+
+  static get usesRegionSurfaceEdgeFade() {
+    return true;
+  }
+
+  static get alwaysSoftToggleFade() {
+    return true;
+  }
+
+  /** @override */
+  static get softOptionTransition() {
+    return false;
   }
 
   /**
@@ -121,366 +403,70 @@ export class SnowstormParticleEffect extends FXMasterParticleEffect {
     return this.SNOWSTORM_CONFIG;
   }
 
+  _destroyProceduralSnowstorm() {
+    try {
+      this._fxmSnowstormProceduralSurface?.destroy?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    this._fxmSnowstormProceduralSurface = null;
+  }
+
+  _installProceduralSnowstorm(options) {
+    this._destroyProceduralSnowstorm();
+    try {
+      const surface = new SnowstormProceduralSurface({
+        owner: this,
+        options,
+        dimensions: CONFIG.fxmaster.getParticleDimensions?.(options),
+        renderer: CONFIG.fxmaster.getParticleRenderer?.(options),
+        ticker: CONFIG.fxmaster.getParticleTicker?.(options),
+      });
+      this.addChildAt(surface.displayObject, 0);
+      this._fxmSnowstormProceduralSurface = surface;
+      return surface;
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+      return null;
+    }
+  }
+
   /** @override */
   getParticleEmitters(options = {}) {
     options = this.constructor.mergeWithDefaults(options);
-
-    const topDown = !!options?.topDown?.value;
-    if (topDown) return this._getTopDownEmitters(options);
-
     this._fxmCanvasPanOwnerPosEnabled = false;
-
-    const d = CONFIG.fxmaster.getParticleDimensions(options);
-
-    const { maxParticles } = this.constructor.computeMaxParticlesFromView(options, {
-      minViewCells: this.constructor.MIN_VIEW_CELLS ?? 15000,
-    });
-
-    const config = foundry.utils.deepClone(this.constructor.defaultConfig);
-    config.maxParticles = maxParticles;
-
-    const lifetime = config.lifetime ?? 1;
-    let avgLifetime;
-    if (typeof lifetime === "number") {
-      avgLifetime = lifetime;
-    } else {
-      const min = lifetime.min ?? lifetime.max ?? 1;
-      const max = lifetime.max ?? lifetime.min ?? min;
-      avgLifetime = (min + max) / 2;
-    }
-    config.frequency = avgLifetime / maxParticles;
-
-    config.behaviors.push({
-      type: "spawnShape",
-      config: {
-        type: "rect",
-        data: { x: d.sceneRect.x, y: d.sceneRect.y, w: d.sceneRect.width, h: d.sceneRect.height },
-      },
-    });
-
-    this.applyOptionsToConfig(options, config);
-
-    return [this.createEmitter(config)];
-  }
-
-  /**
-   * Build a top-down variant of the snowstorm effect.
-   * - Spawns in a ring around the view center (torus)
-   * - Forces inward motion (spawnShape affectRotation + rotationStatic 180)
-   * - Leaves a central "hole" so it doesn't read as a vortex
-   * - Keeps ownerPos synced to canvas pan/zoom
-   * @private
-   */
-  _getTopDownEmitters(options) {
-    this._fxmCanvasPanOwnerPosEnabled = true;
-
-    const d = CONFIG.fxmaster.getParticleDimensions(options);
-
-    const { maxParticles } = this.constructor.computeMaxParticlesFromView(options, {
-      minViewCells: this.constructor.MIN_VIEW_CELLS ?? 15000,
-    });
-
-    const config = foundry.utils.deepClone(this.constructor.SNOWSTORM_CONFIG);
-    config.maxParticles = maxParticles;
-
-    const lifetime = config.lifetime ?? 1;
-    let avgLifetime;
-    if (typeof lifetime === "number") {
-      avgLifetime = lifetime;
-    } else {
-      const min = lifetime.min ?? lifetime.max ?? 1;
-      const max = lifetime.max ?? lifetime.min ?? min;
-      avgLifetime = (min + max) / 2;
-    }
-    config.frequency = avgLifetime / maxParticles;
-
-    const movePath = config.behaviors?.find((b) => b.type === "movePath");
-    const movePathSpeed = movePath?.config?.speed ?? {
-      list: [
-        { value: 400, time: 0 },
-        { value: 350, time: 1 },
-      ],
-    };
-    const movePathMinMult = movePath?.config?.minMult ?? 0.2;
-
-    config.behaviors = (config.behaviors ?? []).filter(
-      (b) => b.type !== "rotation" && b.type !== "rotationStatic" && b.type !== "movePath",
-    );
-
-    config.behaviors.push({
-      type: "moveSpeed",
-      config: {
-        speed: foundry.utils.deepClone(movePathSpeed),
-        minMult: movePathMinMult,
-      },
-    });
-
-    config.behaviors.push({ type: "rotationStatic", config: { min: 180, max: 180 } });
-
-    const optsNoDir = foundry.utils.deepClone(options);
-    try {
-      delete optsNoDir.direction;
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
-
-    this.applyOptionsToConfig(optsNoDir, config);
-
-    const moveSpeedBehavior = config.behaviors.find(({ type }) => type === "moveSpeed");
-    const moveSpeedList = moveSpeedBehavior?.config?.speed?.list ?? [{ value: 400 }, { value: 350 }];
-    const averageSpeed =
-      moveSpeedList.reduce((acc, cur) => acc + (cur.value ?? 0), 0) / Math.max(1, moveSpeedList.length);
-
-    const lifetimeMax = typeof config.lifetime === "number" ? config.lifetime : config.lifetime?.max ?? avgLifetime;
-
-    const sceneRadius = Math.sqrt(d.sceneWidth * d.sceneWidth + d.sceneHeight * d.sceneHeight) / 2;
-
-    const holeRadius = this.getTopDownDeadzoneRadius(d);
-
-    const travel = averageSpeed * lifetimeMax;
-    const innerRadius = travel + holeRadius;
-    const outerRadius = innerRadius + sceneRadius * 2;
-
-    config.behaviors.push({
-      type: "spawnShape",
-      config: {
-        type: "torus",
-        data: {
-          x: d.sceneRect.x + d.sceneWidth / 2,
-          y: d.sceneRect.y + d.sceneHeight / 2,
-          radius: outerRadius,
-          innerRadius,
-          affectRotation: true,
-        },
-      },
-    });
-
-    const emitter = this.createEmitter(config);
-
-    const ctx = options?.__fxmParticleContext ?? this.__fxmParticleContext;
-    const ownerX = ctx ? 0 : canvas.stage.pivot.x - d.sceneX - d.sceneWidth / 2;
-    const ownerY = ctx ? 0 : canvas.stage.pivot.y - d.sceneY - d.sceneHeight / 2;
-    emitter.updateOwnerPos(ownerX, ownerY);
-
-    try {
-      const randBetween = (min, max) => min + Math.random() * (max - min);
-      const smoothstep = (x) => x * x * (3 - 2 * x);
-      const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
-
-      /** Re-target the vortex every 10–30 seconds and blend over 2–6 seconds. */
-      const MIN_HOLD = 10.0;
-      const MAX_HOLD = 30.0;
-      const MIN_BLEND = 2.0;
-      const MAX_BLEND = 6.0;
-
-      /** Tangential drift magnitude expressed as a ratio of inward speed. */
-      const BASE_RATIO = 0.85;
-      const DELTA_RATIO = 0.12;
-      const MIN_RATIO = 0.6;
-      const MAX_RATIO = 1.05;
-
-      /** Overall multiplier for top-down rotational drift. */
-      const rawRotationStrength = Number(options?.rotationStrength?.value);
-      const ROTATION_STRENGTH = clamp(
-        Math.round((Number.isFinite(rawRotationStrength) ? rawRotationStrength : 3) * 2) / 2,
-        0,
-        4,
-      );
-
-      const getCenter = () => {
-        if (ctx) {
-          return {
-            x: d.sceneRect.x + d.sceneWidth / 2,
-            y: d.sceneRect.y + d.sceneHeight / 2,
-          };
-        }
-        return {
-          x: canvas?.stage?.pivot?.x ?? d.sceneRect.x + d.sceneWidth / 2,
-          y: canvas?.stage?.pivot?.y ?? d.sceneRect.y + d.sceneHeight / 2,
-        };
-      };
-
-      const nextOf = (p) => p?.next ?? p?._next ?? p?.nextParticle ?? p?._nextParticle ?? p?.__next ?? null;
-
-      const outerMinusHole = Math.max(1, outerRadius - holeRadius);
-
-      const initSigned = (() => {
-        const sign = Math.random() < 0.5 ? -1 : 1;
-        const mag = clamp(BASE_RATIO + randBetween(-DELTA_RATIO, DELTA_RATIO), MIN_RATIO, MAX_RATIO);
-        return sign * mag;
-      })();
-
-      emitter._fxmVortexState ??= {
-        signed: initSigned,
-        holdRemaining: randBetween(MIN_HOLD, MAX_HOLD),
-        blendRemaining: 0,
-        blendDuration: 0,
-        fromSigned: initSigned,
-        toSigned: initSigned,
-      };
-
-      const originalUpdate = emitter.update.bind(emitter);
-
-      emitter.update = function (delta) {
-        originalUpdate(delta);
-
-        /** Convert PIXI ticker delta time to seconds. */
-        let dt = 0;
-        if (typeof delta === "number") {
-          dt = delta > 0 && delta < 5 ? delta / 60 : delta > 5 ? delta / 1000 : delta;
-        }
-        if (!Number.isFinite(dt) || dt <= 0) return;
-        dt = Math.min(dt, 0.05);
-
-        const s = emitter._fxmVortexState;
-        if (!s) return;
-
-        if (s.blendRemaining > 0) {
-          s.blendRemaining -= dt;
-          const prog = 1 - s.blendRemaining / Math.max(1e-6, s.blendDuration);
-          const u = smoothstep(clamp(prog, 0, 1));
-          s.signed = s.fromSigned * (1 - u) + s.toSigned * u;
-          if (s.blendRemaining <= 0) s.signed = s.toSigned;
-        } else {
-          s.holdRemaining -= dt;
-          if (s.holdRemaining <= 0) {
-            const cur = Number(s.signed) || initSigned;
-            const curSign = Math.sign(cur) || 1;
-            const curMag = Math.abs(cur);
-            const nextSign = -curSign;
-            const nextMag = clamp(curMag + randBetween(-DELTA_RATIO, DELTA_RATIO), MIN_RATIO, MAX_RATIO);
-
-            s.fromSigned = cur;
-            s.toSigned = nextSign * nextMag;
-            s.blendDuration = randBetween(MIN_BLEND, MAX_BLEND);
-            s.blendRemaining = s.blendDuration;
-            s.holdRemaining = randBetween(MIN_HOLD, MAX_HOLD);
-          }
-        }
-
-        const signedRatio = Number(s.signed) || 0;
-        if (!Number.isFinite(signedRatio) || signedRatio === 0) return;
-
-        const first = emitter._activeParticlesFirst;
-
-        const getArrayParticles = () => {
-          const pc = emitter.particleContainer ?? emitter._particleContainer;
-          const candidates = [
-            emitter.particles,
-            emitter._particles,
-            emitter._activeParticles,
-            emitter._active,
-            pc?.children,
-          ];
-          for (const c of candidates) {
-            if (Array.isArray(c) && c.length) return c;
-          }
-          return null;
-        };
-
-        let arrayParticles = null;
-        if (!first) {
-          arrayParticles = getArrayParticles();
-          if (!arrayParticles) return;
-        }
-
-        const c = getCenter();
-        const cx = c.x;
-        const cy = c.y;
-
-        const applyVortex = (p) => {
-          const px = p?.x ?? p?.position?.x;
-          const py = p?.y ?? p?.position?.y;
-          if (!Number.isFinite(px) || !Number.isFinite(py)) return;
-
-          const dx = px - cx;
-          const dy = py - cy;
-          const r = Math.hypot(dx, dy);
-          if (!Number.isFinite(r) || r <= holeRadius * 0.95) return;
-
-          const f = clamp((r - holeRadius) / outerMinusHole, 0, 1);
-          const env = smoothstep(f);
-          if (env <= 0) return;
-
-          let mul = p._fxmVortexMul;
-          if (!Number.isFinite(mul)) {
-            mul = randBetween(0.85, 1.15);
-            p._fxmVortexMul = mul;
-          }
-
-          const invR = 1 / r;
-          const tx = -dy * invR;
-          const ty = dx * invR;
-
-          const disp = averageSpeed * signedRatio * dt * env * mul * ROTATION_STRENGTH;
-          if (!Number.isFinite(disp) || disp === 0) return;
-
-          const nx = px + tx * disp;
-          const ny = py + ty * disp;
-
-          if (p.position) {
-            p.position.x = nx;
-            p.position.y = ny;
-          } else {
-            p.x = nx;
-            p.y = ny;
-          }
-        };
-
-        let iterated = 0;
-        if (first) {
-          const countHint = Number(emitter.particleCount ?? emitter.maxParticles ?? 0) || 0;
-          const maxIter = Math.max(200, Math.min(12000, countHint ? countHint + 25 : 6000));
-          let cur = first;
-          for (let i = 0; cur && i < maxIter; i++) {
-            const p = cur;
-            const nxt = nextOf(cur);
-            cur = !nxt || nxt === cur ? null : nxt;
-            applyVortex(p);
-            iterated++;
-          }
-        }
-
-        if ((!first || iterated <= 1) && !arrayParticles) arrayParticles = getArrayParticles();
-
-        if ((!first || iterated <= 1) && arrayParticles) {
-          const n = arrayParticles.length;
-          for (let i = 0; i < n; i++) applyVortex(arrayParticles[i]);
-        }
-      };
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
-
-    try {
-      const was = !!emitter.autoUpdate;
-      emitter.autoUpdate = false;
-      emitter.autoUpdate = was;
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
-
-    return [emitter];
+    this._installProceduralSnowstorm(options);
+    return [];
   }
 
   /** @override */
   play({ prewarm = false } = {}) {
+    this._fxmSnowstormProceduralSurface?.start?.();
     super.play({ prewarm });
+  }
 
-    try {
-      if (!this.options?.topDown?.value) return;
-      const emitters = this.emitters ?? [];
-      for (const e of emitters) {
-        try {
-          const was = !!e.autoUpdate;
-          e.autoUpdate = false;
-          e.autoUpdate = was;
-        } catch (err) {
-          logger.debug("FXMaster:", err);
-        }
-      }
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
+  /** @override */
+  async fadeOut(options = {}) {
+    this._fxmSnowstormProceduralSurface?.start?.();
+    return super.fadeOut(options);
+  }
+
+  /** @override */
+  async fadeIn(options = {}) {
+    this._fxmSnowstormProceduralSurface?.start?.();
+    const payload = options && typeof options === "object" ? options : {};
+    return super.fadeIn(payload);
+  }
+
+  /** @override */
+  stop() {
+    this._fxmSnowstormProceduralSurface?.stop?.();
+    super.stop();
+  }
+
+  /** @override */
+  destroy(options) {
+    this._destroyProceduralSnowstorm();
+    super.destroy(options);
   }
 }

@@ -6,7 +6,7 @@
  * Domain groups:
  * - **Token hooks** - Token/tile CRUD → mask refresh
  * - **Region hooks** - Region/behavior CRUD → effect drawing & suppression
- * - **Canvas hooks** - canvasInit/Ready/activateScene → pipeline setup
+ * - **Canvas hooks** - canvasInit/canvasReady setup
  * - **Scene hooks** - updateScene, dropCanvasData, hotbarDrop, pan/zoom
  * - **UI hooks** - Management window tracking, scene controls, settings
  *

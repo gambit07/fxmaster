@@ -57,6 +57,7 @@ function getKindLabel(kind) {
  * - Parameter changes write back only to that instance's flag key.
  */
 export class ApiEffectEditor extends FXMasterBaseFormV2 {
+  static FXMASTER_DETACHED_WINDOW_FIT = true;
   /**
    * Return the user flag key for the current API effect editor kind.
    *
@@ -209,7 +210,7 @@ export class ApiEffectEditor extends FXMasterBaseFormV2 {
   async _onRender(...args) {
     await super._onRender(...args);
 
-    const pos = game.user.getFlag(packageId, this._getPositionFlagKey());
+    const pos = this._fxmIsDetachedHost() ? null : game.user.getFlag(packageId, this._getPositionFlagKey());
     if (pos) {
       await new Promise((r) => requestAnimationFrame(r));
 

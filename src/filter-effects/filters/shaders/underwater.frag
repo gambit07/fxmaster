@@ -1,7 +1,7 @@
 /**
  * SPDX-FileCopyrightText: 2026 Gambit
  */
- 
+
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
 precision highp int;
@@ -14,18 +14,19 @@ uniform sampler2D uSampler;
 uniform sampler2D maskSampler;
 
 /** ---- Pixi pipeline frames (match Color) ---- */
-uniform vec2  viewSize;     /** CSS px of mask RT */
+uniform vec2  viewSize;     /** CSS viewport size */
 uniform vec4  inputSize;    /** xy: input size in CSS px; zw: 1/size */
 uniform vec4  outputFrame;  /** xy: offset in CSS px;    zw: size */
 
-/** Kept for ABI/back-compat; not used for mask sample now */
-uniform vec4  srcFrame;     /** CSS px area spanned by vTextureCoord */
 uniform vec2  camFrac;
 
 uniform float hasMask;
 uniform float maskReady;
 uniform float invertMask;
 uniform float maskSoft;
+uniform float maskWorldReady;
+uniform mat3  uMaskUvFromWorld;
+uniform vec2  maskTexelUV;
 uniform float feather;      /** optional mask feather (CSS px) */
 uniform float strength;     /** 0..1 overall effect strength */
 
@@ -36,8 +37,8 @@ uniform vec2      mapRepeat;
 uniform vec2      mapOffset;
 uniform vec2      mapTexel;   /** 1/texSize (set from JS) */
 
-/** -------- NEW: tokens-only mask for belowTokens -------- */
-uniform sampler2D tokenSampler;  /** CSS-space tokens mask (alpha) */
+/** -------- Tokens-only mask for belowTokens -------- */
+uniform sampler2D tokenSampler;  /** tokens mask alpha */
 uniform float     hasTokenMask;  /** 1 when provided, else 0 */
 
 varying vec2 vTextureCoord;
@@ -79,6 +80,32 @@ vec2 wrapUV(vec2 uv){ return fract(uv); }
 /** Shared region fade infrastructure */
 #include <region-fade-common>
 
+vec2 fxmMaskUvFromCss(vec2 cssPx) {
+  if (maskWorldReady > 0.5) {
+    vec2 world = applyCssToWorld(cssPx);
+    return (uMaskUvFromWorld * vec3(world, 1.0)).xy;
+  }
+  return cssPx / max(viewSize, vec2(1.0));
+}
+
+float fxmMaskSampleUv(vec2 uv) {
+  if (maskWorldReady > 0.5 && (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)) return 0.0;
+  return clamp(texture2D(maskSampler, clamp(uv, vec2(0.0), vec2(1.0))).r, 0.0, 1.0);
+}
+
+float fxmMaskSample(vec2 cssPx) {
+  return fxmMaskSampleUv(fxmMaskUvFromCss(cssPx));
+}
+
+vec2 fxmMaskTexel() {
+  return (maskWorldReady > 0.5) ? maskTexelUV : (1.0 / max(viewSize, vec2(1.0)));
+}
+
+float fxmTokenMaskAlphaSampleUv(vec2 uv) {
+  if (maskWorldReady > 0.5 && (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)) return 0.0;
+  return clamp(texture2D(tokenSampler, clamp(uv, vec2(0.0), vec2(1.0))).a, 0.0, 1.0);
+}
+
 void main(void) {
   vec4 src = texture2D(uSampler, vTextureCoord);
 
@@ -96,22 +123,22 @@ void main(void) {
       vec2 samplePx = (uRegionShape < 0) ? screenPx : snapPx;
 
       vec2 maskPx = floor(samplePx) + 0.5;
-      vec2 maskUV = clamp(maskPx / max(viewSize, vec2(1.0)), 0.0, 1.0);
-      float a = clamp(texture2D(maskSampler, maskUV).r, 0.0, 1.0);
+      vec2 maskUV = fxmMaskUvFromCss(maskPx);
+      float a = fxmMaskSampleUv(maskUV);
 
       if (feather > 0.5) {
-        vec2 px = 1.0 / max(viewSize, vec2(1.0));
+        vec2 px = fxmMaskTexel();
         vec2 o  = px * feather;
         float s = 0.0;
-        s += texture2D(maskSampler, maskUV + vec2(-o.x, -o.y)).r;
-        s += texture2D(maskSampler, maskUV + vec2( 0.0, -o.y)).r;
-        s += texture2D(maskSampler, maskUV + vec2( o.x, -o.y)).r;
-        s += texture2D(maskSampler, maskUV + vec2(-o.x,  0.0)).r;
+        s += fxmMaskSampleUv(maskUV + vec2(-o.x, -o.y));
+        s += fxmMaskSampleUv(maskUV + vec2( 0.0, -o.y));
+        s += fxmMaskSampleUv(maskUV + vec2( o.x, -o.y));
+        s += fxmMaskSampleUv(maskUV + vec2(-o.x,  0.0));
         s += a;
-        s += texture2D(maskSampler, maskUV + vec2( o.x,  0.0)).r;
-        s += texture2D(maskSampler, maskUV + vec2(-o.x,  o.y)).r;
-        s += texture2D(maskSampler, maskUV + vec2( 0.0,  o.y)).r;
-        s += texture2D(maskSampler, maskUV + vec2( o.x,  o.y)).r;
+        s += fxmMaskSampleUv(maskUV + vec2( o.x,  0.0));
+        s += fxmMaskSampleUv(maskUV + vec2(-o.x,  o.y));
+        s += fxmMaskSampleUv(maskUV + vec2( 0.0,  o.y));
+        s += fxmMaskSampleUv(maskUV + vec2( o.x,  o.y));
         a = clamp(s / 9.0, 0.0, 1.0);
       }
 
@@ -175,12 +202,12 @@ void main(void) {
   float tokenA = 0.0;
   if (hasTokenMask > 0.5) {
     vec2 displacedScreenPx = screenPx + dispPx;
-    vec2 tokenUV = displacedScreenPx / max(viewSize, vec2(1.0));
-    vec2 cssPx = 1.0 / max(viewSize, vec2(1.0));
+    vec2 tokenUV = fxmMaskUvFromCss(displacedScreenPx);
+    vec2 cssPx = fxmMaskTexel();
     for (int dy = -1; dy <= 1; ++dy) {
       for (int dx = -1; dx <= 1; ++dx) {
         vec2 off = vec2(float(dx), float(dy)) * cssPx;
-        tokenA = max(tokenA, texture2D(tokenSampler, tokenUV + off).a);
+        tokenA = max(tokenA, fxmTokenMaskAlphaSampleUv(tokenUV + off));
       }
     }
   }

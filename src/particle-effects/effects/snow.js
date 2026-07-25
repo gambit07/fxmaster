@@ -22,6 +22,11 @@ export class SnowParticleEffect extends FXMasterParticleEffect {
     return 0.05;
   }
 
+  /** Prewarm snowflakes behind alpha 0 so soft toggles have a visible alpha fade instead of waiting for new flakes to populate. */
+  static get softFadePrewarm() {
+    return true;
+  }
+
   /** @override */
   static get parameters() {
     const p = super.parameters;
@@ -33,11 +38,149 @@ export class SnowParticleEffect extends FXMasterParticleEffect {
       topDown: { label: "FXMASTER.Params.TopDown", type: "checkbox", value: false },
       scale: p.scale,
       direction: { ...p.direction, showWhen: { topDown: false } },
-      speed: p.speed,
+      synchronizedDirection: { ...this.synchronizedDirectionParameter, showWhen: { topDown: false } },
+      speed: { ...p.speed, value: 0.3 },
       lifetime: p.lifetime,
-      density: p.density,
+      density: { ...p.density, value: 0.4 },
       alpha: p.alpha,
+      backgroundEnabled: {
+        label: "FXMASTER.Params.Background",
+        type: "checkbox",
+        value: false,
+        tooltip: "FXMASTER.ParamTooltips.Background",
+      },
+      backgroundMode: {
+        label: "FXMASTER.Params.BackgroundMode",
+        type: "select",
+        value: "accumulate",
+        options: {
+          full: "FXMASTER.Params.BackgroundModeFull",
+          accumulate: "FXMASTER.Params.BackgroundModeAccumulate",
+        },
+        showWhen: { backgroundEnabled: true },
+        tooltip: "FXMASTER.ParamTooltips.BackgroundMode",
+      },
+      backgroundDuration: {
+        label: "FXMASTER.Params.BackgroundDuration",
+        type: "range",
+        min: 10,
+        value: 180,
+        max: 3600,
+        step: 10,
+        decimals: 0,
+        labelOutput: "minutes",
+        showWhen: { backgroundEnabled: true, backgroundMode: "accumulate" },
+        tooltip: "FXMASTER.ParamTooltips.BackgroundDuration",
+      },
+      backgroundOpacity: {
+        label: "FXMASTER.Params.BackgroundOpacity",
+        type: "range",
+        min: 0,
+        value: 0.7,
+        max: 1,
+        step: 0.01,
+        decimals: 2,
+        showWhen: { backgroundEnabled: true },
+        tooltip: "FXMASTER.ParamTooltips.BackgroundOpacity",
+      },
+      backgroundFillVariation: {
+        label: "FXMASTER.Params.BackgroundFillVariation",
+        type: "range",
+        min: 0,
+        value: 0.75,
+        max: 1,
+        step: 0.05,
+        decimals: 2,
+        showWhen: { backgroundEnabled: true, backgroundMode: "accumulate" },
+        tooltip: "FXMASTER.ParamTooltips.BackgroundFillVariation",
+      },
+      backgroundDriftStrength: {
+        label: "FXMASTER.Params.BackgroundDriftStrength",
+        type: "range",
+        min: 0,
+        value: 0.5,
+        max: 1,
+        step: 0.05,
+        decimals: 2,
+        showWhen: { backgroundEnabled: true },
+        tooltip: "FXMASTER.ParamTooltips.BackgroundDriftStrength",
+      },
+      backgroundDriftScale: {
+        label: "FXMASTER.Params.BackgroundDriftScale",
+        type: "range",
+        min: 0.05,
+        value: 0.8,
+        max: 12,
+        step: 0.05,
+        decimals: 2,
+        showWhen: { backgroundEnabled: true },
+        tooltip: "FXMASTER.ParamTooltips.BackgroundDriftScale",
+      },
+      backgroundTrailsEnabled: {
+        label: "FXMASTER.Params.BackgroundTrails",
+        type: "checkbox",
+        value: false,
+        showWhen: { backgroundEnabled: true },
+        tooltip: "FXMASTER.ParamTooltips.BackgroundTrails",
+      },
+      backgroundTrailRefillEnabled: {
+        label: "FXMASTER.Params.BackgroundTrailRefill",
+        type: "checkbox",
+        value: true,
+        showWhen: { backgroundEnabled: true, backgroundTrailsEnabled: true },
+        tooltip: "FXMASTER.ParamTooltips.BackgroundTrailRefill",
+      },
+      backgroundTrailRefillDuration: {
+        label: "FXMASTER.Params.BackgroundTrailRefillDuration",
+        type: "range",
+        min: 10,
+        value: 90,
+        max: 3600,
+        step: 10,
+        decimals: 0,
+        labelOutput: "minutes",
+        showWhen: { backgroundEnabled: true, backgroundTrailsEnabled: true, backgroundTrailRefillEnabled: true },
+        tooltip: "FXMASTER.ParamTooltips.BackgroundTrailRefillDuration",
+      },
+      backgroundTrailWidth: {
+        label: "FXMASTER.Params.BackgroundTrailWidth",
+        type: "range",
+        min: 0,
+        value: 0.5,
+        max: 2,
+        step: 0.05,
+        decimals: 2,
+        showWhen: { backgroundEnabled: true, backgroundTrailsEnabled: true },
+        tooltip: "FXMASTER.ParamTooltips.BackgroundTrailWidth",
+      },
+      backgroundTrailStrength: {
+        label: "FXMASTER.Params.BackgroundTrailStrength",
+        type: "range",
+        min: 0,
+        value: 0.25,
+        max: 1,
+        step: 0.01,
+        decimals: 2,
+        showWhen: { backgroundEnabled: true, backgroundTrailsEnabled: true },
+        tooltip: "FXMASTER.ParamTooltips.BackgroundTrailStrength",
+      },
+      backgroundInteractionElevationThreshold: {
+        label: "FXMASTER.Params.BackgroundInteractionElevationThreshold",
+        type: "number-infinity",
+        min: 0,
+        value: 5,
+        max: "Infinity",
+        step: 0.5,
+        decimals: 1,
+        showWhen: { backgroundEnabled: true, backgroundTrailsEnabled: true },
+        tooltip: "FXMASTER.ParamTooltips.BackgroundTrailElevationThreshold",
+      },
     };
+  }
+
+  /** @override */
+  static get backgroundSurface() {
+    return { type: "snow" };
   }
 
   /**
@@ -52,8 +195,11 @@ export class SnowParticleEffect extends FXMasterParticleEffect {
         config: {
           alpha: {
             list: [
-              { time: 0, value: 0.9 },
-              { time: 1, value: 0.5 },
+              { time: 0, value: 0 },
+              { time: 0.08, value: 0.9 },
+              { time: 0.62, value: 0.85 },
+              { time: 0.82, value: 0.45 },
+              { time: 1, value: 0 },
             ],
           },
         },
@@ -132,8 +278,9 @@ export class SnowParticleEffect extends FXMasterParticleEffect {
       this._fxmCanvasPanOwnerPosEnabled = false;
 
       const ctx = options?.__fxmParticleContext ?? this.__fxmParticleContext;
-      const spawnX = ctx ? d.sceneRect.x : 0;
-      const spawnY = (ctx ? d.sceneRect.y : 0) - 0.1 * d.height;
+      const scopedContext = CONFIG.fxmaster?.isScopedParticleContext?.(ctx) ?? !!ctx?.dimensions;
+      const spawnX = scopedContext ? d.sceneRect.x : 0;
+      const spawnY = (scopedContext ? d.sceneRect.y : 0) - 0.1 * d.height;
 
       config.behaviors.push({
         type: "spawnShape",
@@ -193,8 +340,9 @@ export class SnowParticleEffect extends FXMasterParticleEffect {
     const emitter = this.createEmitter(config);
 
     const ctx = options?.__fxmParticleContext ?? this.__fxmParticleContext;
-    const ownerX = ctx ? 0 : canvas.stage.pivot.x - d.sceneX - d.sceneWidth / 2;
-    const ownerY = ctx ? 0 : canvas.stage.pivot.y - d.sceneY - d.sceneHeight / 2;
+    const scopedContext = CONFIG.fxmaster?.isScopedParticleContext?.(ctx) ?? !!ctx?.dimensions;
+    const ownerX = scopedContext ? 0 : canvas.stage.pivot.x - d.sceneX - d.sceneWidth / 2;
+    const ownerY = scopedContext ? 0 : canvas.stage.pivot.y - d.sceneY - d.sceneHeight / 2;
     emitter.updateOwnerPos(ownerX, ownerY);
 
     return [emitter];
