@@ -196,13 +196,16 @@ export function installTileRefreshStateGuard() {
 
   const guardedRefreshState = function fxmasterTileRefreshStateGuard(...args) {
     const layer = this?.layer ?? null;
+    const stateDisplay = "controls" in this ? this.controls : this.frame;
     const invalidLayer = !layer || layer.destroyed;
-    const invalidControls = !this?.controls || !this?.document;
-    if (invalidLayer || invalidControls || this?.destroyed) {
+    const invalidState = !stateDisplay || !this?.document;
+    if (invalidLayer || invalidState || this?.destroyed) {
       if (!this?.destroyed && typeof globalThis.requestAnimationFrame === "function") {
         globalThis.requestAnimationFrame(() => {
           try {
-            if (!this?.destroyed && this?.layer && this?.controls && this?.document) {
+            const retryLayer = this?.layer ?? null;
+            const retryStateDisplay = "controls" in this ? this.controls : this.frame;
+            if (!this?.destroyed && retryLayer && !retryLayer.destroyed && retryStateDisplay && this?.document) {
               this.renderFlags?.set?.({ refreshState: true });
             }
           } catch (err) {
