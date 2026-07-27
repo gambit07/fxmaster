@@ -1,5 +1,8 @@
 # Changelog
 
+## [v8.3.3] - 2026-07-27
+- Resolved a bug where some Particle parameters would not display
+
 ## [v8.3.2] - 2026-07-27
 Welcome to FXMaster V8.3.0! This is an incredibly exciting update with some features I've been working on for a while that enhance the natural feel of effects on canvas. Many effects now have either a Background mode, Token Trails mode, or both! These options can really spice up your environmental effects with persistent time-based background fills, and token trails that interact with various particles and filters! The Wind and Duststorm effects for FXMaster+ also get some exciting updates that allow tying particle effects direction into the wind direction, and the ability to paint Wind areas to allow defining trees, bushes, etc that should be effected by wind displacement/movement. Tons of other small tweaks all over the place
 - Added Background mode to FXMaster effects Snow, Snowstorm, Rain, and Autumn Leaves. Added background mode to FXMaster+ effects Summer Leaves, Sakura Bloom, Duststorm, and Sandstorm
