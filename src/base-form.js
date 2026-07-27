@@ -1715,7 +1715,7 @@ export class FXMasterBaseFormV2 extends Base {
             root.querySelector(`[name="${inputName}_min"]`) ||
             root.querySelector(`[name="${inputName}_max"]`) ||
             null;
-          if (!input) continue;
+          if (!input || input.dataset?.fxmHiddenParameter === "true") continue;
 
           const row = this.constructor._fxmFindFieldRow(input, root);
           if (!row) continue;
@@ -1909,6 +1909,7 @@ export class FXMasterBaseFormV2 extends Base {
     }
 
     const parent = el.parentElement;
+    if (parent?.matches?.(".fxmaster-particle-params, .fxmaster-filter-params")) return null;
     if (parent && parent !== root) return parent;
     return null;
   }

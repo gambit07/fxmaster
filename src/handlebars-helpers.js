@@ -888,7 +888,7 @@ export function registerHandlebarsHelpers() {
     if (parameterConfig.type === "checkbox") {
       const checked = _default ? "checked" : "";
       const inputId = `${safeId(nameBase)}_switch_hidden`;
-      return `<input id="${inputId}" type="checkbox" name="${nameBase}" ${checked} data-action="updateParam" style="display:none" aria-hidden="true" tabindex="-1" />`;
+      return `<input id="${inputId}" type="checkbox" name="${nameBase}" ${checked} data-action="updateParam" data-fxm-hidden-parameter="true" style="display:none" aria-hidden="true" tabindex="-1" />`;
     }
 
     if (parameterConfig.type === "range-dual") {
@@ -901,7 +901,7 @@ export function registerHandlebarsHelpers() {
         : Number(parameterConfig.value?.max ?? parameterConfig.max ?? 1);
       const minId = `${safeId(nameBase)}_range_hidden_min`;
       const maxId = `${safeId(nameBase)}_range_hidden_max`;
-      return `<input id="${minId}" type="hidden" name="${nameBase}_min" value="${minVal}" aria-hidden="true" tabindex="-1" /><input id="${maxId}" type="hidden" name="${nameBase}_max" value="${maxVal}" aria-hidden="true" tabindex="-1" />`;
+      return `<input id="${minId}" type="hidden" name="${nameBase}_min" value="${minVal}" data-fxm-hidden-parameter="true" aria-hidden="true" tabindex="-1" /><input id="${maxId}" type="hidden" name="${nameBase}_max" value="${maxVal}" data-fxm-hidden-parameter="true" aria-hidden="true" tabindex="-1" />`;
     }
 
     if (parameterConfig.type === "number-infinity") {
@@ -917,7 +917,7 @@ export function registerHandlebarsHelpers() {
       const inputId = `${safeId(nameBase)}_number_infinity_hidden`;
       return `<input id="${inputId}" type="hidden" name="${nameBase}" value="${Handlebars.escapeExpression(
         value,
-      )}" aria-hidden="true" tabindex="-1" />`;
+      )}" data-fxm-hidden-parameter="true" aria-hidden="true" tabindex="-1" />`;
     }
 
     return "";
