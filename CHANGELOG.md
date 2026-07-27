@@ -1,5 +1,23 @@
 # Changelog
 
+## [v8.3.2] - 2026-07-26
+Welcome to FXMaster V8.3.0! This is an incredibly exciting update with some features I've been working on for a while that enhance the natural feel of effects on canvas. Many effects now have either a Background mode, Token Trails mode, or both! These options can really spice up your environmental effects with persistent time-based background fills, and token trails that interact with various particles and filters! The Wind and Duststorm effects for FXMaster+ also get some exciting updates that allow tying particle effects direction into the wind direction, and the ability to paint Wind areas to allow defining trees, bushes, etc that should be effected by wind displacement/movement. Tons of other small tweaks all over the place
+- Added Background mode to FXMaster effects Snow, Snowstorm, Rain, and Autumn Leaves. Added background mode to FXMaster+ effects Summer Leaves, Sakura Bloom, Duststorm, and Sandstorm
+  - Background mode contains a number of parameters including fill over time or fixed background density. Fill over time will allow setting a time to fill which will cause the background to organically introduce the effect in the background over time.
+- Added Token Interactivity to FXMaster effects Fog, Snow, Snowstorm, Rain, Autumn Leaves, Bubbles, Rats, and Spiders. Added Token Interactivity to FXMaster+ effects Water, Sakura Bloom, Duststorm, Sandstorm, Fish, Fireflies, and custom user particle effects
+  - Token Interactivity covers a number of different interactions including bubbles popping, leaves flying into the air as a token walks through them, paths created in snowy areas, and more!
+- Added Tooltip compass nomenclature readout for effects with a Direction parameter. This will update in real time to display N/E/S/etc depending on the degrees set.
+- Added tint parameter to the Lightning effect
+- Added direction parameter to the Fog filter effect, allows further customization for fog which was a bit limited.
+- Updated Rain effect. Rain now uses a procedural shader rather than dedicated particle sprites. This should improve performance especially on larger scenes and looks better imo
+- Updated Snowstorm effect. Snowstorm now uses a procedural shader rather than dedicated particle sprites. This should improve performance especially on larger scenes and definitely looks better. Snowstorm also receives a sweeping snow effect when the background is turned on that can emulate a heavy snowstorm really well.
+- Updated and improved V14 levels logic by converting some bespoke FXMaster code to use Foundrys native detection handling
+- Updated Detach Window handling in V14 to fix a few bugs and remove empty deadspace
+- Removed the FXMaster compendium pack. The macro examples there were outdated, macros can be saved and inspected by generating them directly from the Save Particle and Filter Effects as Macro controls button
+- Resolved V14 levels issue where multiple levels with a suppression behavior would not properly suppress in certain levels scenarios.
+- Resolved regions not normalizing fxmaster parameter values properly at runtime
+- Resolved isometric modules causing FXMaster scene effects to not apply properly
+
 ## [v8.3.1] - 2026-07-25
 Welcome to FXMaster V8.3.0! This is an incredibly exciting update with some features I've been working on for a while that enhance the natural feel of effects on canvas. Many effects now have either a Background mode, Token Trails mode, or both! These options can really spice up your environmental effects with persistent time-based background fills, and token trails that interact with various particles and filters! The Wind and Duststorm effects for FXMaster+ also get some exciting updates that allow tying particle effects direction into the wind direction, and the ability to paint Wind areas to allow defining trees, bushes, etc that should be effected by wind displacement/movement. Tons of other small tweaks all over the place
 - Added Background mode to FXMaster effects Snow, Snowstorm, Rain, and Autumn Leaves. Added background mode to FXMaster+ effects Summer Leaves, Sakura Bloom, Duststorm, and Sandstorm
