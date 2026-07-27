@@ -538,7 +538,15 @@ function parseHexColor(value, fallback = [0.73, 0.86, 0.97]) {
   ]);
 }
 
-function resolveTintColor(options) {
+function resolveTintColor(options, owner = null) {
+  let resolved = null;
+  try {
+    resolved = owner?._resolveTintOption?.(options) ?? null;
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+  }
+  if (resolved) return parseHexColor(resolved);
+
   const tint = options?.tint;
   const payload = tint?.value && typeof tint.value === "object" ? tint.value : tint;
   const apply = !!(payload?.apply ?? tint?.apply);
@@ -837,7 +845,14 @@ export class RainProceduralSurface {
       uniforms.uTopDown = topDown ? 1 : 0;
       uniforms.uDirection[0] = direction.x;
       uniforms.uDirection[1] = direction.y;
-      uniforms.uColor = resolveTintColor(this.options);
+      const color = resolveTintColor(this.options, this.owner);
+      if (uniforms.uColor?.length >= 3) {
+        uniforms.uColor[0] = color[0];
+        uniforms.uColor[1] = color[1];
+        uniforms.uColor[2] = color[2];
+      } else {
+        uniforms.uColor = color;
+      }
     }
 
     this.setDimensions(

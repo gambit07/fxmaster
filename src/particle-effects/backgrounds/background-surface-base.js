@@ -312,10 +312,19 @@ void main() {
       ? clamp(trailRefillDuration, 1, 3600, 180)
       : Math.max(0.25, this.durationSeconds * refillMultiplier);
 
+    const resolvedTint = unwrapParticleBackgroundOption(this.options?.__fxmResolvedTint);
     const tint = unwrapParticleBackgroundOption(this.options?.tint);
     const tintEnabled = !!(tint && typeof tint === "object" && tint.apply);
-    const tintValue = tintEnabled ? tint.value : this.constructor.defaultColorHex ?? "#edf5ff";
-    this.filter.uniforms.uColor = parseHexColor(tintValue, this.constructor.defaultColorRgb ?? [0.93, 0.96, 1.0]);
+    const tintValue = resolvedTint ?? (tintEnabled ? tint.value : this.constructor.defaultColorHex ?? "#edf5ff");
+    const color = parseHexColor(tintValue, this.constructor.defaultColorRgb ?? [0.93, 0.96, 1.0]);
+    const uniform = this.filter.uniforms.uColor;
+    if (uniform?.length >= 3) {
+      uniform[0] = color[0];
+      uniform[1] = color[1];
+      uniform[2] = color[2];
+    } else {
+      this.filter.uniforms.uColor = color;
+    }
     this.filter.uniforms.uSeed = resolvePatternSeed(this.uid, this.state);
     this.filter.uniforms.uFillVariation = this.fillVariation;
     this.filter.uniforms.uDriftStrength = this.driftStrength;

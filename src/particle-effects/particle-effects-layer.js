@@ -1053,6 +1053,14 @@ export class ParticleEffectsLayer extends BaseEffectsLayer {
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
+    try {
+      surfaceOptions = {
+        ...surfaceOptions,
+        __fxmResolvedTint: fx._resolveTintOption?.(surfaceOptions) ?? null,
+      };
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
     const trailStore = this._getParticleBackgroundTrailStore(descriptor, backgroundUid);
     let surface = fx.__fxmBackgroundSurface ?? null;
     if (surface && String(surface.type ?? "") !== expectedType) {

@@ -2703,13 +2703,15 @@ export function syncActiveRadialRestrictWeatherTileMasksForCamera(
   }
 }
 
-function tileHasNonRadialSpatialOcclusionReveal(candidate) {
-  if (!tileHasSpatialOcclusionReveal(candidate)) return false;
-
+function tileHasNonRadialSpatialOcclusionMode(candidate) {
   const tile = _getTileMaskCandidateTile(candidate);
   const modes = getTileOcclusionModes(tile?.document ?? tile ?? null);
   const M = CONST?.OCCLUSION_MODES ?? CONST?.TILE_OCCLUSION_MODES ?? {};
   return tileOcclusionModesInclude(modes, M.SURFACE) || tileOcclusionModesInclude(modes, M.VISION);
+}
+
+function tileHasNonRadialSpatialOcclusionReveal(candidate) {
+  return tileHasSpatialOcclusionReveal(candidate) && tileHasNonRadialSpatialOcclusionMode(candidate);
 }
 
 function getTileRadialRevealMaskAlpha(candidate) {
@@ -3019,7 +3021,7 @@ function renderRadialOcclusionShapesIntoRT(
  * @param {{ clear?: boolean, restrictionKind?: "particles"|"filters"|"weather" }} [options]
  * @returns {boolean}
  */
-function renderV13RadialVisibleTilesIntoRT(outRT, candidates, { clear = true, restrictionKind = "weather" } = {}) {
+function renderRadialVisibleTilesIntoRT(outRT, candidates, { clear = true, restrictionKind = "weather" } = {}) {
   const renderer = canvas?.app?.renderer;
   if (!renderer || !outRT || !Array.isArray(candidates) || !candidates.length) {
     if (clear) clearTileMaskRenderTexture(outRT);
@@ -4715,7 +4717,9 @@ export function repaintTilesMaskInto(
       shouldIncludeTile: predicate,
       includeOffscreen: !!worldAtlas,
     });
-    const explicitRadialCandidates = foundryGenerationAtLeast14() ? [] : candidates.filter(tileHasRadialOcclusionMode);
+    const explicitRadialCandidates = candidates.filter(
+      (candidate) => tileHasRadialOcclusionMode(candidate) && !tileHasNonRadialSpatialOcclusionMode(candidate),
+    );
     const explicitRadialSet = new Set(explicitRadialCandidates);
     const standardCandidates = candidates.filter((candidate) => !explicitRadialSet.has(candidate));
 
@@ -4738,7 +4742,7 @@ export function repaintTilesMaskInto(
       : false;
     const renderedStandard = renderedLive || renderedFallback;
     const renderedRadial = explicitRadialCandidates.length
-      ? renderV13RadialVisibleTilesIntoRT(renderTexture, explicitRadialCandidates, {
+      ? renderRadialVisibleTilesIntoRT(renderTexture, explicitRadialCandidates, {
           clear: clear && !renderedStandard,
           restrictionKind: resolvedRestrictionKind,
         })

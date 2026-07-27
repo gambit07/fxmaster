@@ -118,6 +118,13 @@ float densityLayerGate(float layerIndex, float maxLayerIndex) {
   return smoothstep(layerNorm - 0.24, layerNorm + 0.12, coverage);
 }
 
+float sideViewOpacityStrength() {
+  float coverage = densityLayerCoverage();
+  float densityStrength = mix(1.10, 2.27, coverage * coverage);
+  float smallScaleBoost = mix(1.16, 1.0, smoothstep(0.35, 1.50, uScale));
+  return densityStrength * smallScaleBoost;
+}
+
 #ifndef FXM_SNOWSTORM_SIDE_VIEW
 float topDownDeadzoneFade(vec2 relative, float stopRadius) {
   float radius = length(relative);
@@ -360,10 +367,7 @@ void main() {
     snowUv.x += sin(oriented.y * 0.028 + time * 0.18 + f) * gustStrength * 0.36;
     accumulation += snowDensityForLayer(snowUv, f) * layerGate * mix(0.78, 1.44, gustBand * gustStrength);
   }
-  accumulation *= mix(0.74, 1.08, densityLayerCoverage());
-
-  float highDensityLift = smoothstep(1.0, 2.85, uDensity);
-  float sideAlpha = clamp((1.0 - exp(-accumulation * mix(0.58, 1.52, amount) * mix(1.0, 1.18, highDensityLift))) * effectiveAlpha, 0.0, 0.97);
+  float sideAlpha = clamp((1.0 - exp(-accumulation * sideViewOpacityStrength())) * effectiveAlpha, 0.0, 0.97);
   vec3 sideColor = min(vec3(1.0), uColor * 0.96);
   gl_FragColor = vec4(sideColor * sideAlpha, sideAlpha);
 #else
@@ -410,10 +414,7 @@ void main() {
     snowUv.x += sin(oriented.y * 0.028 + time * 0.18 + f) * gustStrength * 0.36;
     accumulation += snowDensityForLayer(snowUv, f) * layerGate * mix(0.78, 1.44, gustBand * gustStrength);
   }
-  accumulation *= mix(0.74, 1.08, densityLayerCoverage());
-
-  float highDensityLift = smoothstep(1.0, 2.85, uDensity);
-  float sideAlpha = clamp((1.0 - exp(-accumulation * mix(0.58, 1.52, amount) * mix(1.0, 1.18, highDensityLift))) * effectiveAlpha, 0.0, 0.97);
+  float sideAlpha = clamp((1.0 - exp(-accumulation * sideViewOpacityStrength())) * effectiveAlpha, 0.0, 0.97);
   vec3 sideColor = min(vec3(1.0), uColor * 0.96);
   gl_FragColor = vec4(sideColor * sideAlpha, sideAlpha);
 #endif
@@ -623,7 +624,15 @@ function parseHexColor(value, fallback = [0.95, 1.0, 1.0]) {
   ]);
 }
 
-function resolveTintColor(options) {
+function resolveTintColor(options, owner = null) {
+  let resolved = null;
+  try {
+    resolved = owner?._resolveTintOption?.(options) ?? null;
+  } catch (err) {
+    logger.debug("FXMaster:", err);
+  }
+  if (resolved) return parseHexColor(resolved);
+
   const tint = options?.tint;
   const payload = tint?.value && typeof tint.value === "object" ? tint.value : tint;
   const apply = !!(payload?.apply ?? tint?.apply);
@@ -812,7 +821,14 @@ export class SnowstormProceduralSurface {
       uniforms.uRotationStrength = topDown ? clamp(unwrapOption(this.options?.rotationStrength), 0, 1, 0.35) : 0;
       uniforms.uDirection[0] = direction.x;
       uniforms.uDirection[1] = direction.y;
-      uniforms.uColor = resolveTintColor(this.options);
+      const color = resolveTintColor(this.options, this.owner);
+      if (uniforms.uColor?.length >= 3) {
+        uniforms.uColor[0] = color[0];
+        uniforms.uColor[1] = color[1];
+        uniforms.uColor[2] = color[2];
+      } else {
+        uniforms.uColor = color;
+      }
       uniforms.uSeed = stableSeed(
         this.owner?.__fxmBackgroundUid ?? this.owner?.id ?? this.owner?.constructor?.label ?? "fxmaster-snowstorm",
       );

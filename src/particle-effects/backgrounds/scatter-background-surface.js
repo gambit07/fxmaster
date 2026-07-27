@@ -258,9 +258,10 @@ export class ScatterBackgroundSurface {
     this.direction = baseDirection;
     this.trailsEnabled = this.interactionEnabled;
 
+    const resolvedTint = unwrapParticleBackgroundOption(this.options?.__fxmResolvedTint);
     const tint = unwrapParticleBackgroundOption(this.options?.tint);
     const tintEnabled = !!(tint && typeof tint === "object" && tint.apply);
-    this.tint = parseHexColorInt(tintEnabled ? tint.value : "#ffffff", 0xffffff);
+    this.tint = parseHexColorInt(resolvedTint ?? (tintEnabled ? tint.value : "#ffffff"), 0xffffff);
 
     if (dimensions) this.setDimensions(dimensions);
     this._configureStore();
