@@ -21,57 +21,37 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
 
   /** @override */
   static get parameters() {
-    return foundry.utils.mergeObject(super.parameters, {
-      density: { min: 0.001, value: 0.03, max: 0.2, step: 0.001, decimals: 3 },
-      synchronizedDirection: this.synchronizedDirectionParameter,
-      dropShadow: { label: "FXMASTER.Params.Shadow", type: "checkbox", value: false },
-      shadowOnly: {
-        label: "FXMASTER.Params.ShadowOnly",
-        type: "checkbox",
-        value: false,
-        showWhen: { dropShadow: true },
-      },
-      shadowRotation: {
-        label: "FXMASTER.Params.ShadowRotation",
+    const p = super.parameters;
+    return {
+      belowTokens: p.belowTokens,
+      belowTiles: p.belowTiles,
+      soundFxEnabled: p.soundFxEnabled,
+      tint: p.tint,
+      orbit: { label: "FXMASTER.Params.Orbit", type: "checkbox", value: false },
+      orbitDistance: {
+        label: "FXMASTER.Params.OrbitDistance",
         type: "range",
         min: 0,
-        value: 315,
-        max: 360,
-        step: 1,
-        decimals: 0,
-        showWhen: { dropShadow: true },
-      },
-      shadowDistance: {
-        label: "FXMASTER.Params.ShadowDistance",
-        type: "range",
-        min: 0,
-        value: 70,
-        max: 300,
-        step: 1,
-        decimals: 0,
-        showWhen: { dropShadow: true },
-      },
-      shadowBlur: {
-        label: "FXMASTER.Params.ShadowBlur",
-        type: "range",
-        min: 0,
-        value: 2,
-        max: 20,
-        step: 0.5,
-        decimals: 1,
-        showWhen: { dropShadow: true },
-      },
-      shadowOpacity: {
-        label: "FXMASTER.Params.ShadowOpacity",
-        type: "range",
-        min: 0,
-        value: 1,
+        value: 0.5,
         max: 1,
-        step: 0.05,
+        step: 0.01,
         decimals: 2,
-        showWhen: { dropShadow: true },
+        showWhen: { orbit: true },
       },
-    });
+      scale: p.scale,
+      direction: { ...p.direction, hideWhen: { orbit: true } },
+      synchronizedDirection: { ...this.synchronizedDirectionParameter, hideWhen: { orbit: true } },
+      speed: p.speed,
+      lifetime: p.lifetime,
+      density: { ...p.density, min: 0.001, value: 0.03, max: 0.2, step: 0.001, decimals: 3 },
+      alpha: p.alpha,
+      ...this.shadowParameters,
+    };
+  }
+
+  /** @override */
+  static get orbitFacesTangent() {
+    return false;
   }
 
   /**
@@ -121,12 +101,12 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
       minViewCells: this.constructor.MIN_VIEW_CELLS ?? 3000,
     });
 
+    const orbit = !!options.orbit?.value;
     const offsetFactor = 2 / 3;
     const grid = Math.max(1, Number(d?.size) || 100);
-    const spawnPadding = Math.max(
-      grid * 6,
-      Math.min(Number(d?.sceneRect?.width) || 1, Number(d?.sceneRect?.height) || 1) * 0.12,
-    );
+    const spawnPadding = orbit
+      ? 0
+      : Math.max(grid * 6, Math.min(Number(d?.sceneRect?.width) || 1, Number(d?.sceneRect?.height) || 1) * 0.12);
     const config = foundry.utils.deepClone(this.constructor.CLOUDS_CONFIG);
     const speed = config.behaviors.find(({ type }) => type === "moveSpeedStatic")?.config;
     if (speed === undefined) {
@@ -139,7 +119,7 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
     const minLifetime = averageDiagonalTime / offsetFactor / 2;
     const maxLifetime = averageDiagonalTime / offsetFactor;
 
-    const directionVector = geometricDirectionToCanvasVector(options.direction.value);
+    const directionVector = orbit ? { x: 0, y: 0 } : geometricDirectionToCanvasVector(options.direction.value);
 
     const spawnX = d.sceneRect.x - directionVector.x * d.sceneRect.width * offsetFactor - spawnPadding;
     const spawnY = d.sceneRect.y - directionVector.y * d.sceneRect.height * offsetFactor - spawnPadding;
@@ -149,7 +129,7 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
     const spawnArea = Math.max(1, spawnW * spawnH);
     const areaRatio = spawnArea / sceneArea;
 
-    config.maxParticles = Math.max(maxParticles, Math.round(maxParticles * areaRatio));
+    config.maxParticles = orbit ? maxParticles : Math.max(maxParticles, Math.round(maxParticles * areaRatio));
     config.frequency = (minLifetime + maxLifetime) / 2 / config.maxParticles;
     config.lifetime = { min: minLifetime, max: maxLifetime };
     config.behaviors.push({
@@ -174,7 +154,14 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
     config._dropshadowBlur = Number.isFinite(options.shadowBlur?.value) ? options.shadowBlur.value : 2;
     config._dropshadowOpacity = Number.isFinite(options.shadowOpacity?.value) ? options.shadowOpacity.value : 1;
 
-    this.applyOptionsToConfig(options, config);
+    const runtimeOptions = orbit
+      ? {
+          ...options,
+          direction: undefined,
+          synchronizedDirection: { ...(options.synchronizedDirection ?? {}), value: false },
+        }
+      : options;
+    this.applyOptionsToConfig(runtimeOptions, config);
 
     return [this.createEmitter(config)];
   }
@@ -193,7 +180,12 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
     const emitter = new PIXI.particles.Emitter(wrapper, config);
 
     try {
-      this._fxmInstallSynchronizedDirection(emitter, this._fxmLastOptions ?? this.options ?? {}, { wrap: true });
+      config._fxmOrbitFacesTangent = this.constructor.orbitFacesTangent !== false;
+      emitter._fxmOrbitConfig = config;
+      emitter._fxmOrbitFacesTangent = config._fxmOrbitFacesTangent;
+      const options = this._fxmLastOptions ?? this.options ?? {};
+      this._fxmInstallOrbitMovement(emitter, options, { wrap: true });
+      this._fxmInstallSynchronizedDirection(emitter, options, { wrap: true });
     } catch (err) {
       logger.debug("FXMaster:", err);
     }

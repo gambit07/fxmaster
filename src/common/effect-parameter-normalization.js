@@ -402,10 +402,14 @@ function normalizeParameterMap(kind, source) {
       ]
     : [];
   const hasTokenAvoidanceToggle = Object.hasOwn(parameters, "tokenAvoidance");
+  const hasTokenAvoidanceDispositions = Object.hasOwn(parameters, "tokenAvoidanceDispositions");
   const tokenAvoidanceOrder = hasTokenAvoidanceToggle
     ? [
         "tokenAvoidance",
-        ...Object.keys(parameters).filter((key) => key !== "tokenAvoidance" && key.startsWith("tokenAvoidance")),
+        "tokenAvoidanceDispositions",
+        ...Object.keys(parameters).filter(
+          (key) => key !== "tokenAvoidance" && key !== "tokenAvoidanceDispositions" && key.startsWith("tokenAvoidance"),
+        ),
       ]
     : [];
   const hasBurnTokensToggle = Object.hasOwn(parameters, "burnTokens");
@@ -479,6 +483,24 @@ function normalizeParameterMap(kind, source) {
   }
 
   for (const key of tokenAvoidanceOrder) {
+    if (key === "tokenAvoidanceDispositions" && !hasTokenAvoidanceDispositions) {
+      normalized[key] = {
+        label: "FXMASTER.Params.TokenAvoidanceDispositions",
+        tooltip: "FXMASTER.ParamTooltips.TokenAvoidanceDispositions",
+        type: "multi-select",
+        options: {
+          friendly: "TOKEN.DISPOSITION.FRIENDLY",
+          neutral: "TOKEN.DISPOSITION.NEUTRAL",
+          hostile: "TOKEN.DISPOSITION.HOSTILE",
+          secret: "TOKEN.DISPOSITION.SECRET",
+        },
+        value: ["friendly", "neutral", "hostile", "secret"],
+        allowEmpty: false,
+        showWhen: { tokenAvoidance: true },
+        ...(parameters.tokenAvoidance?.hideWhen ? { hideWhen: parameters.tokenAvoidance.hideWhen } : {}),
+      };
+      continue;
+    }
     normalized[key] = normalizeRangeParameter(key, parameters[key]);
   }
 

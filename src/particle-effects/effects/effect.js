@@ -131,6 +131,53 @@ function fxmOptionValue(value, fallback = undefined) {
   return value === undefined ? fallback : value;
 }
 
+const FXM_TOKEN_AVOIDANCE_DISPOSITIONS = Object.freeze(["friendly", "neutral", "hostile", "secret"]);
+
+/**
+ * Normalize a Token disposition selection used by particle avoidance.
+ * @param {any} value
+ * @returns {Set<string>}
+ */
+function fxmTokenAvoidanceDispositionSelection(value) {
+  const raw = fxmOptionValue(value, FXM_TOKEN_AVOIDANCE_DISPOSITIONS);
+  const values = Array.isArray(raw) ? raw : raw == null ? [] : [raw];
+  const aliases = new Map([
+    ["1", "friendly"],
+    ["0", "neutral"],
+    ["-1", "hostile"],
+    ["-2", "secret"],
+  ]);
+  const valid = new Set(FXM_TOKEN_AVOIDANCE_DISPOSITIONS);
+  const selected = new Set();
+
+  for (const value of values) {
+    const normalized = String(value ?? "")
+      .trim()
+      .toLowerCase();
+    const key = aliases.get(normalized) ?? normalized;
+    if (valid.has(key)) selected.add(key);
+  }
+
+  return selected.size ? selected : new Set(FXM_TOKEN_AVOIDANCE_DISPOSITIONS);
+}
+
+/**
+ * Resolve the stable disposition key for a Token.
+ * @param {Token|object} token
+ * @returns {string|null}
+ */
+function fxmTokenAvoidanceDisposition(token) {
+  const value = Number(token?.document?.disposition ?? token?.disposition);
+  if (!Number.isFinite(value)) return null;
+
+  const dispositions = globalThis.CONST?.TOKEN_DISPOSITIONS ?? {};
+  if (value === Number(dispositions.FRIENDLY ?? 1)) return "friendly";
+  if (value === Number(dispositions.NEUTRAL ?? 0)) return "neutral";
+  if (value === Number(dispositions.HOSTILE ?? -1)) return "hostile";
+  if (value === Number(dispositions.SECRET ?? -2)) return "secret";
+  return null;
+}
+
 /**
  * Stable token identifier used by particle token avoidance.
  * @param {Token|object} token
@@ -1677,6 +1724,7 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
     }
 
     const includeAtRest = !!fxmOptionValue(options?.tokenAvoidanceAtRest, false);
+    const selectedDispositions = fxmTokenAvoidanceDispositionSelection(options?.tokenAvoidanceDispositions);
     const directionalMode =
       !!fxmOptionValue(options?.directionalMovement, false) && !fxmOptionValue(options?.orbit, false);
     const rawDirection = Number(fxmOptionValue(options?.direction, NaN));
@@ -1704,6 +1752,8 @@ export class FXMasterParticleEffect extends CONFIG.fxmaster.ParticleEffectNS {
 
       for (const token of tokens) {
         if (!fxmTokenAvoidanceVisible(token)) continue;
+        const disposition = fxmTokenAvoidanceDisposition(token);
+        if (!disposition || !selectedDispositions.has(disposition)) continue;
         const id = fxmTokenAvoidanceId(token);
         if (!id) continue;
 

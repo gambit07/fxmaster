@@ -1,1 +1,2 @@
-- Resolved a bug where some Particle parameters would not display
+- Added Orbit mode to the Clouds particle effect. Should give some fun options
+- Added Token Disposition multi-select to Token Avoidance effects (Rats, Spiders, Ghosts, etc). This allows stopping rats from avoiding enemy type tokens, for example.
