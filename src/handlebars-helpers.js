@@ -755,11 +755,11 @@ export function registerHandlebarsHelpers() {
             value: Array.isArray(_default) ? _default : [_default],
             options: Array.isArray(dynamicChoices)
               ? dynamicChoices.map((choice) => ({
-                  value: choice.value,
-                  label: choice.label,
+                  value: Handlebars.escapeExpression(String(choice.value ?? "")),
+                  label: Handlebars.escapeExpression(String(choice.label ?? "")),
                   selected: choice.selected,
                 }))
-              : Object.entries(parameterConfig.options || {}).map((i) => ({ value: i[0], label: i[1] })),
+              : Object.entries(parameterConfig.options || {}).map((i) => ({ value: Handlebars.escapeExpression(String(i[0])), label: Handlebars.escapeExpression(String(i[1])) })),
             dataset: { action: "updateParam", tooltip: tipText, tooltipDirection: tipDir },
             localize: !Array.isArray(dynamicChoices),
           };
