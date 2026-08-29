@@ -1,14 +1,57 @@
 import { packageId } from "./constants.js";
 
 /**
+ * Cached setting values, keyed by setting name.
+ * 
+ * Avoids WorldSettings#getSetting - linear scan of all settings documents,
+ * which adds latency that can add up with enough call frequency.
+ *
+ * @type {Map<string, boolean>}
+ */
+const settingCache = new Map();
+let cacheHooksRegistered = false;
+
+/**
+ * Read a cached boolean module setting.
+ * 
+ * Invalidates on any possible action that can result in a setting change.
+ * Failed reads are not cached and hooks register on first use
+ * 
+ * @param {string} key
+ * @returns {boolean}
+ */
+function cachedFlag(key) {
+  const hit = settingCache.get(key);
+  if (hit !== undefined) return hit;
+
+  const settings = globalThis.game?.settings;
+  if (!settings) return false;
+
+  if (!cacheHooksRegistered) {
+    cacheHooksRegistered = true;
+    const invalidate = () => settingCache.clear();
+    Hooks.on("updateSetting", invalidate);
+    Hooks.on("createSetting", invalidate);
+    Hooks.on("clientSettingChanged", invalidate);
+  }
+
+  let value;
+  try {
+    value = settings.get(packageId, key) === true;
+  } catch (_err) {
+    return false;
+  }
+  settingCache.set(key, value);
+  return value;
+}
+
+/**
  * Determine whether FXMaster effects are globally enabled.
  *
  * @returns {boolean} Whether the module is enabled for the current world and client.
  */
 export function isEnabled() {
-  return (
-    globalThis.game?.settings?.get(packageId, "enable") && !globalThis.game?.settings?.get(packageId, "disableAll")
-  );
+  return cachedFlag("enable") && !cachedFlag("disableAll");
 }
 
 /**
@@ -17,11 +60,7 @@ export function isEnabled() {
  * @returns {boolean}
  */
 export function applyRegionBehaviorsToOverheadLevels() {
-  try {
-    return globalThis.game?.settings?.get(packageId, "applyRegionBehaviorsToOverheadLevels") === true;
-  } catch (_err) {
-    return false;
-  }
+  return cachedFlag("applyRegionBehaviorsToOverheadLevels");
 }
 
 /**
@@ -30,11 +69,7 @@ export function applyRegionBehaviorsToOverheadLevels() {
  * @returns {boolean}
  */
 export function compositeGridInFxStack() {
-  try {
-    return globalThis.game?.settings?.get(packageId, "compositeGridInFxStack") === true;
-  } catch (_err) {
-    return false;
-  }
+  return cachedFlag("compositeGridInFxStack");
 }
 
 /**
@@ -43,11 +78,7 @@ export function compositeGridInFxStack() {
  * @returns {boolean}
  */
 export function displayEffectsOverVision() {
-  try {
-    return globalThis.game?.settings?.get(packageId, "displayEffectsOverVision") === true;
-  } catch (_err) {
-    return false;
-  }
+  return cachedFlag("displayEffectsOverVision");
 }
 
 /**
@@ -56,9 +87,5 @@ export function displayEffectsOverVision() {
  * @returns {boolean}
  */
 export function disableGridMovementHighlighting() {
-  try {
-    return globalThis.game?.settings?.get(packageId, "disableGridMovementHighlighting") === true;
-  } catch (_err) {
-    return false;
-  }
+  return cachedFlag("disableGridMovementHighlighting");
 }
