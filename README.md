@@ -14,8 +14,19 @@
 <p align="center"><a href="https://gambit07.github.io/fxmaster-wiki/" target="_blank"> <img src="https://img.shields.io/badge/FXMaster-OPEN%20WIKI-6eaef7?style=for-the-badge&labelColor=7d69f2&" alt="Open the FXMaster Wiki" width="500"></a></p>
 <p>Welcome to the official release of FXMaster V8! This release brings brand new handling for V14 Scene Levels, new Manage Layers functionality to order particle and filter effects, new macro API with improved flexibility, and more! Hope everyone enjoys!</p>
 
-**<p>Any support via the <a href="https://www.patreon.com/GambitsLounge" target="_blank" rel="nofollow noopener">Patreon</a> or <a href="https://ko-fi.com/gambit07" target="_blank" rel="nofollow noopener">Ko-fi</a> is greatly appreciated! If you are a Patreon subscriber you will receive access to the FXMaster+ module. FXMaster+ can be accessed from Patreon, and it's where I will be adding new particle effects and filters moving forward. For the month of May, it will get you access to the 🟢Summer Leaves, 🟡Fire, 🟢Aurora Borealis, ⚪Wind, ⚪Wind Wisp, 🔵Water, 🟡Lightning Bolts, 🔵Fish, 🟢Glitch, 🔵Ice, 🟤Duststorm, 🟤Sandstorm, 🟢Ghosts, 🟡Sunlight, 🟢Magic Crystals, 🟡Fireflies, 🌸Sakura Bloom, and 🌸Sakura Blossoms Effects - Effects are previewed below:</p>**
+**<p>Any support via the <a href="https://www.patreon.com/GambitsLounge" target="_blank" rel="nofollow noopener">Patreon</a> or <a href="https://ko-fi.com/gambit07" target="_blank" rel="nofollow noopener">Ko-fi</a> is greatly appreciated! If you are a Patreon subscriber you will receive access to the FXMaster+ module. FXMaster+ can be accessed from Patreon, and it's where I will be adding new particle effects and filters moving forward. For the month of August, it will get you access to the 🟣Neon, 🟢Summer Leaves, 🟡Fire, 🟢Aurora Borealis, ⚪Wind, ⚪Wind Wisp, 🔵Water, 🟡Lightning Bolts, 🔵Fish, 🟢Glitch, 🔵Ice, 🟤Duststorm, 🟤Sandstorm, 🟢Ghosts, 🟡Sunlight, 🟢Magic Crystals, 🟡Fireflies, 🌸Sakura Bloom, and 🌸Sakura Blossoms Effects - Effects are previewed below:</p>**
 
+  <video
+    autoplay
+    muted
+    playsinline
+    loop
+    preload="auto"
+    src="https://github.com/user-attachments/assets/93803fcc-8df0-41eb-8bd5-8295ae96d9b8">
+  </video>
+
+<details>
+    <summary>Summer Leaves (click to expand - Map: <a href="https://www.czepeku.com/" target="_blank" rel="nofollow noopener">Cze & Peku</a>)</summary>
   <video
     autoplay
     muted
@@ -24,6 +35,7 @@
     preload="auto"
     src="https://github.com/user-attachments/assets/b21611d7-9bf0-4d94-91ed-82b9f55b9aff">
   </video>
+</details>
 
 <details>
     <summary>Fire (click to expand - Map: <a href="https://www.czepeku.com/" target="_blank" rel="nofollow noopener">Cze & Peku</a>)</summary>
