@@ -388,6 +388,9 @@ export class ParticleRegionBehaviorType extends foundry.data.regionBehaviors.Reg
     try {
       await super._onUpdate(changed, options, userId);
 
+      /** Sakura conversion supplies targeted flag changes and must not rebuild unrelated effect or gate flags. */
+      if (options?.fxmasterSakuraMigration) return;
+
       await this._applyParticles();
 
       const mode = this._getEventModeFromSelection();
