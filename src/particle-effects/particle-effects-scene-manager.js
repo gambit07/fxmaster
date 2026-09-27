@@ -106,61 +106,6 @@ function _collectSelectedSceneParticleLevelIds(allFx) {
 }
 
 /**
- * Normalize the runtime mode for compositor-side scene-particle suppression.
- *
- * V22 intentionally supports only the stable modes for this path:
- * - "off" disables compositor-side scene-particle suppression.
- * - any other value keeps compositor-side scene-particle suppression always on.
- *
- * V21 attempted an adaptive handoff from compositor-side suppression back to the shared scene-particle mask after panning stopped. That handoff could rebind a render texture into the particle mask graph while the compositor was still sampling related textures, producing WebGL feedback-loop errors.
- *
- * @returns {"off"|"always"}
- * @private
- */
-function _sceneParticleSuppressionCompositorMode() {
-  if (CONFIG?.fxmaster?.overheadPerformance?.compositorSceneParticleSuppression === false) return "off";
-  const raw = String(
-    CONFIG?.fxmaster?.overheadPerformance?.compositorSceneParticleSuppressionMode ?? "always",
-  ).toLowerCase();
-  if (["off", "never", "false", "0"].includes(raw)) return "off";
-  return "always";
-}
-
-/**
- * Return whether scene-particle suppression should currently be handled by the compositor instead of the shared scene allow-mask.
- *
- * @param {object|null|undefined} [layer]
- * @returns {boolean}
- */
-export function sceneParticleCompositorSuppressionIsInteractionActive(layer = canvas?.particleeffects) {
-  void layer;
-  return _sceneParticleSuppressionCompositorMode() !== "off";
-}
-
-/**
- * V22 compatibility shim for callers that marked the V21 adaptive window. The adaptive timer is intentionally not scheduled; stale V21 timers are cancelled so the stable compositor-side path remains active continuously.
- *
- * @param {object|null|undefined} [layer]
- * @param {{reason?: string, holdMs?: number}} [options]
- * @returns {boolean}
- */
-export function markSceneParticleSuppressionCompositorInteraction(layer = canvas?.particleeffects, options = {}) {
-  void options;
-  try {
-    if (!layer) return false;
-    if (layer._fxmSceneParticleSuppressionCompositorSettleTimer) {
-      globalThis.clearTimeout?.(layer._fxmSceneParticleSuppressionCompositorSettleTimer);
-      layer._fxmSceneParticleSuppressionCompositorSettleTimer = null;
-    }
-    layer._fxmSceneParticleSuppressionCompositorActiveUntil = 0;
-    return _sceneParticleSuppressionCompositorMode() !== "off";
-  } catch (err) {
-    logger.debug("FXMaster:", err);
-    return false;
-  }
-}
-
-/**
  * Return whether active suppress-scene-particles Regions can affect the supplied scene-particle runtimes. This avoids rebuilding the expensive scene allow mask on every camera movement when, for example, a Level 2 suppression Region is present but all active scene particles are explicitly assigned to Levels 1 & 3.
  *
  * @param {object[]} allFx
@@ -193,11 +138,9 @@ function _hasRelevantSuppressionForSceneParticles(allFx) {
  */
 function _sceneParticleSuppressionCanUseCompositor(
   allFx,
-  { anyBelow = false, anyBelowTiles = false, hasRelevantSuppression = false, layer = canvas?.particleeffects } = {},
+  { anyBelow = false, anyBelowTiles = false, hasRelevantSuppression = false } = {},
 ) {
   try {
-    if (CONFIG?.fxmaster?.overheadPerformance?.compositorSceneParticleSuppression === false) return false;
-    if (!sceneParticleCompositorSuppressionIsInteractionActive(layer)) return false;
     if (!applyRegionBehaviorsToOverheadLevels()) return false;
     if (!hasRelevantSuppression || anyBelow || anyBelowTiles) return false;
     if (!allFx?.length) return false;

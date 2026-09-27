@@ -1,4 +1,4 @@
-import { FXMasterParticleEffect } from "./effect.js";
+import { FXMasterParticleEffect } from "../effect.js";
 
 /**
  * A full-screen particle effect which renders flying eagles.
@@ -9,7 +9,7 @@ export class EaglesParticleEffect extends FXMasterParticleEffect {
 
   /** @override */
   static get icon() {
-    return "modules/fxmaster/assets/particle-effects/icons/eagles.webp";
+    return "modules/fxmaster/assets/particle-effects/icons/eagles.svg";
   }
 
   /** @override */

@@ -8,6 +8,7 @@ import { getRegionPlaceableOrDocumentAdapter, resolveDarknessActivationEnabled }
 import { configureNormalizedRegionRangeInputs } from "../utils/region-schema.js";
 import { configureCompassDirectionInputs, wireCompassDirectionOutputs } from "./compass-direction.js";
 import { wireMinuteLabelOutputs } from "./parameter-label-output.js";
+import { wireRangeInputBehavior } from "./range-input.js";
 
 function isColorPickerEditEvent(event) {
   const target = event?.target;
@@ -137,6 +138,7 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
 
   async _renderHTML(context, options) {
     const rendered = await super._renderHTML(context, options);
+    this._clearRegionFormListeners();
     rendered.form.classList.add("scrollable");
     this._configureNormalizedRangeInputs(rendered.form);
     this._configureCompassDirectionInputs(rendered.form);
@@ -148,6 +150,7 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
     this._configureMultiSelectQuickSelections(rendered.form);
     this._wireCompassDirectionOutputs(rendered.form);
     this._wireMinuteLabelOutputs(rendered.form);
+    this._fxmRangeBehaviorAbort = wireRangeInputBehavior(rendered.form);
 
     this._wireElevationGateVisibility(rendered.form);
     this._wireFxmasterConditionalVisibility(rendered.form);
@@ -362,10 +365,41 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
    */
   _scheduleLivePreview(form) {
     if (this._fxmLivePreviewTimer != null) return;
+    const signal = this._fxmLivePreviewAbort?.signal;
     this._fxmLivePreviewTimer = window.setTimeout(() => {
       this._fxmLivePreviewTimer = null;
+      if (signal?.aborted) return;
       this._applyLivePreview(form);
     }, 60);
+  }
+
+  /** Cancel a queued preview before its form is replaced or closed. */
+  _cancelLivePreviewTimer() {
+    if (this._fxmLivePreviewTimer == null) return;
+    window.clearTimeout(this._fxmLivePreviewTimer);
+    this._fxmLivePreviewTimer = null;
+  }
+
+  /** Release form listeners and pending preview work. */
+  _clearRegionFormListeners() {
+    this._cancelLivePreviewTimer();
+    for (const key of [
+      "_fxmLivePreviewAbort",
+      "_fxmParticleActionAbort",
+      "_fxmFilterActionAbort",
+      "_fxmCompassDirectionAbort",
+      "_fxmMinuteLabelAbort",
+      "_fxmRangeBehaviorAbort",
+      "_fxmMultiSelectPresetAbort",
+      "_fxmConditionalVisibilityAbort",
+    ]) {
+      try {
+        this[key]?.abort?.();
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+      this[key] = null;
+    }
   }
 
   /**
@@ -374,14 +408,15 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
    * @returns {void}
    */
   _wireLivePreview(form) {
-    if (!form || !game.user?.isGM) return;
-    this._fxmLivePreviewCommitted = false;
-
+    this._cancelLivePreviewTimer();
     try {
       this._fxmLivePreviewAbort?.abort?.();
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
+    this._fxmLivePreviewAbort = null;
+    if (!form || !game.user?.isGM) return;
+    this._fxmLivePreviewCommitted = false;
 
     const ac = new AbortController();
     this._fxmLivePreviewAbort = ac;
@@ -412,10 +447,7 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
-    if (this._fxmLivePreviewTimer != null) {
-      clearTimeout(this._fxmLivePreviewTimer);
-      this._fxmLivePreviewTimer = null;
-    }
+    this._cancelLivePreviewTimer();
     this._restoreLivePreviewSource({ refresh: false });
     await super._processSubmitData(event, form, submitData, options);
     this._refreshLivePreviewRegion({ soft: false, reason: "commit" });
@@ -424,42 +456,12 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
   /** @inheritdoc */
   _onClose(options) {
     this._fxmDisableDetachedWindowFit();
-    try {
-      this._fxmLivePreviewAbort?.abort?.();
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
-    try {
-      this._fxmParticleActionAbort?.abort?.();
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
-    try {
-      this._fxmFilterActionAbort?.abort?.();
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
-    try {
-      this._fxmCompassDirectionAbort?.abort?.();
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
-    this._fxmCompassDirectionAbort = null;
-    try {
-      this._fxmMultiSelectPresetAbort?.abort?.();
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
-    this._fxmMultiSelectPresetAbort = null;
+    this._clearRegionFormListeners();
     try {
       this._notifyRegionParticleActionClose();
       this._notifyRegionFilterActionClose();
     } catch (err) {
       logger.debug("FXMaster:", err);
-    }
-    if (this._fxmLivePreviewTimer != null) {
-      clearTimeout(this._fxmLivePreviewTimer);
-      this._fxmLivePreviewTimer = null;
     }
     if (!this._fxmLivePreviewCommitted) this._restoreLivePreviewSource({ refresh: true });
     super._onClose(options);
@@ -833,6 +835,7 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
     );
 
     const refreshControls = () => {
+      if (ac.signal.aborted) return;
       for (const effectDef of Object.values(CONFIG?.fxmaster?.filterEffects ?? {})) {
         try {
           effectDef?.refreshManualPlacementControl?.();
@@ -841,10 +844,23 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
         }
       }
     };
+    let refreshFrame = null;
+    ac.signal.addEventListener(
+      "abort",
+      () => {
+        if (refreshFrame != null) cancelAnimationFrame(refreshFrame);
+        refreshFrame = null;
+      },
+      { once: true },
+    );
     const scheduleRefresh = (event) => {
       const name = String(event?.target?.name ?? "");
       if (!name.endsWith("_enabled") && !name.endsWith("_manualPlacement")) return;
-      requestAnimationFrame(refreshControls);
+      if (refreshFrame != null) return;
+      refreshFrame = requestAnimationFrame(() => {
+        refreshFrame = null;
+        refreshControls();
+      });
     };
 
     form.addEventListener("input", scheduleRefresh, { signal: ac.signal, capture: true });
@@ -1173,16 +1189,52 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
     }
   }
 
+  /** Add the registered effect icon without replacing the label or its form association. */
+  _decorateEffectHeader(row, effect, kind) {
+    const label = row.querySelector("label");
+    const source = String(effect?.icon ?? "").trim();
+    if (!label || !source || label.querySelector(".fxmaster-region-effect-icon")) return;
+
+    const doc = label.ownerDocument;
+    const title = doc.createElement("span");
+    title.className = kind === "particle" ? "fxmaster-particle-label" : "fxmaster-filter-label";
+    while (label.firstChild) title.appendChild(label.firstChild);
+
+    const icon = doc.createElement(kind === "particle" ? "img" : "i");
+    icon.className = `fxmaster-region-effect-icon ${
+      kind === "particle" ? "fxmaster-particle-icon" : "fxmaster-filter-icon"
+    }`;
+    icon.setAttribute("aria-hidden", "true");
+    if (kind === "particle") {
+      icon.src = source;
+      icon.alt = "";
+      icon.width = 50;
+      icon.height = 50;
+    } else {
+      for (const name of source.split(/\s+/).filter(Boolean)) icon.classList.add(name);
+    }
+    label.classList.add("fxmaster-region-effect-name", `fxmaster-${kind}-name`);
+    label.append(icon, title);
+  }
+
   _groupByEnabled(fieldset) {
     const rows = Array.from(fieldset.querySelectorAll(".form-group"));
     let i = 0;
 
     while (i < rows.length) {
       const row = rows[i];
-      if (row.querySelector('input[type="checkbox"][name$="_enabled"]')) {
+      const enabledInput = row.querySelector('input[type="checkbox"][name$="_enabled"]');
+      if (enabledInput) {
         row.classList.add("behavior-header");
+        const type = enabledInput.name.replace(/^system\./, "").slice(0, -"_enabled".length);
+        const kind = this.document?.type === `${packageId}.particleEffectsRegion` ? "particle" : "filter";
+        const definitions = kind === "particle" ? CONFIG.fxmaster?.particleEffects : CONFIG.fxmaster?.filterEffects;
+        this._decorateEffectHeader(row, definitions?.[type], kind);
 
-        const wrapper = document.createElement("div");
+        const wrapper = fieldset.ownerDocument.createElement("div");
+        if (kind === "particle" && Object.hasOwn(CONFIG.fxmaster?.legacyParticleEffects ?? {}, type)) {
+          wrapper.hidden = true;
+        }
         wrapper.classList.add("behavior-group");
         fieldset.insertBefore(wrapper, row);
         wrapper.appendChild(row);
@@ -1380,7 +1432,10 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
               ? [findGroupByName(`${type}_${paramName}_min`), findGroupByName(`${type}_${paramName}_max`)].filter(
                   Boolean,
                 )
-              : [findGroupByName(`${type}_${paramName}`)].filter(Boolean);
+              : (paramCfg?.type === "color"
+                  ? [findGroupByName(`${type}_${paramName}_apply`), findGroupByName(`${type}_${paramName}`)]
+                  : [findGroupByName(`${type}_${paramName}`)]
+                ).filter(Boolean);
           if (!groups.length) continue;
 
           rules.push({ kind: source.kind, type, paramName, showWhen, hideWhen, regionOnly, sceneOnly, groups });
@@ -1391,6 +1446,7 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
     if (!rules.length) return;
 
     const applyAll = () => {
+      if (ac.signal.aborted) return;
       const isRegionContext = true;
       for (const r of rules) {
         const showOk = evalCond(r.showWhen, r.type);
@@ -1405,14 +1461,15 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
       }
     };
 
-    applyAll();
-    try {
-      requestAnimationFrame(() => applyAll());
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
-
     let raf = null;
+    ac.signal.addEventListener(
+      "abort",
+      () => {
+        if (raf != null) cancelAnimationFrame(raf);
+        raf = null;
+      },
+      { once: true },
+    );
     const schedule = (event) => {
       if (isColorPickerEditEvent(event)) return;
       if (raf != null) return;
@@ -1424,5 +1481,7 @@ export class CommonRegionBehaviorConfig extends foundry.applications.sheets.Regi
 
     form.addEventListener("change", schedule, { signal: ac.signal, capture: true });
     form.addEventListener("input", schedule, { signal: ac.signal, capture: true });
+    applyAll();
+    schedule();
   }
 }

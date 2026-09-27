@@ -4,11 +4,19 @@
 
 import { packageId } from "../constants.js";
 import { normalizeDarknessActivationRange } from "./darkness.js";
+import { matrixCacheKey } from "./render-state.js";
 
 let _snapshotFrameKey = null;
 let _snapshotCache = new WeakMap();
 let _levelTexturePlanCache = new Map();
 const LEVEL_TEXTURE_PLAN_CACHE_MAX = 16;
+const _comparableSourcePathCache = new Map();
+const COMPARABLE_SOURCE_PATH_CACHE_MAX = 1024;
+const COMPARABLE_SOURCE_PATH_CACHE_MAX_LENGTH = 4096;
+let _sourceNodeSnapshotScene = null;
+let _sourceNodeSnapshotPrimary = null;
+let _sourceNodeSnapshots = new WeakMap();
+let _sourceRootSnapshots = new WeakMap();
 
 function fxmCanvas() {
   return globalThis.canvas ?? null;
@@ -27,11 +35,28 @@ function resetSnapshotCacheIfNeeded() {
   }
 }
 
+/**
+ * Filter a newly allocated collection snapshot, compacting small arrays in place.
+ * @param {Array} values
+ * @returns {Array}
+ */
+function compactCollectionSnapshot(values) {
+  if (values.length > 32) return values.filter(Boolean);
+  let count = 0;
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i];
+    if (value) values[count++] = value;
+  }
+  values.length = count;
+  return values;
+}
+
 /** @param {*} value @returns {Array} */
 export function fxmCollectionValues(value) {
   if (!value) return [];
   if (Array.isArray(value)) return value.filter(Boolean);
-  if (Array.isArray(value?.contents)) return value.contents.filter(Boolean);
+  const contents = value?.contents;
+  if (Array.isArray(contents)) return contents.filter(Boolean);
   if (typeof value?.toArray === "function") {
     try {
       return value.toArray().filter(Boolean);
@@ -41,13 +66,13 @@ export function fxmCollectionValues(value) {
   }
   if (typeof value?.values === "function") {
     try {
-      return Array.from(value.values()).filter(Boolean);
+      return compactCollectionSnapshot(Array.from(value.values()));
     } catch (_err) {
       return [];
     }
   }
   try {
-    return Array.from(value).filter(Boolean);
+    return compactCollectionSnapshot(Array.from(value));
   } catch (_err) {
     return value ? [value] : [];
   }
@@ -78,7 +103,46 @@ export function fxmGetPrimaryCanvasObjects({ fallbackCollections = [], predicate
   if (!primary || primary.destroyed) return [];
 
   const output = [];
-  const seen = new Set();
+  let seen = null;
+  if ("objects" in primary && primary.objects != null) {
+    const objects = fxmCollectionValues(primary.objects);
+    if (typeof predicate === "function" && Array.isArray(objects) && objects.length <= 40) {
+      for (const object of objects) {
+        if (!fxmPrimaryCanvasObjectIsLive(object) || (seen ? seen.has(object) : output.includes(object))) continue;
+        try {
+          if (!predicate(object)) continue;
+        } catch (_err) {
+          continue;
+        }
+        output.push(object);
+        if (seen) seen.add(object);
+        else if (output.length === 32) seen = new Set(output);
+      }
+      return output;
+    }
+    seen = new Set();
+    if (typeof predicate === "function") {
+      for (const object of objects) {
+        if (!fxmPrimaryCanvasObjectIsLive(object) || seen.has(object)) continue;
+        try {
+          if (!predicate(object)) continue;
+        } catch (_err) {
+          continue;
+        }
+        seen.add(object);
+        output.push(object);
+      }
+    } else {
+      for (const object of objects) {
+        if (!fxmPrimaryCanvasObjectIsLive(object) || seen.has(object)) continue;
+        seen.add(object);
+        output.push(object);
+      }
+    }
+    return output;
+  }
+
+  seen = new Set();
   const push = (object) => {
     if (!fxmPrimaryCanvasObjectIsLive(object) || seen.has(object)) return;
     if (typeof predicate === "function") {
@@ -91,12 +155,6 @@ export function fxmGetPrimaryCanvasObjects({ fallbackCollections = [], predicate
     seen.add(object);
     output.push(object);
   };
-
-  if ("objects" in primary && primary.objects != null) {
-    for (const object of fxmCollectionValues(primary.objects)) push(object);
-    return output;
-  }
-
   const collections = Array.isArray(fallbackCollections) ? fallbackCollections : [fallbackCollections];
   for (const collection of collections) {
     for (const object of fxmCollectionValues(collection)) push(object);
@@ -121,11 +179,18 @@ export function fxmGetPrimaryTileMeshes() {
   if (!primary || primary.destroyed) return [];
 
   const collectionMeshes = fxmCollectionValues(primary.tiles);
-  const collectionSet = new Set(collectionMeshes);
+  const useSmallArray =
+    Array.isArray(collectionMeshes) &&
+    collectionMeshes.length <= 32 &&
+    Object.getPrototypeOf(collectionMeshes) === Array.prototype &&
+    !Object.hasOwn(collectionMeshes, Symbol.iterator) &&
+    !Object.hasOwn(collectionMeshes, "includes");
+  const collectionSet = useSmallArray ? null : new Set(collectionMeshes);
   return fxmGetPrimaryCanvasObjects({
     fallbackCollections: [collectionMeshes],
     predicate: (object) => {
-      if (collectionSet.has(object)) return true;
+      if (collectionSet ? collectionSet.has(object) : collectionMeshes.length && collectionMeshes.includes(object))
+        return true;
       const owner = fxmLinkedPlaceableFromDisplayObject(object) ?? object?.object ?? null;
       const document = owner?.documentName ? owner : owner?.document ?? null;
       const documentName = document?.documentName ?? document?.constructor?.documentName ?? "";
@@ -200,7 +265,19 @@ export function fxmGetPublicHoverFadeState(...candidates) {
  */
 export function fxmIsCanvasLevelTexture(object) {
   if (!object) return false;
-  return fxmGetPrimaryLevelTextureMeshes().includes(object);
+  const textures = fxmCanvas()?.primary?.levelTextures;
+  if (
+    Array.isArray(textures) &&
+    Object.getPrototypeOf(textures) === Array.prototype &&
+    !Object.hasOwn(textures, "includes") &&
+    !Object.hasOwn(textures, "filter") &&
+    !Object.hasOwn(textures, "constructor")
+  ) {
+    return textures.includes(object) && fxmPrimaryCanvasObjectIsLive(object);
+  }
+  return fxmCollectionValues(textures ?? [])
+    .filter((entry) => fxmPrimaryCanvasObjectIsLive(entry))
+    .includes(object);
 }
 
 /**
@@ -259,23 +336,33 @@ export function fxmGetPlaceableTargetAlphaCompat(placeable) {
   }
 }
 
-export function fxmUpdateDisplayObjectWorldTransform(object) {
+/**
+ * Update a display transform, optionally leaving child graphics to their normal render pass.
+ * @param {PIXI.DisplayObject|null|undefined} object
+ * @param {{ skipChildren?: boolean }} [options]
+ * @returns {boolean}
+ */
+export function fxmUpdateDisplayObjectWorldTransform(object, { skipChildren = false } = {}) {
   if (!object || typeof object !== "object") return false;
   try {
+    const update =
+      skipChildren && typeof object.displayObjectUpdateTransform === "function"
+        ? object.displayObjectUpdateTransform
+        : object.updateTransform;
     if (object.parent?.transform) {
-      object.updateTransform?.();
+      update?.call(object);
       return true;
     }
     if (typeof object.enableTempParent === "function" && typeof object.disableTempParent === "function") {
       const cacheParent = object.enableTempParent();
       try {
-        object.updateTransform?.();
+        update?.call(object);
       } finally {
         object.disableTempParent(cacheParent);
       }
       return true;
     }
-    object.updateTransform?.();
+    update?.call(object);
     return true;
   } catch (_err) {
     return false;
@@ -285,8 +372,7 @@ export function fxmUpdateDisplayObjectWorldTransform(object) {
 /** @param {*} object @returns {string} */
 export function fxmDisplayObjectTransformSignature(object) {
   const m = object?.worldTransform ?? object?.transform?.worldTransform ?? null;
-  if (!m) return "";
-  return [m.a, m.b, m.c, m.d, m.tx, m.ty].map((value) => Number(value || 0).toFixed(4)).join(",");
+  return matrixCacheKey(m);
 }
 
 /** @param {*} document @returns {*} */
@@ -362,43 +448,30 @@ export function fxmGetLevelTextures(level) {
   return level?.textures ?? null;
 }
 
+/** Normalize an explicit elevation or range without treating missing values as zero. */
+function elevationWindow(elevation, bottom, top) {
+  const scalar = elevation == null || String(elevation).trim() === "" ? Number.NaN : Number(elevation);
+  if (Number.isFinite(scalar)) return { min: scalar, max: scalar };
+  bottom = elevation?.bottom ?? bottom;
+  top = elevation?.top ?? top;
+  const hasBottom = bottom !== undefined && bottom !== null && String(bottom).trim() !== "";
+  const hasTop = top !== undefined && top !== null && String(top).trim() !== "";
+  if (!hasBottom && !hasTop) return null;
+  return {
+    min: hasBottom ? Number(bottom) : Number.NEGATIVE_INFINITY,
+    max: hasTop ? Number(top) : Number.POSITIVE_INFINITY,
+  };
+}
+
 /** @param {*} level @returns {{min:number,max:number}|null} */
 export function fxmGetLevelElevationWindow(level) {
   if (!level) return null;
-  const elevation = level?.elevation ?? null;
-  const scalar = Number(elevation);
-  if (Number.isFinite(scalar)) return { min: scalar, max: scalar };
-
-  const ownBottom = Object.prototype.hasOwnProperty.call(level ?? {}, "bottom") ? level.bottom : undefined;
-  const ownTop = Object.prototype.hasOwnProperty.call(level ?? {}, "top") ? level.top : undefined;
-  const bottom = elevation?.bottom ?? ownBottom;
-  const top = elevation?.top ?? ownTop;
-  const hasBottom = bottom !== undefined && bottom !== null && String(bottom).trim() !== "";
-  const hasTop = top !== undefined && top !== null && String(top).trim() !== "";
-  if (hasBottom || hasTop) {
-    return {
-      min: hasBottom ? Number(bottom) : Number.NEGATIVE_INFINITY,
-      max: hasTop ? Number(top) : Number.POSITIVE_INFINITY,
-    };
-  }
-
-  const fallback = fxmReadDocumentSnapshotValue(level, "elevation");
-  if (fallback !== undefined) {
-    const fallbackScalar = Number(fallback);
-    if (Number.isFinite(fallbackScalar)) return { min: fallbackScalar, max: fallbackScalar };
-    const fallbackBottom = fallback?.bottom;
-    const fallbackTop = fallback?.top;
-    const hasFallbackBottom =
-      fallbackBottom !== undefined && fallbackBottom !== null && String(fallbackBottom).trim() !== "";
-    const hasFallbackTop = fallbackTop !== undefined && fallbackTop !== null && String(fallbackTop).trim() !== "";
-    if (hasFallbackBottom || hasFallbackTop) {
-      return {
-        min: hasFallbackBottom ? Number(fallbackBottom) : Number.NEGATIVE_INFINITY,
-        max: hasFallbackTop ? Number(fallbackTop) : Number.POSITIVE_INFINITY,
-      };
-    }
-  }
-  return null;
+  const ownBottom = Object.prototype.hasOwnProperty.call(level, "bottom") ? level.bottom : undefined;
+  const ownTop = Object.prototype.hasOwnProperty.call(level, "top") ? level.top : undefined;
+  return (
+    elevationWindow(level.elevation, ownBottom, ownTop) ??
+    elevationWindow(fxmReadDocumentSnapshotValue(level, "elevation"))
+  );
 }
 
 /** @param {*} level @returns {number} */
@@ -499,25 +572,37 @@ export function fxmGetSceneLevelById(levelId, scene = fxmCanvas()?.scene ?? null
   return fxmGetSceneLevels(scene).find((level) => fxmDocumentId(level) === id) ?? null;
 }
 
-/** @param {string|null|undefined} sourcePath @returns {string} */
+/**
+ * Normalize source paths with bounded reuse keyed by the complete input string.
+ * @param {string|null|undefined} sourcePath
+ * @returns {string}
+ */
 export function fxmNormalizeComparableSourcePath(sourcePath) {
   if (typeof sourcePath !== "string") return "";
+  const cacheable = sourcePath.length <= COMPARABLE_SOURCE_PATH_CACHE_MAX_LENGTH;
+  if (cacheable) {
+    const cached = _comparableSourcePathCache.get(sourcePath);
+    if (cached !== undefined) return cached;
+  }
   const trimmed = sourcePath.trim();
   if (!trimmed) return "";
-  const originPattern = new RegExp("^https?:\\/\\/[^/]+", "i");
-  const filePattern = new RegExp("^file:\\/\\/", "i");
-  const normalize = (value) =>
-    value
-      .replace(originPattern, "")
-      .replace(filePattern, "")
-      .replace(/^\/+/, "")
-      .replace(/\?.*$/, "")
-      .replace(/#.*$/, "");
-  try {
-    return normalize(decodeURI(trimmed));
-  } catch (_err) {
-    return normalize(trimmed);
+  let decoded = trimmed;
+  if (trimmed.includes("%")) {
+    try {
+      decoded = decodeURI(trimmed);
+    } catch (_err) {}
   }
+  const normalized = decoded
+    .replace(/^(?:https?:\/\/[^/]+\/*|file:\/\/\/*|\/+)/i, "")
+    .replace(/\?.*$/, "")
+    .replace(/#.*$/, "");
+  if (cacheable) {
+    if (_comparableSourcePathCache.size >= COMPARABLE_SOURCE_PATH_CACHE_MAX) {
+      _comparableSourcePathCache.delete(_comparableSourcePathCache.keys().next().value);
+    }
+    _comparableSourcePathCache.set(sourcePath, normalized);
+  }
+  return normalized;
 }
 
 /** @param {Set<string>} output @param {*} candidate @returns {void} */
@@ -527,17 +612,321 @@ export function fxmAddComparableSourcePath(output, candidate) {
   if (normalized) output.add(normalized);
 }
 
-/** @param {*} value @param {Set<string>} [output] @param {Set<object>} [seen] @returns {Set<string>} */
-export function fxmCollectComparableSourcePaths(value, output = new Set(), seen = new Set()) {
+/** Clear source snapshots when the active canvas is released. @returns {void} */
+export function fxmClearSourcePathCache() {
+  _sourceNodeSnapshotScene = null;
+  _sourceNodeSnapshotPrimary = null;
+  _sourceNodeSnapshots = new WeakMap();
+  _sourceRootSnapshots = new WeakMap();
+}
+
+/**
+ * Create request-local traversal state backed by validated source snapshots.
+ * @returns {{nodes: WeakMap<object,object>, normalized: Map<string,string>, snapshots?: WeakMap<object,object>, roots?: WeakMap<object,object>}}
+ */
+export function fxmCreateSourcePathContext() {
+  const canvas = fxmCanvas();
+  const scene = canvas?.scene ?? null;
+  const primary = canvas?.primary ?? null;
+  if (scene !== _sourceNodeSnapshotScene || primary !== _sourceNodeSnapshotPrimary) {
+    _sourceNodeSnapshotScene = scene;
+    _sourceNodeSnapshotPrimary = primary;
+    _sourceNodeSnapshots = new WeakMap();
+    _sourceRootSnapshots = new WeakMap();
+  }
+  return { nodes: new WeakMap(), normalized: new Map(), snapshots: _sourceNodeSnapshots, roots: _sourceRootSnapshots };
+}
+
+/**
+ * Reuse normalized paths only while every direct source input remains unchanged; linked objects are checked independently so changed descendants are revisited.
+ * @param {object|Function} value
+ * @param {object} context
+ * @returns {object}
+ */
+function readComparableSourceSnapshot(value, context) {
+  const texture = value.texture;
+  const baseTexture = value.baseTexture;
+  const resource = value.resource;
+  const document = value.document;
+  const textureBase = texture?.baseTexture;
+  const textureResource = textureBase?.resource;
+  const baseResource = baseTexture?.resource;
+  const documentTexture = document?.texture;
+  const textureCacheIds = value.textureCacheIds;
+  const snapshot = context.snapshots.get(value);
+  const candidate0 = value?.src;
+  const candidate1 = value?.currentSrc;
+  const candidate2 = value?.url;
+  const candidate3 = value?.href;
+  const candidate4 = value?.path;
+  const candidate5 = value?.img;
+  const candidate6 = value?.cacheId;
+  const candidate7 = texture?.src;
+  const candidate8 = texture?.url;
+  const candidate9 = texture?.path;
+  const candidate10 = textureResource?.src;
+  const candidate11 = textureResource?.url;
+  const candidate12 = textureBase?.cacheId;
+  const candidate13 = baseResource?.src;
+  const candidate14 = baseResource?.url;
+  const candidate15 = baseTexture?.cacheId;
+  const candidate16 = resource?.src;
+  const candidate17 = resource?.url;
+  const candidate18 = documentTexture?.src;
+  const candidate19 = document?.src;
+  const candidate20 = document?.img;
+  const cacheIds = Array.isArray(textureCacheIds) ? Array.from(textureCacheIds) : null;
+  let sameIds = (snapshot?.cacheIds?.length ?? 0) === (cacheIds?.length ?? 0);
+  if (sameIds && cacheIds) {
+    for (let i = 0; i < cacheIds.length; i++) {
+      if (cacheIds[i] !== snapshot?.cacheIds?.[i]) {
+        sameIds = false;
+        break;
+      }
+    }
+  }
+  const unchanged =
+    !!snapshot &&
+    sameIds &&
+    snapshot.candidates[0] === candidate0 &&
+    snapshot.candidates[1] === candidate1 &&
+    snapshot.candidates[2] === candidate2 &&
+    snapshot.candidates[3] === candidate3 &&
+    snapshot.candidates[4] === candidate4 &&
+    snapshot.candidates[5] === candidate5 &&
+    snapshot.candidates[6] === candidate6 &&
+    snapshot.candidates[7] === candidate7 &&
+    snapshot.candidates[8] === candidate8 &&
+    snapshot.candidates[9] === candidate9 &&
+    snapshot.candidates[10] === candidate10 &&
+    snapshot.candidates[11] === candidate11 &&
+    snapshot.candidates[12] === candidate12 &&
+    snapshot.candidates[13] === candidate13 &&
+    snapshot.candidates[14] === candidate14 &&
+    snapshot.candidates[15] === candidate15 &&
+    snapshot.candidates[16] === candidate16 &&
+    snapshot.candidates[17] === candidate17 &&
+    snapshot.candidates[18] === candidate18 &&
+    snapshot.candidates[19] === candidate19 &&
+    snapshot.candidates[20] === candidate20;
+  let paths = unchanged ? snapshot.paths : null;
+  let candidates = snapshot?.candidates;
+  if (!unchanged) {
+    candidates = [
+      candidate0,
+      candidate1,
+      candidate2,
+      candidate3,
+      candidate4,
+      candidate5,
+      candidate6,
+      candidate7,
+      candidate8,
+      candidate9,
+      candidate10,
+      candidate11,
+      candidate12,
+      candidate13,
+      candidate14,
+      candidate15,
+      candidate16,
+      candidate17,
+      candidate18,
+      candidate19,
+      candidate20,
+    ];
+    for (const candidate of cacheIds ? candidates.concat(cacheIds) : candidates) {
+      if (typeof candidate !== "string") continue;
+      let normalized = context.normalized.get(candidate);
+      if (normalized === undefined) {
+        normalized = fxmNormalizeComparableSourcePath(candidate);
+        context.normalized.set(candidate, normalized);
+      }
+      if (!normalized) continue;
+      if (paths === null) paths = typeof normalized === "string" ? normalized : new Set([normalized]);
+      else if (typeof paths === "string") {
+        if (normalized !== paths) paths = new Set([paths, normalized]);
+      } else paths.add(normalized);
+    }
+  }
+  const nested0 = texture;
+  const nested1 = baseTexture;
+  const nested2 = resource;
+  const nested3 = value?.source;
+  const nested4 = value?.parentTextureArray;
+  const nested5 = value?.object;
+  const nested6 = value?.placeable;
+  const nested7 = value?.level;
+  const nested8 = value?.levels;
+  const nested9 = document;
+  if (
+    unchanged &&
+    snapshot.nested[0] === nested0 &&
+    snapshot.nested[1] === nested1 &&
+    snapshot.nested[2] === nested2 &&
+    snapshot.nested[3] === nested3 &&
+    snapshot.nested[4] === nested4 &&
+    snapshot.nested[5] === nested5 &&
+    snapshot.nested[6] === nested6 &&
+    snapshot.nested[7] === nested7 &&
+    snapshot.nested[8] === nested8 &&
+    snapshot.nested[9] === nested9
+  )
+    return snapshot;
+  const record = {
+    paths,
+    candidates,
+    cacheIds,
+    nested: [nested0, nested1, nested2, nested3, nested4, nested5, nested6, nested7, nested8, nested9],
+  };
+  context.snapshots.set(value, record);
+  return record;
+}
+
+/**
+ * Reuse an ordered root result after validating its reachable source nodes, stopping at the first changed node before following obsolete links.
+ * @param {object|Function} value
+ * @param {Set<string>|null} output
+ * @param {Set<object>|null} seen
+ * @param {object} context
+ * @param {boolean} [reuseResult=false]
+ * @returns {Set<string>|{paths:Set<string>,seen:Set<object>}}
+ */
+function collectValidatedSourceRoot(value, output, seen, context, reuseResult = false) {
+  let root = context.roots.get(value);
+  if (root) {
+    for (let i = 0; i < root.dependencies.length; i++) {
+      const [object, previous] = root.dependencies[i];
+      let current = context.nodes.get(object);
+      if (!current) {
+        try {
+          current = readComparableSourceSnapshot(object, context);
+          context.nodes.set(object, current);
+        } catch (error) {
+          context.nodes.set(object, {
+            get paths() {
+              throw error;
+            },
+          });
+          const traversal = { nodes: context.nodes, normalized: context.normalized, snapshots: context.snapshots };
+          seen ??= new Set();
+          try {
+            fxmCollectComparableSourcePaths(value, output ?? new Set(), seen, traversal);
+          } finally {
+            context.nodes.delete(object);
+          }
+          throw error;
+        }
+      }
+      if (current !== previous) {
+        root = null;
+        break;
+      }
+    }
+  }
+  if (root) {
+    if (!reuseResult) for (const [object] of root.dependencies) seen.add(object);
+  } else {
+    seen ??= new Set();
+    const paths = new Set();
+    const traversal = { nodes: context.nodes, normalized: context.normalized, snapshots: context.snapshots };
+    try {
+      fxmCollectComparableSourcePaths(value, paths, seen, traversal);
+    } catch (error) {
+      if (output) for (const path of paths) output.add(path);
+      throw error;
+    }
+    root = {
+      paths: Array.from(paths),
+      dependencies: Array.from(seen, (object) => [object, context.nodes.get(object)]),
+    };
+    if (reuseResult) root.result = { paths, seen };
+    context.roots.set(value, root);
+  }
+  if (reuseResult) {
+    return (root.result ??= { paths: new Set(root.paths), seen: new Set(root.dependencies.map(([object]) => object)) });
+  }
+  for (const path of root.paths) output.add(path);
+  return output;
+}
+
+/**
+ * Return validated source paths and reachability without copying unchanged results. The returned sets are borrowed and must remain read-only.
+ * @param {*} value
+ * @param {object|null} [context]
+ * @returns {{paths:Set<string>,seen:Set<object>}}
+ */
+export function fxmGetComparableSourcePathResult(value, context = null) {
+  if (value && (typeof value === "object" || typeof value === "function") && context?.roots) {
+    return collectValidatedSourceRoot(value, null, null, context, true);
+  }
+  const paths = new Set();
+  const seen = new Set();
+  fxmCollectComparableSourcePaths(value, paths, seen, context);
+  return { paths, seen };
+}
+
+/**
+ * Collect reachable source paths with request-local traversal and optional validated snapshot reuse.
+ * @param {*} value
+ * @param {Set<string>} [output]
+ * @param {Set<object>} [seen]
+ * @param {{nodes: WeakMap<object,object>, normalized: Map<string,string>}|null} [context]
+ * @returns {Set<string>}
+ */
+export function fxmCollectComparableSourcePaths(value, output = new Set(), seen = new Set(), context = null) {
   if (!value || !(output instanceof Set)) return output;
   if (typeof value === "string") {
-    fxmAddComparableSourcePath(output, value);
+    if (context) {
+      let normalized = context.normalized.get(value);
+      if (normalized === undefined) {
+        normalized = fxmNormalizeComparableSourcePath(value);
+        context.normalized.set(value, normalized);
+      }
+      if (normalized) output.add(normalized);
+    } else fxmAddComparableSourcePath(output, value);
     return output;
   }
   if (typeof value !== "object" && typeof value !== "function") return output;
+  if (context?.roots && seen.size === 0) return collectValidatedSourceRoot(value, output, seen, context);
   if (seen.has(value)) return output;
   seen.add(value);
 
+  const cached = context?.nodes.get(value);
+  if (cached) {
+    if (cached.paths) {
+      const paths = cached.paths;
+      if (typeof paths === "string") output.add(paths);
+      else for (const path of paths) output.add(path);
+    }
+    for (const nested of cached.nested) {
+      if (!nested || nested === value) continue;
+      fxmCollectComparableSourcePaths(nested, output, seen, context);
+    }
+    return output;
+  }
+
+  if (context?.snapshots) {
+    const record = readComparableSourceSnapshot(value, context);
+    context.nodes.set(value, record);
+    if (typeof record.paths === "string") output.add(record.paths);
+    else if (record.paths) for (const path of record.paths) output.add(path);
+    for (const nested of record.nested) {
+      if (!nested || nested === value) continue;
+      fxmCollectComparableSourcePaths(nested, output, seen, context);
+    }
+    return output;
+  }
+
+  const texture = value.texture;
+  const baseTexture = value.baseTexture;
+  const resource = value.resource;
+  const document = value.document;
+  const textureBase = texture?.baseTexture;
+  const textureResource = textureBase?.resource;
+  const baseResource = baseTexture?.resource;
+  const documentTexture = document?.texture;
+  const textureCacheIds = value.textureCacheIds;
   const directCandidates = [
     value?.src,
     value?.currentSrc,
@@ -546,41 +935,65 @@ export function fxmCollectComparableSourcePaths(value, output = new Set(), seen 
     value?.path,
     value?.img,
     value?.cacheId,
-    value?.texture?.src,
-    value?.texture?.url,
-    value?.texture?.path,
-    value?.texture?.baseTexture?.resource?.src,
-    value?.texture?.baseTexture?.resource?.url,
-    value?.texture?.baseTexture?.cacheId,
-    value?.baseTexture?.resource?.src,
-    value?.baseTexture?.resource?.url,
-    value?.baseTexture?.cacheId,
-    value?.resource?.src,
-    value?.resource?.url,
-    value?.document?.texture?.src,
-    value?.document?.src,
-    value?.document?.img,
+    texture?.src,
+    texture?.url,
+    texture?.path,
+    textureResource?.src,
+    textureResource?.url,
+    textureBase?.cacheId,
+    baseResource?.src,
+    baseResource?.url,
+    baseTexture?.cacheId,
+    resource?.src,
+    resource?.url,
+    documentTexture?.src,
+    document?.src,
+    document?.img,
   ];
-  for (const candidate of directCandidates) fxmAddComparableSourcePath(output, candidate);
-
-  if (Array.isArray(value?.textureCacheIds)) {
-    for (const candidate of value.textureCacheIds) fxmAddComparableSourcePath(output, candidate);
+  if (Array.isArray(textureCacheIds)) {
+    for (const candidate of textureCacheIds) directCandidates.push(candidate);
   }
 
-  for (const nested of [
-    value?.texture,
-    value?.baseTexture,
-    value?.resource,
+  let directPaths = context ? null : output;
+  for (const candidate of directCandidates) {
+    if (context) {
+      if (typeof candidate !== "string") continue;
+      let normalized = context.normalized.get(candidate);
+      if (normalized === undefined) {
+        normalized = fxmNormalizeComparableSourcePath(candidate);
+        context.normalized.set(candidate, normalized);
+      }
+      if (normalized) {
+        if (directPaths === null) directPaths = typeof normalized === "string" ? normalized : new Set([normalized]);
+        else if (typeof directPaths === "string") {
+          if (normalized !== directPaths) directPaths = new Set([directPaths, normalized]);
+        } else directPaths.add(normalized);
+      }
+    } else fxmAddComparableSourcePath(directPaths, candidate);
+  }
+
+  const nestedValues = [
+    texture,
+    baseTexture,
+    resource,
     value?.source,
     value?.parentTextureArray,
     value?.object,
     value?.placeable,
     value?.level,
     value?.levels,
-    value?.document,
-  ]) {
+    document,
+  ];
+  if (context) {
+    context.nodes.set(value, { paths: directPaths, nested: nestedValues });
+    if (typeof directPaths === "string") output.add(directPaths);
+    else if (directPaths) {
+      for (const path of directPaths) output.add(path);
+    }
+  }
+  for (const nested of nestedValues) {
     if (!nested || nested === value) continue;
-    fxmCollectComparableSourcePaths(nested, output, seen);
+    fxmCollectComparableSourcePaths(nested, output, seen, context);
   }
   return output;
 }
@@ -814,14 +1227,19 @@ export function fxmGetLevelConfiguredImagePaths(
   return paths;
 }
 
-/** @param {Set<string>} sourcePaths @param {{foregroundOnly?:boolean,scene?:*}} [options] @returns {Set<string>} */
+/**
+ * Resolve configured artwork ownership, optionally reusing a plan for one synchronous operation.
+ * @param {Set<string>} sourcePaths
+ * @param {{foregroundOnly?:boolean,scene?:*,plan?:object|null}} [options]
+ * @returns {Set<string>}
+ */
 export function fxmResolveLevelIdsFromConfiguredSources(
   sourcePaths,
-  { foregroundOnly = false, scene = fxmCanvas()?.scene ?? null } = {},
+  { foregroundOnly = false, scene = fxmCanvas()?.scene ?? null, plan = null } = {},
 ) {
   const ids = new Set();
   if (!(sourcePaths?.size > 0)) return ids;
-  const plan = fxmGetLevelTexturePlan(scene);
+  plan ??= fxmGetLevelTexturePlan(scene);
   for (const sourcePath of sourcePaths) {
     const normalized = fxmNormalizeComparableSourcePath(sourcePath);
     if (!normalized) continue;
@@ -838,7 +1256,17 @@ export function fxmGetDocumentLevelIds(document) {
   const doc = document?.document ?? document ?? null;
   if (!doc) return null;
   const raw = doc?.levels ?? document?.levels ?? null;
-  if (raw instanceof Set) return new Set(Array.from(raw).map(String).filter(Boolean));
+  if (raw instanceof Set) {
+    const values = Array.from(raw);
+    let normalized = true;
+    for (const value of values) {
+      if (typeof value !== "string" || !value) {
+        normalized = false;
+        break;
+      }
+    }
+    return new Set(normalized ? values : values.map(String).filter(Boolean));
+  }
   if (Array.isArray(raw)) return new Set(raw.map(String).filter(Boolean));
   if (typeof raw?.values === "function") {
     try {
@@ -907,24 +1335,13 @@ export function fxmDocumentLocatedInLevel(document, level) {
 /** @param {*} document @param {number} [fallbackElevation] @returns {{min:number,max:number}|null} */
 export function fxmGetDocumentElevationWindow(document, fallbackElevation = Number.NaN) {
   const doc = document?.document ?? document ?? null;
-  const snapshot = fxmReadDocumentSnapshotCompat(doc) ?? fxmReadDocumentSnapshotCompat(document);
-  const elevation = doc?.elevation ?? document?.elevation ?? snapshot?.elevation ?? null;
-  const scalar = Number(elevation);
-  if (Number.isFinite(scalar)) return { min: scalar, max: scalar };
   const ownBottom = Object.prototype.hasOwnProperty.call(doc ?? {}, "bottom") ? doc.bottom : undefined;
   const ownTop = Object.prototype.hasOwnProperty.call(doc ?? {}, "top") ? doc.top : undefined;
-  const bottom = elevation?.bottom ?? ownBottom ?? snapshot?.elevation?.bottom ?? snapshot?.bottom;
-  const top = elevation?.top ?? ownTop ?? snapshot?.elevation?.top ?? snapshot?.top;
-  const hasBottom = bottom !== undefined && bottom !== null && String(bottom).trim() !== "";
-  const hasTop = top !== undefined && top !== null && String(top).trim() !== "";
-  if (hasBottom || hasTop) {
-    return {
-      min: hasBottom ? Number(bottom) : Number.NEGATIVE_INFINITY,
-      max: hasTop ? Number(top) : Number.POSITIVE_INFINITY,
-    };
-  }
-  const fallback = Number(fallbackElevation);
-  return Number.isFinite(fallback) ? { min: fallback, max: fallback } : null;
+  const liveWindow = elevationWindow(doc?.elevation ?? document?.elevation, ownBottom, ownTop);
+  if (liveWindow) return liveWindow;
+
+  const snapshot = fxmReadDocumentSnapshotCompat(doc) ?? fxmReadDocumentSnapshotCompat(document);
+  return elevationWindow(snapshot?.elevation, snapshot?.bottom, snapshot?.top) ?? elevationWindow(fallbackElevation);
 }
 
 /** @param {*} scene @param {object} [options] @returns {Array} */
@@ -956,11 +1373,12 @@ function normalizeStringArray(value) {
   return [String(value)].filter(Boolean);
 }
 
-/** @param {*} behavior @returns {object} */
-export function fxmGetRegionBehaviorSystem(behavior) {
+/** @param {*} behavior @param {{snapshot?:boolean}} [options] @returns {object} */
+export function fxmGetRegionBehaviorSystem(behavior, { snapshot = true } = {}) {
   if (!behavior) return {};
   const system = behavior.system ?? behavior.typeData ?? null;
   if (system && typeof system === "object") {
+    if (!snapshot) return system;
     if (typeof system.toObject === "function") {
       try {
         const value = system.toObject(false);
@@ -990,7 +1408,7 @@ export function fxmGetRegionBehaviorSystem(behavior) {
 
 /** @param {*} behavior @param {string} flagName @param {string|string[]} systemNames @param {*} [fallback] @returns {*} */
 export function fxmGetRegionBehaviorValue(behavior, flagName, systemNames, fallback = undefined) {
-  const system = fxmGetRegionBehaviorSystem(behavior);
+  const system = fxmGetRegionBehaviorSystem(behavior, { snapshot: false });
   const names = Array.isArray(systemNames) ? systemNames : [systemNames];
   for (const name of names) {
     if (!name) continue;
@@ -1043,9 +1461,11 @@ function eventModeFromBehaviorEvents(behavior, system) {
   return null;
 }
 
-/** @param {*} behavior @returns {{mode:string,latched:boolean}} */
-export function fxmGetRegionBehaviorEventGate(behavior) {
-  const system = fxmGetRegionBehaviorSystem(behavior);
+/** @param {*} behavior @param {object} [system] @returns {{mode:string,latched:boolean}} */
+export function fxmGetRegionBehaviorEventGate(
+  behavior,
+  system = fxmGetRegionBehaviorSystem(behavior, { snapshot: false }),
+) {
   const flagGate = behavior?.getFlag?.(packageId, "eventGate") ?? null;
   const systemGate = system?.eventGate ?? system?._eventGate ?? null;
   const selectedMode = eventModeFromBehaviorEvents(behavior, system);
@@ -1054,14 +1474,14 @@ export function fxmGetRegionBehaviorEventGate(behavior) {
   return { mode, latched };
 }
 
-/** @param {*} behavior @param {string} [packageIdOverride] @returns {object} */
-export function fxmReadRegionBehaviorRuntimeState(behavior, packageIdOverride = packageId) {
+/** @param {*} behavior @param {string} [packageIdOverride] @param {{snapshot?:boolean}} [options] @returns {object} */
+export function fxmReadRegionBehaviorRuntimeState(behavior, packageIdOverride = packageId, { snapshot = true } = {}) {
   const flag = (key) => behavior?.getFlag?.(packageIdOverride, key);
-  const system = fxmGetRegionBehaviorSystem(behavior);
+  const system = fxmGetRegionBehaviorSystem(behavior, { snapshot });
   const gateMode = String(system?._elev_gateMode ?? flag("gateMode") ?? "none");
   const tokenTargets = normalizeStringArray(system?._elev_tokenTargets ?? flag("tokenTargets") ?? []);
   const edgeFade = Number(system?._edgeFadePercent ?? flag("edgeFadePercent") ?? 0);
-  const eventGate = fxmGetRegionBehaviorEventGate(behavior);
+  const eventGate = fxmGetRegionBehaviorEventGate(behavior, system);
   return {
     gmAlwaysVisible: Boolean(system?._elev_gmAlwaysVisible ?? flag("gmAlwaysVisible") ?? false),
     gateMode,
@@ -1074,7 +1494,7 @@ export function fxmReadRegionBehaviorRuntimeState(behavior, packageIdOverride = 
 
 /** @param {*} behavior @returns {string} */
 export function fxmRegionBehaviorRuntimeSignature(behavior) {
-  const state = fxmReadRegionBehaviorRuntimeState(behavior);
+  const state = fxmReadRegionBehaviorRuntimeState(behavior, packageId, { snapshot: false });
   return [
     fxmDocumentId(behavior),
     behavior?.type ?? "",
@@ -1091,7 +1511,9 @@ export function fxmRegionBehaviorRuntimeSignature(behavior) {
 function buildRegionEffectDefinitionsFromSystem(behavior, kind) {
   const system = fxmGetRegionBehaviorSystem(behavior);
   const db =
-    kind === "filter" ? globalThis.CONFIG?.fxmaster?.filterEffects : globalThis.CONFIG?.fxmaster?.particleEffects;
+    kind === "filter"
+      ? globalThis.CONFIG?.fxmaster?.filterEffects
+      : { ...globalThis.CONFIG?.fxmaster?.legacyParticleEffects, ...globalThis.CONFIG?.fxmaster?.particleEffects };
   if (!db || !system || typeof system !== "object") return null;
   const out = {};
   const regionOnly = kind === "filter" ? { fadePercent: { type: "range" } } : {};

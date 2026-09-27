@@ -312,10 +312,7 @@ void main() {
 `;
 
 /**
- * Procedural settled-sand surface used by Sandstorm and future granular effects.
- * It reuses the shared accumulation surface timing, world-space placement,
- * movement journal, and trail-mask lifecycle while supplying a sand-specific
- * shader and defaults.
+ * Procedural settled-sand surface used by Sandstorm and future granular effects. It reuses the shared accumulation surface timing, world-space placement, movement journal, and trail-mask lifecycle while supplying a sand-specific shader and defaults.
  */
 export class SandBackgroundSurface extends ParticleAccumulationBackgroundSurface {
   /** @override */
@@ -355,9 +352,7 @@ export class SandBackgroundSurface extends ParticleAccumulationBackgroundSurface
   }
 
   /**
-   * Resolve the synchronized epoch at which dune migration was enabled.
-   * Legacy definitions without animation state receive a local fallback until
-   * they are next saved, at which point reconciliation persists the epoch.
+   * Resolve the synchronized epoch at which dune migration was enabled. Legacy definitions without animation state receive a local fallback until they are next saved, at which point reconciliation persists the epoch.
    *
    * @param {number} now
    * @returns {number}
@@ -379,8 +374,7 @@ export class SandBackgroundSurface extends ParticleAccumulationBackgroundSurface
   }
 
   /**
-   * Migration begins only once accumulation has actually completed. In full
-   * coverage mode, the animation activation epoch is the start point.
+   * Migration begins only once accumulation has actually completed. In full coverage mode, the animation activation epoch is the start point.
    *
    * @param {number} now
    * @returns {number}
@@ -398,9 +392,7 @@ export class SandBackgroundSurface extends ParticleAccumulationBackgroundSurface
   }
 
   /**
-   * Seed post-coverage motion from a persisted epoch, then advance with the
-   * monotonic runtime clock so wall-clock corrections cannot visibly jerk the
-   * dunes during a session. The resulting value is measured in grid spaces.
+   * Seed post-coverage motion from a persisted epoch, then advance with the monotonic runtime clock so wall-clock corrections cannot visibly jerk the dunes during a session. The resulting value is measured in grid spaces.
    *
    * @param {number} now
    * @param {number} tick

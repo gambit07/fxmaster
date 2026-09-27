@@ -26,6 +26,8 @@ export function clearCoalesceMap() {
         logger.debug("FXMaster:", err);
       }
     }
+    s.pending = false;
+    s.args = s.ctx = null;
   }
   _stateMap.clear();
 }
@@ -60,13 +62,13 @@ export function coalesceNextFrame(fn, { key } = {}) {
 
     const _raf = globalThis.requestAnimationFrame ?? ((cb) => setTimeout(cb, 16));
     s.raf = _raf(() => {
+      if (_stateMap.get(k) !== s) return;
+      _stateMap.delete(k);
       s.pending = false;
       s.raf = null;
-      try {
-        fn.apply(s.ctx, s.args || []);
-      } finally {
-        s.args = s.ctx = null;
-      }
+      const { ctx, args } = s;
+      s.args = s.ctx = null;
+      fn.apply(ctx, args || []);
     });
   };
 
@@ -80,7 +82,9 @@ export function coalesceNextFrame(fn, { key } = {}) {
 
   /** Cancel the pending animation frame without invoking the callback. */
   wrapper.cancel = () => {
-    const s = getState();
+    const s = _stateMap.get(k);
+    if (!s) return;
+    _stateMap.delete(k);
     if (s.raf != null) {
       try {
         const cancel = globalThis.cancelAnimationFrame ?? clearTimeout;
@@ -96,8 +100,9 @@ export function coalesceNextFrame(fn, { key } = {}) {
 
   /** Immediately invoke the pending callback (if any) and cancel the RAF. */
   wrapper.flush = () => {
-    const s = getState();
-    if (!s.pending) return;
+    const s = _stateMap.get(k);
+    if (!s?.pending) return;
+    _stateMap.delete(k);
     if (s.raf != null) {
       try {
         const cancel = globalThis.cancelAnimationFrame ?? clearTimeout;
@@ -108,11 +113,9 @@ export function coalesceNextFrame(fn, { key } = {}) {
       s.raf = null;
     }
     s.pending = false;
-    try {
-      fn.apply(s.ctx, s.args || []);
-    } finally {
-      s.args = s.ctx = null;
-    }
+    const { ctx, args } = s;
+    s.args = s.ctx = null;
+    fn.apply(ctx, args || []);
   };
 
   return wrapper;

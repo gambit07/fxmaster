@@ -16,6 +16,7 @@
  */
 
 export { isPlainObject, hasOwn, collectionValues } from "./object.js";
+export { matrixCacheKey, localTransformChainKey, textureContentKey } from "./render-state.js";
 
 export {
   addDeletionKey,
@@ -107,6 +108,9 @@ export {
   fxmNormalizeComparableSourcePath,
   fxmAddComparableSourcePath,
   fxmCollectComparableSourcePaths,
+  fxmGetComparableSourcePathResult,
+  fxmCreateSourcePathContext,
+  fxmClearSourcePathCache,
   fxmResolveConfiguredImageSourcePath,
   fxmGetSceneForegroundSourcePath,
   fxmGetLevelTexturePlan,
@@ -211,8 +215,10 @@ export {
   releaseTileSprites,
   collectTokenAlphaSprites,
   collectBelowTokenMaskTokens,
+  getTokenLevelVisibilityForMask,
   buildBelowTokenMaskCoverageSignature,
   buildBelowTileMaskCoverageSignature,
+  createTileMaskSelection,
   collectTileAlphaSprites,
   stageLocalMatrixOf,
   tileDocumentRestrictsWeather,
@@ -225,6 +231,7 @@ export {
   syncActiveRadialRestrictWeatherTileMasksForCamera,
   isTokenRevealedByHoveredUpperLevel,
   tokenUpperLevelRevealAllowsBelowTokenMask,
+  sceneMaskContainsTokenCenter,
   composeMaskMinusTokens,
   composeMaskMinusTokensRT,
   composeMaskMinusTiles,
@@ -232,9 +239,11 @@ export {
   composeMaskMinusCoverageRT,
   ensureCssSpaceMaskSprite,
   repaintTokensMaskInto,
+  clearTokenLevelMaskResources,
   repaintTilesMaskInto,
   safeMaskTexture,
   invalidateUpperLevelCoverageCache,
+  invalidateBelowObjectCoverageCaches,
   buildRegionMaskRT,
   getRegionSoftMaskData,
   applyMaskSpriteTransform,

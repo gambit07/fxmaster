@@ -1,5 +1,7 @@
 :root {
   --fxmaster-radius: 0.5rem;
+  --fxmaster-effect-icon-size: 50px;
+  --fxmaster-particle-icon-size: var(--fxmaster-effect-icon-size);
   --fxmaster-border: 1px solid var(--color-border-dark-4);
   --fxmaster-max-height: 85vh;
   --fxmaster-max-height: 85dvh;
@@ -57,6 +59,56 @@
   gap: 0.5rem;
   flex: 1;
   white-space: nowrap;
+}
+
+.fxmaster-particle-name,
+.fxmaster-filter-name {
+  min-width: 0;
+  padding-inline-end: 0.5rem;
+  white-space: normal;
+}
+
+.fxmaster-particle-label,
+.fxmaster-filter-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.fxmaster-particle-icon {
+  display: block;
+  flex: 0 0 var(--fxmaster-particle-icon-size);
+  width: var(--fxmaster-particle-icon-size);
+  height: var(--fxmaster-particle-icon-size);
+  object-fit: contain;
+  border: 0;
+  border-radius: 0;
+}
+
+.fxmaster-filter-name > .fxmaster-filter-icon,
+.fxmaster-particle-name > .fxmaster-filter-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 var(--fxmaster-particle-icon-size);
+  box-sizing: border-box;
+  width: var(--fxmaster-particle-icon-size);
+  min-width: var(--fxmaster-particle-icon-size);
+  max-width: var(--fxmaster-particle-icon-size);
+  height: var(--fxmaster-particle-icon-size);
+  margin: 0;
+  padding: 0;
+  font-size: calc(var(--fxmaster-particle-icon-size) * 0.64);
+  line-height: 1;
+}
+
+.fxmaster-particles-row > .fxmaster-particle-toggle,
+.fxmaster-filters-row > .fxmaster-filter-toggle,
+.fxmaster-filters-row > .fxmaster-api-effect-delete {
+  flex-shrink: 0;
+}
+
+.fxmaster-filters-row > .fxmaster-collapse-arrow {
+  right: 3.2rem;
 }
 
 .fxmaster-particle-toggle,
@@ -597,9 +649,29 @@
 }
 .region-behavior-config .behavior-header {
   display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
   cursor: pointer;
   font-weight: bold;
 }
+.region-behavior-config .behavior-header > .fxmaster-region-effect-name {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  gap: 0.5rem;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  white-space: normal;
+}
+.region-behavior-config .behavior-header > .form-fields {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  width: auto;
+  margin-inline-start: auto;
+  justify-content: flex-end;
+}
+
 .region-behavior-config .behavior-header:has(input[type="checkbox"]:checked) ~ .behavior-settings {
   display: flex;
 }
@@ -1598,6 +1670,12 @@ body.detached .fxmaster-detached-fit .window-content {
   max-height: none !important;
   min-height: 0 !important;
   overflow: auto !important;
+}
+
+.fxmaster-window-moving,
+.fxmaster-window-moving .window-content {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 body.detached .fxmaster-detached-fit .fxmaster-filters-container,

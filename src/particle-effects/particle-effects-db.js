@@ -9,13 +9,13 @@ import { CrowsParticleEffect } from "./effects/crows.js";
 import { EaglesParticleEffect } from "./effects/eagles.js";
 import { EmbersParticleEffect } from "./effects/embers.js";
 import { FogParticleEffect } from "./effects/fog.js";
-import { RainParticleEffect } from "./effects/rain.js";
+import { RainParticleEffect } from "./effects/rain/rain.js";
 import { RatsParticleEffect } from "./effects/rats.js";
 import { HailParticleEffect } from "./effects/hail.js";
 import { SnowParticleEffect } from "./effects/snow.js";
-import { SnowstormParticleEffect } from "./effects/snowstorm.js";
+import { SnowstormParticleEffect } from "./effects/snowstorm/snowstorm.js";
 
-/** @typedef {Record<string, typeof import("./effects/effect.js").FXMasterParticleEffect>} ParticleEffects */
+/** @typedef {Record<string, typeof import("./effect.js").FXMasterParticleEffect>} ParticleEffects */
 
 /** @type {ParticleEffects} */
 export const particleEffects = {

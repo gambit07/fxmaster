@@ -1,5 +1,5 @@
-import { FXMasterParticleEffect, fxmDeltaSeconds, fxmForEachEmitterParticle, fxmGetParticleAge } from "./effect.js";
-import { DefaultRectangleSpawnMixin } from "./mixins/default-rectangle-spawn.js";
+import { FXMasterParticleEffect, fxmDeltaSeconds, fxmForEachEmitterParticle, fxmGetParticleAge } from "../effect.js";
+import { DefaultRectangleSpawnMixin } from "../mixins/default-rectangle-spawn.js";
 import { geometricDirectionToScreenDegrees } from "../../utils.js";
 import { logger } from "../../logger.js";
 
@@ -57,6 +57,7 @@ function leafTintBrightness(tint, brightness) {
   if (!Number.isFinite(color)) return tint;
   const factor = leafClamp(brightness, 0, 2, 1);
   const packed = color & 0xffffff;
+  if (factor === 1) return packed;
   const red = Math.min(255, Math.round(((packed >> 16) & 0xff) * factor));
   const green = Math.min(255, Math.round(((packed >> 8) & 0xff) * factor));
   const blue = Math.min(255, Math.round((packed & 0xff) * factor));
@@ -83,7 +84,7 @@ export class AutumnLeavesParticleEffect extends DefaultRectangleSpawnMixin(FXMas
 
   /** @override */
   static get icon() {
-    return "modules/fxmaster/assets/particle-effects/icons/autumn-leaves.webp";
+    return "modules/fxmaster/assets/particle-effects/icons/autumn-leaves.svg";
   }
 
   /** @override */
@@ -255,7 +256,7 @@ export class AutumnLeavesParticleEffect extends DefaultRectangleSpawnMixin(FXMas
         label: "FXMASTER.Params.Background",
         type: "checkbox",
         value: false,
-        tooltip: "FXMASTER.ParamTooltips.LeafBackground",
+        tooltip: "FXMASTER.ParamTooltips.ScatterBackground",
       },
       backgroundMode: {
         label: "FXMASTER.Params.BackgroundMode",
@@ -266,7 +267,7 @@ export class AutumnLeavesParticleEffect extends DefaultRectangleSpawnMixin(FXMas
           accumulate: "FXMASTER.Params.BackgroundModeAccumulate",
         },
         showWhen: { backgroundEnabled: true },
-        tooltip: "FXMASTER.ParamTooltips.LeafBackgroundMode",
+        tooltip: "FXMASTER.ParamTooltips.ScatterBackgroundMode",
       },
       backgroundDuration: {
         label: "FXMASTER.Params.BackgroundDuration",
@@ -278,7 +279,7 @@ export class AutumnLeavesParticleEffect extends DefaultRectangleSpawnMixin(FXMas
         decimals: 0,
         labelOutput: "minutes",
         showWhen: { backgroundEnabled: true, backgroundMode: "accumulate" },
-        tooltip: "FXMASTER.ParamTooltips.LeafBackgroundDuration",
+        tooltip: "FXMASTER.ParamTooltips.ScatterBackgroundDuration",
       },
       backgroundOpacity: {
         label: "FXMASTER.Params.BackgroundOpacity",
@@ -289,7 +290,7 @@ export class AutumnLeavesParticleEffect extends DefaultRectangleSpawnMixin(FXMas
         step: 0.01,
         decimals: 2,
         showWhen: { backgroundEnabled: true },
-        tooltip: "FXMASTER.ParamTooltips.LeafBackgroundOpacity",
+        tooltip: "FXMASTER.ParamTooltips.ScatterBackgroundOpacity",
       },
       backgroundCoverage: {
         label: "FXMASTER.Params.BackgroundCoverage",
@@ -300,7 +301,7 @@ export class AutumnLeavesParticleEffect extends DefaultRectangleSpawnMixin(FXMas
         step: 0.05,
         decimals: 2,
         showWhen: { backgroundEnabled: true },
-        tooltip: "FXMASTER.ParamTooltips.LeafBackgroundCoverage",
+        tooltip: "FXMASTER.ParamTooltips.ScatterBackgroundCoverage",
       },
       backgroundFillVariation: {
         label: "FXMASTER.Params.BackgroundFillVariation",
@@ -311,7 +312,7 @@ export class AutumnLeavesParticleEffect extends DefaultRectangleSpawnMixin(FXMas
         step: 0.05,
         decimals: 2,
         showWhen: { backgroundEnabled: true, backgroundMode: "accumulate" },
-        tooltip: "FXMASTER.ParamTooltips.LeafBackgroundFillVariation",
+        tooltip: "FXMASTER.ParamTooltips.ScatterBackgroundFillVariation",
       },
       backgroundPileStrength: {
         label: "FXMASTER.Params.BackgroundPileStrength",
@@ -322,7 +323,7 @@ export class AutumnLeavesParticleEffect extends DefaultRectangleSpawnMixin(FXMas
         step: 0.05,
         decimals: 2,
         showWhen: { backgroundEnabled: true },
-        tooltip: "FXMASTER.ParamTooltips.LeafBackgroundPileStrength",
+        tooltip: "FXMASTER.ParamTooltips.ScatterBackgroundPileStrength",
       },
       backgroundPileSize: {
         label: "FXMASTER.Params.BackgroundPileSize",
@@ -333,7 +334,7 @@ export class AutumnLeavesParticleEffect extends DefaultRectangleSpawnMixin(FXMas
         step: 0.5,
         decimals: 1,
         showWhen: { backgroundEnabled: true },
-        tooltip: "FXMASTER.ParamTooltips.LeafBackgroundPileSize",
+        tooltip: "FXMASTER.ParamTooltips.ScatterBackgroundPileSize",
       },
       backgroundLeafSize: {
         label: "FXMASTER.Params.BackgroundParticleSize",
@@ -344,17 +345,17 @@ export class AutumnLeavesParticleEffect extends DefaultRectangleSpawnMixin(FXMas
         step: 0.05,
         decimals: 2,
         showWhen: { backgroundEnabled: true },
-        tooltip: "FXMASTER.ParamTooltips.LeafBackgroundLeafSize",
+        tooltip: "FXMASTER.ParamTooltips.ScatterBackgroundParticleSize",
       },
       backgroundInteractionEnabled: {
-        label: "FXMASTER.Params.BackgroundInteraction",
+        label: "FXMASTER.Params.TokenTrails",
         type: "checkbox",
         value: true,
         showWhen: { backgroundEnabled: true },
-        tooltip: "FXMASTER.ParamTooltips.LeafBackgroundInteraction",
+        tooltip: "FXMASTER.ParamTooltips.ScatterBackgroundInteraction",
       },
       backgroundInteractionRadius: {
-        label: "FXMASTER.Params.BackgroundInteractionRadius",
+        label: "FXMASTER.Params.TokenTrailWidth",
         type: "range",
         min: 0,
         value: 0.9,
@@ -362,10 +363,10 @@ export class AutumnLeavesParticleEffect extends DefaultRectangleSpawnMixin(FXMas
         step: 0.05,
         decimals: 2,
         showWhen: { backgroundEnabled: true, backgroundInteractionEnabled: true },
-        tooltip: "FXMASTER.ParamTooltips.LeafBackgroundInteractionRadius",
+        tooltip: "FXMASTER.ParamTooltips.TokenTrailWidth",
       },
       backgroundInteractionStrength: {
-        label: "FXMASTER.Params.BackgroundInteractionStrength",
+        label: "FXMASTER.Params.TokenTrailStrength",
         type: "range",
         min: 0,
         value: 0.7,
@@ -373,7 +374,7 @@ export class AutumnLeavesParticleEffect extends DefaultRectangleSpawnMixin(FXMas
         step: 0.05,
         decimals: 2,
         showWhen: { backgroundEnabled: true, backgroundInteractionEnabled: true },
-        tooltip: "FXMASTER.ParamTooltips.LeafBackgroundInteractionStrength",
+        tooltip: "FXMASTER.ParamTooltips.ScatterBackgroundInteractionStrength",
       },
       backgroundInteractionSwirl: {
         label: "FXMASTER.Params.BackgroundInteractionSwirl",
@@ -384,7 +385,7 @@ export class AutumnLeavesParticleEffect extends DefaultRectangleSpawnMixin(FXMas
         step: 0.05,
         decimals: 2,
         showWhen: { backgroundEnabled: true, backgroundInteractionEnabled: true },
-        tooltip: "FXMASTER.ParamTooltips.LeafBackgroundInteractionSwirl",
+        tooltip: "FXMASTER.ParamTooltips.ScatterBackgroundInteractionSwirl",
       },
       backgroundInteractionLiftChance: {
         label: "FXMASTER.Params.BackgroundInteractionLiftChance",
@@ -395,7 +396,7 @@ export class AutumnLeavesParticleEffect extends DefaultRectangleSpawnMixin(FXMas
         step: 0.05,
         decimals: 2,
         showWhen: { backgroundEnabled: true, backgroundInteractionEnabled: true },
-        tooltip: "FXMASTER.ParamTooltips.LeafBackgroundInteractionLiftChance",
+        tooltip: "FXMASTER.ParamTooltips.ScatterBackgroundInteractionLiftChance",
       },
       backgroundInteractionElevationThreshold: {
         label: "FXMASTER.Params.BackgroundInteractionElevationThreshold",
@@ -409,7 +410,7 @@ export class AutumnLeavesParticleEffect extends DefaultRectangleSpawnMixin(FXMas
         tooltip: "FXMASTER.ParamTooltips.BackgroundInteractionElevationThreshold",
       },
       backgroundInteractionSettleTime: {
-        label: "FXMASTER.Params.BackgroundInteractionSettleTime",
+        label: "FXMASTER.Params.TokenTrailSettleTime",
         type: "range",
         min: 0.1,
         value: 0.2,
@@ -417,7 +418,7 @@ export class AutumnLeavesParticleEffect extends DefaultRectangleSpawnMixin(FXMas
         step: 0.1,
         decimals: 1,
         showWhen: { backgroundEnabled: true, backgroundInteractionEnabled: true },
-        tooltip: "FXMASTER.ParamTooltips.LeafBackgroundInteractionSettleTime",
+        tooltip: "FXMASTER.ParamTooltips.ScatterBackgroundInteractionSettleTime",
       },
       backgroundInteractionSettleImpact: {
         label: "FXMASTER.Params.BackgroundInteractionSettleImpact",
@@ -428,7 +429,7 @@ export class AutumnLeavesParticleEffect extends DefaultRectangleSpawnMixin(FXMas
         step: 0.05,
         decimals: 2,
         showWhen: { backgroundEnabled: true, backgroundInteractionEnabled: true },
-        tooltip: "FXMASTER.ParamTooltips.LeafBackgroundInteractionSettleImpact",
+        tooltip: "FXMASTER.ParamTooltips.ScatterBackgroundInteractionSettleImpact",
       },
     };
   }
@@ -783,6 +784,10 @@ export class AutumnLeavesParticleEffect extends DefaultRectangleSpawnMixin(FXMas
 
       origUpdate(delta);
 
+      const depthAmount = leafClamp(motion.depthVariation, 0, 1, this.constructor.DEPTH_VARIATION_DEFAULT);
+      const gustStrength = leafClamp(motion.gustiness, 0, 1, this.constructor.GUSTINESS_DEFAULT);
+      const turbulenceStrength = orbit ? 0 : leafClamp(motion.turbulence, 0, 1, this.constructor.TURBULENCE_DEFAULT);
+      const rippleStrength = leafClamp(motion.liveliness, 0, 1, this.constructor.RIPPLE_DEFAULT);
       const gustWave =
         Math.sin(elapsed * 0.82) * 0.24 +
         Math.sin(elapsed * 1.91 + 1.35) * 0.13 +
@@ -815,25 +820,24 @@ export class AutumnLeavesParticleEffect extends DefaultRectangleSpawnMixin(FXMas
           ? Number(particle.rotation)
           : Math.atan2(dy, dx);
 
-        const depthAmount = leafClamp(motion.depthVariation, 0, 1, this.constructor.DEPTH_VARIATION_DEFAULT);
         const depthSize = Math.max(0.62, 1 + state.depth * depthAmount * 0.3);
         const depthSpeed = Math.max(0.72, 1 + state.depth * depthAmount * 0.2);
         const depthAlpha = Math.max(0.72, 1 + state.depth * depthAmount * 0.14);
-        const gustAmount = leafClamp(motion.gustiness, 0, 1, this.constructor.GUSTINESS_DEFAULT) * profile.gust;
+        const gustAmount = gustStrength * profile.gust;
         const gustFactor = Math.max(0.62, 1 + gustWave * gustAmount);
 
-        const turbulenceAmount = orbit
-          ? 0
-          : leafClamp(motion.turbulence, 0, 1, this.constructor.TURBULENCE_DEFAULT) * profile.turbulence;
+        const turbulenceAmount = orbit ? 0 : turbulenceStrength * profile.turbulence;
         const turbulenceAngle =
-          (Math.sin(elapsed * 2.2 + state.turbulencePhase) * 0.18 +
-            Math.sin(elapsed * 4.9 + state.turbulencePhase2) * 0.07) *
-          turbulenceAmount;
+          turbulenceAmount === 0 && Number.isFinite(state.turbulencePhase) && Number.isFinite(state.turbulencePhase2)
+            ? 0
+            : (Math.sin(elapsed * 2.2 + state.turbulencePhase) * 0.18 +
+                Math.sin(elapsed * 4.9 + state.turbulencePhase2) * 0.07) *
+              turbulenceAmount;
 
         if (!orbit) {
           const speedFactor = Math.max(0.15, profile.speed * depthSpeed * gustFactor);
-          const cos = Math.cos(turbulenceAngle);
-          const sin = Math.sin(turbulenceAngle);
+          const cos = turbulenceAngle === 0 ? 1 : Math.cos(turbulenceAngle);
+          const sin = turbulenceAngle === 0 ? turbulenceAngle : Math.sin(turbulenceAngle);
           particle.x = originX + (dx * cos - dy * sin) * speedFactor;
           particle.y = originY + (dx * sin + dy * cos) * speedFactor;
         }
@@ -846,9 +850,11 @@ export class AutumnLeavesParticleEffect extends DefaultRectangleSpawnMixin(FXMas
         const heading = Number.isFinite(nativeHeading) ? nativeHeading : state.travelRotation;
         state.travelRotation = heading + turbulenceAngle;
 
-        const rippleAmount = leafClamp(motion.liveliness, 0, 1, this.constructor.RIPPLE_DEFAULT) * profile.liveliness;
-        const rippleWave = Math.sin(state.ripplePhase + Math.sin(state.ripplePhase2) * 0.24);
-        const rippleCrossWave = Math.sin(state.ripplePhase2 + Math.sin(state.ripplePhase) * 0.32);
+        const rippleAmount = rippleStrength * profile.liveliness;
+        const skipRipple =
+          rippleAmount === 0 && Number.isFinite(state.ripplePhase) && Number.isFinite(state.ripplePhase2);
+        const rippleWave = skipRipple ? 0 : Math.sin(state.ripplePhase + Math.sin(state.ripplePhase2) * 0.24);
+        const rippleCrossWave = skipRipple ? 0 : Math.sin(state.ripplePhase2 + Math.sin(state.ripplePhase) * 0.32);
         const rippleFold = Math.abs(rippleWave);
         const sizeMultiplier = profile.size * depthSize;
         const rippleWidth = Math.max(0.62, 1 - rippleFold * rippleAmount * 0.24);

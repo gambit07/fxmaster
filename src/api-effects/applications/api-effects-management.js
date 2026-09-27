@@ -226,7 +226,7 @@ export class ApiEffectsManagement extends FXMasterBaseFormV2 {
   }
 
   _storeCurrentPosition() {
-    this._persistPositionFlag(this.position);
+    this._persistPositionFlag(this.position, { immediate: true });
   }
 
   async _onClose(...args) {

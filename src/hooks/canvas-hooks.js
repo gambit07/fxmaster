@@ -9,6 +9,8 @@
 import { logger } from "../logger.js";
 import {
   clearCoalesceMap,
+  fxmClearSourcePathCache,
+  clearTokenLevelMaskResources,
   getRegionEffectPlaceablesForCurrentView,
   syncCanvasLiveLevelSurfaceState,
 } from "../utils.js";
@@ -132,7 +134,11 @@ function schedulePostCanvasReadyMaskRefresh(ctx) {
  * @param {object} ctx - Shared hook context from {@link createHookContext}.
  */
 export function registerCanvasHooks(ctx) {
+  Hooks.on("canvasTearDown", clearTokenLevelMaskResources);
+  Hooks.on("canvasTearDown", fxmClearSourcePathCache);
   Hooks.on("canvasInit", async () => {
+    clearTokenLevelMaskResources();
+    fxmClearSourcePathCache();
     invalidateEffectStackCache();
 
     /**

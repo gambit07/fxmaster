@@ -39,8 +39,7 @@ export function applyLegacyRangeTolerance(options, parameterConfig) {
 }
 
 /**
- * Convert an out-of-band legacy internal value for display in a normalized Region slider.
- * Values already inside the public UI range are left untouched because they are valid normalized values.
+ * Convert an out-of-band legacy internal value for display in a normalized Region slider. Values already inside the public UI range are left untouched because they are valid normalized values.
  *
  * @param {object|null|undefined} parameterConfig
  * @param {unknown} value
@@ -67,9 +66,7 @@ export function normalizeRegionRangeInputValue(parameterConfig, value) {
 }
 
 /**
- * NumberField which keeps a legacy-tolerant validation range while presenting the public normalized range to
- * Foundry's range-picker. The range-picker captures min/max/step in its constructor, so changing attributes after
- * render is too late on Foundry V14.
+ * NumberField which keeps a legacy-tolerant validation range while presenting the public normalized range to Foundry's range-picker. The range-picker captures min/max/step in its constructor, so changing attributes after render is too late on Foundry V14.
  */
 export class NormalizedRegionNumberField extends foundry.data.fields.NumberField {
   /**
@@ -98,8 +95,7 @@ export class NormalizedRegionNumberField extends foundry.data.fields.NumberField
 }
 
 /**
- * Create a Region behavior NumberField. Normalized effect parameters receive a specialized input renderer while the
- * field's validation constraints remain legacy tolerant.
+ * Create a Region behavior NumberField. Normalized effect parameters receive a specialized input renderer while the field's validation constraints remain legacy tolerant.
  *
  * @param {object} options
  * @param {object|null|undefined} parameterConfig
@@ -113,8 +109,7 @@ export function createRegionNumberField(options, parameterConfig = null) {
 /**
  * Apply normalized public range attributes to Region behavior form inputs.
  *
- * This remains as a compatibility fallback for Foundry versions which render native inputs. On V14 the authoritative
- * range is supplied by NormalizedRegionNumberField before the range-picker custom element is constructed.
+ * This remains as a compatibility fallback for Foundry versions which render native inputs. On V14 the authoritative range is supplied by NormalizedRegionNumberField before the range-picker custom element is constructed.
  *
  * @param {HTMLFormElement|HTMLElement|null} form
  * @param {object|null|undefined} effectDatabase
@@ -141,5 +136,27 @@ export function configureNormalizedRegionRangeInputs(form, effectDatabase) {
         if (config.step !== undefined) target.setAttribute("step", String(config.step));
       }
     }
+  }
+}
+
+/** Render current sound choices while preserving valid stored identifiers across scenes. */
+export class RegionSoundSelectionField extends foundry.data.fields.SetField {
+  constructor(kind, effectType, options = {}) {
+    super(new foundry.data.fields.StringField({ required: false }), options);
+    this.fxmKind = kind;
+    this.fxmEffectType = effectType;
+  }
+
+  /** @override */
+  _toInput(config = {}) {
+    const current = Array.from(config.value ?? []);
+    const provider = CONFIG?.fxmaster?.collectSoundFxManualSoundChoices;
+    const choices = typeof provider === "function" ? provider(this.fxmKind, this.fxmEffectType, current) : [];
+    const options = Array.from(choices ?? [], (choice) => ({ ...choice }));
+    const known = new Set(options.map((choice) => choice.value));
+    for (const value of current) {
+      if (!known.has(value)) options.push({ value, label: String(value), selected: true });
+    }
+    return super._toInput({ ...config, options });
   }
 }

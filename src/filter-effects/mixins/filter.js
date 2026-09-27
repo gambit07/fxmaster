@@ -1,0 +1,754 @@
+import {
+  snappedStageMatrix,
+  getSnappedCameraCss,
+  getCssViewportMetrics,
+  mat3FromPixi,
+  safeResolutionForCssArea,
+} from "../../utils.js";
+import { MAX_EDGES } from "../../constants.js";
+import { prepareFilterShaderSources } from "../shader-sources.js";
+
+export const FILTER_PRESENTATION_PASSES = Object.freeze({
+  NORMAL: "normal",
+  BELOW_DARKNESS: "belowDarkness",
+  ABOVE_DARKNESS: "aboveDarkness",
+});
+
+export const FILTER_PRESENTATION_PASS_VALUES = Object.freeze({
+  [FILTER_PRESENTATION_PASSES.NORMAL]: 0,
+  [FILTER_PRESENTATION_PASSES.BELOW_DARKNESS]: 1,
+  [FILTER_PRESENTATION_PASSES.ABOVE_DARKNESS]: 2,
+});
+
+const REGION_BOUND_OPTIONS = ["regionMinX", "regionMinY", "regionMaxX", "regionMaxY"];
+
+/** Adds filter option handling, viewport locking, masks, fades, and lifecycle helpers. */
+
+function normalizeOptionValue(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || !("value" in value)) return value;
+  if (typeof value.apply === "boolean") return { value: value.value, apply: value.apply };
+
+  const inner = value.value;
+  if (inner && typeof inner === "object" && !Array.isArray(inner) && "value" in inner)
+    return normalizeOptionValue(inner);
+  return inner;
+}
+
+export const normalize = (opts) => {
+  const out = {};
+  if (!opts || typeof opts !== "object") return out;
+
+  for (const [k, v] of Object.entries(opts)) out[k] = normalizeOptionValue(v);
+  return out;
+};
+
+import regionFadeCommonFrag from "../shaders/region-fade-common.frag";
+import { logger } from "../../logger.js";
+
+/**
+ * Preprocess shared shader constants and region-fade includes.
+ * @param {string} src Raw GLSL source.
+ * @returns {string} Preprocessed GLSL source.
+ */
+export function preprocessShader(src) {
+  if (typeof src !== "string") return src;
+  let out = src.replace(/#define MAX_EDGES \d+/g, `#define MAX_EDGES ${MAX_EDGES}`);
+  out = out.replace(/#include\s+<region-fade-common>/g, regionFadeCommonFrag);
+  return out;
+}
+
+export function FXMasterFilterEffectMixin(Base) {
+  return class extends Base {
+    constructor(options, id, ...args) {
+      if (typeof args[1] === "string") {
+        const [vertex, fragment] = prepareFilterShaderSources(args[0] ?? PIXI.Filter.defaultVertexSrc, args[1]);
+        args[0] = vertex;
+        args[1] = fragment;
+      }
+      super(...args);
+      this.id = id;
+      this.enabled = false;
+      this.__fxmFilterContext = options?.__fxmFilterContext ?? null;
+
+      try {
+        const r = this.__fxmFilterContext?.renderer ?? canvas?.app?.renderer;
+        this.resolution = r?.resolution || 1;
+        this.filterArea = new PIXI.Rectangle(0, 0, 1, 1);
+      } catch {
+        this.filterArea = new PIXI.Rectangle(0, 0, 1, 1);
+      }
+      this.autoFit = false;
+      this.padding = 0;
+
+      this._fxmStoredOptions = { ...this.constructor.default, ...(options ?? {}) };
+      this.options = normalize(this.normalizeOptionsForRuntime(this._fxmStoredOptions));
+      this.applyOptions(this.options);
+      this.applyOptions(this.constructor.neutral);
+
+      this._fxTickers = [];
+      this._fadeCancel = null;
+      this._fadeGen = 0;
+    }
+
+    static label = "FXMASTER.Common.FilterEffect";
+    static icon = "fas fa-filter";
+    static get parameters() {
+      return {};
+    }
+    static get default() {
+      return Object.fromEntries(Object.entries(this.parameters).map(([k, cfg]) => [k, cfg.value]));
+    }
+    static get neutral() {
+      return {};
+    }
+
+    static get aboveDarknessPresentation() {
+      return null;
+    }
+
+    /**
+     * Prepare one presentation pass.
+     * @param {string} pass Presentation pass identifier.
+     * @returns {false|(() => void)|{cleanup?: () => void, skip?: boolean}} Cleanup state.
+     */
+    prepareFXMasterPresentationPass(pass) {
+      const descriptor = this.constructor?.aboveDarknessPresentation;
+      if (!descriptor || typeof descriptor !== "object") return false;
+
+      const uniformKey = String(descriptor.uniform ?? "").trim();
+      const uniforms = this.uniforms ?? null;
+      if (!uniformKey || !uniforms || !(uniformKey in uniforms)) return false;
+
+      const values =
+        descriptor.values && typeof descriptor.values === "object"
+          ? descriptor.values
+          : FILTER_PRESENTATION_PASS_VALUES;
+      const nextValue = values[pass];
+      if (!Number.isFinite(Number(nextValue))) return false;
+
+      const previousValue = uniforms[uniformKey];
+      uniforms[uniformKey] = Number(nextValue);
+
+      return () => {
+        try {
+          uniforms[uniformKey] = previousValue;
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+      };
+    }
+
+    configure(options) {
+      const incoming = normalize(options ?? {});
+      /** Update derived bounds without copying already-normalized effect settings. */
+      if (
+        this.options?.__fxmNormalizedRangesExpanded === true &&
+        Object.keys(incoming).length === REGION_BOUND_OPTIONS.length &&
+        REGION_BOUND_OPTIONS.every(
+          (key) =>
+            Number.isFinite(incoming[key]) &&
+            Object.getOwnPropertyDescriptor(this.options, key)?.writable === true &&
+            Object.getOwnPropertyDescriptor(this._fxmStoredOptions ?? {}, key)?.writable === true,
+        )
+      ) {
+        for (const key of REGION_BOUND_OPTIONS) {
+          this._fxmStoredOptions[key] = incoming[key];
+          this.options[key] = incoming[key];
+        }
+        return;
+      }
+      this._fxmStoredOptions = { ...this.constructor.default, ...(this._fxmStoredOptions ?? {}), ...incoming };
+      this.options = normalize(this.normalizeOptionsForRuntime(this._fxmStoredOptions));
+    }
+
+    /** Preserve a running lifecycle fade while configuration refreshes other uniforms. */
+    configureWithFade(options = {}) {
+      const fade = this._uniformFadeState;
+      const current = fade ? this.uniforms?.[fade.key] : undefined;
+      const result = this.configure(options);
+      if (fade && fade === this._uniformFadeState && Number.isFinite(current)) {
+        if (fade.to !== 0 && Object.hasOwn(options, fade.key)) {
+          const target = Number(this.uniforms?.[fade.key]);
+          if (Number.isFinite(target)) fade.to = target;
+        }
+        this.uniforms[fade.key] = current;
+      }
+      return result;
+    }
+
+    get optionContext() {
+      return this;
+    }
+
+    normalizeOptionsForRuntime(options = this.options) {
+      return CONFIG.fxmaster?.normalizeEffectOptionsForRuntime?.(this.constructor, options) ?? options;
+    }
+
+    applyOptions(options = this.options) {
+      const runtimeOptions = this.normalizeOptionsForRuntime(options);
+      const normalized = normalize(runtimeOptions) || {};
+      for (const [key, val] of Object.entries(normalized)) {
+        if (key.startsWith?.("__fxm")) continue;
+        this.optionContext[key] = val;
+      }
+    }
+
+    play(_options = {}) {
+      this.cancelUniformFade?.();
+      this._fadeGen++;
+      this.applyOptions(this.options);
+      this.enabled = true;
+
+      try {
+        if (this.uniforms && typeof this.uniforms.strength === "number") {
+          const raw = this.options?.strength;
+          const val =
+            raw && typeof raw === "object" && "value" in raw
+              ? raw.value
+              : typeof raw === "number"
+              ? raw
+              : this.constructor?.default?.strength ?? 1;
+          this.uniforms.strength = Number.isFinite(val) ? val : 1;
+        }
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+
+      return this;
+    }
+
+    async stop(_options = {}) {
+      this.enabled = false;
+      this.cancelUniformFade?.();
+      this.removeAllFilterTickers?.();
+      this.neutralizeMask?.();
+      this.applyOptions(this.constructor.neutral);
+      return true;
+    }
+
+    async step() {}
+
+    /** Project and clamp the active rendering area to the viewport. */
+    lockViewport(opts = {}) {
+      const { setCamFrac = true, setDeviceToCss = true } = opts;
+
+      const context = this.__fxmFilterContext ?? null;
+      const r = context?.renderer ?? canvas?.app?.renderer;
+      if (!r) return;
+
+      const metrics = context ? null : getCssViewportMetrics();
+      const viewportWidth = context ? Math.max(1, Number(context.width) || 1) : metrics.cssW;
+      const viewportHeight = context ? Math.max(1, Number(context.height) || 1) : metrics.cssH;
+
+      const sw = Math.max(1, viewportWidth | 0);
+      const sh = Math.max(1, viewportHeight | 0);
+
+      let fx = 0;
+      let fy = 0;
+      let fw = sw;
+      let fh = sh;
+
+      fx = Math.floor(fx);
+      fy = Math.floor(fy);
+      fw = Math.max(1, Math.ceil(fw));
+      fh = Math.max(1, Math.ceil(fh));
+
+      try {
+        if (!(this.filterArea instanceof PIXI.Rectangle)) this.filterArea = new PIXI.Rectangle();
+        this.filterArea.x = fx;
+        this.filterArea.y = fy;
+        this.filterArea.width = fw;
+        this.filterArea.height = fh;
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+
+      this.autoFit = false;
+      this.padding = 0;
+
+      const u = (this.uniforms ??= {});
+
+      if (setDeviceToCss && "deviceToCss" in u) {
+        const v = 1 / (r.resolution || 1);
+        u.deviceToCss = v;
+      }
+
+      if ("viewSize" in u) {
+        const arr = u.viewSize instanceof Float32Array && u.viewSize.length >= 2 ? u.viewSize : new Float32Array(2);
+        arr[0] = sw;
+        arr[1] = sh;
+        u.viewSize = arr;
+      }
+
+      if (setCamFrac && "camFrac" in u) {
+        const arr = u.camFrac instanceof Float32Array && u.camFrac.length >= 2 ? u.camFrac : new Float32Array(2);
+        if (context) {
+          arr[0] = 0;
+          arr[1] = 0;
+        } else if (canvas?.stage?.transform) {
+          const { camFracX, camFracY } = getSnappedCameraCss();
+          arr[0] = camFracX;
+          arr[1] = camFracY;
+        }
+        u.camFrac = arr;
+      }
+    }
+
+    writeSrcFrameFrom(filterSystem, currentState) {
+      const u = this.uniforms || {};
+      if (!("srcFrame" in u)) return;
+
+      const context = this.__fxmFilterContext ?? null;
+      const r = context?.renderer ?? canvas?.app?.renderer;
+      const wCSS = Math.max(1, Number(context?.width) || Number(r?.screen?.width) || 1);
+      const hCSS = Math.max(1, Number(context?.height) || Number(r?.screen?.height) || 1);
+
+      const A = filterSystem?.activeState ?? currentState;
+      const sf = A?.sourceFrame;
+
+      if (u.srcFrame instanceof Float32Array && u.srcFrame.length >= 4) {
+        if (sf) {
+          u.srcFrame[0] = sf.x || 0;
+          u.srcFrame[1] = sf.y || 0;
+          u.srcFrame[2] = sf.width || wCSS;
+          u.srcFrame[3] = sf.height || hCSS;
+        } else {
+          u.srcFrame[0] = 0;
+          u.srcFrame[1] = 0;
+          u.srcFrame[2] = wCSS;
+          u.srcFrame[3] = hCSS;
+        }
+      } else {
+        u.srcFrame = new Float32Array(
+          sf ? [sf.x || 0, sf.y || 0, sf.width || wCSS, sf.height || hCSS] : [0, 0, wCSS, hCSS],
+        );
+      }
+    }
+
+    updateOutputFrame(filterSystem, key = "outputFrame") {
+      const u = this.uniforms;
+      if (!u) return;
+      const dest = filterSystem?.activeState?.destinationFrame || filterSystem?.destinationFrame;
+      if (!dest) return;
+      const arr = u[key] instanceof Float32Array && u[key].length >= 4 ? u[key] : new Float32Array(4);
+      arr[0] = dest.x || 0;
+      arr[1] = dest.y || 0;
+      arr[2] = dest.width || 1;
+      arr[3] = dest.height || 1;
+      u[key] = arr;
+    }
+
+    lockAndSync(filterSystem, currentState, lockOpts = {}) {
+      this.lockViewport(lockOpts);
+      this.writeSrcFrameFrom(filterSystem, currentState);
+      this.updateOutputFrame(filterSystem);
+    }
+
+    applyWithLock(
+      filterSystem,
+      input,
+      output,
+      clear,
+      currentState,
+      lockOpts = { area: "sceneRect", setDeviceToCss: false },
+    ) {
+      this.lockAndSync(filterSystem, currentState, lockOpts);
+
+      if (this.uniforms && "uCssToWorld" in this.uniforms) {
+        const context = this.__fxmFilterContext ?? null;
+        const M =
+          context?.cssToWorld instanceof PIXI.Matrix
+            ? context.cssToWorld
+            : canvas?.stage
+            ? snappedStageMatrix().clone().invert()
+            : PIXI.Matrix.IDENTITY.clone();
+        this.uniforms.uCssToWorld = mat3FromPixi(M);
+      }
+
+      try {
+        const r = this.__fxmFilterContext?.renderer ?? canvas?.app?.renderer;
+
+        const area = this.filterArea instanceof PIXI.Rectangle ? this.filterArea : r?.screen ?? { width: 1, height: 1 };
+        const wCSS = Math.max(1, Number(area.width) || 1);
+        const hCSS = Math.max(1, Number(area.height) || 1);
+
+        const safe = safeResolutionForCssArea(wCSS, hCSS);
+        if (!Number.isFinite(this.resolution) || this.resolution > safe || this.resolution <= 0) {
+          this.resolution = safe;
+        }
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+
+      return super.apply(filterSystem, input, output, clear, currentState);
+    }
+
+    initMaskUniforms(u = this.uniforms, { withStrength = false, strengthDefault = 1.0 } = {}) {
+      if (!u) return;
+      u.maskSampler = u.maskSampler || PIXI.Texture.EMPTY;
+      u.viewSize = u.viewSize || new Float32Array([1, 1]);
+      u.hasMask = typeof u.hasMask === "number" ? u.hasMask : 0.0;
+      u.maskReady = typeof u.maskReady === "number" ? u.maskReady : 0.0;
+      u.maskSoft = typeof u.maskSoft === "number" ? u.maskSoft : 0.0;
+      u.maskWorldReady = typeof u.maskWorldReady === "number" ? u.maskWorldReady : 0.0;
+      u.uMaskUvFromWorld ??= new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+      u.maskTexelUV ??= new Float32Array([1, 1]);
+      u.invertMask = typeof u.invertMask === "number" ? u.invertMask : 0.0;
+      if (withStrength) u.strength = typeof u.strength === "number" ? u.strength : strengthDefault;
+      return u;
+    }
+
+    applyMaskOptionsFrom(options = {}) {
+      const u = this.uniforms;
+      if (!u || !options) return;
+      if ("maskSampler" in options && options.maskSampler) {
+        u.maskSampler = options.maskSampler;
+        try {
+          const bt = u.maskSampler.baseTexture;
+          if (bt) {
+            bt.scaleMode = PIXI.SCALE_MODES.LINEAR;
+            if (typeof PIXI.MIPMAP_MODES !== "undefined") bt.mipmap = PIXI.MIPMAP_MODES.OFF;
+          }
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+      }
+      if ("hasMask" in options && typeof options.hasMask === "number") u.hasMask = options.hasMask;
+      if ("maskReady" in options && typeof options.maskReady === "number") u.maskReady = options.maskReady;
+      if ("maskSoft" in options && typeof options.maskSoft === "number") u.maskSoft = options.maskSoft;
+      if ("maskWorldReady" in options && typeof options.maskWorldReady === "number")
+        u.maskWorldReady = options.maskWorldReady;
+      if ("uMaskUvFromWorld" in options && options.uMaskUvFromWorld instanceof Float32Array)
+        u.uMaskUvFromWorld = options.uMaskUvFromWorld;
+      if ("maskTexelUV" in options && options.maskTexelUV instanceof Float32Array) u.maskTexelUV = options.maskTexelUV;
+      if ("invertMask" in options && typeof options.invertMask === "number") u.invertMask = options.invertMask;
+      if ("viewSize" in options && Array.isArray(options.viewSize) && options.viewSize.length === 2) {
+        u.viewSize = new Float32Array([
+          Math.max(1, Number(options.viewSize[0]) || 1),
+          Math.max(1, Number(options.viewSize[1]) || 1),
+        ]);
+      }
+    }
+
+    neutralizeMask() {
+      const u = this.uniforms;
+      if (!u) return;
+      if ("maskReady" in u) u.maskReady = 0.0;
+      if ("hasMask" in u) u.hasMask = 0.0;
+      if ("maskSoft" in u) u.maskSoft = 0.0;
+      if ("maskWorldReady" in u) u.maskWorldReady = 0.0;
+      if ("invertMask" in u) u.invertMask = 0.0;
+      if ("maskSampler" in u) {
+        try {
+          u.maskSampler = PIXI.Texture.EMPTY;
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+      }
+    }
+
+    ensureVec2Uniform(key, def = [0, 0]) {
+      const u = this.uniforms || (this.uniforms = {});
+      const a = u[key];
+      if (a instanceof Float32Array && a.length >= 2) return a;
+      u[key] = new Float32Array(def.length >= 2 ? def.slice(0, 2) : [0, 0]);
+      return u[key];
+    }
+
+    ensureVec4Uniform(key, def = [0, 0, 1, 1]) {
+      const u = this.uniforms || (this.uniforms = {});
+      const a = u[key];
+      if (a instanceof Float32Array && a.length >= 4) return a;
+      u[key] = new Float32Array(def.length >= 4 ? def.slice(0, 4) : [0, 0, 1, 1]);
+      return u[key];
+    }
+
+    parseColorOption(raw, { defaultHex = "#000000" } = {}) {
+      if (typeof raw === "string") {
+        const rgb = [0, 0, 0];
+        try {
+          PIXI.utils.hex2rgb(PIXI.utils.string2hex(raw), rgb);
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+        return rgb;
+      }
+      if (raw && typeof raw === "object") {
+        const hex = raw.value ?? defaultHex;
+        const apply = !!raw.apply;
+        if (!apply) return null;
+        const rgb = [0, 0, 0];
+        try {
+          PIXI.utils.hex2rgb(PIXI.utils.string2hex(hex), rgb);
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+        return rgb;
+      }
+      return null;
+    }
+
+    addFilterTicker(cb, { priority } = {}) {
+      if (typeof cb !== "function") return () => {};
+      const ticker = this.__fxmFilterContext?.ticker ?? canvas?.app?.ticker ?? PIXI.Ticker.shared;
+      const fn = () => {
+        try {
+          cb(ticker.deltaMS ?? 16.6);
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+      };
+      try {
+        if (priority != null && ticker.add.length >= 3) ticker.add(fn, this, priority);
+        else ticker.add(fn, this);
+        (this._fxTickers ||= []).push({ ticker, fn });
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+      return () => this.removeFilterTicker(fn);
+    }
+
+    removeFilterTicker(fn) {
+      for (const entry of this._fxTickers || []) {
+        if (entry.fn !== fn) continue;
+        try {
+          entry.ticker.remove(fn, this);
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+      }
+      this._fxTickers = (this._fxTickers || []).filter((t) => t.fn !== fn);
+    }
+
+    removeAllFilterTickers() {
+      for (const { ticker, fn } of this._fxTickers || []) {
+        try {
+          ticker.remove(fn, this);
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+      }
+      this._fxTickers = [];
+    }
+
+    destroy(options) {
+      this.cancelUniformFade?.();
+      this.removeAllFilterTickers?.();
+      super.destroy?.(options);
+    }
+
+    cancelUniformFade() {
+      this._fadeGen = (this._fadeGen ?? 0) + 1;
+      const settle = this._fadeStopResolve;
+      this._fadeStopResolve = null;
+      settle?.(false);
+      try {
+        this._fadeCancel?.();
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      }
+      this._fadeCancel = null;
+    }
+
+    /**
+     * Animate a numeric uniform to a target value.
+     * @param {string} uniformKey Uniform name.
+     * @param {number} to Target value.
+     * @param {{ durationMs?: number, from?: number|undefined, easing?: Function|undefined, onDone?: Function|undefined }} [options] Animation options.
+     * @returns {void}
+     */
+    fadeUniformTo(uniformKey, to, { durationMs = 3000, from, easing, onDone } = {}) {
+      this.cancelUniformFade();
+      if (!this.uniforms) return;
+
+      if (from !== undefined) {
+        try {
+          this.uniforms[uniformKey] = from;
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+      }
+
+      if (!(durationMs > 0)) {
+        try {
+          this.uniforms[uniformKey] = to;
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+        try {
+          onDone?.();
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+        return;
+      }
+
+      this._startUniformFade(uniformKey, { to, durationMs, easing, onDone });
+    }
+
+    _startUniformFade(uniformKey, { to, durationMs, easing, onDone }) {
+      const tkr = this.__fxmFilterContext?.ticker ?? canvas?.app?.ticker;
+      if (!tkr || !this.uniforms) {
+        try {
+          this.uniforms[uniformKey] = to;
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+        return onDone?.();
+      }
+
+      const ease = typeof easing === "function" ? easing : (t) => t;
+      const start = Number(this.uniforms[uniformKey]) || 0;
+      const state = (this._uniformFadeState = { key: uniformKey, to });
+
+      let elapsed = 0;
+      const tick = () => {
+        const dt = tkr.deltaMS ?? 16.6;
+        elapsed += dt;
+        const t = Math.min(1, elapsed / durationMs);
+        const k = ease(t);
+        try {
+          this.uniforms[uniformKey] = start + (state.to - start) * k;
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+
+        if (t >= 1) {
+          const target = state.to;
+          this._fadeCancel?.();
+          this._fadeCancel = null;
+          try {
+            this.uniforms[uniformKey] = target;
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
+          try {
+            onDone?.();
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
+        }
+      };
+
+      tkr.add(tick, this);
+      this._fadeCancel = () => {
+        if (this._uniformFadeState === state) this._uniformFadeState = null;
+        try {
+          tkr.remove(tick, this);
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+      };
+    }
+
+    stopWithUniformFade({
+      uniformKey = "strength",
+      durationMs = 3000,
+      to = 0,
+      skipFading,
+      disableOnDone = true,
+      neutralizeMaskOnStop = true,
+      removeTickersOnStop = true,
+      easing,
+      onDone,
+    } = {}) {
+      const skip = Boolean(skipFading);
+      this.cancelUniformFade();
+      const myGen = ++this._fadeGen;
+
+      const tkr = this.__fxmFilterContext?.ticker ?? canvas?.app?.ticker;
+      const u = this.uniforms ?? {};
+
+      const finish = () => {
+        if (myGen !== this._fadeGen) return Promise.resolve(false);
+        if (neutralizeMaskOnStop) this.neutralizeMask?.();
+        if (removeTickersOnStop) this.removeAllFilterTickers?.();
+        if (disableOnDone) this.enabled = false;
+
+        const out = super.stop?.({ skipFading: true }) ?? true;
+        const done = (res) => {
+          if (myGen !== this._fadeGen) return false;
+          try {
+            onDone?.();
+          } catch (err) {
+            logger.debug("FXMaster:", err);
+          }
+          return !!res;
+        };
+        return Promise.resolve(out).then(done);
+      };
+
+      if (skip || !tkr || durationMs <= 0) {
+        try {
+          if (u) u[uniformKey] = to;
+        } catch (err) {
+          logger.debug("FXMaster:", err);
+        }
+        return finish();
+      }
+
+      return new Promise((resolve, reject) => {
+        const settle = (value) => {
+          if (this._fadeStopResolve === settle) this._fadeStopResolve = null;
+          resolve(value);
+        };
+        const fail = (error) => {
+          if (this._fadeStopResolve === settle) this._fadeStopResolve = null;
+          reject(error);
+        };
+        this._fadeStopResolve = settle;
+        try {
+          this._startUniformFade(uniformKey, {
+            to,
+            durationMs,
+            easing,
+            onDone: () => {
+              if (myGen !== this._fadeGen) return settle(false);
+              try {
+                Promise.resolve(finish()).then(settle, fail);
+              } catch (error) {
+                fail(error);
+              }
+            },
+          });
+        } catch (error) {
+          fail(error);
+        }
+      });
+    }
+
+    initFadeUniforms(u) {
+      if (typeof u.uUsePct !== "number") u.uUsePct = 0.0;
+      if (typeof u.uFadePct !== "number") u.uFadePct = 0.0;
+      if (typeof u.uFadeWorld !== "number") u.uFadeWorld = 0.0;
+      if (typeof u.uFadePx !== "number") u.uFadePx = 0.0;
+    }
+
+    applyFadeOptionsFrom(options = {}) {
+      if (options.fadePercent !== undefined) {
+        const pct = Math.min(Math.max(Number(options.fadePercent) || 0, 0), 1);
+        this.uniforms.uUsePct = pct > 0 ? 1.0 : 0.0;
+        this.uniforms.uFadePct = pct;
+      }
+      if (options.featherPx !== undefined) {
+        this.uniforms.uFadePx = Math.max(0, Number(options.featherPx) || 0);
+      }
+    }
+
+    initRegionFadeUniforms(u, { maxEdges = 64 } = {}) {
+      u.uRegionShape = typeof u.uRegionShape === "number" ? u.uRegionShape : -1;
+      u.uCssToWorld ??= new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+      u.uCenter ??= new Float32Array([0, 0]);
+      u.uHalfSize ??= new Float32Array([1, 1]);
+      if (typeof u.uRotation !== "number") u.uRotation = 0.0;
+      u.uSdf ??= PIXI.Texture.EMPTY;
+      u.uUvFromWorld ??= new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+      u.uSdfScaleOff ??= new Float32Array([1, 0]);
+      u.uSdfTexel ??= new Float32Array([0, 0]);
+      if (typeof u.uSdfInsideMax !== "number") u.uSdfInsideMax = 0.0;
+      u.uEdges ??= new Float32Array(maxEdges * 4);
+      if (typeof u.uEdgeCount !== "number") u.uEdgeCount = 0;
+      if (typeof u.uSmoothKWorld !== "number") u.uSmoothKWorld = 0.0;
+    }
+  };
+}

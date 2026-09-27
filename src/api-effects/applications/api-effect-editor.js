@@ -204,7 +204,7 @@ export class ApiEffectEditor extends FXMasterBaseFormV2 {
   }
 
   _storeCurrentPosition() {
-    this._persistPositionFlag(this.position);
+    this._persistPositionFlag(this.position, { immediate: true });
   }
 
   async _onRender(...args) {
@@ -231,10 +231,7 @@ export class ApiEffectEditor extends FXMasterBaseFormV2 {
       }
     }
 
-    const content = this.element?.querySelector?.(".window-content") ?? this.element;
-
     this._wireRangeWheelBehavior({
-      getScrollWrapper: () => content,
       onInput: (event, slider) => ApiEffectEditor.updateParam.call(this, event, slider),
     });
 

@@ -293,7 +293,7 @@ export class FxLayersManagement extends FXMasterBaseFormV2 {
   }
 
   _storeCurrentPosition() {
-    this._persistPositionFlag(this.position);
+    this._persistPositionFlag(this.position, { immediate: true });
   }
 
   /**

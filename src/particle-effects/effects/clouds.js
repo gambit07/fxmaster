@@ -1,4 +1,4 @@
-import { FXMasterParticleEffect } from "./effect.js";
+import { FXMasterParticleEffect } from "../effect.js";
 import { geometricDirectionToCanvasVector } from "../../utils.js";
 import { logger } from "../../logger.js";
 
@@ -11,7 +11,7 @@ export class CloudsParticleEffect extends FXMasterParticleEffect {
 
   /** @override */
   static get icon() {
-    return "modules/fxmaster/assets/particle-effects/icons/clouds.webp";
+    return "modules/fxmaster/assets/particle-effects/icons/clouds.svg";
   }
 
   /** @override */

@@ -101,6 +101,9 @@ function registerClearFxContextMenuListener() {
   );
 }
 
+/**
+ * Open the tools overview from scene controls and announcement links.
+ */
 function registerFxMasterInfoClickListener() {
   if (fxMasterInfoClickListenerRegistered) return;
   fxMasterInfoClickListenerRegistered = true;
@@ -111,11 +114,14 @@ function registerFxMasterInfoClickListener() {
       if (!game.user?.isGM) return;
 
       const target = event?.target;
-      const toolButton = target?.closest?.('[data-tool="activation"]');
-      if (!toolButton) return;
+      const announcementLink = target?.closest?.('.fxmaster-announcement a[data-fxmaster-action="open-overview"]');
+      if (!announcementLink) {
+        const toolButton = target?.closest?.('[data-tool="activation"]');
+        if (!toolButton) return;
 
-      const controlsElement = getSceneControlsElement();
-      if (controlsElement && !controlsElement.contains(toolButton)) return;
+        const controlsElement = getSceneControlsElement();
+        if (controlsElement && !controlsElement.contains(toolButton)) return;
+      }
 
       event?.preventDefault?.();
       event?.stopPropagation?.();

@@ -46,6 +46,7 @@ function currentStageMatrix(stage = canvas.stage) {
  */
 let _stageFrameMatrixCache = { key: null, raw: null, snapped: null };
 let _cssViewportMetricsCache = null;
+let _cssViewportMetricsInputs = null;
 const _maxTextureSizeCache = new WeakMap();
 
 /**
@@ -320,17 +321,38 @@ export function ellipseSteps(rx, ry, stageMatrix = stageMatrixSnapshot().raw) {
 
 /**
  * Return viewport metrics in CSS pixels.
- * @returns {{cssW:number, cssH:number, deviceToCss:number, rect: PIXI.Rectangle, deviceRect: PIXI.Rectangle}}
+ * @returns {{key:string, cssW:number, cssH:number, deviceToCss:number, rect: PIXI.Rectangle, deviceRect: PIXI.Rectangle}}
  */
 export function getCssViewportMetrics() {
   const r = canvas?.app?.renderer;
   const res = r?.resolution || window.devicePixelRatio || 1;
-
-  const deviceW = Math.max(1, Math.round(Number(r?.view?.width ?? (r?.screen?.width ?? 1) * res)) || 1);
-  const deviceH = Math.max(1, Math.round(Number(r?.view?.height ?? (r?.screen?.height ?? 1) * res)) || 1);
-  const cssW = Math.max(1, Number(r?.screen?.width ?? deviceW / res) || 1);
-  const cssH = Math.max(1, Number(r?.screen?.height ?? deviceH / res) || 1);
-  const key = `${deviceW}|${deviceH}|${cssW}|${cssH}|${res}`;
+  const viewW = r?.view?.width;
+  const viewH = r?.view?.height;
+  const screenW = r?.screen?.width;
+  const screenH = r?.screen?.height;
+  let inputs = _cssViewportMetricsInputs;
+  if (
+    !inputs ||
+    inputs.viewW !== viewW ||
+    inputs.viewH !== viewH ||
+    inputs.screenW !== screenW ||
+    inputs.screenH !== screenH ||
+    inputs.res !== res
+  ) {
+    const deviceW = Math.max(1, Math.round(Number(viewW ?? (screenW ?? 1) * res)) || 1);
+    const deviceH = Math.max(1, Math.round(Number(viewH ?? (screenH ?? 1) * res)) || 1);
+    const cssW = Math.max(1, Number(screenW ?? deviceW / res) || 1);
+    const cssH = Math.max(1, Number(screenH ?? deviceH / res) || 1);
+    const key = `${deviceW}|${deviceH}|${cssW}|${cssH}|${res}`;
+    inputs = { viewW, viewH, screenW, screenH, res, deviceW, deviceH, cssW, cssH, key };
+    /** Mutable numeric objects require fresh coercion on each lookup. */
+    _cssViewportMetricsInputs = [viewW, viewH, screenW, screenH, res].every(
+      (value) => value === null || (typeof value !== "object" && typeof value !== "function"),
+    )
+      ? inputs
+      : null;
+  }
+  const { deviceW, deviceH, cssW, cssH, key } = inputs;
 
   if (!_cssViewportMetricsCache || _cssViewportMetricsCache.key !== key) {
     _cssViewportMetricsCache = {

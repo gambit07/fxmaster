@@ -108,8 +108,7 @@ function encodeTrailTimestampUnits(clockUnits) {
 }
 
 /**
- * Clip a segment to a rectangle so Region-scoped surfaces do not hand very
- * large off-canvas coordinates to the browser's 2D rasterizer.
+ * Clip a segment to a rectangle so Region-scoped surfaces do not hand very large off-canvas coordinates to the browser's 2D rasterizer.
  *
  * @param {{x:number,y:number}} from
  * @param {{x:number,y:number}} to
@@ -152,13 +151,9 @@ function clipSegmentToRect(from, to, rect, padding = 0) {
 }
 
 /**
- * Session-persistent world-space mask shared by every runtime instance of the
- * same snow effect row. Sharing keeps trails intact across emitter crossfades
- * and Region runtime rebuilds without serializing a large texture into flags.
+ * Session-persistent world-space mask shared by every runtime instance of the same snow effect row. Sharing keeps trails intact across emitter crossfades and Region runtime rebuilds without serializing a large texture into flags.
  *
- * When refill is enabled, a second nearest-neighbor texture records the newest
- * stamp time for each trail pixel. The snow shader can then restore each path
- * independently without redrawing or uploading the full mask every frame.
+ * When refill is enabled, a second nearest-neighbor texture records the newest stamp time for each trail pixel. The snow shader can then restore each path independently without redrawing or uploading the full mask every frame.
  */
 export class SnowTrailStore {
   constructor({ uid = "snow-background" } = {}) {
@@ -204,9 +199,7 @@ export class SnowTrailStore {
   }
 
   /**
-   * Enable or disable per-pixel refill timestamps without altering the trail
-   * mask. Existing persistent trails begin their refill from the moment this is
-   * enabled; disabling refill freezes the visible trails again.
+   * Enable or disable per-pixel refill timestamps without altering the trail mask. Existing persistent trails begin their refill from the moment this is enabled; disabling refill freezes the visible trails again.
    *
    * @param {boolean} enabled
    * @param {number} [tick]
@@ -256,10 +249,7 @@ export class SnowTrailStore {
   }
 
   /**
-   * Clear refill-backed trail pixels once their refill window has fully elapsed.
-   * The visual shader already hides expired pixels, but the source mask can still
-   * contain old alpha. Clearing it before a new stamp prevents stale, visually
-   * refilled paths from being revived by nearby new trail timestamps.
+   * Clear refill-backed trail pixels once their refill window has fully elapsed. The visual shader already hides expired pixels, but the source mask can still contain old alpha. Clearing it before a new stamp prevents stale, visually refilled paths from being revived by nearby new trail timestamps.
    *
    * @param {number} [tick]
    * @param {number} [activeDurationSeconds=Infinity]
@@ -282,10 +272,7 @@ export class SnowTrailStore {
   }
 
   /**
-   * Return whether shader-side trail sampling can currently change pixels.
-   * Trail stores are lazy-created so an enabled token-interaction option does
-   * not have to keep an empty texture sample branch hot. Refill-based trails can
-   * also stand down after the newest stamp has settled.
+   * Return whether shader-side trail sampling can currently change pixels. Trail stores are lazy-created so an enabled token-interaction option does not have to keep an empty texture sample branch hot. Refill-based trails can also stand down after the newest stamp has settled.
    *
    * @param {number} [tick]
    * @param {number} [activeDurationSeconds=Infinity]

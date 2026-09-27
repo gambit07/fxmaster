@@ -1,10 +1,7 @@
 /**
- * Foundry Query transport for live and persisted particle-background
- * disturbances.
+ * Foundry Query transport for live and persisted particle-background disturbances.
  *
- * Live queries keep connected viewers visually in step. A second query sends
- * the same compact movement segments to the active GM, which appends them to a
- * bounded Scene flag so late joiners and reloads can reconstruct the field.
+ * Live queries keep connected viewers visually in step. A second query sends the same compact movement segments to the active GM, which appends them to a bounded Scene flag so late joiners and reloads can reconstruct the field.
  */
 
 import { packageId } from "../../constants.js";
@@ -261,7 +258,7 @@ function localUserIsActiveGM() {
   return String(activeGMUser()?.id ?? "") === String(user.id ?? "");
 }
 
-function validatePersistencePayload(queryData = {}) {
+function validatePersistencePayload(queryData = {}, authenticatedUser = null) {
   if (Number(queryData?.version) !== PARTICLE_BACKGROUND_PERSIST_QUERY_VERSION) {
     return { accepted: [], reason: "unsupported-version" };
   }
@@ -269,8 +266,11 @@ function validatePersistencePayload(queryData = {}) {
   const sceneId = String(queryData?.sceneId ?? "").trim();
   const senderUserId = String(queryData?.senderUserId ?? "").trim();
   const scene = getSceneById(sceneId);
-  const sender = getUserById(senderUserId);
-  if (!scene || !sender?.active) return { accepted: [], reason: "invalid-scene-or-user" };
+  const sender = authenticatedUser;
+  if (!sender?.active || getUserById(sender.id) !== sender || senderUserId !== String(sender.id)) {
+    return { accepted: [], reason: "unauthenticated-sender" };
+  }
+  if (!scene) return { accepted: [], reason: "invalid-scene-or-user" };
 
   const now = particleBackgroundNow();
   const grid = Math.max(1, Number(scene?.grid?.size ?? scene?.dimensions?.size ?? 100) || 100);
@@ -371,13 +371,16 @@ function enqueuePersistedMovement(sceneId, events) {
     persistenceQueues.set(id, queue);
   }
   for (const event of events) queue.pending.set(event.eventId, event);
+  while (queue.pending.size > PARTICLE_BACKGROUND_MOVEMENT_HISTORY_MAX_EVENTS) {
+    queue.pending.delete(queue.pending.keys().next().value);
+  }
   schedulePersistenceFlush(id, queue);
   return events.length;
 }
 
-async function receivePersistenceQuery(queryData = {}) {
+async function receivePersistenceQuery(queryData = {}, authenticatedUser = null) {
   if (!localUserIsActiveGM()) return { accepted: 0, reason: "not-active-gm" };
-  const validated = validatePersistencePayload(queryData);
+  const validated = validatePersistencePayload(queryData, authenticatedUser);
   if (!validated.accepted.length) return { accepted: 0, reason: validated.reason ?? "no-valid-segments" };
   return {
     accepted: enqueuePersistedMovement(String(validated.scene?.id ?? queryData?.sceneId ?? ""), validated.accepted),
@@ -393,7 +396,7 @@ export function registerParticleBackgroundQueries() {
   }
 
   config.queries ??= {};
-  config.queries[PARTICLE_BACKGROUND_DISTURBANCE_QUERY] = async (queryData = {}) => {
+  config.queries[PARTICLE_BACKGROUND_DISTURBANCE_QUERY] = async (queryData = {}, context = {}) => {
     if (Number(queryData?.version) !== PARTICLE_BACKGROUND_DISTURBANCE_QUERY_VERSION) {
       return { accepted: 0, reason: "unsupported-version" };
     }
@@ -402,16 +405,16 @@ export function registerParticleBackgroundQueries() {
       if (!layer || typeof layer.receiveParticleBackgroundDisturbanceQuery !== "function") {
         return { accepted: 0, reason: "layer-unavailable" };
       }
-      return (await layer.receiveParticleBackgroundDisturbanceQuery(queryData)) ?? { accepted: 0 };
+      return (await layer.receiveParticleBackgroundDisturbanceQuery(queryData, context)) ?? { accepted: 0 };
     } catch (err) {
       logger.debug("FXMaster: particle-background query handler failed", err);
       return { accepted: 0, reason: "handler-failed" };
     }
   };
 
-  config.queries[PARTICLE_BACKGROUND_PERSIST_QUERY] = async (queryData = {}) => {
+  config.queries[PARTICLE_BACKGROUND_PERSIST_QUERY] = async (queryData = {}, context = {}) => {
     try {
-      return await receivePersistenceQuery(queryData);
+      return await receivePersistenceQuery(queryData, resolveParticleBackgroundQueryUser(queryData, context));
     } catch (err) {
       logger.debug("FXMaster: particle-background persistence query handler failed", err);
       return { accepted: 0, reason: "handler-failed" };
@@ -422,9 +425,25 @@ export function registerParticleBackgroundQueries() {
   return true;
 }
 
+/** Resolve only the transport-authenticated user attached to a query. */
+export function resolveParticleBackgroundQueryUser(payload, context = {}) {
+  const user = context?.user;
+  if (!user?.active || getUserById(user.id) !== user) return null;
+  if (String(payload?.senderUserId ?? "") !== String(user.id)) return null;
+  return user;
+}
+
+/** Select the observing GM for legacy trail sampling, with local fallback when unavailable. */
+export function particleBackgroundLocalTrailAuthority(sceneId) {
+  const gm = activeGMUser();
+  if (!gm || !userViewsScene(gm, sceneId)) return true;
+  return String(gm.id) === String(globalThis.game?.user?.id ?? "");
+}
+
 export function particleBackgroundQueriesAvailable() {
   return (
     queryRegistered &&
+    Number(globalThis.game?.release?.generation) >= 14 &&
     typeof globalThis.CONFIG?.queries?.[PARTICLE_BACKGROUND_DISTURBANCE_QUERY] === "function" &&
     typeof globalThis.game?.user?.query === "function"
   );
@@ -433,6 +452,7 @@ export function particleBackgroundQueriesAvailable() {
 export function particleBackgroundPersistenceAvailable() {
   if (!queryRegistered) return false;
   if (localUserIsActiveGM()) return true;
+  if (!particleBackgroundQueriesAvailable()) return false;
   const gm = activeGMUser();
   return !!gm?.active && typeof gm.query === "function";
 }
@@ -461,7 +481,9 @@ export function queryParticleBackgroundDisturbances(user, payload) {
 
 export function persistParticleBackgroundDisturbances(payload) {
   if (!queryRegistered) return Promise.resolve({ accepted: 0, reason: "query-unavailable" });
-  if (localUserIsActiveGM()) return Promise.resolve(receivePersistenceQuery(payload));
+  if (localUserIsActiveGM()) return Promise.resolve(receivePersistenceQuery(payload, globalThis.game?.user));
+  if (!particleBackgroundQueriesAvailable())
+    return Promise.resolve({ accepted: 0, reason: "authenticated-query-unavailable" });
 
   const gm = activeGMUser();
   if (!gm?.active || typeof gm.query !== "function") {

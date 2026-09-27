@@ -50,6 +50,8 @@ uniform vec2 uRainSheetTravel;
 uniform vec2 uRainSheetPreviousTravel;
 uniform mat3 uCssToWorld;
 uniform vec3 uColor;
+uniform vec3 uRainTint;
+uniform float uRainTintEnabled;
 
 const float FXM_TAU = 6.28318530717958647692;
 
@@ -103,6 +105,7 @@ float rainStormBackdropSpeed(float speedFactor) {
   return (0.44 + 0.28 * sqrt(speed)) * groundSpeed * speedFactor;
 }
 
+#if RAIN_SIDE
 float rainStormFogFbm(vec2 uv, float t) {
   uv = uv * 2.0 + vec2(t * 0.060, -t * 0.035);
   float value = 0.74 * rainValueNoise(uv);
@@ -186,6 +189,9 @@ float rainStormCoreFogSheet(
   return clamp((slopeMask * 0.70 + softFront * 0.40) * breakup * livingSheet * mix(0.48, 1.12, densityAmount), 0.0, 1.18);
 }
 
+#endif
+
+#if RAIN_TOP_DOWN
 float rainStormTopDownWetFilm(vec2 p, vec2 dir, float densityAmount) {
   vec2 d = dir / max(length(dir), 0.0001);
   vec2 crossDir = vec2(-d.y, d.x);
@@ -217,25 +223,32 @@ float rainStormTopDownWetFilm(vec2 p, vec2 dir, float densityAmount) {
   return clamp(wetFront * (0.70 + 0.30 * anisotropicSheen), 0.0, 1.08);
 }
 
+#endif
+
 float rainStormSheetField(vec2 p, vec2 dir, vec2 motionDir, vec2 sheetTravel, float densityAmount) {
   vec2 d = dir / max(length(dir), 0.0001);
   vec2 motion = motionDir / max(length(motionDir), 0.0001);
   vec2 crossDir = vec2(-d.y, d.x);
   float quality = clamp(uRainBackgroundQuality, 0.55, 1.0);
 
-  if (uRainTopDown < 0.5) {
+  #if RAIN_SIDE
+  {
     float storm = 0.0;
     storm += rainStormCoreFogSheet(p, d, motion, sheetTravel, 15.5, 0.82, densityAmount, 11.7) * 0.82;
     storm += rainStormCoreFogSheet(p, normalize(d * 0.96 + crossDir * 0.16), motion, sheetTravel, 22.0, 0.58, densityAmount, 47.3) * mix(0.40, 0.56, quality);
     return clamp(storm, 0.0, 1.18);
   }
 
+  #endif
+  #if RAIN_TOP_DOWN
   float film = rainStormTopDownWetFilm(p, normalize(vec2(0.70710678, -0.70710678)), densityAmount);
   if (quality < 0.84) return clamp(film * 0.92, 0.0, 1.08);
   float filmB = rainStormTopDownWetFilm(p + vec2(13.1, -7.4), normalize(vec2(-0.38, 0.92)), densityAmount);
   return clamp(film * 0.76 + filmB * 0.36, 0.0, 1.12);
+  #endif
 }
 
+#if RAIN_INTERACTIONS
 vec4 rainTokenWake(vec2 world, vec2 p) {
   if (uTrailsEnabled <= 0.5 || uRainInteractionStrength <= 0.001) return vec4(0.0);
 
@@ -279,6 +292,8 @@ vec4 rainTokenWake(vec2 world, vec2 p) {
   return vec4(wake, splash, life, lift);
 }
 
+#endif
+
 void main() {
   float progress = clamp(uProgress, 0.0, 1.0);
   if (progress <= 0.0001 || uRuntimeAlpha <= 0.0001) {
@@ -302,7 +317,8 @@ void main() {
   float waterCore = 0.0;
   float waterAge = 0.0;
 
-  if (uRainTopDown > 0.5) {
+  #if RAIN_TOP_DOWN
+  {
     vec2 q = p / patchSpacing;
     vec2 baseCell = floor(q - vec2(0.5));
     float presenceChance = clamp(0.045 + coverage * 0.86, 0.035, 0.88);
@@ -364,6 +380,7 @@ void main() {
     }
   }
 
+  #endif
   vec2 wind = uWind / max(length(uWind), 0.0001);
 
   float wetField = rainFbm2(p / max(5.0, patchSpacing * 4.4) + vec2(uSeed * 0.061, -uSeed * 0.043));
@@ -422,7 +439,10 @@ void main() {
     float previousRainSheets = rainStormSheetField(p, sheetPreviousBasis, sheetWind, uRainSheetPreviousTravel, densityAmount);
     rainSheets = mix(previousRainSheets, rainSheets, sheetBasisBlend);
   }
-  vec4 tokenWake = rainTokenWake(world, p);
+  vec4 tokenWake = vec4(0.0);
+  #if RAIN_INTERACTIONS
+  tokenWake = rainTokenWake(world, p);
+  #endif
   float coverageDamp = mix(0.04, 1.0, backgroundCoverage);
   float rainSheetLight = rainSheets * coverageDamp;
   float motionWetAge = max(wetAge, mix(0.10, 1.0, smoothstep(0.0, 0.14, progress)) * backgroundCoverage);
@@ -483,9 +503,34 @@ void main() {
   float outputAlpha = sceneSheenAlpha + patchShadowAlpha * (1.0 - sceneSheenAlpha);
   vec3 outputColor = sheenColor * sceneSheenAlpha;
   outputColor += patchDepthColor * patchShadowAlpha * (1.0 - sceneSheenAlpha);
+  if (uRainTintEnabled > 0.5) {
+    float highlight = max(outputColor.r, max(outputColor.g, outputColor.b));
+    outputColor = highlight * uRainTint;
+  }
   gl_FragColor = vec4(outputColor, outputAlpha);
 }
 `;
+
+const RAIN_SHADER_VARIANTS = new Map();
+
+/**
+ * Select only the authored background mode and optional token wake code.
+ * @param {object} [options]
+ * @returns {string}
+ */
+export function rainBackgroundFragmentShader(options = {}) {
+  const topDown = !!unwrapParticleBackgroundOption(options.topDown);
+  const interactions = !!unwrapParticleBackgroundOption(options.backgroundInteractionEnabled);
+  const key = (topDown ? 1 : 0) | (interactions ? 2 : 0);
+  if (RAIN_SHADER_VARIANTS.has(key)) return RAIN_SHADER_VARIANTS.get(key);
+  const enabled = { RAIN_TOP_DOWN: topDown, RAIN_SIDE: !topDown, RAIN_INTERACTIONS: interactions };
+  const source = RAIN_FRAGMENT_SHADER.replace(
+    /^[ \t]*#if (RAIN_[A-Z_]+)\n([\s\S]*?)^[ \t]*#endif/gm,
+    (_match, feature, body) => (enabled[feature] ? body : ""),
+  );
+  RAIN_SHADER_VARIANTS.set(key, source);
+  return source;
+}
 
 function rainBackgroundStageZoom() {
   const stage = globalThis.canvas?.stage ?? null;
@@ -570,10 +615,7 @@ function rainBackgroundSheetWindVector(options = {}) {
 }
 
 /**
- * Procedural rain wet-surface layer. It reuses the persistent background timing
- * and world-space placement from the shared accumulation surface, combines bounded
- * soft depth/shadow patches with a core Rain Storm-inspired moving fog/sheet sheen,
- * and keeps the broad moving layer responsive to the background coverage controls.
+ * Procedural rain wet-surface layer. It reuses the persistent background timing and world-space placement from the shared accumulation surface, combines bounded soft depth/shadow patches with a core Rain Storm-inspired moving fog/sheet sheen, and keeps the broad moving layer responsive to the background coverage controls.
  */
 export class RainBackgroundSurface extends ParticleAccumulationBackgroundSurface {
   /** @override */
@@ -583,7 +625,12 @@ export class RainBackgroundSurface extends ParticleAccumulationBackgroundSurface
 
   /** @override */
   static get fragmentShader() {
-    return RAIN_FRAGMENT_SHADER;
+    return rainBackgroundFragmentShader();
+  }
+
+  /** @param {object} options @returns {string} */
+  static fragmentShaderForOptions(options) {
+    return rainBackgroundFragmentShader(options);
   }
 
   /** @override */
@@ -593,7 +640,7 @@ export class RainBackgroundSurface extends ParticleAccumulationBackgroundSurface
 
   /** @override */
   static get defaultColorRgb() {
-    return [0.435, 0.608, 0.69];
+    return [0x6f / 255, 0x9b / 255, 0xb0 / 255];
   }
 
   /** @override */
@@ -624,6 +671,18 @@ export class RainBackgroundSurface extends ParticleAccumulationBackgroundSurface
       },
     });
     if (this._destroyed) return;
+    const source = rainBackgroundFragmentShader(rawOptions);
+    if (this._rainShaderSource !== source) {
+      this.filter.program = PIXI.Program.from(this.constructor.vertexShader, source);
+      this._rainShaderSource = source;
+    }
+    const tint = unwrapParticleBackgroundOption(rawOptions.tint);
+    const resolvedTint = unwrapParticleBackgroundOption(rawOptions.__fxmResolvedTint);
+    const tintEnabled = resolvedTint != null || !!(tint && typeof tint === "object" && tint.apply);
+    const tintUniform = (this.filter.uniforms.uRainTint ??= new Float32Array(3));
+    tintUniform.set(this.filter.uniforms.uColor);
+    this.filter.uniforms.uRainTintEnabled = tintEnabled ? 1 : 0;
+    this.filter.uniforms.uColor.set(this.constructor.defaultColorRgb);
 
     this.coverage = clamp(unwrapParticleBackgroundOption(this.options?.backgroundCoverage), 0.05, 1, 0.65);
     this.patchScale = clamp(unwrapParticleBackgroundOption(this.options?.backgroundPatchSize), 0.35, 5, 0.85);

@@ -1,6 +1,6 @@
 import { FOUNDRY_GRID_STACK_UID, getOrderedEnabledEffectRenderRows } from "../common/effect-stack.js";
 import { FilterEffectsSceneManager } from "../filter-effects/filter-effects-scene-manager.js";
-import { FILTER_PRESENTATION_PASSES } from "../filter-effects/filters/mixins/filter.js";
+import { FILTER_PRESENTATION_PASSES } from "../filter-effects/mixins/filter.js";
 import { SceneMaskManager } from "../common/base-effects-scene-manager.js";
 import {
   applyRegionBehaviorsToOverheadLevels,
@@ -9,6 +9,10 @@ import {
   isEnabled,
 } from "../settings-access.js";
 import { logger } from "../logger.js";
+import { renderTextureMatches } from "../utils/render-textures.js";
+import { TextureMaskRestore } from "../utils/texture-mask-restore.js";
+import { SceneMaskPass } from "../utils/scene-mask-pass.js";
+import { SurfaceMaskReuse } from "../utils/surface-mask-reuse.js";
 import { packageId } from "../constants.js";
 import {
   computeRegionGatePass,
@@ -18,7 +22,6 @@ import {
   getDocumentLevelsSet,
   getDocumentAssignedLevelIds,
   getRegionBehaviorEdgeFadePercent,
-  getRegionBehaviorRuntimeSignature,
   getSceneDarknessLevel,
   getSelectedSceneLevelIds,
   getSceneLevels as getSceneLevelDocuments,
@@ -33,7 +36,6 @@ import {
   regionMaskGeometrySignature,
   inferVisibleLevelForDocument,
   getCanvasLiveLevelSurfaceRevealState,
-  getCanvasLiveLevelSurfaceState,
   getCanvasPrimaryHoverFadeElevation,
   buildCanvasLiveLevelSurfaceSignature,
   hasActiveRadialRestrictWeatherTilesForMask,
@@ -45,8 +47,7 @@ import {
   syncActiveRadialRestrictWeatherTileMasksForCamera,
   isDocumentOnCurrentCanvasLevel,
   tokenUpperLevelRevealAllowsBelowTokenMask,
-  collectBelowTokenMaskTokens,
-  buildBelowTileMaskCoverageSignature,
+  sceneMaskContainsTokenCenter,
   resolveDocumentOcclusionElevation,
   safeResolutionForCssArea,
   syncCanvasLiveLevelSurfaceState,
@@ -64,7 +65,10 @@ import {
   fxmLevelIsAbove,
   fxmLevelTop,
   fxmResolveLevelIdsForComparableSourcePaths,
+  fxmGetLevelTexturePlan,
   fxmCollectComparableSourcePaths,
+  fxmGetComparableSourcePathResult,
+  fxmCreateSourcePathContext,
   fxmReadDocumentSnapshotCompat,
   fxmReadDocumentSnapshotValue,
   fxmDocumentId,
@@ -76,7 +80,9 @@ import {
   fxmLinkedPlaceableFromDisplayObject,
   fxmGetPublicHoverFadeState,
   fxmUpdateDisplayObjectWorldTransform,
-  fxmDisplayObjectTransformSignature,
+  matrixCacheKey,
+  textureContentKey,
+  RTPool,
 } from "../utils.js";
 
 const SUPPRESS_WEATHER = "suppressWeather";
@@ -140,55 +146,6 @@ function tileIsActiveOnCanvasForCompositor(tile, primaryMeshes = null) {
 }
 
 /**
- * Return the center point of a token for live scene-mask visibility checks.
- *
- * @param {Token|null|undefined} token
- * @returns {PIXI.Point|{x:number, y:number}|null}
- */
-function getTokenCenterPointForCompositor(token) {
-  const boundsCenter = token?.bounds?.center ?? null;
-  if (Number.isFinite(boundsCenter?.x) && Number.isFinite(boundsCenter?.y)) return boundsCenter;
-
-  const tokenCenter = token?.center ?? null;
-  if (Number.isFinite(tokenCenter?.x) && Number.isFinite(tokenCenter?.y)) return tokenCenter;
-
-  return null;
-}
-
-/**
- * Return whether the live native scene mask currently includes the token center.
- *
- * @param {Token|null|undefined} token
- * @returns {boolean|null}
- */
-function sceneMaskContainsTokenCenterForCompositor(token) {
-  const sceneMask = canvas?.masks?.scene ?? null;
-  if (!sceneMask || sceneMask.destroyed) return null;
-
-  const point = getTokenCenterPointForCompositor(token);
-  if (!point) return null;
-
-  try {
-    if (typeof sceneMask.containsPoint === "function") return !!sceneMask.containsPoint(point);
-  } catch (err) {
-    logger.debug("FXMaster:", err);
-    return null;
-  }
-
-  const hitArea = sceneMask.hitArea ?? null;
-  const worldTransform = sceneMask.worldTransform ?? null;
-  if (typeof hitArea?.contains !== "function" || typeof worldTransform?.applyInverse !== "function") return null;
-
-  try {
-    const localPoint = worldTransform.applyInverse(point, new PIXI.Point());
-    return !!hitArea.contains(localPoint.x, localPoint.y);
-  } catch (err) {
-    logger.debug("FXMaster:", err);
-    return null;
-  }
-}
-
-/**
  * Normalize a texture path for stable equality comparisons.
  *
  * @param {string|null|undefined} sourcePath
@@ -198,26 +155,16 @@ function normalizeComparableSourcePath(sourcePath) {
   if (typeof sourcePath !== "string") return "";
   const trimmed = sourcePath.trim();
   if (!trimmed) return "";
-
-  const originPattern = new RegExp("^https?:\\/\\/[^/]+", "i");
-  const filePattern = new RegExp("^file:\\/\\/", "i");
-
-  try {
-    const decoded = decodeURI(trimmed);
-    return decoded
-      .replace(originPattern, "")
-      .replace(filePattern, "")
-      .replace(/^\/+/, "")
-      .replace(/\?.*$/, "")
-      .replace(/#.*$/, "");
-  } catch {
-    return trimmed
-      .replace(originPattern, "")
-      .replace(filePattern, "")
-      .replace(/^\/+/, "")
-      .replace(/\?.*$/, "")
-      .replace(/#.*$/, "");
+  let decoded = trimmed;
+  if (trimmed.includes("%")) {
+    try {
+      decoded = decodeURI(trimmed);
+    } catch (_err) {}
   }
+  return decoded
+    .replace(/^(?:https?:\/\/[^/]+\/*|file:\/\/\/*|\/+)/i, "")
+    .replace(/\?.*$/, "")
+    .replace(/#.*$/, "");
 }
 
 /**
@@ -225,11 +172,12 @@ function normalizeComparableSourcePath(sourcePath) {
  *
  * @param {*} value
  * @param {Set<string>} output
+ * @param {object|null} [context]
  * @param {Set<object>} [seen]
  * @returns {void}
  */
-function collectComparableSourcePaths(value, output) {
-  fxmCollectComparableSourcePaths(value, output);
+function collectComparableSourcePaths(value, output, context = null, seen = undefined) {
+  fxmCollectComparableSourcePaths(value, output, seen, context);
 }
 
 /**
@@ -254,6 +202,9 @@ function hasActiveForegroundImage() {
  * Render the ordered FXMaster stack into a single post-scene output texture.
  */
 export class GlobalEffectsCompositor {
+  /** Enable same-frame surface-mask reuse during normal rendering. @type {boolean} */
+  /** Stop surface-existence checks at the first matching object. @type {boolean} */
+
   /** @type {GlobalEffectsCompositor|undefined} */
   static #instance;
 
@@ -297,21 +248,11 @@ export class GlobalEffectsCompositor {
     this._renderedVisibilityCaptureRenderList = null;
     this._renderedVisibilityCaptureObjects = [];
     this._surfaceMaskThresholdSprite = null;
-    this._sceneFilterSuppressionRegionRT = null;
     this._sceneSuppressionRegionMaskRTCache = new Map();
     this._sceneSuppressionRegionMaskDynamicRTCache = new Map();
     this._sceneSuppressionCombinedMaskRTCache = new Map();
     this._sceneSuppressionCombinedMaskDynamicRTCache = new Map();
-    this._sceneSuppressionMaskStats = {
-      regionStableHits: 0,
-      regionStableMisses: 0,
-      regionDynamicHits: 0,
-      regionDynamicMisses: 0,
-      combinedStableHits: 0,
-      combinedStableMisses: 0,
-      combinedDynamicHits: 0,
-      combinedDynamicMisses: 0,
-    };
+
     this._maskIntersectionSprite = null;
     this._maskIntersectionFilter = null;
     this._displayContainer = null;
@@ -339,7 +280,6 @@ export class GlobalEffectsCompositor {
     this._sceneClipMask = null;
     this._weatherOcclusionFilter = null;
     this._dynamicCoverageSignature = null;
-    this._dynamicCoverageContentSignature = null;
     this._renderFrameSerial = 0;
     this._liveLevelSurfaceStateSyncedFrameSerial = -1;
     this._sceneLevelsFrameSerial = -1;
@@ -370,8 +310,15 @@ export class GlobalEffectsCompositor {
     this._visibleSceneLevelIdsFrameValue = null;
     this._selectedLevelViewportMatrixKeyFrameSerial = -1;
     this._selectedLevelViewportMatrixKeyFrameValue = null;
+    this._surfaceMaskReuse = null;
     this._surfaceSourcePathsFrameCache = null;
+    this._surfaceSourceReachabilityFrameCache = null;
+    this._surfaceTupleSourcePathsFrameCache = null;
+    this._surfaceSourcePathContextFrameCache = null;
     this._surfaceConfiguredLevelIdsFrameCache = null;
+    this._surfaceExplicitLevelIdsFrameCache = null;
+    this._regionAssignedLevelIdsFrameCache = null;
+    this._surfaceLevelTexturePlansFrameCache = null;
     this._levelConfiguredImagePathsFrameCache = null;
     this._levelForegroundImagePathsFrameCache = null;
     this._protectedLevelImagePathsFrameCache = null;
@@ -383,6 +330,7 @@ export class GlobalEffectsCompositor {
     this._selectedLevelNonTileCoverageFrameCache = null;
     this._levelDefinedSurfaceFootprintRegionsFrameCache = null;
     this._configuredLevelTextureObjectsFrameCache = null;
+    this._configuredLevelTextureSourceIndexFrameCache = null;
     this._hasSelectedLevelParticleRowsFrame = false;
     this._hasSceneFilterRowsFrame = false;
     this._forceGeneratedSceneClipFrame = false;
@@ -455,6 +403,7 @@ export class GlobalEffectsCompositor {
    * @returns {void}
    */
   attachLayer(layer) {
+    this._sceneFilterStackMasksFailed = false;
     this.layer = layer ?? null;
     this.#ensureSprites();
     this.#attachDisplayContainer();
@@ -469,6 +418,7 @@ export class GlobalEffectsCompositor {
    */
   detachLayer(layer) {
     if (layer && this.layer && layer !== this.layer) return;
+    this._surfaceMaskReuse?.clear();
 
     this.#syncCompositedSceneParticleSources([], false);
 
@@ -526,7 +476,6 @@ export class GlobalEffectsCompositor {
     }
     this._weatherOcclusionFilter = null;
     this._dynamicCoverageSignature = null;
-    this._dynamicCoverageContentSignature = null;
     this._sceneLevelsFrameSerial = -1;
     this._sceneLevelsFrameValue = null;
     this._sceneLevelByIdFrameSerial = -1;
@@ -556,7 +505,12 @@ export class GlobalEffectsCompositor {
     this._selectedLevelViewportMatrixKeyFrameSerial = -1;
     this._selectedLevelViewportMatrixKeyFrameValue = null;
     this._surfaceSourcePathsFrameCache = null;
+    this._surfaceSourceReachabilityFrameCache = null;
+    this._surfaceTupleSourcePathsFrameCache = null;
+    this._surfaceSourcePathContextFrameCache = null;
     this._surfaceConfiguredLevelIdsFrameCache = null;
+    this._surfaceExplicitLevelIdsFrameCache = null;
+    this._surfaceLevelTexturePlansFrameCache = null;
     this._levelConfiguredImagePathsFrameCache = null;
     this._levelForegroundImagePathsFrameCache = null;
     this._protectedLevelImagePathsFrameCache = null;
@@ -568,6 +522,7 @@ export class GlobalEffectsCompositor {
     this._selectedLevelNonTileCoverageFrameCache = null;
     this._levelDefinedSurfaceFootprintRegionsFrameCache = null;
     this._configuredLevelTextureObjectsFrameCache = null;
+    this._configuredLevelTextureSourceIndexFrameCache = null;
     this._hasSelectedLevelParticleRowsFrame = false;
     this._hasSceneFilterRowsFrame = false;
     this._forceGeneratedSceneClipFrame = false;
@@ -635,7 +590,7 @@ export class GlobalEffectsCompositor {
 
     this.#clearFrameMapProperty("_regionGatePassFrameCache");
 
-    const rows = this.#collectRenderableRows(canvas.scene);
+    const rows = this._collectRenderableRows(canvas.scene);
     if (!rows.length) {
       this.#hideOutput();
       return;
@@ -665,8 +620,10 @@ export class GlobalEffectsCompositor {
       this._sceneLevelByIdFrameSerial = -1;
       this._sceneLevelByIdFrameMap = null;
       this.#resetPerFrameCaches(rows);
-      const frameInfo = this.#analyzeRowsForFrame(rows);
-      this.#syncRadialWeatherMaskStateForFrame(rows, frameInfo, { presyncedCoreState });
+      this._surfaceExplicitLevelIdsFrameCache = new WeakMap();
+      this._regionAssignedLevelIdsFrameCache = new WeakMap();
+      const frameInfo = this._analyzeRowsForFrame(rows);
+      this._syncRadialWeatherMaskStateForFrame(rows, frameInfo, { presyncedCoreState });
       this._hasSelectedLevelParticleRowsFrame = frameInfo.hasSelectedLevelParticleRows;
       this._hasSceneFilterRowsFrame = frameInfo.hasSceneFilterRows;
       this._forceGeneratedSceneClipFrame =
@@ -696,9 +653,9 @@ export class GlobalEffectsCompositor {
       this._levelSurfaceSignatureFrameValue = null;
       this.#attachDisplayContainer();
       if (this.#shouldSyncLevelSurfaceStateForFrame(frameInfo)) {
-        this.#syncLiveLevelSurfaceState({ presyncedCoreState });
+        this._syncLiveLevelSurfaceState({ presyncedCoreState });
       }
-      this.#syncDynamicSceneState(rows, frameInfo, { presyncedCoreState });
+      this._syncDynamicSceneState(rows, frameInfo, { presyncedCoreState });
       this.#syncCompositedSceneParticleSources(rows, true);
 
       const useTransparentParticleOnlyPass =
@@ -715,7 +672,7 @@ export class GlobalEffectsCompositor {
         const previousDisplayState = this.#suspendDisplayOutput();
         let capturedBase = false;
         try {
-          capturedBase = this.#captureEnvironment(this._baseRT);
+          capturedBase = this._captureEnvironment(this._baseRT);
         } finally {
           if (capturedBase) this.#restoreDisplayOutput(previousDisplayState);
         }
@@ -746,6 +703,8 @@ export class GlobalEffectsCompositor {
         let outputInCurrent = false;
         const rowScope = this.#getRowScope(row);
         if (!this.#rowLevelSelectionCanRenderInCurrentView(row)) continue;
+        const particleRuntime = row.kind === "particle" ? this.#resolveParticleRuntime(row.uid) : null;
+        const presentParticleAboveDarkness = this.#rowWantsAboveDarknessParticlePresentation(row, particleRuntime);
         const rowUsesSelectedSurfaceMask = this.#rowUsesSelectedLevelSurfaceMask(row);
         const useRegionLevelDrawOrderComposite = this.#rowNeedsRegionLevelDrawOrderComposite(row);
         const restoreLevelBlockers =
@@ -756,12 +715,13 @@ export class GlobalEffectsCompositor {
           useRegionLevelDrawOrderComposite && !regionParticleCanUseInputForDrawOrderComposite && !!this._rowSourceRT;
         const regionLocalPass =
           rowScope === "region" && !useRegionLevelDrawOrderComposite
-            ? this.#prepareRegionLevelLocalPass(row, regionLocalPassCache)
+            ? this._prepareRegionLevelLocalPass(row, regionLocalPassCache)
             : null;
         const rowOverlayMaskTexture = regionLocalPass?.overlayMaskTexture ?? regionLocalPass?.overlayTexture ?? null;
         const needsRegionOverlayRestoreSource = !!rowOverlayMaskTexture && !!this._rowSourceRT;
         const rowRestoreSource =
-          restoreLevelBlockers || needsRegionCompositeSource || needsRegionOverlayRestoreSource
+          !presentParticleAboveDarkness &&
+          (restoreLevelBlockers || needsRegionCompositeSource || needsRegionOverlayRestoreSource)
             ? this._rowSourceRT
             : null;
         if (rowRestoreSource) this.#blit(current, rowRestoreSource, { clear: true });
@@ -795,7 +755,7 @@ export class GlobalEffectsCompositor {
           const useCompositorSceneFilterSuppression = this.#rowUsesCompositorSceneFilterSuppression(row);
           const useDirectSceneFilterClip =
             this.#rowUsesDirectSceneFilterClip(row) || useCompositorSceneFilterSuppression;
-          const weatherMaskTexture = this.#getRestrictWeatherTilesMaskTexture("filters");
+          const weatherMaskTexture = this._getRestrictWeatherTilesMaskTexture("filters");
           const useNativeWeatherOcclusion =
             canUseNativeWeatherOcclusionStackPass() &&
             (!wantsBelowTiles || wantsBelowForeground) &&
@@ -847,13 +807,13 @@ export class GlobalEffectsCompositor {
             } else {
               this.#blit(next, this._baseRT, { clear: true });
             }
-            this.#compositeSelectedLevelRowOutput(row, this._baseRT, rowInput, next, {
+            this._compositeSelectedLevelRowOutput(row, this._baseRT, rowInput, next, {
               belowForeground: wantsBelowForeground,
             });
             if (useCompositorSceneFilterSuppression) {
               this.#applyCompositorSceneFilterSuppression(row, rowInput, next);
             }
-            const weatherMaskTexture = this.#getRestrictWeatherTilesMaskTexture("filters");
+            const weatherMaskTexture = this._getRestrictWeatherTilesMaskTexture("filters");
             if (weatherMaskTexture) this.#eraseTextureFromRenderTexture(weatherMaskTexture, next);
           } else if (applied && wantsForegroundImageMask && !useRegionLevelDrawOrderComposite) {
             this.#blit(next, this._baseRT, { clear: true });
@@ -870,14 +830,14 @@ export class GlobalEffectsCompositor {
 
             if (canvas?.level && this.#hasVisibleLevelSurfacesForBelowForeground()) {
               this.#blit(next, this._baseRT, { clear: true });
-              this.#compositeVisibleLevelBelowForegroundRowOutput(this._baseRT, rowBaseForRestore, next);
+              this._compositeVisibleLevelBelowForegroundRowOutput(this._baseRT, rowBaseForRestore, next);
             } else {
               this.#restoreFromTextureMask(this.#getForegroundVisibleMaskTexture(), rowBaseForRestore, next);
             }
-            const weatherMaskTexture = this.#getRestrictWeatherTilesMaskTexture("filters");
+            const weatherMaskTexture = this._getRestrictWeatherTilesMaskTexture("filters");
             if (weatherMaskTexture) this.#eraseTextureFromRenderTexture(weatherMaskTexture, next);
           } else if (applied && useNativeWeatherOcclusion) {
-            const weatherMaskTexture = this.#getRestrictWeatherTilesMaskTexture("filters");
+            const weatherMaskTexture = this._getRestrictWeatherTilesMaskTexture("filters");
 
             outputInCurrent = this.#overlayTextureWithWeatherOcclusion(next, current, {
               clipToScene: useDirectSceneFilterClip,
@@ -894,7 +854,7 @@ export class GlobalEffectsCompositor {
             this.#eraseTextureFromRenderTexture(weatherMaskTexture, next);
           }
         } else {
-          const runtime = this.#resolveParticleRuntime(row.uid);
+          const runtime = particleRuntime;
           if (!this.#particleRuntimeCanRender(runtime)) continue;
 
           let selectedParticleMaskOverride = null;
@@ -918,11 +878,24 @@ export class GlobalEffectsCompositor {
             wantsBelowForeground &&
             this.#hasVisibleForegroundCoverage();
           const useCompositorSceneParticleSuppression = this.#rowUsesCompositorSceneParticleSuppression(row);
-          const weatherMaskTexture = this.#getRestrictWeatherTilesMaskTexture("particles");
+          const weatherMaskTexture = this._getRestrictWeatherTilesMaskTexture("particles");
           const useNativeWeatherOcclusion =
             canUseNativeWeatherOcclusionStackPass() &&
             (!useRegionManagedOcclusion || wantsBelowForeground) &&
             !weatherMaskTexture;
+          if (presentParticleAboveDarkness) {
+            this.#renderAboveDarknessParticleContribution(row, runtime, {
+              rowUsesSelectedSurfaceMask,
+              selectedParticleMaskOverride,
+              useRegionLevelDrawOrderComposite,
+              rowOverlayMaskTexture,
+              restoreLevelBlockers,
+              wantsBelowForeground,
+              useCompositorSceneParticleSuppression,
+              weatherMaskTexture,
+            });
+            continue;
+          }
           const useTransparentSelectedParticleContribution = this.#canUseTransparentSelectedParticleContribution(row, {
             selectedParticleMaskOverride,
             weatherMaskTexture,
@@ -939,9 +912,7 @@ export class GlobalEffectsCompositor {
           );
           const needsIsolatedParticleOutput = !!selectedSurfaceMaskTexture || !!weatherMaskTexture;
           const useScratchRegionParticleComposite =
-            useTransparentRegionLevelParticleContribution &&
-            this._particleMaskScratchRT &&
-            CONFIG?.fxmaster?.overheadPerformance?.regionParticleScratchComposite !== false;
+            useTransparentRegionLevelParticleContribution && this._particleMaskScratchRT;
           const particleRowOutput = useScratchRegionParticleComposite
             ? this._particleMaskScratchRT
             : useTransparentRegionLevelParticleContribution
@@ -959,7 +930,7 @@ export class GlobalEffectsCompositor {
             this.#blit(particleBase, particleRowOutput, { clear: true });
           }
 
-          const stackSceneParticleMaskOverride = this.#getSceneParticleStackMaskOverride(row, {
+          const stackSceneParticleMaskOverride = this._getSceneParticleStackMaskOverride(row, {
             selectedMaskTexture: selectedParticleMaskOverride,
             useCompositorSuppression: useCompositorSceneParticleSuppression,
           });
@@ -986,11 +957,21 @@ export class GlobalEffectsCompositor {
           } else if (applied && needsIsolatedParticleOutput) {
             if (weatherMaskTexture) this.#eraseTextureFromRenderTexture(weatherMaskTexture, particleRowOutput);
             if (selectedSurfaceMaskTexture) {
-              this.#compositeSelectedLevelRowOutput(row, particleRowOutput, particleBase, next, {
+              this._compositeSelectedLevelRowOutput(row, particleRowOutput, particleBase, next, {
                 belowForeground: wantsBelowForeground,
                 selectedMaskTexture: selectedParticleMaskOverride,
               });
-            } else {
+            } else if (
+              !this._canDeferRegionParticleOutput({
+                useRegionLevelDrawOrderComposite,
+                rowScope,
+                rowCompositeInput,
+                particleRowOutput,
+                output: next,
+                useCompositorSceneParticleSuppression,
+                useParticleTileRestore,
+              })
+            ) {
               this.#blit(particleBase, next, { clear: true });
               this.#blit(particleRowOutput, next, { clear: false });
             }
@@ -1007,7 +988,7 @@ export class GlobalEffectsCompositor {
           if (applied && wantsForegroundImageMask && !useRegionLevelDrawOrderComposite) {
             if (canvas?.level && this.#hasVisibleLevelSurfacesForBelowForeground()) {
               this.#blit(next, this._baseRT, { clear: true });
-              this.#compositeVisibleLevelBelowForegroundRowOutput(this._baseRT, particleBase, next);
+              this._compositeVisibleLevelBelowForegroundRowOutput(this._baseRT, particleBase, next);
             } else {
               this.#restoreFromTextureMask(this.#getForegroundVisibleMaskTexture(), particleBase, next);
             }
@@ -1019,7 +1000,7 @@ export class GlobalEffectsCompositor {
           const rowOutput = explicitRowOutput ?? (outputInCurrent ? current : next);
           const compositeTarget = outputInCurrent ? next : rowOutput === next ? this._baseRT : next;
           if (compositeTarget) {
-            regionLevelCompositeApplied = this.#compositeRegionLevelRowOutput(
+            regionLevelCompositeApplied = this._compositeRegionLevelRowOutput(
               row,
               rowOutput,
               rowCompositeInput,
@@ -1062,7 +1043,7 @@ export class GlobalEffectsCompositor {
       this.#pruneRegionUpperVisibleRTCache(regionLocalPassCache);
       this.#pruneLevelSegmentMaskRTCache();
       this.#pruneSceneSuppressionMaskRTCaches();
-      this.#present(current, { maskOutput: needsOutputSceneMask });
+      this._present(current, { maskOutput: needsOutputSceneMask });
       if (this._aboveDarknessContributionRendered) {
         this.#presentAboveDarkness(this._aboveDarknessFrameTexture);
       } else {
@@ -1071,7 +1052,38 @@ export class GlobalEffectsCompositor {
     } catch (err) {
       logger.debug("FXMaster:", err);
       this.#hideOutput();
+    } finally {
+      this._surfaceMaskReuse?.clear();
+      this._surfaceExplicitLevelIdsFrameCache = null;
+      this._regionAssignedLevelIdsFrameCache = null;
     }
+  }
+
+  /**
+   * Skip provisional copies when Region Level compositing initializes the destination from the preserved input and isolated particle output. Intermediate suppression and tile restoration require the provisional destination and retain the original path.
+   * @param {object} options
+   * @returns {boolean}
+   */
+  _canDeferRegionParticleOutput({
+    useRegionLevelDrawOrderComposite,
+    rowScope,
+    rowCompositeInput,
+    particleRowOutput,
+    output,
+    useCompositorSceneParticleSuppression,
+    useParticleTileRestore,
+  }) {
+    return (
+      useRegionLevelDrawOrderComposite === true &&
+      rowScope === "region" &&
+      !!rowCompositeInput &&
+      !!particleRowOutput &&
+      !!output &&
+      !this.#texturesShareBaseTexture(particleRowOutput, output) &&
+      !this.#texturesShareBaseTexture(particleRowOutput, rowCompositeInput) &&
+      !useCompositorSceneParticleSuppression &&
+      !useParticleTileRestore
+    );
   }
 
   /**
@@ -1137,6 +1149,7 @@ export class GlobalEffectsCompositor {
    * @returns {void}
    */
   #resetPerFrameCaches(rows) {
+    this._surfaceMaskReuse?.clear();
     this.#clearFrameMapProperty("_upperSurfaceObjectsFrameCache");
     this.#clearFrameMapProperty("_visibleOverlayLevelIdsFrameCache");
     this.#clearFrameMapProperty("_visibleOverlayLevelsFrameCache");
@@ -1163,7 +1176,11 @@ export class GlobalEffectsCompositor {
     this._selectedLevelViewportMatrixKeyFrameSerial = -1;
     this._selectedLevelViewportMatrixKeyFrameValue = null;
     this._surfaceSourcePathsFrameCache = new WeakMap();
+    this._surfaceSourceReachabilityFrameCache = new WeakMap();
+    this._surfaceTupleSourcePathsFrameCache = new WeakMap();
+    this._surfaceSourcePathContextFrameCache = fxmCreateSourcePathContext();
     this._surfaceConfiguredLevelIdsFrameCache = new WeakMap();
+    this.#clearFrameMapProperty("_surfaceLevelTexturePlansFrameCache");
     this.#clearFrameMapProperty("_levelConfiguredImagePathsFrameCache");
     this.#clearFrameMapProperty("_levelForegroundImagePathsFrameCache");
     this.#clearFrameMapProperty("_protectedLevelImagePathsFrameCache");
@@ -1175,16 +1192,7 @@ export class GlobalEffectsCompositor {
     this.#clearFrameMapProperty("_selectedLevelNonTileCoverageFrameCache");
     this.#clearFrameMapProperty("_levelDefinedSurfaceFootprintRegionsFrameCache");
     this.#clearFrameMapProperty("_configuredLevelTextureObjectsFrameCache");
-
-    const stats = this._sceneSuppressionMaskStats ?? (this._sceneSuppressionMaskStats = {});
-    stats.regionStableHits = 0;
-    stats.regionStableMisses = 0;
-    stats.regionDynamicHits = 0;
-    stats.regionDynamicMisses = 0;
-    stats.combinedStableHits = 0;
-    stats.combinedStableMisses = 0;
-    stats.combinedDynamicHits = 0;
-    stats.combinedDynamicMisses = 0;
+    this._configuredLevelTextureSourceIndexFrameCache = null;
   }
 
   /**
@@ -1194,7 +1202,6 @@ export class GlobalEffectsCompositor {
    * @returns {boolean}
    */
   #canUseCapturedBaseAsInitialFrame(rows) {
-    if (CONFIG?.fxmaster?.overheadPerformance?.skipInitialStackBlitForSimpleHiDpiFrames === false) return false;
     const { resolution } = this.#getViewportMetrics();
     if (!(Number(resolution) > 1)) return false;
     if (!this.#canBindRenderTexture(this._baseRT) || !this.#canBindRenderTexture(this._rtA)) return false;
@@ -1292,7 +1299,7 @@ export class GlobalEffectsCompositor {
         : null;
     if (!behaviorType) return true;
 
-    return this.#computeRegionGatePassForFrame(placeable, behaviorType);
+    return this.#computeRegionGatePassForFrame(placeable, behaviorType, row?.behaviorId);
   }
 
   /**
@@ -1300,32 +1307,33 @@ export class GlobalEffectsCompositor {
    *
    * @param {PlaceableObject|null|undefined} region
    * @param {string|null|undefined} behaviorType
+   * @param {string|null|undefined} behaviorId
    * @returns {boolean}
    */
-  #computeRegionGatePassForFrame(region, behaviorType) {
+  #computeRegionGatePassForFrame(region, behaviorType, behaviorId = null) {
     if (!region || !behaviorType) return true;
 
     const doc = region?.document ?? region ?? null;
     const regionId = String(doc?.uuid ?? doc?.id ?? region?.id ?? "");
     if (!regionId) {
       try {
-        return computeRegionGatePass(region, { behaviorType }) !== false;
+        return computeRegionGatePass(region, { behaviorType, behaviorId }) !== false;
       } catch (err) {
         logger.debug("FXMaster:", err);
-        return true;
+        return false;
       }
     }
 
-    const cacheKey = `${regionId}:${behaviorType}`;
+    const cacheKey = `${regionId}:${behaviorType}:${behaviorId ?? "*"}`;
     const cache = this._regionGatePassFrameCache;
     if (cache?.has(cacheKey)) return cache.get(cacheKey) === true;
 
     let passes = true;
     try {
-      passes = computeRegionGatePass(region, { behaviorType }) !== false;
+      passes = computeRegionGatePass(region, { behaviorType, behaviorId }) !== false;
     } catch (err) {
       logger.debug("FXMaster:", err);
-      passes = true;
+      passes = false;
     }
 
     cache?.set(cacheKey, passes);
@@ -1342,11 +1350,9 @@ export class GlobalEffectsCompositor {
     if (!row?.uid) return false;
     if (this.#rowIsSuppressionOperator(row)) return true;
     if (this.#rowIsFoundryGrid(row)) return this.#gridCompositingEnabled();
-    if (!this.#rowPassesRegionGate(row)) return false;
-
-    if (row.kind === "filter") return this.#filterRuntimeCanRender(this.#resolveFilter(row.uid));
-    if (row.kind === "particle") return this.#particleRuntimeCanRender(this.#resolveParticleRuntime(row.uid));
-    return true;
+    if (row.kind === "filter" && !this.#filterRuntimeCanRender(this.#resolveFilter(row.uid))) return false;
+    if (row.kind === "particle" && !this.#particleRuntimeCanRender(this.#resolveParticleRuntime(row.uid))) return false;
+    return this.#rowPassesRegionGate(row);
   }
 
   /**
@@ -1362,7 +1368,7 @@ export class GlobalEffectsCompositor {
   }
 
   /**
-   * Return the presentation descriptor declared by a filter class.
+   * Return the presentation descriptor declared by a filter or particle effect class.
    *
    * @param {PIXI.Filter|null|undefined} filter
    * @returns {object|null}
@@ -1370,6 +1376,26 @@ export class GlobalEffectsCompositor {
   #getFilterAboveDarknessPresentationDescriptor(filter) {
     const descriptor = filter?.constructor?.aboveDarknessPresentation ?? null;
     return descriptor && typeof descriptor === "object" ? descriptor : null;
+  }
+
+  /** Return whether a particle runtime supports Level-aware above-darkness presentation. */
+  #particleSupportsAboveDarknessPresentation(runtime) {
+    const effect = runtime?.fx;
+    return (
+      !!this.#getFilterAboveDarknessPresentationDescriptor(effect) &&
+      typeof effect?.prepareFXMasterPresentationPass === "function"
+    );
+  }
+
+  /** Resolve above-darkness particle presentation from the committed runtime options. */
+  #rowWantsAboveDarknessParticlePresentation(row, runtime) {
+    return (
+      row?.kind === "particle" &&
+      this.#particleSupportsAboveDarknessPresentation(runtime) &&
+      (runtime.layerLevel ?? row.layerLevel) === "aboveDarkness" &&
+      !this.#effectsOverVisionEnabled() &&
+      getSceneDarknessLevel(canvas?.scene) > ACTIVE_DARKNESS_EPSILON
+    );
   }
 
   /**
@@ -1561,7 +1587,7 @@ export class GlobalEffectsCompositor {
     }
 
     return remember(
-      this.#collectVisibleForegroundSurfaceObjectsForLevelIds(new Set(visibleLevelIds)).length > 0 ||
+      this._collectVisibleForegroundSurfaceObjectsForLevelIds(new Set(visibleLevelIds)).length > 0 ||
         hasActiveForegroundImage(),
     );
   }
@@ -1733,7 +1759,7 @@ export class GlobalEffectsCompositor {
     );
     if (!behaviors.length) return false;
 
-    return this.#computeRegionGatePassForFrame(region, behaviorType);
+    return behaviors.some((behavior) => this.#computeRegionGatePassForFrame(region, behaviorType, behavior.id));
   }
 
   /**
@@ -1812,7 +1838,7 @@ export class GlobalEffectsCompositor {
     const behaviorType = String(operatorRow?.behaviorType ?? "");
     if (!behaviorType) return false;
 
-    return this.#computeRegionGatePassForFrame(region, behaviorType);
+    return this.#computeRegionGatePassForFrame(region, behaviorType, operatorRow?.behaviorId);
   }
 
   /**
@@ -1977,7 +2003,6 @@ export class GlobalEffectsCompositor {
    * @returns {boolean}
    */
   #rowUsesCompositorSceneFilterSuppression(row) {
-    if (CONFIG?.fxmaster?.overheadPerformance?.compositorSceneFilterSuppression === false) return false;
     if (!applyRegionBehaviorsToOverheadLevels()) return false;
     if (row?.kind !== "filter" || this.#getRowScope(row) !== "scene") return false;
     if (this.#rowWantsBelowTiles(row)) return false;
@@ -1993,22 +2018,6 @@ export class GlobalEffectsCompositor {
   }
 
   /**
-   * Return whether compositor-side scene-particle suppression is enabled.
-   *
-   * V22 disables the V21 adaptive handoff because rebinding the shared scene-particle mask during/around compositor rendering can trigger WebGL feedback-loop warnings. The stable path is either always compositor-side or fully disabled by setting compositorSceneParticleSuppressionMode to "off".
-   *
-   * @returns {boolean}
-   */
-  #sceneParticleSuppressionCompositorInteractionActive() {
-    if (CONFIG?.fxmaster?.overheadPerformance?.compositorSceneParticleSuppression === false) return false;
-    const raw = String(
-      CONFIG?.fxmaster?.overheadPerformance?.compositorSceneParticleSuppressionMode ?? "always",
-    ).toLowerCase();
-    if (["off", "never", "false", "0"].includes(raw)) return false;
-    return true;
-  }
-
-  /**
    * Return whether scene-particle suppression can be applied by the compositor instead of by the shared scene allow-mask.
    *
    * The path mirrors scene-filter suppression and is limited to explicit selected-Level scene particles without below-token or below-tile cutouts, plus optional non-current overhead Region projection. Current-view Regions fall back to the shared scene mask so visible upper Levels cannot undo suppression.
@@ -2017,8 +2026,6 @@ export class GlobalEffectsCompositor {
    * @returns {boolean}
    */
   #rowUsesCompositorSceneParticleSuppression(row) {
-    if (CONFIG?.fxmaster?.overheadPerformance?.compositorSceneParticleSuppression === false) return false;
-    if (!this.#sceneParticleSuppressionCompositorInteractionActive()) return false;
     if (!applyRegionBehaviorsToOverheadLevels()) return false;
     if (row?.kind !== "particle" || this.#getRowScope(row) !== "scene") return false;
     if (this.#rowWantsBelowTokens(row) || this.#rowWantsBelowTiles(row)) return false;
@@ -2031,6 +2038,47 @@ export class GlobalEffectsCompositor {
     if (!this.#rowUsesSelectedLevelSurfaceMask(row)) return false;
 
     return this.#canHandleCompositorSceneSuppressionForLevelSelection("particles", selectedLevelIds, row);
+  }
+
+  /**
+   * Return whether attached stack rendering can prepare masks for every supplied scene filter.
+   * @param {PIXI.Filter[]} filters
+   * @returns {boolean}
+   */
+  canPrepareSceneFilterStackMasks(filters) {
+    if (!canvas?.ready || canvas?.loading || !canvas?.level || !isEnabled()) return false;
+    if (!this.layer || this.layer.destroyed || this.layer._tearingDown || this.layer._ticker !== true) return false;
+    if (canvas?.app?.ticker?.started !== true || this._sceneFilterStackMasksFailed) return false;
+    if (!Array.isArray(filters) || !filters.length) return false;
+    const environmentFilters = canvas?.environment?.filters ?? [];
+    return filters.every((filter) => {
+      const uniforms = filter?.uniforms;
+      return (
+        !!filter &&
+        !filter.destroyed &&
+        !filter.__fxmFilterContext &&
+        filter.__fxmRuntimeContext?.scope === "scene" &&
+        !!uniforms &&
+        "maskSampler" in uniforms &&
+        "hasMask" in uniforms &&
+        "maskReady" in uniforms &&
+        !environmentFilters.includes(filter)
+      );
+    });
+  }
+
+  /**
+   * Restore general scene masks after row-mask preparation fails until the layer is attached again.
+   * @param {PIXI.Filter} filter
+   * @returns {void}
+   */
+  #restoreGeneralSceneFilterMasks(filter) {
+    this._sceneFilterStackMasksFailed = true;
+    FilterEffectsSceneManager.instance.refreshViewMaskGeometry();
+    const uniforms = filter?.uniforms;
+    if (!(uniforms?.maskReady > 0) || !this.#canBindRenderTexture(uniforms.maskSampler)) {
+      throw new Error("FXMaster scene-filter mask preparation failed");
+    }
   }
 
   /**
@@ -2344,7 +2392,7 @@ export class GlobalEffectsCompositor {
       let revealed =
         token?.controlled === true ||
         this.#tokenIsDirectlyHoveredForSuppressionFallback(token) === true ||
-        sceneMaskContainsTokenCenterForCompositor(token) === true;
+        sceneMaskContainsTokenCenter(token) === true;
 
       if (!revealed) {
         try {
@@ -2419,7 +2467,7 @@ export class GlobalEffectsCompositor {
     let edgeFadePercent = 0;
     for (const behavior of region?.document?.behaviors ?? []) {
       if (!behavior || behavior.disabled || behavior.type !== specificType) continue;
-      if (!this.#computeRegionGatePassForFrame(region, specificType)) continue;
+      if (!this.#computeRegionGatePassForFrame(region, specificType, behavior.id)) continue;
       const pct = getRegionBehaviorEdgeFadePercent(behavior);
       edgeFadePercent = Math.max(edgeFadePercent, pct);
     }
@@ -2485,10 +2533,6 @@ export class GlobalEffectsCompositor {
   #getCompositorSuppressionRegionMaskTexture(region, edgeFadePercent = 0) {
     if (!region) return null;
 
-    if (CONFIG?.fxmaster?.overheadPerformance?.compositorSuppressionMaskCaching === false) {
-      return this.#buildUncachedCompositorSuppressionRegionMaskTexture(region, edgeFadePercent);
-    }
-
     const baseKey = this.#compositorSuppressionRegionMaskBaseKey(region, edgeFadePercent);
     if (!baseKey) return null;
 
@@ -2503,7 +2547,7 @@ export class GlobalEffectsCompositor {
       const entry = stableCache.get(stableKey) ?? null;
       if (this.#canBindRenderTexture(entry?.rt)) {
         entry.lastUsedFrame = this._renderFrameSerial;
-        this._sceneSuppressionMaskStats.regionStableHits += 1;
+
         return entry.rt;
       }
       if (entry?.rt) {
@@ -2519,13 +2563,9 @@ export class GlobalEffectsCompositor {
     if (moving && dynamicCache instanceof Map) {
       const entry = dynamicCache.get(dynamicKey) ?? null;
       if (this.#canBindRenderTexture(entry?.rt) && entry.frameSerial === this._renderFrameSerial) {
-        this._sceneSuppressionMaskStats.regionDynamicHits += 1;
         return entry.rt;
       }
     }
-
-    if (moving) this._sceneSuppressionMaskStats.regionDynamicMisses += 1;
-    else this._sceneSuppressionMaskStats.regionStableMisses += 1;
 
     let renderTexture = null;
     const cache = moving ? dynamicCache : stableCache;
@@ -2535,10 +2575,7 @@ export class GlobalEffectsCompositor {
     const pool = {
       acquire: (width, height, resolution) => {
         const needsNew =
-          !this.#canBindRenderTexture(existing?.rt) ||
-          Math.abs(Number(existing.rt.width ?? 0) - Math.max(1, Number(width) || 1)) > 0.001 ||
-          Math.abs(Number(existing.rt.height ?? 0) - Math.max(1, Number(height) || 1)) > 0.001 ||
-          Math.abs(Number(existing.rt.resolution || 1) - Number(resolution || 1)) > 0.0001;
+          !this.#canBindRenderTexture(existing?.rt) || !renderTextureMatches(existing.rt, width, height, resolution);
 
         if (!needsNew) {
           renderTexture = existing.rt;
@@ -2562,14 +2599,18 @@ export class GlobalEffectsCompositor {
       },
     };
 
+    let completedTexture = null;
     try {
-      renderTexture = buildRegionMaskRT(region, { rtPool: pool, edgeFadePercent });
+      completedTexture = buildRegionMaskRT(region, { rtPool: pool, edgeFadePercent });
     } catch (err) {
       logger.debug("FXMaster:", err);
-      renderTexture = null;
     }
 
-    if (!this.#canBindRenderTexture(renderTexture)) return null;
+    if (!this.#canBindRenderTexture(completedTexture)) {
+      this.#discardSuppressionMaskTexture(cache, cacheKey, renderTexture ?? existing?.rt);
+      return null;
+    }
+    renderTexture = completedTexture;
 
     if (cache instanceof Map) {
       const entry = moving
@@ -2579,51 +2620,6 @@ export class GlobalEffectsCompositor {
     }
 
     return renderTexture;
-  }
-
-  /**
-   * Build a compositor-side suppression Region mask without persistent caching.
-   *
-   * @param {PlaceableObject|null|undefined} region
-   * @param {number} [edgeFadePercent=0]
-   * @returns {PIXI.RenderTexture|null}
-   */
-  #buildUncachedCompositorSuppressionRegionMaskTexture(region, edgeFadePercent = 0) {
-    const pool = {
-      acquire: (width, height, resolution) => {
-        const needsNew =
-          !this._sceneFilterSuppressionRegionRT ||
-          this._sceneFilterSuppressionRegionRT.destroyed ||
-          Math.abs(Number(this._sceneFilterSuppressionRegionRT.width ?? 0) - Math.max(1, Number(width) || 1)) > 0.001 ||
-          Math.abs(Number(this._sceneFilterSuppressionRegionRT.height ?? 0) - Math.max(1, Number(height) || 1)) >
-            0.001 ||
-          Math.abs(Number(this._sceneFilterSuppressionRegionRT.resolution || 1) - Number(resolution || 1)) > 0.0001;
-
-        if (needsNew) {
-          try {
-            this._sceneFilterSuppressionRegionRT?.destroy?.(true);
-          } catch (err) {
-            logger.debug("FXMaster:", err);
-          }
-          this._sceneFilterSuppressionRegionRT = PIXI.RenderTexture.create({
-            width: Math.max(1, Number(width) || 1),
-            height: Math.max(1, Number(height) || 1),
-            resolution: resolution || 1,
-            multisample: 0,
-          });
-          this.#configureRenderTexture(this._sceneFilterSuppressionRegionRT);
-        }
-
-        return this._sceneFilterSuppressionRegionRT;
-      },
-    };
-
-    try {
-      return buildRegionMaskRT(region, { rtPool: pool, edgeFadePercent });
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-      return null;
-    }
   }
 
   /**
@@ -2736,20 +2732,6 @@ export class GlobalEffectsCompositor {
     const regionBaseKey = this.#compositorSuppressionRegionMaskBaseKey(region, edgeFadePercent);
     if (!regionBaseKey) return null;
 
-    if (CONFIG?.fxmaster?.overheadPerformance?.compositorSuppressionMaskCaching === false) {
-      const levelMask = this.#captureSingleSelectedLevelContributionMaskForLevelIds(ids, {
-        belowForeground,
-        includeTiles,
-        strictLevelIdentity,
-        restoreStrictLevelIdentity,
-        includeTilesOnlyWithoutLevelSurface,
-      });
-      if (!levelMask) return null;
-      const regionMask = this.#getCompositorSuppressionRegionMaskTexture(region, edgeFadePercent);
-      if (!regionMask) return null;
-      return this.#intersectMasksInto(levelMask, regionMask, this._surfaceMaskScratchRT);
-    }
-
     const selectedSet = new Set(ids);
     const blockerIds = new Set();
     for (const segment of this.#buildSelectedLevelCompositeSegments(selectedSet)) {
@@ -2772,7 +2754,8 @@ export class GlobalEffectsCompositor {
       width,
       height,
       Number(resolution || 1).toFixed(3),
-      this.#getLevelSurfaceSignatureForFrame(),
+      this._getLevelSurfaceSignatureForFrame(),
+      includeTilesOnlyWithoutLevelSurface ? this.#definedSurfaceFootprintSignatureForLevelIds(ids) : "",
     ].join(":");
 
     const moving = this.#selectedLevelViewportMovedThisFrame();
@@ -2785,8 +2768,7 @@ export class GlobalEffectsCompositor {
       const entry = cache.get(cacheKey) ?? null;
       if (this.#canBindRenderTexture(entry?.rt) && (!moving || entry.frameSerial === this._renderFrameSerial)) {
         entry.lastUsedFrame = this._renderFrameSerial;
-        if (moving) this._sceneSuppressionMaskStats.combinedDynamicHits += 1;
-        else this._sceneSuppressionMaskStats.combinedStableHits += 1;
+
         return entry.rt;
       }
       if (entry?.rt && !this.#canBindRenderTexture(entry.rt)) {
@@ -2798,9 +2780,6 @@ export class GlobalEffectsCompositor {
         cache.delete(cacheKey);
       }
     }
-
-    if (moving) this._sceneSuppressionMaskStats.combinedDynamicMisses += 1;
-    else this._sceneSuppressionMaskStats.combinedStableMisses += 1;
 
     const levelMask = this.#captureSingleSelectedLevelContributionMaskForLevelIds(ids, {
       belowForeground,
@@ -2827,12 +2806,21 @@ export class GlobalEffectsCompositor {
         this.#configureRenderTexture(renderTexture);
       } catch (err) {
         logger.debug("FXMaster:", err);
+        this.#discardSuppressionMaskTexture(cache, cacheKey, renderTexture);
         return null;
       }
     }
 
-    const combined = this.#intersectMasksInto(levelMask, regionMask, renderTexture);
-    if (!combined || combined !== renderTexture) return combined;
+    let combined = null;
+    try {
+      combined = this.#intersectMasksInto(levelMask, regionMask, renderTexture);
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    if (combined !== renderTexture) {
+      this.#discardSuppressionMaskTexture(cache, cacheKey, renderTexture);
+      return combined;
+    }
 
     if (cache instanceof Map) {
       cache.set(
@@ -2844,6 +2832,16 @@ export class GlobalEffectsCompositor {
     }
 
     return renderTexture;
+  }
+
+  /** Release a failed suppression-mask allocation and remove its stale cache entry. */
+  #discardSuppressionMaskTexture(cache, key, texture) {
+    if (cache instanceof Map) cache.delete(key);
+    try {
+      texture?.destroy?.(true);
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
   }
 
   /**
@@ -3089,7 +3087,7 @@ export class GlobalEffectsCompositor {
    * @param {Array<object>} rows
    * @returns {object}
    */
-  #analyzeRowsForFrame(rows = []) {
+  _analyzeRowsForFrame(rows = []) {
     const state = {
       hasSelectedLevelParticleRows: false,
       hasSceneFilterRows: false,
@@ -3132,8 +3130,8 @@ export class GlobalEffectsCompositor {
    * @param {{ presyncedCoreState?: boolean }} [options]
    * @returns {boolean}
    */
-  #syncRadialWeatherMaskStateForFrame(rows = [], frameInfo = null, { presyncedCoreState = false } = {}) {
-    const info = frameInfo ?? this.#analyzeRowsForFrame(rows);
+  _syncRadialWeatherMaskStateForFrame(rows = [], frameInfo = null, { presyncedCoreState = false } = {}) {
+    const info = frameInfo ?? this._analyzeRowsForFrame(rows);
     if (!info?.hasSceneFilterRows && !info?.hasSceneParticleRows) return false;
     if (!hasActiveRadialRestrictWeatherTilesForMask("all", { includeOffscreen: true })) return false;
 
@@ -3344,24 +3342,29 @@ export class GlobalEffectsCompositor {
   /**
    * Return whether the current stack can skip the full environment capture and render as a transparent particle overlay.
    *
-   * This is intentionally limited to scene-scoped normal-blend particle rows. Rendering normal particles into a transparent texture and presenting that texture over the live scene is equivalent to baking them into a captured scene frame, while avoiding a full scene capture every particle tick. Additive/screen/custom blend particles keep the full-frame path so their blend math remains baked against the scene behind them.
+   * Scene-scoped normal-blend particles can render over the live scene without capturing it. Below Foreground requires captured scene pixels for masked restoration, so those rows retain the full-frame path. Additive, screen, and custom blend modes require a captured scene unless their light is presented separately above darkness.
    *
    * @param {Array<object>} rows
    * @returns {boolean}
    */
   #canUseTransparentParticleOnlyPass(rows = []) {
     if (!Array.isArray(rows) || !rows.length) return false;
-    if (this.#selectedLevelViewportMovedThisFrame()) return false;
+    const viewportMoved = this.#selectedLevelViewportMovedThisFrame();
 
     let hasParticleRow = false;
 
     for (const row of rows) {
       if (this.#rowIsSuppressionOperator(row)) continue;
-      if (row?.kind !== "particle" || this.#getRowScope(row) !== "scene") return false;
-      if (this.#rowUsesSelectedLevelSurfaceMask(row) || this.#rowHasLevelLimitedOutput(row)) return false;
-
+      if (row?.kind !== "particle") return false;
       const runtime = row?.uid ? this.#resolveParticleRuntime(row.uid) : null;
       if (!runtime) return false;
+      if (this.#rowWantsAboveDarknessParticlePresentation(row, runtime)) {
+        hasParticleRow = true;
+        continue;
+      }
+      if (viewportMoved || this.#getRowScope(row) !== "scene") return false;
+      if (this.#rowUsesSelectedLevelSurfaceMask(row) || this.#rowHasLevelLimitedOutput(row)) return false;
+      if (this.#rowWantsBelowForeground(row)) return false;
 
       if (!this.#particleRuntimeUsesOnlyNormalBlend(runtime)) return false;
       hasParticleRow = true;
@@ -3786,8 +3789,6 @@ export class GlobalEffectsCompositor {
    * @returns {boolean}
    */
   #allowConfiguredLevelImageSceneRectFallback(texture = null) {
-    if (CONFIG?.fxmaster?.overheadPerformance?.configuredLevelImageSceneRectFallback === false) return false;
-
     const sceneRect = canvas?.dimensions?.sceneRect ?? null;
     const width = Number(sceneRect?.width ?? canvas?.dimensions?.sceneWidth ?? canvas?.scene?.width ?? Number.NaN);
     const height = Number(sceneRect?.height ?? canvas?.dimensions?.sceneHeight ?? canvas?.scene?.height ?? Number.NaN);
@@ -3834,7 +3835,7 @@ export class GlobalEffectsCompositor {
   #configuredLevelImageMaskBoundsAvailable(levelId, { foregroundOnly = false, allowSceneRectFallback = false } = {}) {
     if (!levelId || !this.#getConfiguredLevelImageSources(levelId, { foregroundOnly }).length) return false;
     const levelIds = new Set([levelId]);
-    if (this.#collectConfiguredLevelTextureObjectsForLevelIds(levelIds, { foregroundOnly }).length) return true;
+    if (this._collectConfiguredLevelTextureObjectsForLevelIds(levelIds, { foregroundOnly }).length) return true;
     if (this.#resolveConfiguredLevelImageWorldRect(levelId, null, { foregroundOnly })) return true;
 
     for (const src of this.#getConfiguredLevelImageSources(levelId, { foregroundOnly })) {
@@ -3978,9 +3979,9 @@ export class GlobalEffectsCompositor {
       if (!capturedForeground) continue;
 
       const protectedLevelIds = new Set([levelId]);
-      const upperObjects = this.#collectUpperSurfaceObjectsForTargetLevel(level, { protectedLevelIds });
+      const upperObjects = this._collectUpperSurfaceObjectsForTargetLevel(level, { protectedLevelIds });
       if (upperObjects.length) {
-        const capturedUpper = this.#captureSurfaceMaskTexture(upperObjects, upperSurfaceMaskRT, { clear: true });
+        const capturedUpper = this._captureSurfaceMaskTexture(upperObjects, upperSurfaceMaskRT, { clear: true });
         if (capturedUpper) this.#eraseTextureFromRenderTexture(upperSurfaceMaskRT, levelForegroundScratchRT);
       }
 
@@ -4160,7 +4161,7 @@ export class GlobalEffectsCompositor {
 
     if (rowScope === "region") {
       return (
-        this.#collectVisibleSurfaceObjectsForLevelIds(allowedLevelIds, {
+        this._collectVisibleSurfaceObjectsForLevelIds(allowedLevelIds, {
           includeTiles: true,
           strictLevelIdentity: true,
         }).length > 0
@@ -4183,7 +4184,7 @@ export class GlobalEffectsCompositor {
    * @param {object|null|undefined} row
    * @returns {foundry.documents.Level|null}
    */
-  #resolveRegionLocalTargetLevel(row) {
+  _resolveRegionLocalTargetLevel(row) {
     const currentLevel = getCanvasLevel();
     if (!currentLevel) return null;
 
@@ -4191,7 +4192,7 @@ export class GlobalEffectsCompositor {
     if (!regionDoc) return currentLevel;
 
     const sceneLevels = getSceneLevelDocuments(canvas?.scene ?? null);
-    const regionLevels = getDocumentAssignedLevelIds(regionDoc, regionDoc?.parent ?? canvas?.scene ?? null);
+    const regionLevels = this._getRegionAssignedLevelIds(regionDoc);
     if (regionLevels?.size) {
       if (currentLevel?.id && regionLevels.has(currentLevel.id)) return currentLevel;
 
@@ -4271,12 +4272,10 @@ export class GlobalEffectsCompositor {
     if (!levelId || !canvas?.primary) return false;
 
     try {
-      return (
-        this.#collectVisibleSurfaceObjectsForLevelIds(new Set([levelId]), {
-          includeTiles,
-          strictLevelIdentity,
-        }).length > 0
-      );
+      return this._hasVisibleSurfaceObjectsForLevelIds(new Set([levelId]), {
+        includeTiles,
+        strictLevelIdentity,
+      });
     } catch (err) {
       logger.debug("FXMaster:", err);
       return false;
@@ -4305,7 +4304,7 @@ export class GlobalEffectsCompositor {
    * @param {{ protectedLevelIds?: Set<string>|null }} [options]
    * @returns {Set<string>}
    */
-  #getVisibleOverlayLevelIdsAboveTarget(targetLevel, { protectedLevelIds = null } = {}) {
+  _getVisibleOverlayLevelIdsAboveTarget(targetLevel, { protectedLevelIds = null } = {}) {
     if (!targetLevel) return new Set();
 
     const cacheKey = `${targetLevel?.id ?? ""}:${this.#levelIdsCacheKey(protectedLevelIds)}:visible-overlays`;
@@ -4371,6 +4370,7 @@ export class GlobalEffectsCompositor {
       );
     }
 
+    if (allCandidatesVisible()) return remember(visibleLevelIds);
     for (const mesh of this.#getPrimaryTileMeshesForFrame()) {
       if (allCandidatesVisible()) break;
 
@@ -4395,7 +4395,8 @@ export class GlobalEffectsCompositor {
       );
     }
 
-    for (const object of this.#collectConfiguredLevelTextureObjectsForLevelIds(candidateLevelIds)) {
+    if (allCandidatesVisible()) return remember(visibleLevelIds);
+    for (const object of this._collectConfiguredLevelTextureObjectsForLevelIds(candidateLevelIds)) {
       if (allCandidatesVisible()) break;
       this.#addStrictSurfaceLevelMatches(visibleLevelIds, { mesh: object, object }, candidateLevelIds);
     }
@@ -4412,14 +4413,14 @@ export class GlobalEffectsCompositor {
    * @param {{ protectedLevelIds?: Set<string>|null }} [options]
    * @returns {foundry.documents.Level[]}
    */
-  #getVisibleOverlayLevelsAboveTarget(targetLevel, { protectedLevelIds = null } = {}) {
+  _getVisibleOverlayLevelsAboveTarget(targetLevel, { protectedLevelIds = null } = {}) {
     if (!targetLevel) return [];
 
     const cacheKey = `${targetLevel?.id ?? ""}:${this.#levelIdsCacheKey(protectedLevelIds)}:visible-overlay-levels`;
     const cache = this._visibleOverlayLevelsFrameCache;
     if (cache?.has(cacheKey)) return cache.get(cacheKey) ?? [];
 
-    const visibleLevelIds = this.#getVisibleOverlayLevelIdsAboveTarget(targetLevel, { protectedLevelIds });
+    const visibleLevelIds = this._getVisibleOverlayLevelIdsAboveTarget(targetLevel, { protectedLevelIds });
     const value = visibleLevelIds.size
       ? this.#getSceneLevels().filter((level) => visibleLevelIds.has(level?.id ?? null))
       : [];
@@ -4528,30 +4529,9 @@ export class GlobalEffectsCompositor {
    * @returns {{min:number,max:number}|null}
    */
   #getSurfaceElevationWindow(document, fallbackElevation = Number.NaN) {
-    const publicWindow = fxmGetDocumentElevationWindow(document, fallbackElevation);
-    if (publicWindow) return publicWindow;
-
     const fallback = Number(fallbackElevation);
     const trustDocumentElevation = this.#isDocumentBackedSurface(document) || !Number.isFinite(fallback);
-    const sourceElevation = trustDocumentElevation
-      ? document?.elevation ?? fxmReadDocumentSnapshotValue(document, "elevation") ?? null
-      : null;
-    const scalarElevation = Number(sourceElevation);
-    if (Number.isFinite(scalarElevation)) return { min: scalarElevation, max: scalarElevation };
-
-    const bottom = sourceElevation?.bottom ?? fxmReadDocumentSnapshotValue(document, ["elevation", "bottom"]);
-    const top = sourceElevation?.top ?? fxmReadDocumentSnapshotValue(document, ["elevation", "top"]);
-    const hasBottom = bottom !== undefined && bottom !== null && `${bottom}`.trim() !== "";
-    const hasTop = top !== undefined && top !== null && `${top}`.trim() !== "";
-    if (hasBottom || hasTop) {
-      return {
-        min: hasBottom ? Number(bottom) : Number.NEGATIVE_INFINITY,
-        max: hasTop ? Number(top) : Number.POSITIVE_INFINITY,
-      };
-    }
-
-    if (Number.isFinite(fallback)) return { min: fallback, max: fallback };
-    return null;
+    return fxmGetDocumentElevationWindow(trustDocumentElevation ? document : null, fallbackElevation);
   }
 
   /**
@@ -4631,6 +4611,25 @@ export class GlobalEffectsCompositor {
    * @returns {Set<string>}
    */
   #resolveSurfaceLevelIds({ mesh = null, object = null, document = null, level = null } = {}) {
+    const cache = this._surfaceExplicitLevelIdsFrameCache;
+    const cacheObject = cache
+      ? [mesh, object, document, level].find(
+          (value) => value && (typeof value === "object" || typeof value === "function"),
+        )
+      : null;
+    const scene = canvas?.scene ?? null;
+    const cached = cacheObject ? cache.get(cacheObject) : null;
+    if (
+      cached &&
+      cached.scene === scene &&
+      cached.mesh === mesh &&
+      cached.object === object &&
+      cached.document === document &&
+      cached.level === level
+    ) {
+      return new Set(cached.ids);
+    }
+
     const ids = new Set();
 
     const candidates = [
@@ -4649,7 +4648,8 @@ export class GlobalEffectsCompositor {
       fxmReadDocumentSnapshotValue(document, "level") ?? null,
       fxmReadDocumentSnapshotValue(document, "levels") ?? null,
     ];
-    for (const candidate of candidates) this.#addSceneLevelIdsFromValue(candidate, ids);
+    const seen = new Set();
+    for (const candidate of candidates) this.#addSceneLevelIdsFromValue(candidate, ids, seen);
 
     const directLevels = getDocumentLevelsSet(document ?? object ?? null);
     if (directLevels?.size) {
@@ -4658,6 +4658,7 @@ export class GlobalEffectsCompositor {
       }
     }
 
+    if (cacheObject) cache.set(cacheObject, { scene, mesh, object, document, level, ids: [...ids] });
     return ids;
   }
 
@@ -4704,7 +4705,7 @@ export class GlobalEffectsCompositor {
   }
 
   /**
-   * Resolve Level ids by matching a live surface's texture source against configured V14 Level background/foreground images. This is authoritative for native level textures because their live mesh elevation sits on shared boundaries between levels while the image path still identifies the actual Level that owns it.
+   * Resolve surface ownership from configured Level artwork, sharing each scene plan within the current compositor render. Image paths identify the owning Level even when a mesh lies on a shared elevation boundary.
    *
    * @param {{ mesh?: object|null, object?: object|null, document?: foundry.abstract.Document|null, level?: object|null }} options
    * @returns {Set<string>}
@@ -4728,16 +4729,24 @@ export class GlobalEffectsCompositor {
       return value;
     };
 
-    const surfacePaths = this.#collectSurfaceComparableSourcePaths({ mesh, object, document, level });
+    const surfacePaths = this._collectSurfaceComparableSourcePaths({ mesh, object, document, level });
     if (!surfacePaths.size) return remember(new Set());
 
-    return remember(
-      fxmResolveLevelIdsForComparableSourcePaths(
-        surfacePaths,
-        canvas?.scene ?? document?.parent ?? object?.document?.parent ?? level?.parent ?? null,
-      ),
-    );
+    const scene = canvas?.scene ?? document?.parent ?? object?.document?.parent ?? level?.parent ?? null;
+
+    const plans = this._surfaceLevelTexturePlansFrameCache;
+    let plan = null;
+    if (plans && scene) {
+      plan = plans.get(scene);
+      if (!plan) {
+        plan = fxmGetLevelTexturePlan(scene);
+        plans.set(scene, plan);
+      }
+    }
+
+    return remember(fxmResolveLevelIdsForComparableSourcePaths(surfacePaths, scene, { plan }));
   }
+
   /**
    * Resolve directly-owned Level ids from live surface fields that identify a single owner Level rather than a broad document visibility list.
    *
@@ -4754,7 +4763,8 @@ export class GlobalEffectsCompositor {
       document?.level ?? null,
     ];
 
-    for (const candidate of candidates) this.#addSceneLevelIdsFromValue(candidate, ids);
+    const seen = new Set();
+    for (const candidate of candidates) this.#addSceneLevelIdsFromValue(candidate, ids, seen);
     return ids;
   }
 
@@ -4994,7 +5004,6 @@ export class GlobalEffectsCompositor {
 
     const allowedLevelIds = this.#getRowAllowedLevelIds(row);
     if (!(allowedLevelIds?.size > 0)) return false;
-    if (CONFIG?.fxmaster?.overheadPerformance?.sceneRowSelectedLevelTilesExpandCoverage === true) return true;
 
     for (const levelId of allowedLevelIds) {
       if (!this.#levelHasSelectedNonTileSurfaceCoverage(levelId)) return true;
@@ -5014,7 +5023,6 @@ export class GlobalEffectsCompositor {
     if (this.#rowWantsBelowTiles(row)) return false;
     const allowedLevelIds = this.#getRowAllowedLevelIds(row);
     if (!(allowedLevelIds?.size > 0)) return false;
-    if (CONFIG?.fxmaster?.overheadPerformance?.sceneRowSelectedLevelTilesExpandCoverage === true) return true;
 
     for (const levelId of allowedLevelIds) {
       if (!this.#levelHasSelectedNonTileSurfaceCoverage(levelId)) return true;
@@ -5028,7 +5036,7 @@ export class GlobalEffectsCompositor {
    * @param {object|null|undefined} row
    * @returns {boolean}
    */
-  #regionRowHonorsCurrentLevelMultiLevelTileAssignments(row) {
+  _regionRowHonorsCurrentLevelMultiLevelTileAssignments(row) {
     if (!canvas?.level || !row?.uid) return false;
     if (this.#getRowScope(row) !== "region") return false;
     if (this.#rowWantsBelowTiles(row)) return false;
@@ -5041,10 +5049,10 @@ export class GlobalEffectsCompositor {
     const currentLevel = this.#getSceneLevelById(currentLevelId);
     if (this.#getCachedLevelConfiguredImagePaths(currentLevel).size) return false;
     if (
-      this.#collectVisibleSurfaceObjectsForLevelIds(currentLevelIds, {
+      this._hasVisibleSurfaceObjectsForLevelIds(currentLevelIds, {
         includeTiles: false,
         strictLevelIdentity: true,
-      }).length
+      })
     )
       return false;
 
@@ -5074,14 +5082,14 @@ export class GlobalEffectsCompositor {
    * @param {foundry.documents.Level|null|undefined} fallbackLevel
    * @returns {Set<string>}
    */
-  #getRegionAllowedLevelIds(row, fallbackLevel = null) {
+  _getRegionAllowedLevelIds(row, fallbackLevel = null) {
     const ids = new Set();
     const regionDoc = this.#getRegionDocumentForRow(row);
     const currentLevel = getCanvasLevel();
 
     if (!regionDoc) return ids;
 
-    const levels = getDocumentAssignedLevelIds(regionDoc, regionDoc?.parent ?? canvas?.scene ?? null);
+    const levels = this._getRegionAssignedLevelIds(regionDoc);
     if (levels?.size) {
       const allowOverhead = applyRegionBehaviorsToOverheadLevels();
       for (const levelId of levels) {
@@ -5103,6 +5111,23 @@ export class GlobalEffectsCompositor {
       }
     } else if (currentLevel?.id) ids.add(currentLevel.id);
 
+    return ids;
+  }
+
+  /**
+   * Reuse Region Level assignments during one synchronous compositor render.
+   * @param {foundry.documents.Region|null|undefined} document
+   * @returns {Set<string>|null}
+   */
+  _getRegionAssignedLevelIds(document) {
+    const scene = document?.parent ?? canvas?.scene ?? null;
+    const cache = this._regionAssignedLevelIdsFrameCache;
+    const cacheable = cache && document && (typeof document === "object" || typeof document === "function");
+    const cached = cacheable ? cache.get(document) : null;
+    if (cached && cached.scene === scene) return cached.ids;
+
+    const ids = getDocumentAssignedLevelIds(document, scene);
+    if (cacheable) cache.set(document, { scene, ids });
     return ids;
   }
 
@@ -5188,37 +5213,76 @@ export class GlobalEffectsCompositor {
    * @param {*} value
    * @returns {Set<string>}
    */
-  #getComparableSourcePathsForValue(value) {
-    const paths = new Set();
-    if (!value) return paths;
+  _getComparableSourcePathsForValue(value) {
+    const cacheable = value && (typeof value === "object" || typeof value === "function");
+    const cache = this._surfaceSourcePathsFrameCache;
+    if (cacheable && cache?.has(value)) return cache.get(value);
 
-    if (typeof value === "object" || typeof value === "function") {
-      const cache = this._surfaceSourcePathsFrameCache;
-      if (cache?.has(value)) return cache.get(value) ?? paths;
-      collectComparableSourcePaths(value, paths);
+    if (!value) return new Set();
+    let paths, seen;
+    if (cacheable && this._surfaceSourcePathContextFrameCache?.roots) {
+      ({ paths, seen } = fxmGetComparableSourcePathResult(value, this._surfaceSourcePathContextFrameCache));
+    } else {
+      paths = new Set();
+      seen = new Set();
+      collectComparableSourcePaths(value, paths, this._surfaceSourcePathContextFrameCache, seen);
+    }
+    if (cacheable) {
       try {
         cache?.set(value, paths);
+        this._surfaceSourceReachabilityFrameCache?.set(value, seen);
       } catch (err) {
         logger.debug("FXMaster:", err);
       }
-      return paths;
     }
-
-    collectComparableSourcePaths(value, paths);
     return paths;
   }
 
   /**
-   * Return comparable source paths for a live surface tuple.
+   * Reuse comparable source paths for an identical surface tuple within the current frame.
    *
    * @param {{ mesh?: object|null, object?: object|null, document?: foundry.abstract.Document|null, level?: object|null }} options
    * @returns {Set<string>}
    */
-  #collectSurfaceComparableSourcePaths({ mesh = null, object = null, document = null, level = null } = {}) {
+  _collectSurfaceComparableSourcePaths({ mesh = null, object = null, document = null, level = null } = {}) {
+    const key = mesh ?? object ?? document ?? level;
+    const tupleCache = this._surfaceTupleSourcePathsFrameCache;
+    const cacheable = tupleCache && key && (typeof key === "object" || typeof key === "function");
+    const entries = cacheable ? tupleCache.get(key) : null;
+    if (entries) {
+      for (const entry of entries) {
+        if (entry.mesh === mesh && entry.object === object && entry.document === document && entry.level === level) {
+          return entry.paths;
+        }
+      }
+    }
+
     const output = new Set();
-    for (const value of [mesh, object, document, level]) {
-      const paths = this.#getComparableSourcePathsForValue(value);
+    const values = [mesh, object, document, level];
+    const cache = this._surfaceSourcePathsFrameCache;
+    const reachability = this._surfaceSourceReachabilityFrameCache;
+    const traversals = [];
+    for (let i = 0; i < values.length; i++) {
+      const value = values[i];
+      if (!value || (cache && values.indexOf(value) !== i)) continue;
+      let covered = false;
+      for (const seen of traversals) {
+        if (seen.has(value)) {
+          covered = true;
+          break;
+        }
+      }
+      if (covered) continue;
+
+      const paths = this._getComparableSourcePathsForValue(value);
       for (const pathValue of paths) output.add(pathValue);
+      const seen = reachability?.get(value);
+      if (seen) traversals.push(seen);
+    }
+    if (cacheable) {
+      const entry = { mesh, object, document, level, paths: output };
+      if (entries) entries.push(entry);
+      else tupleCache.set(key, [entry]);
     }
     return output;
   }
@@ -5274,7 +5338,7 @@ export class GlobalEffectsCompositor {
    *
    * @returns {PIXI.DisplayObject[]}
    */
-  #getConfiguredLevelTextureSearchRoots() {
+  _getConfiguredLevelTextureSearchRoots() {
     const roots = [];
     const seen = new Set();
     const add = (object) => {
@@ -5305,11 +5369,17 @@ export class GlobalEffectsCompositor {
    * Return whether a live object belongs to FXMaster output rather than native Level artwork.
    *
    * @param {object|null|undefined} object
+   * @param {Map<object,boolean>|null} [cache]
    * @returns {boolean}
    */
-  #objectIsExcludedFromConfiguredLevelTextureSearch(object) {
+  #objectIsExcludedFromConfiguredLevelTextureSearch(object, cache = null) {
     const seen = new Set();
+    let excluded = false;
     for (let current = object; current && !seen.has(current); current = current?.parent ?? null) {
+      if (cache?.has(current)) {
+        excluded = cache.get(current);
+        break;
+      }
       seen.add(current);
       if (
         current === this._displayContainer ||
@@ -5317,13 +5387,26 @@ export class GlobalEffectsCompositor {
         current === this._blitSprite ||
         current === this._filterPassContainer ||
         current === this._tileRestoreContainer
-      )
-        return true;
-      if (current === canvas?.particleeffects || current === canvas?.filtereffects) return true;
+      ) {
+        excluded = true;
+        break;
+      }
+      if (
+        current === canvas?.particleeffects ||
+        current === canvas?.particleeffects?._aboveContent ||
+        current === canvas?.filtereffects
+      ) {
+        excluded = true;
+        break;
+      }
       const name = String(current?.name ?? current?.label ?? current?.constructor?.name ?? "").toLowerCase();
-      if (name.includes("fxmaster")) return true;
+      if (name.includes("fxmaster")) {
+        excluded = true;
+        break;
+      }
     }
-    return false;
+    for (const ancestor of seen) cache?.set(ancestor, excluded);
+    return excluded;
   }
 
   /**
@@ -5347,7 +5430,7 @@ export class GlobalEffectsCompositor {
    * @param {{ foregroundOnly?: boolean }} [options]
    * @returns {PIXI.DisplayObject[]}
    */
-  #collectConfiguredLevelTextureObjectsForLevelIds(levelIds, { foregroundOnly = false } = {}) {
+  _collectConfiguredLevelTextureObjectsForLevelIds(levelIds, { foregroundOnly = false } = {}) {
     if (!(levelIds?.size > 0) || !canvas?.primary) return [];
 
     const cacheKey = (foregroundOnly ? "foreground" : "all") + ":" + this.#levelIdsCacheKey(levelIds);
@@ -5369,36 +5452,62 @@ export class GlobalEffectsCompositor {
       objects.push(object);
     };
 
+    const index = this._getConfiguredLevelTextureSourceIndex();
+    const matches = new Set();
+    for (const imagePath of imagePaths) {
+      for (const entry of index.get(imagePath) ?? []) matches.add(entry);
+    }
+
+    for (const { object, linkedObject } of Array.from(matches).sort((a, b) => a.order - b.order)) {
+      const liveRenderObject = this.#resolveLiveSurfaceDisplayObject(object, linkedObject);
+      const captureObject = this.#displayObjectContributesVisiblePixels(object)
+        ? object
+        : this.#displayObjectContributesVisiblePixels(liveRenderObject)
+        ? liveRenderObject
+        : null;
+      if (captureObject && this.#displayObjectIntersectsViewport(captureObject)) push(captureObject);
+    }
+    return remember(objects);
+  }
+
+  /**
+   * Index configured artwork candidates once per compositor frame, preserving traversal order.
+   * @returns {Map<string,Array<{object:object,linkedObject:object|null,order:number}>>}
+   */
+  _getConfiguredLevelTextureSourceIndex() {
+    if (this._configuredLevelTextureSourceIndexFrameCache) return this._configuredLevelTextureSourceIndexFrameCache;
+    const index = new Map();
     const visited = new Set();
+    const exclusions = new Map();
+
+    let order = 0;
     const visit = (object, depth = 0) => {
       if (!object || visited.has(object) || depth > 24) return;
       if (typeof object !== "object" && typeof object !== "function") return;
       visited.add(object);
-      if (this.#objectIsExcludedFromConfiguredLevelTextureSearch(object)) return;
 
+      if (this.#objectIsExcludedFromConfiguredLevelTextureSearch(object, exclusions)) return;
       const linkedObject = fxmLinkedPlaceableFromDisplayObject(object);
-      const liveRenderObject = this.#resolveLiveSurfaceDisplayObject(object, linkedObject);
       const document = linkedObject?.document ?? object?.document ?? null;
-
-      if (
-        this.#surfaceUsesImagePaths(
-          { mesh: object, object: linkedObject ?? object, document: document ?? linkedObject ?? object, level: null },
-          imagePaths,
-        )
-      ) {
-        const captureObject = this.#displayObjectContributesVisiblePixels(object)
-          ? object
-          : this.#displayObjectContributesVisiblePixels(liveRenderObject)
-          ? liveRenderObject
-          : null;
-        if (captureObject && this.#displayObjectIntersectsViewport(captureObject)) push(captureObject);
+      const paths = this._collectSurfaceComparableSourcePaths({
+        mesh: object,
+        object: linkedObject ?? object,
+        document: document ?? linkedObject ?? object,
+        level: null,
+      });
+      if (paths.size) {
+        const entry = { object, linkedObject, order: order++ };
+        for (const imagePath of paths) {
+          let entries = index.get(imagePath);
+          if (!entries) index.set(imagePath, (entries = []));
+          entries.push(entry);
+        }
       }
-
       for (const child of this.#getDisplayObjectChildren(object)) visit(child, depth + 1);
     };
-
-    for (const root of this.#getConfiguredLevelTextureSearchRoots()) visit(root, 0);
-    return remember(objects);
+    for (const root of this._getConfiguredLevelTextureSearchRoots()) visit(root, 0);
+    this._configuredLevelTextureSourceIndexFrameCache = index;
+    return index;
   }
 
   /**
@@ -5411,7 +5520,7 @@ export class GlobalEffectsCompositor {
   #surfaceUsesImagePaths({ mesh = null, object = null, document = null, level = null } = {}, imagePaths) {
     if (!(imagePaths?.size > 0)) return false;
 
-    const paths = this.#collectSurfaceComparableSourcePaths({ mesh, object, document, level });
+    const paths = this._collectSurfaceComparableSourcePaths({ mesh, object, document, level });
     for (const pathValue of paths) {
       if (imagePaths.has(pathValue)) return true;
     }
@@ -5467,7 +5576,7 @@ export class GlobalEffectsCompositor {
    * @param {{ protectedLevelIds?: Set<string>|null, overlayLevels?: object[]|null, protectExplicitMultiLevelTiles?: boolean }} [options]
    * @returns {boolean}
    */
-  #surfaceBelongsToVisibleOverlayLevels(
+  _surfaceBelongsToVisibleOverlayLevels(
     { mesh = null, object = null, document = null, level = null, elevation = Number.NaN } = {},
     targetLevel,
     { protectedLevelIds = null, overlayLevels = null, protectExplicitMultiLevelTiles = false } = {},
@@ -5476,7 +5585,7 @@ export class GlobalEffectsCompositor {
 
     const activeOverlayLevels = Array.isArray(overlayLevels)
       ? overlayLevels
-      : this.#getVisibleOverlayLevelsAboveTarget(targetLevel, { protectedLevelIds });
+      : this._getVisibleOverlayLevelsAboveTarget(targetLevel, { protectedLevelIds });
     if (!activeOverlayLevels.length) return false;
 
     const overlayLevelIds = new Set(
@@ -5635,7 +5744,7 @@ export class GlobalEffectsCompositor {
    * @param {{ protectedLevelIds?: Set<string>|null, includeRevealed?: boolean, protectExplicitMultiLevelTiles?: boolean }} [options]
    * @returns {PIXI.DisplayObject[]}
    */
-  #collectUpperSurfaceObjectsForTargetLevel(
+  _collectUpperSurfaceObjectsForTargetLevel(
     targetLevel,
     { protectedLevelIds = null, includeRevealed = false, protectExplicitMultiLevelTiles = false } = {},
   ) {
@@ -5652,7 +5761,7 @@ export class GlobalEffectsCompositor {
       return value ?? [];
     };
 
-    const overlayLevels = this.#getVisibleOverlayLevelsAboveTarget(targetLevel, { protectedLevelIds });
+    const overlayLevels = this._getVisibleOverlayLevelsAboveTarget(targetLevel, { protectedLevelIds });
     if (!overlayLevels.length) return remember([]);
 
     const protectedImagePaths = this.#getProtectedLevelImagePaths(protectedLevelIds);
@@ -5687,7 +5796,7 @@ export class GlobalEffectsCompositor {
           Number.NaN,
       );
       if (
-        !this.#surfaceBelongsToVisibleOverlayLevels({ mesh, object, document, level, elevation }, targetLevel, {
+        !this._surfaceBelongsToVisibleOverlayLevels({ mesh, object, document, level, elevation }, targetLevel, {
           protectedLevelIds,
           overlayLevels,
           protectExplicitMultiLevelTiles,
@@ -5695,15 +5804,17 @@ export class GlobalEffectsCompositor {
       )
         continue;
 
-      const revealObject = liveRenderObject ?? captureObject;
-      const revealState = getCanvasLiveLevelSurfaceRevealState(revealObject, {
-        mesh: revealObject,
-        object,
-        document,
-        level,
-        elevation,
-      });
-      if (!includeRevealed && revealState.revealed) continue;
+      if (!includeRevealed) {
+        const revealObject = liveRenderObject ?? captureObject;
+        const revealState = getCanvasLiveLevelSurfaceRevealState(revealObject, {
+          mesh: revealObject,
+          object,
+          document,
+          level,
+          elevation,
+        });
+        if (revealState.revealed) continue;
+      }
 
       push(captureObject);
     }
@@ -5725,7 +5836,7 @@ export class GlobalEffectsCompositor {
       const elevation = Number(mesh?.elevation ?? document?.elevation ?? tileObject?.elevation ?? Number.NaN);
       const level = mesh?.level ?? tileObject?.level ?? document?.level ?? null;
       if (
-        !this.#surfaceBelongsToVisibleOverlayLevels(
+        !this._surfaceBelongsToVisibleOverlayLevels(
           { mesh, object: tileObject, document: document ?? tileObject ?? null, level, elevation },
           targetLevel,
           { protectedLevelIds, overlayLevels, protectExplicitMultiLevelTiles },
@@ -5733,22 +5844,24 @@ export class GlobalEffectsCompositor {
       )
         continue;
 
-      const revealObject = liveRenderObject ?? captureObject;
-      const revealState = getCanvasLiveLevelSurfaceRevealState(revealObject, {
-        mesh: revealObject,
-        object: tileObject,
-        document: document ?? tileObject ?? null,
-        level,
-        elevation,
-      });
-      if (!includeRevealed && revealState.revealed) continue;
+      if (!includeRevealed) {
+        const revealObject = liveRenderObject ?? captureObject;
+        const revealState = getCanvasLiveLevelSurfaceRevealState(revealObject, {
+          mesh: revealObject,
+          object: tileObject,
+          document: document ?? tileObject ?? null,
+          level,
+          elevation,
+        });
+        if (revealState.revealed) continue;
+      }
 
       push(captureObject);
     }
 
     if (includeRevealed) {
       const overlayLevelIds = new Set(overlayLevels.map((level) => level?.id).filter(Boolean));
-      for (const object of this.#collectConfiguredLevelTextureObjectsForLevelIds(overlayLevelIds)) push(object);
+      for (const object of this._collectConfiguredLevelTextureObjectsForLevelIds(overlayLevelIds)) push(object);
     }
 
     return remember(objects);
@@ -5789,7 +5902,7 @@ export class GlobalEffectsCompositor {
       const [levelId] = Array.from(allowedLevelIds);
       if (!levelId) return false;
       if (this.#levelIsCurrentCanvasView(levelId)) {
-        const protectExplicitMultiLevelTiles = this.#regionRowHonorsCurrentLevelMultiLevelTileAssignments(row);
+        const protectExplicitMultiLevelTiles = this._regionRowHonorsCurrentLevelMultiLevelTileAssignments(row);
         let sawSelectedCurrentLevel = false;
         for (const segment of this.#buildSelectedLevelCompositeSegments(allowedLevelIds)) {
           if (segment?.type === "selected") {
@@ -5811,12 +5924,10 @@ export class GlobalEffectsCompositor {
         }
         return false;
       }
-      return (
-        this.#collectVisibleSurfaceObjectsForLevelIds(allowedLevelIds, {
-          includeTiles: true,
-          strictLevelIdentity: true,
-        }).length > 0
-      );
+      return this._hasVisibleSurfaceObjectsForLevelIds(allowedLevelIds, {
+        includeTiles: true,
+        strictLevelIdentity: true,
+      });
     }
 
     let sawRestoreBetweenSelectedLevels = false;
@@ -5832,28 +5943,55 @@ export class GlobalEffectsCompositor {
   }
 
   /**
+   * Test surface presence without collecting additional matches.
+   * @param {Set<string>|null|undefined} levelIds
+   * @param {{includeTiles?: boolean, strictLevelIdentity?: boolean, includeExplicitMultiLevelTiles?: boolean}} [options]
+   * @returns {boolean}
+   */
+  _hasVisibleSurfaceObjectsForLevelIds(levelIds, options = {}) {
+    return (
+      this._collectVisibleSurfaceObjectsForLevelIds(levelIds, {
+        ...options,
+        firstOnly: true,
+      }).length > 0
+    );
+  }
+
+  /**
    * Collect live canvas surfaces that belong to one of the selected native Scene Levels.
    *
    * The collected objects are rendered into a mask so rows assigned to a visible non-current Level affect only that Level's visible overlay surfaces while the current Level remains unchanged.
    *
    * @param {Set<string>|null|undefined} levelIds
+   * @param {{includeTiles?: boolean, strictLevelIdentity?: boolean, includeExplicitMultiLevelTiles?: boolean, firstOnly?: boolean}} [options]
    * @returns {PIXI.DisplayObject[]}
    */
-  #collectVisibleSurfaceObjectsForLevelIds(
+  _collectVisibleSurfaceObjectsForLevelIds(
     levelIds,
-    { includeTiles = true, strictLevelIdentity = false, includeExplicitMultiLevelTiles = false } = {},
+    {
+      includeTiles = true,
+      strictLevelIdentity = false,
+      includeExplicitMultiLevelTiles = false,
+      firstOnly = false,
+    } = {},
   ) {
     if (!(levelIds?.size > 0) || !canvas?.primary) return [];
 
-    const cacheKey = `${this.#levelIdsCacheKey(levelIds)}::tiles:${includeTiles ? 1 : 0}:strict:${
+    const fullCacheKey = `${this.#levelIdsCacheKey(levelIds)}::tiles:${includeTiles ? 1 : 0}:strict:${
       strictLevelIdentity ? 1 : 0
     }:explicitMultiTiles:${includeExplicitMultiLevelTiles ? 1 : 0}`;
+    const cacheKey = fullCacheKey + (firstOnly ? ":first" : "");
     const frameCache = this._visibleSurfaceObjectsFrameCache;
     if (frameCache?.has(cacheKey)) return frameCache.get(cacheKey) ?? [];
     const remember = (value) => {
       frameCache?.set(cacheKey, value ?? []);
       return value ?? [];
     };
+
+    if (firstOnly && frameCache?.has(fullCacheKey)) {
+      const matches = frameCache.get(fullCacheKey) ?? [];
+      return remember(matches.length ? [matches[0]] : []);
+    }
 
     const objects = [];
     const seen = new Set();
@@ -5890,6 +6028,7 @@ export class GlobalEffectsCompositor {
       if (!surfaceTargets) continue;
 
       push(captureObject);
+      if (firstOnly) return remember(objects);
     }
 
     if (!includeTiles) return remember(objects);
@@ -5921,9 +6060,13 @@ export class GlobalEffectsCompositor {
       if (!surfaceTargets) continue;
 
       push(captureObject);
+      if (firstOnly) return remember(objects);
     }
 
-    for (const object of this.#collectConfiguredLevelTextureObjectsForLevelIds(levelIds)) push(object);
+    for (const object of this._collectConfiguredLevelTextureObjectsForLevelIds(levelIds)) {
+      push(object);
+      if (firstOnly) break;
+    }
 
     return remember(objects);
   }
@@ -5970,7 +6113,7 @@ export class GlobalEffectsCompositor {
    * @param {Set<string>|null|undefined} levelIds
    * @returns {PIXI.DisplayObject[]}
    */
-  #collectVisibleForegroundSurfaceObjectsForLevelIds(levelIds) {
+  _collectVisibleForegroundSurfaceObjectsForLevelIds(levelIds) {
     if (!(levelIds?.size > 0) || !canvas?.primary) return [];
 
     const cacheKey = this.#levelIdsCacheKey(levelIds);
@@ -6013,7 +6156,7 @@ export class GlobalEffectsCompositor {
       push(captureObject);
     }
 
-    for (const object of this.#collectConfiguredLevelTextureObjectsForLevelIds(levelIds, { foregroundOnly: true }))
+    for (const object of this._collectConfiguredLevelTextureObjectsForLevelIds(levelIds, { foregroundOnly: true }))
       push(object);
 
     return remember(objects);
@@ -6035,9 +6178,7 @@ export class GlobalEffectsCompositor {
     const matrix = this.#useSnappedCompositorTransforms()
       ? snappedStageMatrix(canvas?.stage)
       : currentWorldMatrix(canvas?.stage, { snapStage: false });
-    const key = [matrix?.a, matrix?.b, matrix?.c, matrix?.d, matrix?.tx, matrix?.ty]
-      .map((value) => (Number.isFinite(Number(value)) ? Number(value).toFixed(3) : ""))
-      .join(",");
+    const key = matrixCacheKey(matrix);
     this._selectedLevelViewportMatrixKeyFrameSerial = this._renderFrameSerial;
     this._selectedLevelViewportMatrixKeyFrameValue = key;
     return key;
@@ -6072,7 +6213,7 @@ export class GlobalEffectsCompositor {
    *
    * @returns {string}
    */
-  #getLevelSurfaceSignatureForFrame() {
+  _getLevelSurfaceSignatureForFrame() {
     if (
       this._levelSurfaceSignatureFrameSerial === this._renderFrameSerial &&
       typeof this._levelSurfaceSignatureFrameValue === "string"
@@ -6110,7 +6251,7 @@ export class GlobalEffectsCompositor {
     const matrixKey = this.#selectedLevelViewportMatrixKey();
     const surfaceKey = this.#selectedLevelViewportMovedThisFrame()
       ? "viewport-moving"
-      : this.#getLevelSurfaceSignatureForFrame();
+      : this._getLevelSurfaceSignatureForFrame();
     return [
       canvas?.scene?.id ?? "scene",
       suffix,
@@ -6152,7 +6293,7 @@ export class GlobalEffectsCompositor {
     if (this.#getRowScope(row) !== "scene") return false;
     const allowedLevelIds = this.#getRowAllowedLevelIds(row);
     if (!(allowedLevelIds?.size > 0)) return false;
-    return CONFIG?.fxmaster?.overheadPerformance?.sceneRowSelectedLevelTilesExpandCoverage !== true;
+    return true;
   }
 
   /**
@@ -6173,7 +6314,7 @@ export class GlobalEffectsCompositor {
     };
 
     const levelIds = new Set([levelId]);
-    if (this.#collectVisibleSurfaceObjectsForLevelIds(levelIds, { includeTiles: false }).length) return remember(true);
+    if (this._hasVisibleSurfaceObjectsForLevelIds(levelIds, { includeTiles: false })) return remember(true);
 
     return remember(
       this.#levelCanUseConfiguredImageFallbackForMask(levelId, {
@@ -6191,7 +6332,7 @@ export class GlobalEffectsCompositor {
    */
   #getDefinedSurfaceFootprintRegionsForLevel(levelId) {
     const id = String(levelId ?? "").trim();
-    if (!id || CONFIG?.fxmaster?.overheadPerformance?.sceneRowUseDefinedSurfaceFootprints === false) return [];
+    if (!id) return [];
 
     const cache = this._levelDefinedSurfaceFootprintRegionsFrameCache;
     if (cache?.has(id)) return cache.get(id) ?? [];
@@ -6202,9 +6343,6 @@ export class GlobalEffectsCompositor {
       return out;
     };
 
-    const allowWindowFallback =
-      CONFIG?.fxmaster?.overheadPerformance?.sceneRowDefinedSurfaceFootprintWindowFallback === true;
-
     /**
      * Do not use in-window fallback surfaces by default. On maps where a lower Level covers the whole scene and upper Levels are partial structures, an upper-Level footprint can sit inside the lower Level's elevation window and would incorrectly shrink effects assigned to the lower Level.
      */
@@ -6213,7 +6351,7 @@ export class GlobalEffectsCompositor {
         scene: canvas?.scene ?? null,
         requireOcclusion: false,
         allowExposure: true,
-        allowWindowFallback,
+        allowWindowFallback: false,
       }),
     );
   }
@@ -6254,8 +6392,7 @@ export class GlobalEffectsCompositor {
     const ids = Array.from(levelIds ?? [])
       .filter(Boolean)
       .sort();
-    if (!ids.length || CONFIG?.fxmaster?.overheadPerformance?.sceneRowUseDefinedSurfaceFootprints === false)
-      return "footprint:off";
+    if (!ids.length) return "footprint:none";
 
     const parts = [];
     for (const levelId of ids) {
@@ -6314,18 +6451,11 @@ export class GlobalEffectsCompositor {
         const res = Number(resolution) || 1;
         if (
           this.#canBindRenderTexture(this._surfaceMaskScratchRT) &&
-          Math.abs(Number(this._surfaceMaskScratchRT.width ?? 0) - w) <= 0.001 &&
-          Math.abs(Number(this._surfaceMaskScratchRT.height ?? 0) - h) <= 0.001 &&
-          Math.abs(Number(this._surfaceMaskScratchRT.resolution || 1) - res) <= 0.0001
+          renderTextureMatches(this._surfaceMaskScratchRT, w, h, res)
         ) {
           return this._surfaceMaskScratchRT;
         }
-        if (
-          this.#canBindRenderTexture(temporaryScratchRT) &&
-          Math.abs(Number(temporaryScratchRT.width ?? 0) - w) <= 0.001 &&
-          Math.abs(Number(temporaryScratchRT.height ?? 0) - h) <= 0.001 &&
-          Math.abs(Number(temporaryScratchRT.resolution || 1) - res) <= 0.0001
-        ) {
+        if (this.#canBindRenderTexture(temporaryScratchRT) && renderTextureMatches(temporaryScratchRT, w, h, res)) {
           return temporaryScratchRT;
         }
         try {
@@ -6451,29 +6581,29 @@ export class GlobalEffectsCompositor {
       includeTiles &&
       !(includeTilesOnlyWithoutLevelSurface && this.#levelHasSelectedNonTileSurfaceCoverage(levelId));
     const objects = foregroundOnly
-      ? this.#collectVisibleForegroundSurfaceObjectsForLevelIds(levelIds)
-      : this.#collectVisibleSurfaceObjectsForLevelIds(levelIds, {
+      ? this._collectVisibleForegroundSurfaceObjectsForLevelIds(levelIds)
+      : this._collectVisibleSurfaceObjectsForLevelIds(levelIds, {
           includeTiles: effectiveIncludeTiles,
           strictLevelIdentity,
           includeExplicitMultiLevelTiles,
         });
     const allowSceneRectConfiguredFallback = false;
-    const canUseConfiguredImageFallback = this.#levelCanUseConfiguredImageFallbackForMask(levelId, {
-      foregroundOnly,
-      includeTiles: effectiveIncludeTiles,
-      strictLevelIdentity,
-      allowSceneRectFallback: allowSceneRectConfiguredFallback,
-    });
-
-    if (!levelVisible && !objects.length && !canUseConfiguredImageFallback) return false;
-    if (clear && !this.#clearRenderTexture(renderTexture)) return false;
-
     const hasLiveForegroundCandidate = foregroundOnly
       ? this.#hasForegroundSurfaceCandidatesForLevelIds(levelIds)
       : false;
-    const useConfiguredImageFallback = foregroundOnly
-      ? canUseConfiguredImageFallback && !hasLiveForegroundCandidate
-      : canUseConfiguredImageFallback && !objects.length;
+    const needsConfiguredImageFallback = foregroundOnly ? !hasLiveForegroundCandidate : !objects.length;
+    const canUseConfiguredImageFallback =
+      (needsConfiguredImageFallback || (!levelVisible && !objects.length)) &&
+      this.#levelCanUseConfiguredImageFallbackForMask(levelId, {
+        foregroundOnly,
+        includeTiles: effectiveIncludeTiles,
+        strictLevelIdentity,
+        allowSceneRectFallback: allowSceneRectConfiguredFallback,
+      });
+
+    if (!levelVisible && !objects.length && !canUseConfiguredImageFallback) return false;
+    if (clear && !this.#clearRenderTexture(renderTexture)) return false;
+    const useConfiguredImageFallback = needsConfiguredImageFallback && canUseConfiguredImageFallback;
 
     if (useConfiguredImageFallback) {
       rendered =
@@ -6488,7 +6618,7 @@ export class GlobalEffectsCompositor {
     if (objects.length) {
       rendered =
         (binary
-          ? this.#captureSurfaceMaskTexture(objects, renderTexture, { clear: false })
+          ? this._captureSurfaceMaskTexture(objects, renderTexture, { clear: false })
           : this.#captureSurfaceAlphaMaskTexture(objects, renderTexture, { clear: false })) || rendered;
     }
 
@@ -6562,9 +6692,10 @@ export class GlobalEffectsCompositor {
         includeTiles && !(includeTilesOnlyWithoutLevelSurface && this.#levelHasSelectedNonTileSurfaceCoverage(levelId));
       const levelIds = new Set([levelId]);
       if (
-        this.#collectVisibleSurfaceObjectsForLevelIds(levelIds, {
+        this._collectVisibleSurfaceObjectsForLevelIds(levelIds, {
           includeTiles: effectiveIncludeTiles,
           includeExplicitMultiLevelTiles,
+          firstOnly: true,
         }).length
       )
         return true;
@@ -6866,7 +6997,7 @@ export class GlobalEffectsCompositor {
    * @param {{ includeTiles?: boolean, strictLevelIdentity?: boolean, includeExplicitMultiLevelTiles?: boolean, includeTilesOnlyWithoutLevelSurface?: boolean }} [options]
    * @returns {PIXI.RenderTexture|null}
    */
-  #captureSelectedLevelSurfaceMaskForLevelIds(
+  _captureSelectedLevelSurfaceMaskForLevelIds(
     levelIds,
     {
       includeTiles = true,
@@ -6886,6 +7017,22 @@ export class GlobalEffectsCompositor {
     });
     const cached = this.#getCachedLevelSegmentMaskTexture(cacheKey);
     if (cached) return cached;
+
+    if (ids.length === 1 && this._surfaceMaskReuse?.entries.length) {
+      const levelId = ids[0];
+      if (!includeTilesOnlyWithoutLevelSurface || !this.#getDefinedSurfaceFootprintRegionsForLevel(levelId).length) {
+        const effectiveIncludeTiles =
+          includeTiles &&
+          !(includeTilesOnlyWithoutLevelSurface && this.#levelHasSelectedNonTileSurfaceCoverage(levelId));
+        const objects = this._collectVisibleSurfaceObjectsForLevelIds(new Set(ids), {
+          includeTiles: effectiveIncludeTiles,
+          strictLevelIdentity,
+          includeExplicitMultiLevelTiles,
+        });
+        const borrowed = this._surfaceMaskReuse.find(objects, this._renderFrameSerial);
+        if (borrowed) return borrowed;
+      }
+    }
 
     const renderTexture = this.#createLevelSegmentMaskTexture(cacheKey);
     if (!renderTexture) return null;
@@ -6949,14 +7096,14 @@ export class GlobalEffectsCompositor {
       includeTiles,
       strictLevelIdentity,
       protectExplicitMultiLevelTiles,
-      objectSignature: this.#displayObjectMaskSignature(objects),
+      objectSignature: this._displayObjectMaskSignature(objects),
     });
     const cached = this.#getCachedLevelSegmentMaskTexture(cacheKey);
     if (cached) return cached;
 
     const renderTexture = this.#createLevelSegmentMaskTexture(cacheKey);
     if (!renderTexture) return null;
-    const captured = this.#captureSurfaceMaskTexture(objects, renderTexture, { clear: true });
+    const captured = this._captureSurfaceMaskTexture(objects, renderTexture, { clear: true });
     if (captured) return this.#rememberLevelSegmentMaskTexture(cacheKey, renderTexture);
 
     try {
@@ -6973,7 +7120,7 @@ export class GlobalEffectsCompositor {
    * @param {string[]|Set<string>|null|undefined} levelIds
    * @returns {PIXI.RenderTexture|null}
    */
-  #captureSelectedLevelForegroundMaskForLevelIds(levelIds) {
+  _captureSelectedLevelForegroundMaskForLevelIds(levelIds) {
     const ids = Array.from(levelIds ?? []).filter(Boolean);
     if (!ids.length) return null;
 
@@ -7015,11 +7162,7 @@ export class GlobalEffectsCompositor {
   }
 
   /**
-   * Capture a flattened binary mask for scene rows with multiple selected Levels.
-   *
-   * The normal draw-order path restores row output for each selected segment and restores row input for every visible unselected segment above a lower selected Level. For scene rows with non-contiguous selections, such as Levels 1 and 3 with Level 2 visible between them, the same result can be represented as one contribution mask: lower selected surfaces minus the intervening restore surfaces, then higher selected surfaces added back. This preserves the Level 2 blocker while reducing per-row masked restore passes from selected/restore/selected to a single masked restore.
-   *
-   * The optimization is intentionally not used for Below Foreground rows. Those rows restore foreground pixels after each selected segment, and flattening that path can change draw order around translucent or hover-faded foregrounds.
+   * Capture a reusable contribution mask in Level draw order. Each selected surface restores coverage before its foreground removes coverage; intervening unselected surfaces remove coverage before higher selected surfaces are added. Below Foreground uses this path for transparent contributions so overlapping Levels cannot blend the same light repeatedly.
    *
    * @param {Set<string>|string[]|null|undefined} selectedLevelIds
    * @param {{ belowForeground?: boolean, restoreUnselectedAbove?: boolean, includeTiles?: boolean, strictLevelIdentity?: boolean, restoreStrictLevelIdentity?: boolean, includeExplicitMultiLevelTiles?: boolean, includeTilesOnlyWithoutLevelSurface?: boolean, protectExplicitMultiLevelTiles?: boolean }} [options]
@@ -7038,11 +7181,12 @@ export class GlobalEffectsCompositor {
       protectExplicitMultiLevelTiles = false,
     } = {},
   ) {
-    if (!(selectedLevelIds?.size > 1)) return null;
-    if (belowForeground || !restoreUnselectedAbove) return null;
+    if (!(selectedLevelIds?.size > 0)) return null;
 
     const cacheKey = this.#levelSegmentMaskCacheKey(
-      `flattened-level-composite:restoreStrict:${restoreStrictLevelIdentity ? 1 : 0}`,
+      `flattened-level-composite:belowForeground:${belowForeground ? 1 : 0}:restoreAbove:${
+        restoreUnselectedAbove ? 1 : 0
+      }:restoreStrict:${restoreStrictLevelIdentity ? 1 : 0}`,
       selectedLevelIds,
       {
         includeTiles,
@@ -7066,21 +7210,36 @@ export class GlobalEffectsCompositor {
       return null;
     }
 
+    const segments = restoreUnselectedAbove
+      ? this.#buildSelectedLevelCompositeSegments(selectedLevelIds)
+      : [
+          {
+            type: "selected",
+            levelIds: this.#getVisibleSceneLevelIdsInDrawOrder().filter((id) => selectedLevelIds.has(id)),
+          },
+        ];
     let rendered = false;
-    for (const segment of this.#buildSelectedLevelCompositeSegments(selectedLevelIds)) {
+    for (const segment of segments) {
       if (!segment?.levelIds?.length) continue;
 
       if (segment.type === "selected") {
-        const selectedMask = this.#captureSelectedLevelSurfaceMaskForLevelIds(segment.levelIds, {
-          includeTiles,
-          strictLevelIdentity,
-          includeExplicitMultiLevelTiles,
-          includeTilesOnlyWithoutLevelSurface,
-        });
-        if (!selectedMask) continue;
+        const groups = belowForeground ? segment.levelIds.map((id) => [id]) : [segment.levelIds];
+        for (const levelIds of groups) {
+          const selectedMask = this._captureSelectedLevelSurfaceMaskForLevelIds(levelIds, {
+            includeTiles,
+            strictLevelIdentity,
+            includeExplicitMultiLevelTiles,
+            includeTilesOnlyWithoutLevelSurface,
+          });
+          if (!selectedMask) continue;
 
-        this.#blit(selectedMask, renderTexture, { clear: false });
-        rendered = true;
+          this.#blit(selectedMask, renderTexture, { clear: false });
+          if (belowForeground) {
+            const foregroundMask = this._captureSelectedLevelForegroundMaskForLevelIds(levelIds);
+            if (foregroundMask) this.#eraseTextureFromRenderTexture(foregroundMask, renderTexture);
+          }
+          rendered = true;
+        }
         continue;
       }
 
@@ -7154,7 +7313,7 @@ export class GlobalEffectsCompositor {
     const cached = this.#getCachedLevelSegmentMaskTexture(cacheKey);
     if (cached) return cached;
 
-    const selectedMask = this.#captureSelectedLevelSurfaceMaskForLevelIds(ids, {
+    const selectedMask = this._captureSelectedLevelSurfaceMaskForLevelIds(ids, {
       includeTiles,
       strictLevelIdentity,
       includeExplicitMultiLevelTiles,
@@ -7168,7 +7327,7 @@ export class GlobalEffectsCompositor {
     this.#blit(selectedMask, renderTexture, { clear: true });
 
     if (belowForeground) {
-      const foregroundMask = this.#captureSelectedLevelForegroundMaskForLevelIds(ids);
+      const foregroundMask = this._captureSelectedLevelForegroundMaskForLevelIds(ids);
       if (foregroundMask) this.#eraseTextureFromRenderTexture(foregroundMask, renderTexture);
     }
 
@@ -7261,7 +7420,7 @@ export class GlobalEffectsCompositor {
    * @param {{ belowForeground?: boolean }} [options]
    * @returns {boolean}
    */
-  #compositeSelectedLevelRowOutput(
+  _compositeSelectedLevelRowOutput(
     row,
     rowOutput,
     rowInput,
@@ -7270,11 +7429,7 @@ export class GlobalEffectsCompositor {
   ) {
     const selectedLevelIds = this.#getRowAllowedLevelIds(row);
     const flattenSceneLevelMasks =
-      CONFIG?.fxmaster?.overheadPerformance?.flattenSceneLevelMasks !== false &&
-      this.#getRowScope(row) === "scene" &&
-      selectedLevelIds?.size > 1 &&
-      !belowForeground &&
-      !selectedMaskTexture;
+      this.#getRowScope(row) === "scene" && selectedLevelIds?.size > 1 && !belowForeground && !selectedMaskTexture;
     const honorExplicitMultiLevelTiles = this.#rowHonorsExplicitMultiLevelTileAssignments(row);
     const includeTilesOnlyWithoutLevelSurface = this.#rowLimitsSelectedLevelTilesToFallbackSurfaces(row);
 
@@ -7302,9 +7457,9 @@ export class GlobalEffectsCompositor {
    * @param {{ belowForeground?: boolean }} [options]
    * @returns {boolean}
    */
-  #compositeRegionLevelRowOutput(row, rowOutput, rowInput, output, { belowForeground = false } = {}) {
+  _compositeRegionLevelRowOutput(row, rowOutput, rowInput, output, { belowForeground = false } = {}) {
     const selectedLevelIds = this.#getRowAllowedLevelIds(row);
-    const honorCurrentLevelSharedTiles = this.#regionRowHonorsCurrentLevelMultiLevelTileAssignments(row);
+    const honorCurrentLevelSharedTiles = this._regionRowHonorsCurrentLevelMultiLevelTileAssignments(row);
     return this.#compositeLevelRowOutputForLevelIds(selectedLevelIds, rowOutput, rowInput, output, {
       belowForeground,
       restoreUnselectedAbove: true,
@@ -7326,7 +7481,7 @@ export class GlobalEffectsCompositor {
    * @param {PIXI.RenderTexture|null|undefined} output
    * @returns {boolean}
    */
-  #compositeVisibleLevelBelowForegroundRowOutput(rowOutput, rowInput, output) {
+  _compositeVisibleLevelBelowForegroundRowOutput(rowOutput, rowInput, output) {
     const visibleLevelIds = new Set(this.#getVisibleSceneLevelIdsInDrawOrder());
     return this.#compositeLevelRowOutputForLevelIds(visibleLevelIds, rowOutput, rowInput, output, {
       belowForeground: true,
@@ -7357,7 +7512,7 @@ export class GlobalEffectsCompositor {
 
     for (const levelId of ids) {
       const levelIds = new Set([levelId]);
-      if (this.#collectVisibleSurfaceObjectsForLevelIds(levelIds).length) return remember(true);
+      if (this._hasVisibleSurfaceObjectsForLevelIds(levelIds)) return remember(true);
       if (this.#configuredLevelImageMaskBoundsAvailable(levelId, { allowSceneRectFallback: true }))
         return remember(true);
     }
@@ -7396,7 +7551,7 @@ export class GlobalEffectsCompositor {
     if (!rowOutput || !rowInput || !output) return false;
     if (!(selectedLevelIds?.size > 0)) return false;
 
-    if (flattenCompositeMask && !selectedMaskTexture) {
+    if ((flattenCompositeMask || rowInput === PIXI.Texture.EMPTY) && (!selectedMaskTexture || belowForeground)) {
       const flattenedMask = this.#captureFlattenedLevelCompositeMaskForLevelIds(selectedLevelIds, {
         belowForeground,
         restoreUnselectedAbove,
@@ -7444,13 +7599,27 @@ export class GlobalEffectsCompositor {
           },
         ];
 
+    const queuedRestores =
+      belowForeground &&
+      selectedLevelIds.size > 1 &&
+      rowInput !== PIXI.Texture.EMPTY &&
+      !this.#texturesShareBaseTexture(rowInput, output) &&
+      !this.#texturesShareBaseTexture(rowOutput, output)
+        ? []
+        : null;
+    const restore = (mask, source) => {
+      if (source === PIXI.Texture.EMPTY) this.#eraseTextureFromRenderTexture(mask, output);
+      else if (queuedRestores) queuedRestores.push({ mask, source });
+      else this.#restoreFromTextureMask(mask, source, output);
+    };
+
     let rendered = false;
     for (const segment of segments) {
       const selected = segment.type === "selected";
 
       if (selected && belowForeground) {
         for (const levelId of segment.levelIds ?? []) {
-          const maskTexture = this.#captureSelectedLevelSurfaceMaskForLevelIds([levelId], {
+          const maskTexture = this._captureSelectedLevelSurfaceMaskForLevelIds([levelId], {
             includeTiles,
             strictLevelIdentity,
             includeExplicitMultiLevelTiles,
@@ -7458,9 +7627,9 @@ export class GlobalEffectsCompositor {
           });
           if (!maskTexture) continue;
 
-          this.#restoreFromTextureMask(maskTexture, rowOutput, output);
-          const foregroundMaskTexture = this.#captureSelectedLevelForegroundMaskForLevelIds([levelId]);
-          if (foregroundMaskTexture) this.#restoreFromTextureMask(foregroundMaskTexture, rowInput, output);
+          restore(maskTexture, rowOutput);
+          const foregroundMaskTexture = this._captureSelectedLevelForegroundMaskForLevelIds([levelId]);
+          if (foregroundMaskTexture) restore(foregroundMaskTexture, rowInput);
           rendered = true;
         }
         continue;
@@ -7474,7 +7643,7 @@ export class GlobalEffectsCompositor {
       const maskTexture = selected
         ? canUseProvidedSelectedMask
           ? selectedMaskTexture
-          : this.#captureSelectedLevelSurfaceMaskForLevelIds(segment.levelIds, {
+          : this._captureSelectedLevelSurfaceMaskForLevelIds(segment.levelIds, {
               includeTiles,
               strictLevelIdentity,
               includeExplicitMultiLevelTiles,
@@ -7488,13 +7657,14 @@ export class GlobalEffectsCompositor {
       if (!maskTexture) continue;
 
       if (selected) {
-        this.#restoreFromTextureMask(maskTexture, rowOutput, output);
+        restore(maskTexture, rowOutput);
         rendered = true;
       } else {
-        this.#restoreFromTextureMask(maskTexture, rowInput, output);
+        restore(maskTexture, rowInput);
       }
     }
 
+    if (queuedRestores?.length) this.#restoreTextureMaskSequence(queuedRestores, rowInput, output);
     return rendered;
   }
 
@@ -7720,15 +7890,6 @@ export class GlobalEffectsCompositor {
   }
 
   /**
-   * Return whether surface mask batching is enabled.
-   *
-   * @returns {boolean}
-   */
-  #surfaceMaskBatchingEnabled() {
-    return CONFIG?.fxmaster?.overheadPerformance?.batchedSurfaceMasks !== false;
-  }
-
-  /**
    * Render several existing display objects into one render texture pass.
    *
    * The objects remain parented in the Foundry/Levels display tree. The temporary list object forwards render calls through their existing world transforms, masks, and object-local filters, avoiding one top-level renderer.render call per tile/Level surface.
@@ -7775,6 +7936,9 @@ export class GlobalEffectsCompositor {
     if (this.#texturesShareBaseTexture(scratch, renderTexture)) return false;
     if (clear && !this.#clearRenderTexture(renderTexture)) return false;
 
+    const pass = (this._binaryMaskPass ??= new SceneMaskPass(maskFilter, "binary"));
+    if (pass.render(renderer, scratch, renderTexture)) return true;
+
     const { width, height } = this.#getViewportMetrics();
     sprite.texture = scratch;
     sprite.position.set(0, 0);
@@ -7807,7 +7971,7 @@ export class GlobalEffectsCompositor {
    * @param {{ clear?: boolean }} [options]
    * @returns {boolean}
    */
-  #captureSurfaceMaskTexture(objects, renderTexture, { clear = true } = {}) {
+  _captureSurfaceMaskTexture(objects, renderTexture, { clear = true } = {}) {
     const renderer = canvas?.app?.renderer;
     const maskFilter = this.#getBinaryMaskFilter();
     if (!renderer || !renderTexture) return false;
@@ -7820,7 +7984,6 @@ export class GlobalEffectsCompositor {
     }
 
     if (
-      this.#surfaceMaskBatchingEnabled() &&
       candidates.length > 1 &&
       this._surfaceMaskScratchRT &&
       !this._surfaceMaskScratchRT.destroyed &&
@@ -7883,8 +8046,9 @@ export class GlobalEffectsCompositor {
       return false;
     }
 
+    if (clear && !this.#clearRenderTexture(renderTexture)) return false;
+
     if (
-      this.#surfaceMaskBatchingEnabled() &&
       candidates.length > 1 &&
       this._surfaceMaskRenderList &&
       !this._surfaceMaskRenderList.destroyed &&
@@ -7892,8 +8056,6 @@ export class GlobalEffectsCompositor {
     ) {
       return true;
     }
-
-    if (clear && !this.#clearRenderTexture(renderTexture)) return false;
 
     let rendered = false;
     for (const object of candidates) {
@@ -7927,7 +8089,7 @@ export class GlobalEffectsCompositor {
     const { width, height, resolution } = this.#getViewportMetrics();
     const needsResize = (rt) => {
       if (!this.#canBindRenderTexture(rt)) return true;
-      return rt.width !== width || rt.height !== height || (rt.resolution ?? 1) !== resolution;
+      return !renderTextureMatches(rt, width, height, resolution);
     };
 
     let rt = this._regionUpperVisibleRTCache.get(key) ?? null;
@@ -7992,23 +8154,16 @@ export class GlobalEffectsCompositor {
    * @param {PIXI.DisplayObject[]} objects
    * @returns {string}
    */
-  #displayObjectMaskSignature(objects = []) {
+  _displayObjectMaskSignature(objects = []) {
     const parts = [];
     let index = 0;
 
     for (const object of objects ?? []) {
       if (!object || object.destroyed) continue;
       const matrix = object?.worldTransform ?? null;
-      const matrixKey = [matrix?.a, matrix?.b, matrix?.c, matrix?.d, matrix?.tx, matrix?.ty]
-        .map((value) => (Number.isFinite(Number(value)) ? Number(value).toFixed(3) : "NaN"))
-        .join(",");
+      const matrixKey = matrixCacheKey(matrix);
       const texture = object?.texture ?? object?.sprite?.texture ?? object?.mesh?.texture ?? null;
-      const baseTexture = texture?.baseTexture ?? null;
-      const textureKey = [
-        baseTexture?.cacheId ?? baseTexture?.resource?.url ?? baseTexture?.resource?.src ?? baseTexture?.uid ?? "",
-        texture?.uid ?? "",
-        baseTexture?.dirtyId ?? baseTexture?.touched ?? "",
-      ].join("/");
+      const textureKey = textureContentKey(texture);
       const alpha = Number(object?.worldAlpha ?? object?.alpha ?? 1);
       const alphaKey = Number.isFinite(alpha) ? Math.round(alpha * 1000) : "NaN";
       const width = Number(object?.width ?? object?.bounds?.width ?? 0);
@@ -8024,6 +8179,8 @@ export class GlobalEffectsCompositor {
           object?.visible === false ? 0 : 1,
           object?.renderable === false ? 0 : 1,
           alphaKey,
+          object?.anchor?.x ?? 0,
+          object?.anchor?.y ?? 0,
         ].join("~"),
       );
       index += 1;
@@ -8070,7 +8227,8 @@ export class GlobalEffectsCompositor {
       height,
       Number(resolution || 1).toFixed(3),
       this.#selectedLevelViewportMatrixKey(),
-      this.#getLevelSurfaceSignatureForFrame(),
+      this._getLevelSurfaceSignatureForFrame(),
+      includeTilesOnlyWithoutLevelSurface ? this.#definedSurfaceFootprintSignatureForLevelIds(levelIds) : "",
       objectSignature,
     ].join(":");
   }
@@ -8103,7 +8261,31 @@ export class GlobalEffectsCompositor {
   }
 
   /**
-   * Create a new binary Level segment mask render texture for a cache key.
+   * Reclaim a compatible mask invalidated by camera movement in an earlier frame.
+   * @param {number} width
+   * @param {number} height
+   * @param {number} resolution
+   * @param {string} viewportKey
+   * @returns {PIXI.RenderTexture|null}
+   */
+  #takeStaleLevelSegmentMaskTexture(width, height, resolution, viewportKey) {
+    const cache = this._levelSegmentMaskRTCache;
+    if (!(cache instanceof Map) || !viewportKey) return null;
+
+    for (const [key, texture] of cache) {
+      if (!(texture?.__fxmLastUsedFrame < this._renderFrameSerial)) continue;
+      const previousViewportKey = texture.__fxmLevelSegmentMaskViewportKey;
+      if (!previousViewportKey || previousViewportKey === viewportKey) continue;
+      if (!this.#canBindRenderTexture(texture) || !renderTextureMatches(texture, width, height, resolution)) continue;
+
+      cache.delete(key);
+      return texture;
+    }
+    return null;
+  }
+
+  /**
+   * Acquire a binary Level mask allocation without recycling current-frame contents.
    *
    * @param {string} cacheKey
    * @returns {PIXI.RenderTexture|null}
@@ -8113,10 +8295,15 @@ export class GlobalEffectsCompositor {
 
     try {
       const { width, height, resolution } = this.#getViewportMetrics();
-      const renderTexture = PIXI.RenderTexture.create({ width, height, resolution });
+      const viewportKey = this.#selectedLevelViewportMatrixKey();
+      let renderTexture = this.#takeStaleLevelSegmentMaskTexture(width, height, resolution, viewportKey);
+
+      renderTexture ??= (this._levelSegmentMaskRTPool ??= new RTPool()).acquire(width, height, resolution);
+
       this.#configureRenderTexture(renderTexture);
       renderTexture.__fxmLastUsedFrame = this._renderFrameSerial;
-      renderTexture.__fxmLevelSegmentMaskKey = cacheKey;
+
+      renderTexture.__fxmLevelSegmentMaskViewportKey = viewportKey;
       return renderTexture;
     } catch (err) {
       logger.debug("FXMaster:", err);
@@ -8136,15 +8323,15 @@ export class GlobalEffectsCompositor {
     if (!(this._levelSegmentMaskRTCache instanceof Map)) this._levelSegmentMaskRTCache = new Map();
 
     renderTexture.__fxmLastUsedFrame = this._renderFrameSerial;
-    renderTexture.__fxmLevelSegmentMaskKey = cacheKey;
+
     this._levelSegmentMaskRTCache.set(cacheKey, renderTexture);
     return renderTexture;
   }
 
   /**
-   * Drop persistent Level segment masks that were not used this frame.
+   * Retire Level segment masks that were not used this frame.
    *
-   * Keeping only currently reused masks gives steady-state frames the win while avoiding unbounded RT growth during mouse movement, level switches, and hover-fade transitions.
+   * A bounded pool reuses retired allocations on later frames without recycling masks still in use.
    *
    * @returns {void}
    */
@@ -8155,7 +8342,8 @@ export class GlobalEffectsCompositor {
     for (const [key, renderTexture] of cache.entries()) {
       if (renderTexture?.__fxmLastUsedFrame === this._renderFrameSerial) continue;
       try {
-        renderTexture?.destroy?.(true);
+        const pool = (this._levelSegmentMaskRTPool ??= new RTPool());
+        pool.release(renderTexture);
       } catch (err) {
         logger.debug("FXMaster:", err);
       }
@@ -8172,14 +8360,14 @@ export class GlobalEffectsCompositor {
    * @param {Map<string, ({ overlayMaskTexture: PIXI.RenderTexture }|null)>|null} [cache=null]
    * @returns {{ overlayMaskTexture: PIXI.RenderTexture }|null}
    */
-  #prepareRegionLevelLocalPass(row, cache = null) {
+  _prepareRegionLevelLocalPass(row, cache = null) {
     if (this.#getRowScope(row) !== "region") return null;
 
-    const targetLevel = this.#resolveRegionLocalTargetLevel(row);
+    const targetLevel = this._resolveRegionLocalTargetLevel(row);
     if (!targetLevel) return null;
 
-    const protectedLevelIds = this.#getRegionAllowedLevelIds(row, targetLevel);
-    const protectExplicitMultiLevelTiles = this.#regionRowHonorsCurrentLevelMultiLevelTileAssignments(row);
+    const protectedLevelIds = this._getRegionAllowedLevelIds(row, targetLevel);
+    const protectExplicitMultiLevelTiles = this._regionRowHonorsCurrentLevelMultiLevelTileAssignments(row);
     const protectedKey = Array.from(protectedLevelIds ?? [])
       .sort()
       .join("|");
@@ -8193,7 +8381,7 @@ export class GlobalEffectsCompositor {
       return value ?? null;
     };
 
-    const upperObjects = this.#collectUpperSurfaceObjectsForTargetLevel(targetLevel, {
+    const upperObjects = this._collectUpperSurfaceObjectsForTargetLevel(targetLevel, {
       protectedLevelIds,
       includeRevealed: true,
       protectExplicitMultiLevelTiles,
@@ -8207,15 +8395,21 @@ export class GlobalEffectsCompositor {
       protectedLevelIds,
       includeTiles: true,
       strictLevelIdentity: false,
-      objectSignature: this.#displayObjectMaskSignature(upperObjects),
+      objectSignature: this._displayObjectMaskSignature(upperObjects),
     });
     if (overlayMaskTexture.__fxmRegionUpperMaskContentKey === contentKey) {
       overlayMaskTexture.__fxmLastUsedFrame = this._renderFrameSerial;
       return remember({ overlayMaskTexture });
     }
 
-    const capturedUpper = this.#captureSurfaceMaskTexture(upperObjects, overlayMaskTexture);
+    this._surfaceMaskReuse?.forget(overlayMaskTexture);
+    const capturedUpper = this._captureSurfaceMaskTexture(upperObjects, overlayMaskTexture);
     if (!capturedUpper) return remember(null);
+    (this._surfaceMaskReuse ??= new SurfaceMaskReuse(this)).remember(
+      upperObjects,
+      overlayMaskTexture,
+      this._renderFrameSerial,
+    );
     overlayMaskTexture.__fxmRegionUpperMaskContentKey = contentKey;
     overlayMaskTexture.__fxmLastUsedFrame = this._renderFrameSerial;
 
@@ -8245,12 +8439,20 @@ export class GlobalEffectsCompositor {
     };
 
     if (rowScope === "region") {
-      const targetLevel = this.#resolveRegionLocalTargetLevel(row);
-      const ids = this.#getRegionAllowedLevelIds(row, targetLevel);
+      const targetLevel = this._resolveRegionLocalTargetLevel(row);
+      const ids = this._getRegionAllowedLevelIds(row, targetLevel);
       return remember(ids instanceof Set ? ids : null);
     }
 
     if (rowScope !== "scene") return remember(null);
+
+    const transitioning =
+      row.kind === "particle" ? canvas?.particleeffects?._parameterTransitions?.getRuntime(row.effectId) : null;
+    if (transitioning) {
+      const levels = transitioning.__fxmOptions?.levels;
+      const selected = getSelectedSceneLevelIds(levels?.value ?? levels, canvas?.scene ?? null);
+      return remember(selected?.size ? selected : null);
+    }
 
     const rowLevelContainers = [row?.options, row];
     for (const container of rowLevelContainers) {
@@ -8476,7 +8678,7 @@ export class GlobalEffectsCompositor {
     const blockerObjects = this.#collectVisualBlockerSurfaceObjectsForLevelIds(blockerLevelIds, { includeTiles });
     if (!blockerObjects.length) return null;
 
-    const captured = this.#captureSurfaceMaskTexture(blockerObjects, this._levelBlockerRT);
+    const captured = this._captureSurfaceMaskTexture(blockerObjects, this._levelBlockerRT);
     if (!captured) return null;
 
     this._levelBlockerFrameSerial = this._renderFrameSerial;
@@ -8548,6 +8750,11 @@ export class GlobalEffectsCompositor {
         SceneMaskManager.instance.getMasksForSuppressionOperators?.(normalizedKind, operators, {
           belowTokens,
           belowTiles,
+          preparedCoverageKey:
+            this._preparedSharedCoverageFrameSerial === this._renderFrameSerial
+              ? this._preparedSharedCoverageKey
+              : null,
+          presyncedCoreState: this._coveragePresyncedCoreState === true,
         }) ?? null
       );
     } catch (err) {
@@ -8624,6 +8831,14 @@ export class GlobalEffectsCompositor {
     if (!belowTokens && !belowTiles && this.#rowUsesCompositorSceneFilterSuppression(row)) return null;
 
     const bundle = this.#getSceneStackMaskBundleForRow(row, "filters", { belowTokens, belowTiles });
+    if (filter.__fxmStackOwnsSceneMask) {
+      const requiredMask =
+        belowTokens && belowTiles ? bundle?.cutoutCombined : belowTokens ? bundle?.cutoutTokens : bundle?.cutoutTiles;
+      if (!this.#canBindRenderTexture(requiredMask)) {
+        this.#restoreGeneralSceneFilterMasks(filter);
+        return null;
+      }
+    }
     if (!bundle) return null;
 
     const snapshot = this.#snapshotFilterMaskUniforms(filter);
@@ -8648,6 +8863,7 @@ export class GlobalEffectsCompositor {
     } catch (err) {
       logger.debug("FXMaster:", err);
       this.#restoreFilterMaskUniforms(filter, snapshot);
+      if (filter.__fxmStackOwnsSceneMask) this.#restoreGeneralSceneFilterMasks(filter);
       return null;
     }
 
@@ -8661,7 +8877,7 @@ export class GlobalEffectsCompositor {
    * @param {{ selectedMaskTexture?: PIXI.RenderTexture|PIXI.Texture|null, useCompositorSuppression?: boolean }} [options]
    * @returns {PIXI.RenderTexture|PIXI.Texture|false|null}
    */
-  #getSceneParticleStackMaskOverride(row, { selectedMaskTexture = null, useCompositorSuppression = false } = {}) {
+  _getSceneParticleStackMaskOverride(row, { selectedMaskTexture = null, useCompositorSuppression = false } = {}) {
     if (row?.kind !== "particle" || this.#getRowScope(row) !== "scene") return null;
     if (selectedMaskTexture) return null;
 
@@ -8676,6 +8892,11 @@ export class GlobalEffectsCompositor {
         SceneMaskManager.instance.getMasksForSuppressionOperators?.("particles", operators, {
           belowTokens,
           belowTiles,
+          preparedCoverageKey:
+            this._preparedSharedCoverageFrameSerial === this._renderFrameSerial
+              ? this._preparedSharedCoverageKey
+              : null,
+          presyncedCoreState: this._coveragePresyncedCoreState === true,
         }) ?? null;
     } catch (err) {
       logger.debug("FXMaster:", err);
@@ -8813,35 +9034,17 @@ export class GlobalEffectsCompositor {
   /**
    * Erase visible foreground coverage from an above-darkness contribution.
    *
-   * @param {object|null|undefined} row
    * @param {PIXI.RenderTexture|null|undefined} output
    * @returns {void}
    */
-  #eraseAboveDarknessForegroundCoverage(row, output) {
+  #eraseAboveDarknessForegroundCoverage(output) {
     if (!output) return;
-
-    let erased = false;
-    if (canvas?.level) {
-      const selectedLevelIds = this.#getRowAllowedLevelIds(row);
-      const levelIds = selectedLevelIds?.size
-        ? Array.from(selectedLevelIds)
-        : this.#getVisibleSceneLevelIdsInDrawOrder();
-
-      for (const levelId of levelIds) {
-        const maskTexture = this.#captureSelectedLevelForegroundMaskForLevelIds([levelId]);
-        if (!maskTexture) continue;
-        this.#eraseTextureFromRenderTexture(maskTexture, output);
-        erased = true;
-      }
-    }
-
-    if (erased) return;
     const foregroundMask = this.#getForegroundVisibleMaskTexture();
     if (foregroundMask) this.#eraseTextureFromRenderTexture(foregroundMask, output);
   }
 
   /**
-   * Composite one transparent filter contribution into the above-darkness accumulator.
+   * Composite one transparent effect contribution into the above-darkness accumulator.
    *
    * @param {PIXI.RenderTexture|null|undefined} texture
    * @param {PIXI.Filter|null|undefined} filter
@@ -8903,7 +9106,7 @@ export class GlobalEffectsCompositor {
   }
 
   /**
-   * Preserve the first contribution before another split filter reuses its texture.
+   * Preserve the first contribution before another effect reuses its texture.
    *
    * @returns {boolean}
    */
@@ -8985,12 +9188,82 @@ export class GlobalEffectsCompositor {
       presentationState.cleanup?.();
     }
 
-    let current = rawTexture;
+    const contribution = this.#constrainAboveDarknessContribution(row, rawTexture, {
+      rowUsesSelectedSurfaceMask,
+      useRegionLevelDrawOrderComposite,
+      rowOverlayMaskTexture,
+      restoreLevelBlockers,
+      wantsBelowForeground,
+      useCompositorSceneFilterSuppression,
+      useNativeWeatherOcclusion,
+      weatherMaskTexture,
+    });
+    if (!contribution) return unsupported;
+    const rendered = this.#blendAboveDarknessContribution(contribution, filter);
+    return rendered ? { supported: true, rendered: true } : unsupported;
+  }
+
+  /** Render particle light without capturing artwork or inheriting live-band weather depth. */
+  #renderAboveDarknessParticleContribution(row, runtime, options = {}) {
+    if (!this.#prepareAboveDarknessFrameResources()) return false;
+    if (
+      this._aboveDarknessContributionRendered &&
+      !this._aboveDarknessAccumulatorActive &&
+      !this.#promoteAboveDarknessFrameToAccumulator()
+    )
+      return false;
+    const rawTexture = this._aboveDarknessRawRT;
+    if (!rawTexture || !this._particleMaskScratchRT || !this.#clearRenderTexture(rawTexture)) return false;
+    const presentation = this.#prepareFilterPresentationPass(runtime.fx, FILTER_PRESENTATION_PASSES.ABOVE_DARKNESS);
+    if (!presentation.supported || presentation.skip) {
+      presentation.cleanup?.();
+      return false;
+    }
+    try {
+      const maskTextureOverride = this._getSceneParticleStackMaskOverride(row, {
+        selectedMaskTexture: options.selectedParticleMaskOverride,
+        useCompositorSuppression: options.useCompositorSceneParticleSuppression,
+      });
+      const rendered = canvas.particleeffects?.renderStackParticle?.(row.uid, rawTexture, {
+        clear: false,
+        respectBelowTilesMask: true,
+        respectNativeOcclusion: false,
+        respectWeatherReveal: false,
+        maskTextureOverride: options.selectedParticleMaskOverride ?? maskTextureOverride,
+      });
+      if (!rendered) return false;
+    } finally {
+      presentation.cleanup?.();
+    }
+    const contribution = this.#constrainAboveDarknessContribution(row, rawTexture, options);
+    return !!contribution && this.#blendAboveDarknessContribution(contribution, runtime.fx);
+  }
+
+  /** Apply shared Level, foreground, suppression, and tile constraints to transparent effect light. */
+  #constrainAboveDarknessContribution(
+    row,
+    texture,
+    {
+      rowUsesSelectedSurfaceMask = false,
+      selectedParticleMaskOverride = null,
+      useRegionLevelDrawOrderComposite = false,
+      rowOverlayMaskTexture = null,
+      restoreLevelBlockers = false,
+      wantsBelowForeground = false,
+      useCompositorSceneFilterSuppression = false,
+      useCompositorSceneParticleSuppression = false,
+      useNativeWeatherOcclusion = false,
+      weatherMaskTexture = null,
+    } = {},
+  ) {
+    let current = texture;
+    const rawTexture = this._aboveDarknessRawRT;
+    const scratchTexture = this._particleMaskScratchRT;
     const nextTarget = () => (current === rawTexture ? scratchTexture : rawTexture);
 
     if (useNativeWeatherOcclusion) {
       const target = nextTarget();
-      if (!this.#clearRenderTexture(target)) return unsupported;
+      if (!this.#clearRenderTexture(target)) return null;
       const applied = this.#overlayTextureWithWeatherOcclusion(current, target, {
         clipToScene: false,
         occlusionElevation: this.#resolveOcclusionElevationForRow(row),
@@ -9001,10 +9274,11 @@ export class GlobalEffectsCompositor {
     let levelCompositeHandlesForeground = false;
     if (rowUsesSelectedSurfaceMask) {
       const target = nextTarget();
-      const composited = this.#compositeSelectedLevelRowOutput(row, current, PIXI.Texture.EMPTY, target, {
+      const composited = this._compositeSelectedLevelRowOutput(row, current, PIXI.Texture.EMPTY, target, {
         belowForeground: wantsBelowForeground,
+        selectedMaskTexture: selectedParticleMaskOverride,
       });
-      if (!composited) return unsupported;
+      if (!composited) return null;
       current = target;
       levelCompositeHandlesForeground = wantsBelowForeground;
     }
@@ -9012,10 +9286,10 @@ export class GlobalEffectsCompositor {
     let regionLevelCompositeApplied = false;
     if (useRegionLevelDrawOrderComposite) {
       const target = nextTarget();
-      regionLevelCompositeApplied = this.#compositeRegionLevelRowOutput(row, current, PIXI.Texture.EMPTY, target, {
+      regionLevelCompositeApplied = this._compositeRegionLevelRowOutput(row, current, PIXI.Texture.EMPTY, target, {
         belowForeground: wantsBelowForeground,
       });
-      if (!regionLevelCompositeApplied) return unsupported;
+      if (!regionLevelCompositeApplied) return null;
       current = target;
       levelCompositeHandlesForeground = wantsBelowForeground;
     }
@@ -9029,14 +9303,22 @@ export class GlobalEffectsCompositor {
       if (blockerMask) this.#eraseTextureFromRenderTexture(blockerMask, current);
     }
 
-    if (wantsBelowForeground && !levelCompositeHandlesForeground) {
-      this.#eraseAboveDarknessForegroundCoverage(row, current);
+    if (wantsBelowForeground && !levelCompositeHandlesForeground && this.#hasVisibleForegroundCoverage()) {
+      if (canvas?.level && this.#hasVisibleLevelSurfacesForBelowForeground()) {
+        const target = nextTarget();
+        if (!this._compositeVisibleLevelBelowForegroundRowOutput(current, PIXI.Texture.EMPTY, target)) return null;
+        current = target;
+      } else {
+        this.#eraseAboveDarknessForegroundCoverage(current);
+      }
     }
     if (useCompositorSceneFilterSuppression) this.#eraseCompositorSceneFilterSuppression(row, current);
+    if (useCompositorSceneParticleSuppression) {
+      this.#applyCompositorSceneParticleSuppression(row, PIXI.Texture.EMPTY, current);
+    }
     if (weatherMaskTexture) this.#eraseTextureFromRenderTexture(weatherMaskTexture, current);
 
-    const rendered = this.#blendAboveDarknessContribution(current, filter);
-    return rendered ? { supported: true, rendered: true } : unsupported;
+    return current;
   }
 
   /**
@@ -9184,7 +9466,7 @@ export class GlobalEffectsCompositor {
    * @param {"particles"|"filters"} [kind="particles"]
    * @returns {PIXI.RenderTexture|null}
    */
-  #getRestrictWeatherTilesMaskTexture(kind = "particles") {
+  _getRestrictWeatherTilesMaskTexture(kind = "particles") {
     const normalizedKind = kind === "filters" ? "filters" : "particles";
     const frameSerialKey =
       normalizedKind === "filters"
@@ -9273,6 +9555,20 @@ export class GlobalEffectsCompositor {
   }
 
   /**
+   * Render collected restores together, resetting partial output before an individual fallback.
+   * @param {Array<{mask:PIXI.RenderTexture,source:PIXI.RenderTexture}>} operations
+   * @param {PIXI.RenderTexture} rowInput
+   * @param {PIXI.RenderTexture} output
+   */
+  #restoreTextureMaskSequence(operations, rowInput, output) {
+    const restore = (this._textureMaskRestore ??= new TextureMaskRestore());
+    const rendered = restore.renderSequence(canvas?.app?.renderer, operations, output, this.#getViewportMetrics());
+    if (rendered === true) return;
+    if (rendered === false) this.#blit(rowInput, output, { clear: true });
+    for (const { mask, source } of operations) this.#restoreFromTextureMask(mask, source, output);
+  }
+
+  /**
    * Restore pre-pass pixels through a supplied mask texture.
    *
    * @param {PIXI.Texture|PIXI.RenderTexture|null} maskTexture
@@ -9295,6 +9591,10 @@ export class GlobalEffectsCompositor {
       this.#blit(maskSourceTexture, this._maskIntersectionRT, { clear: true });
       maskSourceTexture = this._maskIntersectionRT;
     }
+
+    const restore = (this._textureMaskRestore ??= new TextureMaskRestore());
+    if (restore.render(canvas?.app?.renderer, maskSourceTexture, sourceTexture, output, this.#getViewportMetrics()))
+      return;
 
     const container = this._tileRestoreContainer;
     const sprite = this._tileRestoreSprite;
@@ -9354,213 +9654,6 @@ export class GlobalEffectsCompositor {
   }
 
   /**
-   * Return whether any visible token uses dynamic rings.
-   *
-   * Dynamic ring visuals may animate independently of document or transform changes, so below-token coverage must keep repainting while any visible token uses that feature.
-   *
-   * @returns {boolean}
-   */
-  #hasVisibleDynamicRings() {
-    const padding = Math.max(16, Number(canvas?.dimensions?.size) || 100);
-    for (const token of collectBelowTokenMaskTokens()) {
-      if (!token?.visible || token?.document?.hidden) continue;
-      if (!this.#placeableIntersectsWorldViewport(token, padding)) continue;
-      if (token?.hasDynamicRing) return true;
-    }
-    return false;
-  }
-
-  /**
-   * Build a compact signature for Region behavior state that can affect dynamic coverage masks or region-level cutout refreshes.
-   *
-   * @returns {string}
-   */
-  #buildRegionBehaviorSignature() {
-    const parts = [`overhead:${applyRegionBehaviorsToOverheadLevels() ? 1 : 0}`];
-    for (const region of getRegionEffectPlaceablesForCurrentView(canvas?.scene ?? null)) {
-      const doc = region?.document ?? null;
-      if (!doc) continue;
-
-      const behaviorParts = [];
-      for (const behavior of doc.behaviors ?? []) {
-        if (!behavior) continue;
-        const type = behavior.type ?? "";
-        if (type !== SUPPRESS_WEATHER && !String(type).startsWith(`${packageId}.`)) continue;
-
-        const gatePass = this.#computeRegionGatePassForFrame(region, type) ? "1" : "0";
-        behaviorParts.push(`${gatePass}:${getRegionBehaviorRuntimeSignature(behavior)}`);
-      }
-
-      if (!behaviorParts.length) continue;
-
-      let boundsKey = "bounds-unavailable";
-      try {
-        const bounds = regionWorldBounds(region);
-        if (bounds) {
-          boundsKey = [
-            Number(bounds.minX ?? bounds.x ?? 0).toFixed(2),
-            Number(bounds.minY ?? bounds.y ?? 0).toFixed(2),
-            Number(bounds.maxX ?? (bounds.x ?? 0) + (bounds.width ?? 0)).toFixed(2),
-            Number(bounds.maxY ?? (bounds.y ?? 0) + (bounds.height ?? 0)).toFixed(2),
-          ].join(",");
-        }
-      } catch (err) {
-        logger.debug("FXMaster:", err);
-      }
-
-      const regionLevels = Array.from(getDocumentAssignedLevelIds(doc, doc?.parent ?? canvas?.scene ?? null) ?? [])
-        .sort()
-        .join(",");
-      const window = getRegionElevationWindow(doc);
-      parts.push(
-        [
-          doc.id ?? region?.id ?? "",
-          doc.uuid ?? "",
-          regionLevels,
-          window?.min ?? "",
-          window?.max ?? "",
-          boundsKey,
-          behaviorParts.sort().join(";"),
-        ].join("|"),
-      );
-    }
-
-    return parts.sort().join("#");
-  }
-
-  /**
-   * Return the current viewport and visible token/tile signature for dynamic mask coverage.
-   *
-   * The content key excludes pure camera translation to identify pan-only refreshes.
-   *
-   * @param {{ includeTokens?: boolean, includeTiles?: boolean }} [options]
-   * @returns {{ key: string|null, contentKey: string|null, forceRefresh: boolean }}
-   */
-  #buildDynamicCoverageSignature({ includeTokens = false, includeTiles = false } = {}) {
-    const stage = canvas?.stage ?? null;
-    const metrics = getCssViewportMetrics();
-    const pivotX = Number(stage?.pivot?.x ?? 0) || 0;
-    const pivotY = Number(stage?.pivot?.y ?? 0) || 0;
-    const scaleX = Number(stage?.scale?.x ?? 1) || 1;
-    const scaleY = Number(stage?.scale?.y ?? 1) || 1;
-    const cameraMatrix = snappedStageMatrix();
-    const cameraTx = Number(cameraMatrix?.tx ?? stage?.worldTransform?.tx ?? 0) || 0;
-    const cameraTy = Number(cameraMatrix?.ty ?? stage?.worldTransform?.ty ?? 0) || 0;
-    const cameraA = Number(cameraMatrix?.a ?? scaleX) || 1;
-    const cameraD = Number(cameraMatrix?.d ?? scaleY) || 1;
-
-    const viewportContentKey = `view:${metrics.cssW}:${metrics.cssH}:${scaleX.toFixed(6)}:${scaleY.toFixed(6)}`;
-    const cameraKey = `cam:${pivotX.toFixed(3)}:${pivotY.toFixed(3)}:${cameraA.toFixed(6)}:${cameraD.toFixed(
-      6,
-    )}:${cameraTx.toFixed(3)}:${cameraTy.toFixed(3)}`;
-
-    const parts = [viewportContentKey, cameraKey];
-    const contentParts = [viewportContentKey];
-    const pushContentPart = (part, contentPart = part) => {
-      parts.push(part);
-      contentParts.push(contentPart);
-    };
-    const fmt = (value, digits = 2) => {
-      const n = Number(value);
-      return Number.isFinite(n) ? n.toFixed(digits) : "";
-    };
-
-    if (canvas?.level) {
-      try {
-        const surfaceState = getCanvasLiveLevelSurfaceState(canvas?.scene ?? null, {
-          presynced: true,
-          includeTransientFades: false,
-        });
-        pushContentPart(`surface:${surfaceState?.key ?? ""}`);
-      } catch (err) {
-        logger.debug("FXMaster:", err);
-      }
-    }
-
-    pushContentPart(`regions:${this.#buildRegionBehaviorSignature()}`);
-
-    if (includeTokens) {
-      if (this.#hasVisibleDynamicRings()) return { key: null, contentKey: null, forceRefresh: true };
-
-      if (canvas?.level) {
-        const levelDocs = this.#getSceneLevels();
-        for (const level of levelDocs) {
-          if (!level?.id) continue;
-          pushContentPart(`lvl:${level.id}:${level.isView ? 1 : 0}:${level.isVisible ? 1 : 0}`);
-        }
-      }
-
-      const tokenViewportPadding = Math.max(16, Number(canvas?.dimensions?.size) || 100);
-      for (const token of collectBelowTokenMaskTokens()) {
-        if (token?.document?.hidden) continue;
-        if (!this.#placeableIntersectsWorldViewport(token, tokenViewportPadding)) continue;
-        const sceneMaskVisible = canvas?.level ? sceneMaskContainsTokenCenterForCompositor(token) : null;
-        const explicitlyRevealed = token?.controlled === true;
-        const tokenElevation = token?.elevation ?? token?.document?.elevation ?? Number.NaN;
-        const onCurrentLevel = canvas?.level
-          ? isDocumentOnCurrentCanvasLevel(token?.document ?? null, tokenElevation)
-          : false;
-        const directlyHovered = canvas?.level ? this.#tokenIsDirectlyHoveredForSuppressionFallback(token) : false;
-        const revealedByHoveredUpperLevel = canvas?.level
-          ? tokenUpperLevelRevealAllowsBelowTokenMask(token, { requireDirectHoverForSceneMask: !onCurrentLevel })
-          : false;
-        const tokenIsVisible =
-          token?.visible === true ||
-          token?.isVisible === true ||
-          token?.worldVisible === true ||
-          token?.mesh?.worldVisible === true;
-        if (
-          !tokenIsVisible &&
-          !(
-            revealedByHoveredUpperLevel ||
-            explicitlyRevealed ||
-            directlyHovered ||
-            (onCurrentLevel && sceneMaskVisible === true)
-          )
-        )
-          continue;
-
-        const tokenId = token?.id ?? token?.document?.id ?? "";
-        const mesh = token?.mesh ?? null;
-        const transformId = fxmDisplayObjectTransformSignature(mesh);
-        const worldAlpha = Math.round((Number(mesh?.worldAlpha ?? token?.alpha ?? 1) || 0) * 1000);
-        const bounds = token?.bounds ?? null;
-        const bx = Number(bounds?.x ?? token?.x ?? 0) || 0;
-        const by = Number(bounds?.y ?? token?.y ?? 0) || 0;
-        const bw = Number(bounds?.width ?? token?.w ?? 0) || 0;
-        const bh = Number(bounds?.height ?? token?.h ?? 0) || 0;
-        const maskFlag = sceneMaskVisible === true ? 1 : sceneMaskVisible === false ? 0 : 2;
-        const hoveredUpperLevelReveal = revealedByHoveredUpperLevel ? 1 : 0;
-        const explicitlyVisible = explicitlyRevealed ? 1 : 0;
-        const directlyHoveredFlag = directlyHovered ? 1 : 0;
-        const tokenContentTransformId = [
-          fmt(bx),
-          fmt(by),
-          fmt(bw),
-          fmt(bh),
-          fmt(token?.document?.rotation ?? token?.rotation ?? 0, 3),
-          fmt(token?.elevation ?? token?.document?.elevation ?? 0, 3),
-          fmt(mesh?.scale?.x ?? 1, 4),
-          fmt(mesh?.scale?.y ?? 1, 4),
-        ].join(",");
-        const tokenStateTail = `${worldAlpha}:${token?.occluded ? 1 : 0}:${
-          onCurrentLevel ? 1 : 0
-        }:${maskFlag}:${hoveredUpperLevelReveal}:${explicitlyVisible}:${directlyHoveredFlag}`;
-        pushContentPart(
-          `tok:${tokenId}:${transformId}:${bx.toFixed(2)}:${by.toFixed(2)}:${bw.toFixed(2)}:${bh.toFixed(
-            2,
-          )}:${tokenStateTail}`,
-          `tok:${tokenId}:${tokenContentTransformId}:${tokenStateTail}`,
-        );
-      }
-    }
-
-    if (includeTiles) pushContentPart(`tiles:${buildBelowTileMaskCoverageSignature()}`);
-
-    return { key: parts.join("|"), contentKey: contentParts.join("|"), forceRefresh: false };
-  }
-
-  /**
    * Hide live scene-particle source containers while the compositor presents their masked stack output.
    *
    * Registered particle slots are temporarily made renderable during renderStackParticle, so keeping the source hidden between compositor frames prevents the uncomposited full-scene emitter from leaking on V14 Levels.
@@ -9593,7 +9686,7 @@ export class GlobalEffectsCompositor {
    * @param {{ presyncedCoreState?: boolean }} [options]
    * @returns {boolean} Whether the native canvas state was ready and synchronized.
    */
-  #syncLiveLevelSurfaceState({ presyncedCoreState = false } = {}) {
+  _syncLiveLevelSurfaceState({ presyncedCoreState = false } = {}) {
     if (this._liveLevelSurfaceStateSyncedFrameSerial === this._renderFrameSerial) return true;
 
     try {
@@ -9614,94 +9707,65 @@ export class GlobalEffectsCompositor {
    * @returns {boolean} Whether the native canvas state was ready and synchronized.
    */
   #syncLivePrimaryStateForDynamicCoverage({ presyncedCoreState = false } = {}) {
-    return this.#syncLiveLevelSurfaceState({ presyncedCoreState });
+    return this._syncLiveLevelSurfaceState({ presyncedCoreState });
   }
 
   /**
-   * Synchronize dynamic scene state before capturing the environment for compositor work.
-   *
-   * Dynamic token/tile coverage is dirty-state driven. Native V14 Level SURFACE state uses occluded-surface membership and occlusion-texture revisions, while the dedicated below-Tile signature continues to track fractional Tile fades without invalidating every Level/suppression mask cache.
-   *
+   * Validate shared coverage once before rendering scene and region rows. Refresh region cutouts when coverage pixels or their coordinate mapping change.
    * @param {Array<object>} rows
    * @param {object|null} [frameInfo]
    * @param {{ presyncedCoreState?: boolean }} [options]
    * @returns {void}
    */
-  #syncDynamicSceneState(rows = [], frameInfo = null, { presyncedCoreState = false } = {}) {
+  _syncDynamicSceneState(rows = [], frameInfo = null, { presyncedCoreState = false } = {}) {
+    this._preparedSharedCoverageKey = null;
+    this._preparedSharedCoverageFrameSerial = this._renderFrameSerial;
+    this._coveragePresyncedCoreState = presyncedCoreState;
     const safeRows = Array.isArray(rows) ? rows : [];
-    const info = frameInfo ?? this.#analyzeRowsForFrame(safeRows);
-    const needsDynamicTokenCoverage = !!info.needsDynamicTokenCoverage;
-    const needsDynamicTileCoverage = !!info.needsDynamicTileCoverage;
-    const needsDynamicCoverage = needsDynamicTokenCoverage || needsDynamicTileCoverage;
-    const needsRegionFilterCoverageRefresh = !!info.needsRegionFilterCoverageRefresh;
-    const needsRegionParticleCoverageRefresh = !!info.needsRegionParticleCoverageRefresh;
-
-    if (!needsDynamicCoverage) {
+    const info = frameInfo ?? this._analyzeRowsForFrame(safeRows);
+    if (!info.needsDynamicTokenCoverage && !info.needsDynamicTileCoverage) {
       this._dynamicCoverageSignature = null;
-      this._dynamicCoverageContentSignature = null;
       return;
     }
 
-    const buildDynamicState = () =>
-      this.#buildDynamicCoverageSignature({
-        includeTokens: needsDynamicTokenCoverage || needsDynamicTileCoverage,
-        includeTiles: needsDynamicTokenCoverage || needsDynamicTileCoverage,
+    let coverage;
+    try {
+      const presyncedDynamicCoverage = this.#syncLivePrimaryStateForDynamicCoverage({ presyncedCoreState });
+      coverage = SceneMaskManager.instance.refreshTokensSync?.({
+        presyncedCoreState,
+        presyncedDynamicCoverage,
       });
-
-    let dynamicState = buildDynamicState();
-    let dynamicCoverageChanged = dynamicState.forceRefresh || dynamicState.key !== this._dynamicCoverageSignature;
-    let dynamicContentChanged =
-      dynamicState.forceRefresh || dynamicState.contentKey !== (this._dynamicCoverageContentSignature ?? null);
-
-    if (
-      canvas?.level &&
-      CONFIG?.fxmaster?.overheadPerformance?.nativeLevelDynamicCoveragePresyncOnlyWhenMoving === false
-    ) {
-      dynamicCoverageChanged = true;
-      dynamicContentChanged = true;
+      this._preparedSharedCoverageKey = coverage?.key ?? null;
+    } catch (err) {
+      logger.debug("FXMaster:", err);
     }
 
-    let presyncedDynamicCoverage = false;
-    if (dynamicCoverageChanged && dynamicContentChanged) {
-      presyncedDynamicCoverage = this.#syncLivePrimaryStateForDynamicCoverage({ presyncedCoreState });
-
-      if (presyncedDynamicCoverage && canvas?.level && !dynamicState.forceRefresh) {
-        const syncedState = buildDynamicState();
-        if (syncedState.forceRefresh || syncedState.key !== dynamicState.key) dynamicState = syncedState;
-      }
-    } else if (dynamicCoverageChanged) {
-      presyncedDynamicCoverage = true;
+    if (!info.needsRegionFilterCoverageRefresh && !info.needsRegionParticleCoverageRefresh) {
+      this._dynamicCoverageSignature = null;
+      return;
     }
 
-    if (dynamicCoverageChanged) {
+    const coverageSignature = coverage?.key ? `${coverage.key}|${coverage.revision}` : null;
+    if (coverageSignature && coverageSignature === this._dynamicCoverageSignature) return;
+
+    let complete = true;
+    if (info.needsRegionFilterCoverageRefresh) {
       try {
-        SceneMaskManager.instance.refreshTokensSync?.({
-          presyncedDynamicCoverage,
-          force: dynamicContentChanged,
-        });
+        canvas?.filtereffects?.refreshCoverageCutoutsSync?.({ refreshSharedMasks: false });
       } catch (err) {
+        complete = false;
         logger.debug("FXMaster:", err);
       }
-
-      if (needsRegionFilterCoverageRefresh) {
-        try {
-          canvas?.filtereffects?.refreshCoverageCutoutsSync?.({ refreshSharedMasks: false });
-        } catch (err) {
-          logger.debug("FXMaster:", err);
-        }
-      }
-
-      if (needsRegionParticleCoverageRefresh) {
-        try {
-          canvas?.particleeffects?.refreshCoverageCutoutsSync?.({ refreshSharedMasks: false });
-        } catch (err) {
-          logger.debug("FXMaster:", err);
-        }
-      }
-
-      this._dynamicCoverageSignature = dynamicState.forceRefresh ? null : dynamicState.key;
-      this._dynamicCoverageContentSignature = dynamicState.forceRefresh ? null : dynamicState.contentKey ?? null;
     }
+    if (info.needsRegionParticleCoverageRefresh) {
+      try {
+        canvas?.particleeffects?.refreshCoverageCutoutsSync?.({ refreshSharedMasks: false });
+      } catch (err) {
+        complete = false;
+        logger.debug("FXMaster:", err);
+      }
+    }
+    this._dynamicCoverageSignature = complete ? coverageSignature : null;
   }
 
   /**
@@ -9715,14 +9779,19 @@ export class GlobalEffectsCompositor {
   }
 
   /**
-   * Return whether a particle row renders in the live above-darkness particle band.
+   * Return whether the committed particle runtime renders in the live above-darkness particle band.
    *
    * @param {object|null|undefined} row
    * @param {boolean} useLiveBand
    * @returns {boolean}
    */
   #rowRendersInLiveAboveDarknessParticleBand(row, useLiveBand) {
-    return !!useLiveBand && row?.kind === "particle" && row?.layerLevel === "aboveDarkness";
+    if (!useLiveBand || row?.kind !== "particle") return false;
+    const runtime = this.#resolveParticleRuntime(row.uid);
+    return (
+      (runtime?.layerLevel ?? row.layerLevel) === "aboveDarkness" &&
+      !this.#particleSupportsAboveDarknessPresentation(runtime)
+    );
   }
 
   #rowsHaveLiveAboveDarknessParticle(rows, useLiveBand) {
@@ -9771,7 +9840,7 @@ export class GlobalEffectsCompositor {
    * @param {Scene|null|undefined} scene
    * @returns {Array<object>}
    */
-  #collectRenderableRows(scene) {
+  _collectRenderableRows(scene) {
     const orderedRows = getOrderedEnabledEffectRenderRows(scene, { clone: false });
     const useLiveAboveDarknessBand = this.#aboveDarknessParticlesUseLiveBand(scene);
     const keepGridLive = this.#gridShouldRemainLiveForRows(orderedRows, useLiveAboveDarknessBand);
@@ -9983,7 +10052,7 @@ export class GlobalEffectsCompositor {
    * @param {PIXI.RenderTexture} texture
    * @returns {void}
    */
-  #present(texture, { maskOutput = true } = {}) {
+  _present(texture, { maskOutput = true } = {}) {
     const sprite = this._displaySprite;
     if (!sprite) return;
 
@@ -10032,7 +10101,7 @@ export class GlobalEffectsCompositor {
   }
 
   /**
-   * Present the transparent filter contribution in the above-darkness band.
+   * Present transparent effect contributions in the above-darkness band.
    *
    * @param {PIXI.RenderTexture|null|undefined} texture
    * @returns {void}
@@ -10599,6 +10668,27 @@ export class GlobalEffectsCompositor {
   }
 
   /**
+   * Synchronize a capture tree once, retrying directly if the guarded update fails.
+   * @param {PIXI.DisplayObject} target
+   * @returns {void}
+   */
+  _syncCaptureTransforms(target) {
+    let synchronized = false;
+    try {
+      synchronized = fxmUpdateDisplayObjectWorldTransform(target);
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    if (synchronized) return;
+
+    try {
+      target.updateTransform?.();
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+  }
+
+  /**
    * Capture raw primary children without sampling the primary display shader.
    *
    * @param {PIXI.Container} primary
@@ -10610,17 +10700,7 @@ export class GlobalEffectsCompositor {
     if (!renderer || !primary || !renderTexture) return false;
     if (!this.#clearPrimaryBaseRenderTexture(renderTexture, primary)) return false;
 
-    try {
-      fxmUpdateDisplayObjectWorldTransform(primary);
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
-
-    try {
-      primary.updateTransform?.();
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
+    this._syncCaptureTransforms(primary);
 
     const renderList = this.#getPrimaryCaptureRenderList();
     const objects = this.#collectPrimaryBaseCaptureObjects(primary);
@@ -10721,17 +10801,7 @@ export class GlobalEffectsCompositor {
     if (!renderer || !rendered || !renderTexture) return false;
     if (!this.#clearRenderTexture(renderTexture)) return false;
 
-    try {
-      fxmUpdateDisplayObjectWorldTransform(rendered);
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
-
-    try {
-      rendered.updateTransform?.();
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
+    this._syncCaptureTransforms(rendered);
 
     const renderList = this.#getRenderedVisibilityCaptureRenderList();
     const objects = this.#collectRenderedVisibilityCaptureObjects(rendered);
@@ -10760,7 +10830,7 @@ export class GlobalEffectsCompositor {
    * @param {PIXI.RenderTexture} renderTexture
    * @returns {boolean}
    */
-  #captureEnvironment(renderTexture) {
+  _captureEnvironment(renderTexture) {
     const renderer = canvas?.app?.renderer;
     if (!renderer || !renderTexture) return false;
 
@@ -10785,17 +10855,7 @@ export class GlobalEffectsCompositor {
       logger.debug("FXMaster:", err);
     }
 
-    try {
-      fxmUpdateDisplayObjectWorldTransform(target);
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
-
-    try {
-      target.updateTransform?.();
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
+    this._syncCaptureTransforms(target);
 
     if (!this.#clearRenderTexture(renderTexture)) return false;
 
@@ -11223,7 +11283,7 @@ export class GlobalEffectsCompositor {
   }
 
   /**
-   * Lock the above-darkness display band to CSS viewport coordinates.
+   * Lock the above-darkness display band to CSS viewport coordinates using the unsnapped parent transform. Capture snapping is already represented in the output texture and must not shift its display position.
    *
    * @returns {void}
    */
@@ -11239,7 +11299,7 @@ export class GlobalEffectsCompositor {
     if (parent) {
       try {
         const parentMatrix = currentWorldMatrix(parent, {
-          snapStage: this.#useSnappedCompositorTransforms(),
+          snapStage: false,
         });
         inverseParentMatrix = parentMatrix?.clone ? parentMatrix.clone() : null;
         inverseParentMatrix?.invert?.();
@@ -11501,11 +11561,7 @@ export class GlobalEffectsCompositor {
   #ensureAboveDarknessRenderTexture(key) {
     const { width, height, resolution } = this.#getViewportMetrics();
     const texture = this[key];
-    const usable =
-      this.#canBindRenderTexture(texture) &&
-      texture.width === width &&
-      texture.height === height &&
-      (texture.resolution ?? 1) === resolution;
+    const usable = this.#canBindRenderTexture(texture) && renderTextureMatches(texture, width, height, resolution);
     if (usable) return true;
 
     try {
@@ -11563,7 +11619,7 @@ export class GlobalEffectsCompositor {
     const { width, height, resolution } = this.#getViewportMetrics();
     const needsResize = (rt) => {
       if (!this.#canBindRenderTexture(rt)) return true;
-      return rt.width !== width || rt.height !== height || (rt.resolution ?? 1) !== resolution;
+      return !renderTextureMatches(rt, width, height, resolution);
     };
 
     if (needsResize(this._baseRT)) {
@@ -11817,6 +11873,10 @@ export class GlobalEffectsCompositor {
    * @returns {void}
    */
   #destroyRenderTextures() {
+    this._textureMaskRestore?.destroy();
+    this._textureMaskRestore = null;
+    this._binaryMaskPass?.destroy();
+    this._binaryMaskPass = null;
     try {
       this._baseRT?.destroy?.(true);
     } catch (err) {
@@ -11877,6 +11937,7 @@ export class GlobalEffectsCompositor {
       }
       this._levelSegmentMaskRTCache.clear();
     }
+    this._levelSegmentMaskRTPool?.drain();
     try {
       this._levelBlockerRT?.destroy?.(true);
     } catch (err) {
@@ -11944,11 +12005,6 @@ export class GlobalEffectsCompositor {
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
-    try {
-      this._sceneFilterSuppressionRegionRT?.destroy?.(true);
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
     this.#destroyRenderTextureEntryCache(this._sceneSuppressionRegionMaskRTCache);
     this.#destroyRenderTextureEntryCache(this._sceneSuppressionRegionMaskDynamicRTCache);
     this.#destroyRenderTextureEntryCache(this._sceneSuppressionCombinedMaskRTCache);
@@ -11993,7 +12049,6 @@ export class GlobalEffectsCompositor {
     this._aboveDarknessFrameTexture = null;
     this._aboveDarknessOutputWidth = 0;
     this._aboveDarknessOutputHeight = 0;
-    this._sceneFilterSuppressionRegionRT = null;
     this._sceneSuppressionRegionMaskRTCache = new Map();
     this._sceneSuppressionRegionMaskDynamicRTCache = new Map();
     this._sceneSuppressionCombinedMaskRTCache = new Map();
@@ -12004,33 +12059,5 @@ export class GlobalEffectsCompositor {
     this._particleSelectedLevelMaskFrameKey = null;
     this._particleSelectedLevelMaskFrameTexture = null;
     this._particleSelectedLevelMaskPersistentKey = null;
-  }
-
-  /**
-   * Return a bundle-safe performance snapshot for diagnostics macros.
-   *
-   * @returns {object}
-   */
-  getDebugPerformanceSnapshot() {
-    const cacheSize = (cache) => (cache instanceof Map ? cache.size : 0);
-    return {
-      renderFrameSerial: this._renderFrameSerial ?? 0,
-      sceneSuppressionMaskStats: { ...(this._sceneSuppressionMaskStats ?? {}) },
-      sceneSuppressionRegionMaskCacheSize: cacheSize(this._sceneSuppressionRegionMaskRTCache),
-      sceneSuppressionRegionMaskDynamicCacheSize: cacheSize(this._sceneSuppressionRegionMaskDynamicRTCache),
-      sceneSuppressionCombinedMaskCacheSize: cacheSize(this._sceneSuppressionCombinedMaskRTCache),
-      sceneSuppressionCombinedMaskDynamicCacheSize: cacheSize(this._sceneSuppressionCombinedMaskDynamicRTCache),
-      levelSegmentMaskCacheSize: cacheSize(this._levelSegmentMaskRTCache),
-      regionUpperVisibleCacheSize: cacheSize(this._regionUpperVisibleRTCache),
-    };
-  }
-
-  /**
-   * Compatibility alias for older diagnostics macros.
-   *
-   * @returns {object}
-   */
-  getPerformanceDebugState() {
-    return this.getDebugPerformanceSnapshot();
   }
 }

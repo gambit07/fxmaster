@@ -1,5 +1,5 @@
-import { FXMasterParticleEffect } from "./effect.js";
-import { withSteppedGradientColor } from "./helpers/with-stepped-gradient-color.js";
+import { FXMasterParticleEffect } from "../effect.js";
+import { withSteppedGradientColor } from "../mixins/with-stepped-gradient-color.js";
 
 function hideEmbersDirectionalControls({ get }) {
   return get("orbit") === true || get("topDown") === true;
@@ -14,7 +14,7 @@ export class EmbersParticleEffect extends FXMasterParticleEffect {
 
   /** @override */
   static get icon() {
-    return "modules/fxmaster/assets/particle-effects/icons/embers.webp";
+    return "modules/fxmaster/assets/particle-effects/icons/embers.svg";
   }
 
   /** @override */

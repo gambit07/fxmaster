@@ -1,5 +1,5 @@
-import { FXMasterParticleEffect } from "./effect.js";
-import { DefaultRectangleSpawnMixin } from "./mixins/default-rectangle-spawn.js";
+import { FXMasterParticleEffect } from "../effect.js";
+import { DefaultRectangleSpawnMixin } from "../mixins/default-rectangle-spawn.js";
 
 /**
  * A full-screen particle effect which renders scurrying rats.
@@ -10,7 +10,7 @@ export class RatsParticleEffect extends DefaultRectangleSpawnMixin(FXMasterParti
 
   /** @override */
   static get icon() {
-    return "modules/fxmaster/assets/particle-effects/icons/rats.webp";
+    return "modules/fxmaster/assets/particle-effects/icons/rats.svg";
   }
 
   /** Lateral Movement tuning for small sprites. */

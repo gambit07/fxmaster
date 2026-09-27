@@ -166,14 +166,17 @@ export class SuppressSceneParticlesBehaviorType extends foundry.data.regionBehav
     const mode = this._getEventModeFromSelection();
     if (mode === "none" || mode === "exitOnly") return;
 
-    const runtimeGate = fxmReadRegionBehaviorRuntimeState(this.parent, packageId);
+    const runtimeGate = fxmReadRegionBehaviorRuntimeState(this.parent, packageId, { snapshot: false });
     const prev = runtimeGate.eventGate || { mode, latched: false };
     let latched = !!prev.latched;
 
     const fxGateMode = runtimeGate.gateMode;
     const targetIds = new Set(runtimeGate.tokenTargets ?? []);
     const tokensInRegion = Array.from(event.region?.tokens ?? []);
-    const isTargetToken = (t) => targetIds.has(t.document.id) || targetIds.has(t.document.uuid);
+    const isTargetToken = (token) => {
+      const document = token?.document ?? token;
+      return targetIds.has(document?.id) || targetIds.has(document?.uuid);
+    };
 
     const countTargets = () => {
       if (fxGateMode !== "targets" || targetIds.size === 0) return null;

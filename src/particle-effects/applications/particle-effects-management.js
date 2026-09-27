@@ -270,10 +270,7 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
 
     if (!this._fxmIsDetachedHost()) this._autosizeInit();
 
-    const content = liveElement.querySelector(".window-content") ?? liveElement;
-
     this._wireRangeWheelBehavior({
-      getScrollWrapper: (slider) => slider.closest(".fxmaster-particles-group-wrapper") ?? content,
       onInput: (event, slider) => ParticleEffectsManagement.updateParam.call(this, event, slider),
     });
     this.wireColorInputs(liveElement, ParticleEffectsManagement.updateParam);
@@ -476,7 +473,7 @@ export class ParticleEffectsManagement extends FXMasterBaseFormV2 {
   }
 
   _storeCurrentPosition() {
-    this._persistPositionFlag(this.position);
+    this._persistPositionFlag(this.position, { immediate: true });
   }
 
   async _onClose(...args) {

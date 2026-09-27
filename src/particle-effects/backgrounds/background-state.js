@@ -7,22 +7,17 @@ const MAX_FUTURE_CLOCK_SKEW_MS = 5 * 60 * 1000;
 const MAX_SERVER_CLOCK_SKEW_MS = 24 * 60 * 60 * 1000;
 
 /**
- * State profile used by the epoch-millisecond plus monotonic-runtime clock.
- * Increment this when a future timing migration needs to restart accumulation.
+ * State profile used by the epoch-millisecond plus monotonic-runtime clock. Increment this when a future timing migration needs to restart accumulation.
  */
 export const PARTICLE_BACKGROUND_STATE_PROFILE = 3;
 
 /**
- * Profile for the persisted token-movement epoch. Movement history is stored
- * once per Scene, while this per-effect epoch decides which history belongs to
- * a particular background activation.
+ * Profile for the persisted token-movement epoch. Movement history is stored once per Scene, while this per-effect epoch decides which history belongs to a particular background activation.
  */
 export const PARTICLE_BACKGROUND_MOVEMENT_STATE_PROFILE = 1;
 
 /**
- * Profile for persistent post-coverage background animation clocks. The clock
- * is stored independently from accumulation so full-coverage surfaces can
- * animate consistently across clients and canvas reloads.
+ * Profile for persistent post-coverage background animation clocks. The clock is stored independently from accumulation so full-coverage surfaces can animate consistently across clients and canvas reloads.
  */
 export const PARTICLE_BACKGROUND_ANIMATION_STATE_PROFILE = 1;
 
@@ -49,10 +44,7 @@ export function unwrapParticleBackgroundOption(value) {
 /**
  * Normalize an epoch-millisecond timestamp.
  *
- * Deliberately do not infer Unix seconds from a small number. Foundry and
- * integrations can expose relative millisecond clocks whose magnitude may
- * resemble Unix seconds; multiplying one of those values by 1000 causes a
- * background configured in seconds to complete roughly 1000 times too fast.
+ * Deliberately do not infer Unix seconds from a small number. Foundry and integrations can expose relative millisecond clocks whose magnitude may resemble Unix seconds; multiplying one of those values by 1000 causes a background configured in seconds to complete roughly 1000 times too fast.
  *
  * @param {unknown} value
  * @param {number} [referenceNow=Date.now()]
@@ -71,9 +63,7 @@ export function normalizeParticleBackgroundTimestamp(value, referenceNow = Date.
 /**
  * Return an epoch-millisecond clock.
  *
- * Foundry's synchronized server clock is used only when it is already an
- * epoch-millisecond value close to the local wall clock. Relative clocks and
- * ambiguous second-like values fall back to Date.now().
+ * Foundry's synchronized server clock is used only when it is already an epoch-millisecond value close to the local wall clock. Relative clocks and ambiguous second-like values fall back to Date.now().
  *
  * @returns {number}
  */
@@ -128,8 +118,7 @@ export function particleBackgroundDurationSeconds(options) {
 }
 
 /**
- * Return whether an enabled background currently reacts to token movement.
- * Procedural snow/sand surfaces use trails while scatter profiles use physical interaction.
+ * Return whether an enabled background currently reacts to token movement. Procedural snow/sand surfaces use trails while scatter profiles use physical interaction.
  *
  * @param {object|null|undefined} options
  * @returns {boolean}
@@ -143,9 +132,7 @@ export function particleBackgroundInteractionEnabled(options) {
 }
 
 /**
- * Return whether the background has an authored post-coverage animation.
- * This is intentionally separate from token interaction: an animated surface
- * needs a synchronized activation epoch even when trails are disabled.
+ * Return whether the background has an authored post-coverage animation. This is intentionally separate from token interaction: an animated surface needs a synchronized activation epoch even when trails are disabled.
  *
  * @param {object|null|undefined} options
  * @returns {boolean}
@@ -179,8 +166,7 @@ export function normalizeParticleBackgroundPatternSeed(value) {
 }
 
 /**
- * Generate a new 32-bit procedural seed. The value is written to document
- * state, so all clients render the same randomized accumulation pattern.
+ * Generate a new 32-bit procedural seed. The value is written to document state, so all clients render the same randomized accumulation pattern.
  *
  * @returns {number}
  */
@@ -199,8 +185,7 @@ export function createParticleBackgroundPatternSeed() {
 /**
  * Preserve or initialize persistent background state when an effect definition is updated.
  *
- * The state lives beside the authored options so management forms can continue rebuilding their
- * parameter object without erasing the activation epoch.
+ * The state lives beside the authored options so management forms can continue rebuilding their parameter object without erasing the activation epoch.
  *
  * @param {object|null|undefined} previousDefinition
  * @param {object|null|undefined} nextOptions

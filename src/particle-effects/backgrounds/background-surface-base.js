@@ -54,10 +54,7 @@ function stableSeed(value) {
 }
 
 /**
- * Resolve a synchronized procedural seed. Accumulating backgrounds receive a
- * persisted random seed whenever their timer is restarted. Older state falls
- * back to its activation epoch and revision, which is still stable for every
- * client and changes on the next restart.
+ * Resolve a synchronized procedural seed. Accumulating backgrounds receive a persisted random seed whenever their timer is restarted. Older state falls back to its activation epoch and revision, which is still stable for every client and changes on the next restart.
  *
  * @param {string} uid
  * @param {object|null|undefined} state
@@ -148,6 +145,11 @@ function resolveFilterResolution(renderer) {
 
 export class ParticleAccumulationBackgroundSurface {
   /** @returns {string} */
+  static get vertexShader() {
+    return VERTEX_SHADER;
+  }
+
+  /** @returns {string} */
   static get surfaceType() {
     return "background";
   }
@@ -213,56 +215,60 @@ void main() {
     this.trailStrength = 0.82;
     this.trailRefillDurationSeconds = 180;
 
-    this.filter = new PIXI.Filter(VERTEX_SHADER, this.constructor.fragmentShader, {
-      uProgress: 1,
-      uOpacity: 0.78,
-      uRuntimeAlpha: 1,
-      uSeed: stableSeed(uid) * 97.0,
-      uGridSize: 100,
-      uFillVariation: 0.75,
-      uDriftStrength: 0.55,
-      uDriftScale: 5,
-      uRippleStrength: 0.45,
-      uMigrationDistance: 0,
-      uCoverage: 0.65,
-      uPatchScale: 0.85,
-      uReflectionStrength: 0.58,
-      uShimmerStrength: 0.42,
-      uShimmerSpeed: 0.7,
-      uGroundMovementSpeed: 1,
-      uTime: 0,
-      uRainSheetTime: 0,
-      uSnowstormSweepOpacity: 0,
-      uSnowstormSweepScale: 0.55,
-      uSnowstormSweepSpeed: 0.55,
-      uSnowstormSweepStrength: 0.55,
-      uRainDensity: 0.5,
-      uRainScale: 1,
-      uRainSpeed: 1,
-      uRainTopDown: 0,
-      uRainBackgroundQuality: 1,
-      uRainInteractionStrength: 0,
-      uRainInteractionLiftChance: 0.35,
-      uRainInteractionSettleTime: 2.8,
-      uWind: resolveWindVector(options),
-      uRainSheetWind: resolveWindVector(options),
-      uRainSheetBasis: resolveWindVector(options),
-      uRainSheetPreviousBasis: resolveWindVector(options),
-      uRainSheetBasisBlend: 1,
-      uRainSheetTravel: new Float32Array([0, 0]),
-      uRainSheetPreviousTravel: new Float32Array([0, 0]),
-      uCssToWorld: new Float32Array(CSS_TO_WORLD_IDENTITY),
-      uColor: new Float32Array([0.93, 0.96, 1.0]),
-      uTrailTexture: PIXI.Texture.EMPTY,
-      uTrailAgeTexture: PIXI.Texture.EMPTY,
-      uTrailsEnabled: 0,
-      uTrailStrength: 0.82,
-      uTrailRefillEnabled: 0,
-      uTrailRefillDuration: 180,
-      uTrailClock: 0,
-      uTrailBounds: new Float32Array(EMPTY_TRAIL_BOUNDS),
-      uTrailTexel: new Float32Array(EMPTY_TRAIL_TEXEL),
-    });
+    this.filter = new PIXI.Filter(
+      this.constructor.vertexShader,
+      this.constructor.fragmentShaderForOptions?.(options) ?? this.constructor.fragmentShader,
+      {
+        uProgress: 1,
+        uOpacity: 0.78,
+        uRuntimeAlpha: 1,
+        uSeed: stableSeed(uid) * 97.0,
+        uGridSize: 100,
+        uFillVariation: 0.75,
+        uDriftStrength: 0.55,
+        uDriftScale: 5,
+        uRippleStrength: 0.45,
+        uMigrationDistance: 0,
+        uCoverage: 0.65,
+        uPatchScale: 0.85,
+        uReflectionStrength: 0.58,
+        uShimmerStrength: 0.42,
+        uShimmerSpeed: 0.7,
+        uGroundMovementSpeed: 1,
+        uTime: 0,
+        uRainSheetTime: 0,
+        uSnowstormSweepOpacity: 0,
+        uSnowstormSweepScale: 0.55,
+        uSnowstormSweepSpeed: 0.55,
+        uSnowstormSweepStrength: 0.55,
+        uRainDensity: 0.5,
+        uRainScale: 1,
+        uRainSpeed: 1,
+        uRainTopDown: 0,
+        uRainBackgroundQuality: 1,
+        uRainInteractionStrength: 0,
+        uRainInteractionLiftChance: 0.35,
+        uRainInteractionSettleTime: 2.8,
+        uWind: resolveWindVector(options),
+        uRainSheetWind: resolveWindVector(options),
+        uRainSheetBasis: resolveWindVector(options),
+        uRainSheetPreviousBasis: resolveWindVector(options),
+        uRainSheetBasisBlend: 1,
+        uRainSheetTravel: new Float32Array([0, 0]),
+        uRainSheetPreviousTravel: new Float32Array([0, 0]),
+        uCssToWorld: new Float32Array(CSS_TO_WORLD_IDENTITY),
+        uColor: new Float32Array([0.93, 0.96, 1.0]),
+        uTrailTexture: PIXI.Texture.EMPTY,
+        uTrailAgeTexture: PIXI.Texture.EMPTY,
+        uTrailsEnabled: 0,
+        uTrailStrength: 0.82,
+        uTrailRefillEnabled: 0,
+        uTrailRefillDuration: 180,
+        uTrailClock: 0,
+        uTrailBounds: new Float32Array(EMPTY_TRAIL_BOUNDS),
+        uTrailTexel: new Float32Array(EMPTY_TRAIL_TEXEL),
+      },
+    );
     this.filter.padding = 0;
     this.filter.autoFit = true;
     this.filter.resolution = resolveFilterResolution(renderer);
@@ -483,9 +489,7 @@ void main() {
   }
 
   /**
-   * Resolve the stored start time. Timing profiles from earlier builds are
-   * intentionally restarted locally once so a previously accelerated surface
-   * does not remain complete after upgrading.
+   * Resolve the stored start time. Timing profiles from earlier builds are intentionally restarted locally once so a previously accelerated surface does not remain complete after upgrading.
    *
    * @param {number} now
    * @returns {number}
@@ -507,9 +511,7 @@ void main() {
   }
 
   /**
-   * Seed the runtime timer from persistent epoch state, then advance it using a
-   * monotonic millisecond clock. This prevents server clock units or wall-clock
-   * corrections from changing the configured duration.
+   * Seed the runtime timer from persistent epoch state, then advance it using a monotonic millisecond clock. This prevents server clock units or wall-clock corrections from changing the configured duration.
    *
    * @param {number} now
    * @param {number} tick

@@ -1,3 +1,4 @@
+import { collectActiveEffectDefinitions } from "./common/effect-activation.js";
 import { registerSettings } from "./settings.js";
 import { registerHooks } from "./hooks.js";
 import { FXMASTER } from "./config.js";
@@ -15,8 +16,8 @@ import {
   particleBackgroundNow,
 } from "./particle-effects/backgrounds/background-state.js";
 import { ParticleRegionBehaviorType } from "./particle-effects/particle-effects-region-behavior.js";
-import { DefaultRectangleSpawnMixin } from "./particle-effects/effects/mixins/default-rectangle-spawn.js";
-import { FXMasterParticleEffect } from "./particle-effects/effects/effect.js";
+import { DefaultRectangleSpawnMixin } from "./particle-effects/mixins/default-rectangle-spawn.js";
+import { FXMasterParticleEffect } from "./particle-effects/effect.js";
 import { SuppressSceneParticlesBehaviorType } from "./particle-effects/suppress-scene-particles-region-behavior.js";
 import { FilterEffectsSceneManager } from "./filter-effects/filter-effects-scene-manager.js";
 import { FilterEffectsLayer } from "./filter-effects/filter-effects-layer.js";
@@ -25,10 +26,11 @@ import {
   FILTER_PRESENTATION_PASSES,
   FILTER_PRESENTATION_PASS_VALUES,
   FXMasterFilterEffectMixin,
-} from "./filter-effects/filters/mixins/filter.js";
+} from "./filter-effects/mixins/filter.js";
 import { SuppressSceneFiltersBehaviorType } from "./filter-effects/suppress-scene-filters-region-behavior.js";
 import { SpecialEffectsLayer } from "./special-effects/special-effects-layer.js";
-import customVertex2D from "./filter-effects/filters/shaders/custom-vertex-2d.vert";
+import customVertex2D from "./filter-effects/shaders/custom-vertex-2d.vert";
+import { prepareFilterShaderSources } from "./filter-effects/shader-sources.js";
 import { GlobalEffectsStackLayer } from "./stack/global-effects-stack-layer.js";
 import { GlobalEffectsCompositor } from "./stack/global-effects-compositor.js";
 import {
@@ -36,6 +38,7 @@ import {
   regionWorldBounds,
   regionContainsPoint,
   getRegionElevationWindow,
+  inRangeElev,
   getDocumentLevelsSet,
   getSelectedSceneLevelIds,
   getDocumentAssignedLevelIds,
@@ -57,6 +60,7 @@ import {
 import { FXMasterBaseFormV2 } from "./base-form.js";
 import {
   normalizeRegisteredEffectParameters,
+  normalizeEffectDefinition,
   normalizeEffectOptionsForRuntime,
   normalizeEffectOptionsForStorageFromLegacy,
   compressNormalizedRangeValue,
@@ -78,6 +82,7 @@ import "../css/common.css";
 import "../css/fx-layers.css";
 
 CONFIG.fxmaster = CONFIG.fxmaster || {};
+CONFIG.fxmaster.collectActiveEffectDefinitions = collectActiveEffectDefinitions;
 CONFIG.fxmaster.FXMasterParticleEffect = FXMasterParticleEffect;
 CONFIG.fxmaster.normalizeParticleEmitterColor =
   FXMasterParticleEffect.normalizeParticleEmitterColor.bind(FXMasterParticleEffect);
@@ -92,12 +97,14 @@ CONFIG.fxmaster.particleBackgroundNow = particleBackgroundNow;
 CONFIG.fxmaster.particleBackgroundMonotonicNow = particleBackgroundMonotonicNow;
 CONFIG.fxmaster.customVertex2D = customVertex2D;
 CONFIG.fxmaster.FXMasterFilterEffectMixin = FXMasterFilterEffectMixin;
+CONFIG.fxmaster.prepareFilterShaderSources = prepareFilterShaderSources;
 CONFIG.fxmaster.filterPresentationPasses = FILTER_PRESENTATION_PASSES;
 CONFIG.fxmaster.filterPresentationPassValues = FILTER_PRESENTATION_PASS_VALUES;
 CONFIG.fxmaster.regionWorldBoundsAligned = regionWorldBoundsAligned;
 CONFIG.fxmaster.regionWorldBounds = regionWorldBounds;
 CONFIG.fxmaster.regionContainsPoint = regionContainsPoint;
 CONFIG.fxmaster.getRegionElevationWindow = getRegionElevationWindow;
+CONFIG.fxmaster.inRangeElev = inRangeElev;
 CONFIG.fxmaster.getDocumentLevelsSet = getDocumentLevelsSet;
 CONFIG.fxmaster.getSelectedSceneLevelIds = getSelectedSceneLevelIds;
 CONFIG.fxmaster.getDocumentAssignedLevelIds = getDocumentAssignedLevelIds;
@@ -115,6 +122,7 @@ CONFIG.fxmaster.hasOwn = hasOwn;
 CONFIG.fxmaster.collectionValues = collectionValues;
 CONFIG.fxmaster.computeRegionGatePass = computeRegionGatePass;
 CONFIG.fxmaster.getRegionParticleEffectDefinitions = getRegionParticleEffectDefinitions;
+CONFIG.fxmaster.normalizeEffectDefinition = normalizeEffectDefinition;
 CONFIG.fxmaster.normalizeEffectOptionsForRuntime = normalizeEffectOptionsForRuntime;
 CONFIG.fxmaster.normalizeEffectOptionsForStorageFromLegacy = normalizeEffectOptionsForStorageFromLegacy;
 CONFIG.fxmaster.compressNormalizedRangeValue = compressNormalizedRangeValue;
@@ -140,34 +148,6 @@ CONFIG.fxmaster.GlobalEffectsCompositor = GlobalEffectsCompositor;
 CONFIG.fxmaster.SpecialEffectsLayer = SpecialEffectsLayer;
 CONFIG.fxmaster.getGlobalEffectsCompositor = () => GlobalEffectsCompositor.instance;
 CONFIG.fxmaster.resolveWeatherEffectConfigLabel = resolveWeatherEffectConfigLabel;
-CONFIG.fxmaster.overheadPerformance = {
-  ...(CONFIG.fxmaster.overheadPerformance ?? {}),
-  sceneSuppressionLevelIntersection: true,
-  flattenSceneLevelMasks: true,
-  regionParticleScratchComposite: true,
-  batchedSurfaceMasks: true,
-  sceneRowSelectedLevelTilesExpandCoverage:
-    CONFIG.fxmaster.overheadPerformance?.sceneRowSelectedLevelTilesExpandCoverage ?? false,
-  sceneRowUseDefinedSurfaceFootprints: CONFIG.fxmaster.overheadPerformance?.sceneRowUseDefinedSurfaceFootprints ?? true,
-  sceneRowDefinedSurfaceFootprintWindowFallback:
-    CONFIG.fxmaster.overheadPerformance?.sceneRowDefinedSurfaceFootprintWindowFallback ?? false,
-  configuredLevelImageSceneRectFallback:
-    CONFIG.fxmaster.overheadPerformance?.configuredLevelImageSceneRectFallback ?? true,
-  compositorSceneFilterSuppression: CONFIG.fxmaster.overheadPerformance?.compositorSceneFilterSuppression ?? true,
-  compositorSceneParticleSuppression: CONFIG.fxmaster.overheadPerformance?.compositorSceneParticleSuppression ?? true,
-  compositorSceneParticleSuppressionMode:
-    CONFIG.fxmaster.overheadPerformance?.compositorSceneParticleSuppressionMode ?? "always",
-  compositorSceneParticleSuppressionIdleDelayMs:
-    CONFIG.fxmaster.overheadPerformance?.compositorSceneParticleSuppressionIdleDelayMs ?? 180,
-  compositorSuppressionMaskCaching: CONFIG.fxmaster.overheadPerformance?.compositorSuppressionMaskCaching ?? true,
-  sceneMaskWorldAtlas: CONFIG.fxmaster.overheadPerformance?.sceneMaskWorldAtlas ?? true,
-  nativeLevelDynamicCoveragePresyncOnlyWhenMoving:
-    CONFIG.fxmaster.overheadPerformance?.nativeLevelDynamicCoveragePresyncOnlyWhenMoving ?? true,
-  sharedCoverageSameFrameDeduplication:
-    CONFIG.fxmaster.overheadPerformance?.sharedCoverageSameFrameDeduplication ?? true,
-  skipInitialStackBlitForSimpleHiDpiFrames:
-    CONFIG.fxmaster.overheadPerformance?.skipInitialStackBlitForSimpleHiDpiFrames ?? true,
-};
 
 const PARTICLE_REGION_BEHAVIOR_TYPE = `${packageId}.particleEffectsRegion`;
 const FILTER_REGION_BEHAVIOR_TYPE = `${packageId}.filterEffectsRegion`;

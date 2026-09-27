@@ -5,7 +5,7 @@ import { ParticleEffectsManagement } from "../particle-effects/applications/part
 import { FxLayersManagement } from "../stack/fx-layers-management.js";
 import { hasFxmasterPlus } from "../api.js";
 
-const README_URL = "https://github.com/gambit07/fxmaster#readme";
+const README_URL = "https://gambit07.github.io/fxmaster-wiki/";
 const FXMASTER_PLUS_SOUND_EFFECTS_MODULE = "modules/fxmaster-plus/scripts/soundfx/soundfx-management.js";
 const FXMASTER_PLUS_USER_PARTICLES_MODULE = "modules/fxmaster-plus/scripts/user-particle-effects-management.js";
 const PREVIEW_MAX_WIDTH = "min(92vw, 1100px)";

@@ -1,4 +1,4 @@
-import { FXMasterParticleEffect } from "./effect.js";
+import { FXMasterParticleEffect } from "../effect.js";
 
 /**
  * A full-screen particle effect which renders flying birds.
@@ -9,7 +9,7 @@ export class BirdsParticleEffect extends FXMasterParticleEffect {
 
   /** @override */
   static get icon() {
-    return "modules/fxmaster/assets/particle-effects/icons/birds.webp";
+    return "modules/fxmaster/assets/particle-effects/icons/birds.svg";
   }
 
   /** @override */

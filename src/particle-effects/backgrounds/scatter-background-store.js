@@ -1,7 +1,5 @@
 /**
- * Session-persistent state for sprite-based particle backgrounds such as
- * accumulated autumn leaves. The store deliberately owns only lightweight
- * data; each active renderer mirrors that data into its own PIXI sprites.
+ * Session-persistent state for sprite-based particle backgrounds such as accumulated autumn leaves. The store deliberately owns only lightweight data; each active renderer mirrors that data into its own PIXI sprites.
  */
 
 const MAX_SCATTER_PARTICLES = 2600;
@@ -471,9 +469,7 @@ export class ScatterBackgroundStore {
   }
 
   /**
-   * Advance active leaves once per ticker timestamp. Multiple surfaces can
-   * share this store during a crossfade; the timestamp guard prevents physics
-   * from running twice.
+   * Advance active leaves once per ticker timestamp. Multiple surfaces can share this store during a crossfade; the timestamp guard prevents physics from running twice.
    */
   advance(tick, { progress = this._lastProgress } = {}) {
     if (!this.enabled || this._destroyed || !this.bounds) return;
@@ -646,9 +642,7 @@ export class ScatterBackgroundStore {
   }
 
   /**
-   * Deterministically rebuild the displaced field from persisted movement
-   * events. Events are projected onto a virtual monotonic timeline, simulated
-   * in order, and then shifted back to the current runtime clock.
+   * Deterministically rebuild the displaced field from persisted movement events. Events are projected onto a virtual monotonic timeline, simulated in order, and then shifted back to the current runtime clock.
    *
    * @param {Array<object>} events
    * @param {{currentTick?:number,currentTime?:number}} [options]

@@ -1,5 +1,5 @@
-import { FXMasterParticleEffect } from "./effect.js";
-import { DefaultRectangleSpawnMixin } from "./mixins/default-rectangle-spawn.js";
+import { FXMasterParticleEffect } from "../effect.js";
+import { DefaultRectangleSpawnMixin } from "../mixins/default-rectangle-spawn.js";
 
 /**
  * A full-screen particle effect which renders flying bats.
@@ -10,7 +10,7 @@ export class BatsParticleEffect extends DefaultRectangleSpawnMixin(FXMasterParti
 
   /** @override */
   static get icon() {
-    return "modules/fxmaster/assets/particle-effects/icons/bats.webp";
+    return "modules/fxmaster/assets/particle-effects/icons/bats.svg";
   }
 
   /** @override */

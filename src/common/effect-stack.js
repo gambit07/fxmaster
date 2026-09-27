@@ -382,9 +382,9 @@ export function collectEnabledEffectRows(scene = canvas?.scene ?? null) {
     }
   };
 
-  const getLayerLevel = (type) => {
-    const db = CONFIG?.fxmaster?.particleEffects ?? {};
-    return db?.[type]?.defaultConfig?.layerLevel ?? "belowDarkness";
+  const getLayerLevel = (type, options = {}) => {
+    const EffectClass = CONFIG?.fxmaster?.particleEffects?.[type];
+    return EffectClass?.getLayerLevel?.(options) ?? EffectClass?.defaultConfig?.layerLevel ?? "belowDarkness";
   };
 
   const sceneEffects = scene.getFlag(packageId, "effects") ?? {};
@@ -394,7 +394,7 @@ export function collectEnabledEffectRows(scene = canvas?.scene ?? null) {
     const type = String(info.type);
     const uid = buildSceneEffectUid("particle", effectId);
     const sourceInfo = getSceneEffectSourceInfo(effectId);
-    const layerLevel = getLayerLevel(type);
+    const layerLevel = getLayerLevel(type, info?.options ?? {});
     pushRow({
       uid,
       kind: "particle",
@@ -486,7 +486,7 @@ export function collectEnabledEffectRows(scene = canvas?.scene ?? null) {
       for (const [effectId, info] of Object.entries(particleDefs)) {
         const type = String(effectId);
         const uid = buildRegionEffectUid("particle", regionDoc.id, behavior.id, effectId);
-        const layerLevel = getLayerLevel(type);
+        const layerLevel = getLayerLevel(type, info?.options ?? {});
         pushRow({
           uid,
           kind: "particle",
@@ -559,9 +559,9 @@ export function collectEnabledEffectRenderRows(scene = canvas?.scene ?? null) {
   const pushRow = (row) => {
     if (row?.uid) rows.push(row);
   };
-  const getLayerLevel = (type) => {
-    const db = CONFIG?.fxmaster?.particleEffects ?? {};
-    return db?.[type]?.defaultConfig?.layerLevel ?? "belowDarkness";
+  const getLayerLevel = (type, options = {}) => {
+    const EffectClass = CONFIG?.fxmaster?.particleEffects?.[type];
+    return EffectClass?.getLayerLevel?.(options) ?? EffectClass?.defaultConfig?.layerLevel ?? "belowDarkness";
   };
 
   const sceneEffects = scene.getFlag(packageId, "effects") ?? {};
@@ -569,7 +569,7 @@ export function collectEnabledEffectRenderRows(scene = canvas?.scene ?? null) {
   for (const [effectId, info] of Object.entries(sceneEffects)) {
     if (!info || typeof info !== "object" || !info.type) continue;
     const type = String(info.type);
-    const layerLevel = getLayerLevel(type);
+    const layerLevel = getLayerLevel(type, info?.options ?? {});
     pushRow({
       uid: buildSceneEffectUid("particle", effectId),
       kind: "particle",
@@ -640,7 +640,7 @@ export function collectEnabledEffectRenderRows(scene = canvas?.scene ?? null) {
       const particleDefs = fxmGetRegionBehaviorEffectDefinitions(behavior, "particle");
       for (const [effectId, info] of Object.entries(particleDefs)) {
         const type = String(effectId);
-        const layerLevel = getLayerLevel(type);
+        const layerLevel = getLayerLevel(type, info?.options ?? {});
         pushRow({
           uid: buildRegionEffectUid("particle", regionDoc.id, behavior.id, effectId),
           kind: "particle",

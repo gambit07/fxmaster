@@ -19,8 +19,8 @@ export class SpecialEffectsLayer extends SpecialEffectsLayerBase {
     this.ruler = null;
     this._dragging = false;
     this.windowVisible = false;
-    this._socketHandler = (data) => this.#handleSocketPlayback(data);
-    game.socket?.on?.(`module.${packageId}`, this._socketHandler);
+    this._socketHandler = null;
+    this.#activateSocketPlayback();
   }
 
   static get layerOptions() {
@@ -37,6 +37,7 @@ export class SpecialEffectsLayer extends SpecialEffectsLayerBase {
    * @returns {Promise<void>}
    */
   async _draw() {
+    this.#activateSocketPlayback();
     await super._draw?.();
     this.ruler = this.addChild(new PIXI.Graphics());
   }
@@ -115,9 +116,10 @@ export class SpecialEffectsLayer extends SpecialEffectsLayerBase {
           this.#configureSpecialEffectMesh(record.mesh, playbackData);
           canvas.primary?.addChild?.(record.mesh);
           canvas.primary?.videoMeshes?.add?.(record.mesh);
-          void game.video
-            ?.play?.(video, { playing: true, loop: false })
-            ?.catch?.((err) => logger.debug("FXMaster:", err));
+          void game.video?.play?.(video, { playing: true, loop: false })?.catch?.((err) => {
+            logger.debug("FXMaster:", err);
+            complete();
+          });
         } catch (err) {
           logger.debug("FXMaster:", err);
           complete();
@@ -143,6 +145,13 @@ export class SpecialEffectsLayer extends SpecialEffectsLayerBase {
       ui.notifications.warn(msg);
     } catch (_err) {}
     return `ui.notifications.warn(${JSON.stringify(msg)});`;
+  }
+
+  /** Register one socket playback listener for the active layer. */
+  #activateSocketPlayback() {
+    if (this._socketHandler) return;
+    this._socketHandler = (data) => this.#handleSocketPlayback(data);
+    game.socket?.on?.(`module.${packageId}`, this._socketHandler);
   }
 
   #handleSocketPlayback(data) {

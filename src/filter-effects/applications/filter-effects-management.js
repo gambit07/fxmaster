@@ -248,10 +248,7 @@ export class FilterEffectsManagement extends FXMasterBaseFormV2 {
     const liveElement = this.element;
     if (!liveElement?.isConnected) return;
 
-    const content = liveElement.querySelector(".window-content") ?? liveElement;
-
     this._wireRangeWheelBehavior({
-      getScrollWrapper: (slider) => slider.closest(".fxmaster-filters-container") ?? content,
       onInput: (event, slider) => FilterEffectsManagement.updateParam.call(this, event, slider),
     });
 
@@ -459,7 +456,7 @@ export class FilterEffectsManagement extends FXMasterBaseFormV2 {
   }
 
   _storeCurrentPosition() {
-    this._persistPositionFlag(this.position);
+    this._persistPositionFlag(this.position, { immediate: true });
   }
 
   async _onClose(...args) {

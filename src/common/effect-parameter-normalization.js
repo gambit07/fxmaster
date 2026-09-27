@@ -378,9 +378,10 @@ function resolveStaticDescriptor(target, key) {
  *
  * @param {"particle"|"filter"} kind
  * @param {object|null|undefined} source
+ * @param {string} group
  * @returns {object}
  */
-function normalizeParameterMap(kind, source) {
+function normalizeParameterMap(kind, source, group) {
   const parameters = source && typeof source === "object" ? source : {};
   const defaults = getRenderOrderParameters(kind);
   const leadingOrder = ["belowTokens", "belowTiles", "belowForeground", "levels"];
@@ -504,6 +505,17 @@ function normalizeParameterMap(kind, source) {
     normalized[key] = normalizeRangeParameter(key, parameters[key]);
   }
 
+  if (kind === "particle" && group === "animals") {
+    normalized.regionBoundaryAvoidance = {
+      label: "FXMASTER.Params.RegionBoundaryAvoidance",
+      tooltip: "FXMASTER.ParamTooltips.RegionBoundaryAvoidance",
+      type: "checkbox",
+      value: false,
+      regionOnly: true,
+      hideWhen: { orbit: true },
+    };
+  }
+
   for (const key of burnTokensOrder) {
     normalized[key] = normalizeRangeParameter(key, parameters[key]);
   }
@@ -523,7 +535,7 @@ function normalizeParameterMap(kind, source) {
  * @param {"particle"|"filter"} kind
  * @returns {void}
  */
-function normalizeEffectDefinition(effectDefinition, kind) {
+export function normalizeEffectDefinition(effectDefinition, kind) {
   if (!effectDefinition || hasOwn(effectDefinition, "__fxmRenderOrderParametersNormalized")) return;
 
   const ownDescriptor = Object.getOwnPropertyDescriptor(effectDefinition, "parameters");
@@ -548,7 +560,7 @@ function normalizeEffectDefinition(effectDefinition, kind) {
   };
 
   function getNormalizedParameters() {
-    return normalizeParameterMap(kind, readParameters(this));
+    return normalizeParameterMap(kind, readParameters(this), this?.group);
   }
 
   try {

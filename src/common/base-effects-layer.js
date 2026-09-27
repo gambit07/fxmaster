@@ -9,7 +9,7 @@
  * @abstract
  * @extends {CONFIG.fxmaster.FullCanvasObjectMixinNS}
  */
-import { RTPool, snappedStageMatrix, cameraMatrixChanged } from "../utils.js";
+import { RTPool, snappedStageMatrix, cameraMatrixChanged, coalesceNextFrame } from "../utils.js";
 import { logger } from "../logger.js";
 
 export class BaseEffectsLayer extends CONFIG.fxmaster.FullCanvasObjectMixinNS(CONFIG.fxmaster.CanvasLayerNS) {
@@ -69,6 +69,9 @@ export class BaseEffectsLayer extends CONFIG.fxmaster.FullCanvasObjectMixinNS(CO
    */
   async _tearDown() {
     this._tearingDown = true;
+    this._coalescedRegionRefresh?.cancel();
+    this._pendingRegionRefreshIds?.clear();
+    this._pendingRegionRefreshAll = false;
 
     if (this._ticker) {
       try {
@@ -126,6 +129,33 @@ export class BaseEffectsLayer extends CONFIG.fxmaster.FullCanvasObjectMixinNS(CO
    * @returns {void}
    */
   _onCameraChange() {}
+
+  /**
+   * Batch region mask updates, preserving every requested region and allowing a full refresh to cover them all.
+   * @param {string} [regionId]
+   */
+  requestRegionMaskRefresh(regionId) {
+    if (this._tearingDown) return;
+    this._pendingRegionRefreshIds ??= new Set();
+    if (regionId != null) this._pendingRegionRefreshIds.add(regionId);
+    this._coalescedRegionRefresh ??= coalesceNextFrame(() => {
+      const ids = this._pendingRegionRefreshIds;
+      const all = this._pendingRegionRefreshAll;
+      this._pendingRegionRefreshIds = new Set();
+      this._pendingRegionRefreshAll = false;
+      if (this._tearingDown) return;
+      if (all) this.forceRegionMaskRefreshAll();
+      else for (const id of ids) this.forceRegionMaskRefresh(id);
+    });
+    this._coalescedRegionRefresh();
+  }
+
+  /** Schedule one full region mask refresh on the next animation frame. */
+  requestRegionMaskRefreshAll() {
+    if (this._tearingDown) return;
+    this._pendingRegionRefreshAll = true;
+    this.requestRegionMaskRefresh();
+  }
 
   /**
    * Acquire a pooled {@link PIXI.RenderTexture} from the internal {@link RTPool}.

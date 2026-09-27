@@ -82,7 +82,7 @@ function createScatterGroundBatch(maxSize) {
   try {
     const container = new ParticleContainer(
       size,
-      { position: true, rotation: true, scale: true, tint: true, alpha: true },
+      { position: false, rotation: false, scale: false, uvs: false, tint: false, alpha: false },
       batchSize,
       true,
     );
@@ -138,9 +138,7 @@ function resolveDescriptorTextures(descriptor, options) {
 }
 
 /**
- * Sprite-backed persistent background used by Autumn Leaves and future scatter
- * profiles. The shared store owns positions and physics while this class owns
- * only the PIXI display objects for one particle runtime.
+ * Sprite-backed persistent background used by Autumn Leaves and future scatter profiles. The shared store owns positions and physics while this class owns only the PIXI display objects for one particle runtime.
  */
 export class ScatterBackgroundSurface {
   constructor({
@@ -460,9 +458,7 @@ export class ScatterBackgroundSurface {
   }
 
   /**
-   * Resolve how much of this field existed when a persisted disturbance was
-   * created. Replaying against the historical progress prevents a reload from
-   * moving leaves or petals which had not accumulated yet at that moment.
+   * Resolve how much of this field existed when a persisted disturbance was created. Replaying against the historical progress prevents a reload from moving leaves or petals which had not accumulated yet at that moment.
    *
    * @param {number} epochMs
    * @returns {number}
@@ -509,8 +505,7 @@ export class ScatterBackgroundSurface {
   flushTrails() {}
 
   /**
-   * Reconstruct the deterministic resting field and replay persisted token
-   * disturbances in chronological order.
+   * Reconstruct the deterministic resting field and replay persisted token disturbances in chronological order.
    *
    * @param {Array<object>} events
    * @param {{now?:number,tick?:number}} [options]
@@ -556,17 +551,33 @@ export class ScatterBackgroundSurface {
       return;
     }
 
-    sprite.visible = true;
-    sprite.alpha = clamp(localAge * leaf.baseAlpha, 0, 1, 0);
-    sprite.position.set(leaf.x, leaf.y - leaf.z * 0.62);
-    sprite.rotation = leaf.rotation;
-    sprite.tint = shadeColor(this.tint, leaf.brightness);
-
+    const alpha = clamp(localAge * leaf.baseAlpha, 0, 1, 0);
+    const y = leaf.y - leaf.z * 0.62;
+    const tint = shadeColor(this.tint, leaf.brightness);
     const liftedScale = 1 + Math.min(0.16, (leaf.z / Math.max(1, this.bounds?.gridSize ?? 100)) * 0.11);
     const scale = (leaf.size * liftedScale) / textureLongestSide(sprite.texture);
-    sprite.scale.set(scale);
-
     const targetContainer = leaf.awake ? this.activeContainer : this._groundTextureContainer(leaf);
+    if (
+      targetContainer &&
+      targetContainer !== this.activeContainer &&
+      sprite.parent === targetContainer &&
+      (sprite.alpha !== alpha ||
+        sprite.x !== leaf.x ||
+        sprite.y !== y ||
+        sprite.rotation !== leaf.rotation ||
+        sprite.tint !== tint ||
+        sprite.scale.x !== scale ||
+        sprite.scale.y !== scale)
+    ) {
+      targetContainer.__fxmScatterStaticDirty = true;
+    }
+
+    sprite.visible = true;
+    sprite.alpha = alpha;
+    sprite.position.set(leaf.x, y);
+    sprite.rotation = leaf.rotation;
+    sprite.tint = tint;
+    sprite.scale.set(scale);
     if (targetContainer && sprite.parent !== targetContainer) targetContainer.addChild(sprite);
   }
 
@@ -598,6 +609,11 @@ export class ScatterBackgroundSurface {
     if (awaitingTextures || spriteSignature !== this._spriteUpdateSignature) {
       if (!awaitingTextures) this._spriteUpdateSignature = spriteSignature;
       for (let index = 0; index < count; index++) this._updateSprite(this._sprites[index], leaves[index], progress);
+      for (const container of this._groundTextureContainers) {
+        if (!container.__fxmScatterStaticDirty) continue;
+        container.onChildrenChange?.(0);
+        container.__fxmScatterStaticDirty = false;
+      }
     }
 
     const runtimeAlpha = clamp(fx?.alpha, 0, 1, 1);

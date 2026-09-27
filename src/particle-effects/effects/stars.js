@@ -1,5 +1,5 @@
-import { FXMasterParticleEffect } from "./effect.js";
-import { withSteppedGradientColor } from "./helpers/with-stepped-gradient-color.js";
+import { FXMasterParticleEffect } from "../effect.js";
+import { withSteppedGradientColor } from "../mixins/with-stepped-gradient-color.js";
 
 /**
  * A full-screen particle effect which renders drifting stars.
@@ -10,7 +10,7 @@ export class StarsParticleEffect extends FXMasterParticleEffect {
 
   /** @override */
   static get icon() {
-    return "modules/fxmaster/assets/particle-effects/icons/stars.webp";
+    return "modules/fxmaster/assets/particle-effects/icons/stars.svg";
   }
 
   /** @override */

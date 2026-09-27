@@ -6,7 +6,11 @@ import {
   prepareFilterOptionsForSceneStorage,
 } from "../utils.js";
 import { packageId } from "../constants.js";
-import { applyLegacyRangeTolerance, createRegionNumberField } from "../utils/region-schema.js";
+import {
+  applyLegacyRangeTolerance,
+  createRegionNumberField,
+  RegionSoundSelectionField,
+} from "../utils/region-schema.js";
 import { buildRegionEffectUid, promoteEffectStackUids } from "../common/effect-stack.js";
 
 /**
@@ -141,18 +145,19 @@ export class FilterRegionBehaviorType extends foundry.data.regionBehaviors.Regio
           opts.nullable = false;
           opts.initial = !!cfg.value;
         } else if (cfg.type === "multi-select") {
-          const manualChoices =
-            param === "soundFxManualSoundIds" &&
-            typeof CONFIG?.fxmaster?.collectSoundFxManualSoundChoices === "function"
-              ? Object.fromEntries(
-                  CONFIG.fxmaster
-                    .collectSoundFxManualSoundChoices("filter", type)
-                    .map((choice) => [choice.value, choice.label]),
-                )
-              : null;
+          if (param === "soundFxManualSoundIds") {
+            schema[`${type}_${param}`] = new RegionSoundSelectionField("filter", type, {
+              required: false,
+              nullable: true,
+              initial: cfg.value,
+              label: cfg.label,
+              localize: true,
+            });
+            continue;
+          }
           const elementField = new foundry.data.fields.StringField({
             required: false,
-            choices: manualChoices ?? cfg.options ?? {},
+            choices: cfg.options ?? {},
             label: cfg.label,
             localize: true,
           });
@@ -392,14 +397,17 @@ export class FilterRegionBehaviorType extends foundry.data.regionBehaviors.Regio
     const mode = this._getEventModeFromSelection();
     if (mode === "none" || mode === "exitOnly") return;
 
-    const runtimeGate = fxmReadRegionBehaviorRuntimeState(this.parent, packageId);
+    const runtimeGate = fxmReadRegionBehaviorRuntimeState(this.parent, packageId, { snapshot: false });
     const prev = runtimeGate.eventGate || { mode, latched: false };
     let latched = !!prev.latched;
 
     const fxGateMode = runtimeGate.gateMode;
     const targetIds = new Set(runtimeGate.tokenTargets ?? []);
     const tokensInRegion = Array.from(event.region?.tokens ?? []);
-    const isTargetToken = (t) => targetIds.has(t.document.id) || targetIds.has(t.document.uuid);
+    const isTargetToken = (token) => {
+      const document = token?.document ?? token;
+      return targetIds.has(document?.id) || targetIds.has(document?.uuid);
+    };
 
     const countTargets = () => {
       if (fxGateMode !== "targets" || targetIds.size === 0) return null;

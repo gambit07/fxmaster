@@ -123,7 +123,6 @@ function _sceneFilterSuppressionCanUseCompositor(
   { anyBelow = false, anyBelowTiles = false, hasRelevantSuppression = false } = {},
 ) {
   try {
-    if (CONFIG?.fxmaster?.overheadPerformance?.compositorSceneFilterSuppression === false) return false;
     if (!applyRegionBehaviorsToOverheadLevels()) return false;
     if (!hasRelevantSuppression || anyBelow || anyBelowTiles) return false;
     if (!filters?.length) return false;
@@ -221,8 +220,7 @@ export class FilterEffectsSceneManager {
     const managed = Object.values(this.filters);
     const dying = [...this._dyingFilters];
 
-    const promises = [...managed, ...dying].map((f) => f.stop?.({ skipFading: true }));
-    await Promise.all(promises);
+    const previous = Array.from(new Set([...managed, ...dying]));
 
     try {
       if (env?.filters?.length) {
@@ -240,6 +238,7 @@ export class FilterEffectsSceneManager {
     this._dyingFilters.clear();
     this._lastSuppressionOverlaySignature = "";
     this._timedRemovalPending.clear();
+    this._runtimeFilterScratch = [];
 
     try {
       canvas?.app?.ticker?.remove?.(this.#animate, this);
@@ -247,6 +246,9 @@ export class FilterEffectsSceneManager {
       logger.debug("FXMaster:", err);
     }
     this._ticker = false;
+    this._sceneMasksOwnedByCompositor = false;
+    this._compositorMaskScene = null;
+    this._compositorMaskLevel = null;
     this._lastCamFrac = undefined;
     this._lastBelowTokenCoverageSignature = null;
     this._lastBelowTileCoverageSignature = null;
@@ -255,6 +257,29 @@ export class FilterEffectsSceneManager {
       SceneMaskManager.instance.setBelowTokensNeeded?.("filters", false);
       SceneMaskManager.instance.setBelowTilesNeeded?.("filters", false);
       SceneMaskManager.instance.setKindActive?.("filters", false);
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+    }
+    await Promise.allSettled(
+      previous.map(async (filter) => {
+        try {
+          await filter.stop?.({ skipFading: true });
+        } finally {
+          this.#disposeFilter(filter);
+        }
+      }),
+    );
+  }
+
+  /** Dispose of a filter once, including interrupted removal operations. */
+  #disposeFilter(filter) {
+    if (!filter) return;
+    const disposed = (this._disposedFilters ??= new WeakSet());
+    if (disposed.has(filter)) return;
+    disposed.add(filter);
+    this.#removeFromEnvFilters([filter]);
+    try {
+      filter.destroy?.();
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
@@ -280,6 +305,19 @@ export class FilterEffectsSceneManager {
         return [[id, { ...info, options }]];
       }),
     );
+
+    for (const [key, info] of Object.entries(filterInfos)) {
+      const current = this.filters[key];
+      if (!current || current.constructor === CONFIG.fxmaster.filterEffects[info.type]) continue;
+      delete this.filters[key];
+      try {
+        Promise.resolve(current.stop?.({ skipFading: true })).catch((err) => logger.debug("FXMaster:", err));
+      } catch (err) {
+        logger.debug("FXMaster:", err);
+      } finally {
+        this.#disposeFilter(current);
+      }
+    }
 
     const createKeys = Object.keys(filterInfos).filter((k) => !(k in this.filters));
     const updateKeys = Object.keys(filterInfos).filter((k) => k in this.filters);
@@ -319,7 +357,7 @@ export class FilterEffectsSceneManager {
     for (const key of updateKeys) {
       const { options } = filterInfos[key];
       const f = this.filters[key];
-      f.configure?.(options);
+      (f.configureWithFade ?? f.configure)?.call(f, options);
       f.__fxmBelowTokens = _belowTokensEnabled(options?.belowTokens);
       f.__fxmBelowTiles = _belowTilesEnabled(options?.belowTiles);
       f.__fxmBelowForeground = _belowForegroundEnabled(options?.belowForeground);
@@ -353,17 +391,13 @@ export class FilterEffectsSceneManager {
       });
 
       this._dyingFilters.add(f);
-      Promise.resolve(f.stop?.({ skipFading }))
+      Promise.resolve()
+        .then(() => f.stop?.({ skipFading }))
         .catch(() => {})
         .finally(() => {
-          this.#removeFromEnvFilters([f]);
-          try {
-            f.destroy?.();
-          } catch (err) {
-            logger.debug("FXMaster:", err);
-          }
+          this.#disposeFilter(f);
           this._dyingFilters.delete(f);
-          this._transientStackRows.delete(uid);
+          if (this._transientStackRows.get(uid)?.filter === f) this._transientStackRows.delete(uid);
         });
     }
 
@@ -374,6 +408,14 @@ export class FilterEffectsSceneManager {
 
   refreshViewMaskGeometry() {
     this.#refreshSceneFilterSuppressionMasks(true);
+  }
+
+  /**
+   * Whether camera-driven mask refreshes are handled by the active animation callback.
+   * @returns {boolean}
+   */
+  get handlesCameraMaskRefresh() {
+    return this._ticker === true && canvas?.ready === true && canvas?.app?.ticker?.started === true;
   }
 
   /**
@@ -504,6 +546,45 @@ export class FilterEffectsSceneManager {
   }
 
   /**
+   * Determine whether an active stack can own an existing screen-space scene-filter mask pipeline.
+   * @param {PIXI.Filter[]} filters
+   * @returns {boolean}
+   */
+  #canDelegateSceneMasks(filters) {
+    if (!canvas?.level || !filters?.length) return false;
+    if (!filters.every((filter) => isBelowTokensFilter(filter) || isBelowTilesFilter(filter))) return false;
+    try {
+      const compositor = CONFIG?.fxmaster?.getGlobalEffectsCompositor?.();
+      if (compositor?.canPrepareSceneFilterStackMasks?.(filters) !== true) return false;
+      if (
+        this._sceneMasksOwnedByCompositor &&
+        this._compositorMaskScene === canvas.scene &&
+        this._compositorMaskLevel === canvas.level
+      )
+        return true;
+      const manager = SceneMaskManager.instance;
+      const base = manager.getMasks("filters")?.base;
+      return !!base && !base.destroyed && !base.baseTexture?.destroyed && manager.usesWorldAtlas("filters") !== true;
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+      return false;
+    }
+  }
+
+  /**
+   * Track mask ownership for active and fading scene filters.
+   * @param {PIXI.Filter[]} filters
+   * @param {boolean} owned
+   * @returns {void}
+   */
+  #setCompositorMaskOwnership(filters, owned) {
+    this._sceneMasksOwnedByCompositor = owned;
+    this._compositorMaskScene = owned ? canvas.scene : null;
+    this._compositorMaskLevel = owned ? canvas.level : null;
+    for (const filter of filters) filter.__fxmStackOwnsSceneMask = owned;
+  }
+
+  /**
    * Clear any scene suppression/cutout mask uniforms from active and fading filters.
    *
    * When no suppress-scene-filters Region can affect the filters' selected Levels, compositor stack passes can use their direct Level clip and the shared scene suppression mask is unnecessary. Clearing stale uniforms keeps the live runtime from sampling an obsolete mask while avoiding a rebuild.
@@ -551,6 +632,7 @@ export class FilterEffectsSceneManager {
   #bindSuppressMaskUniforms({ presyncedLiveLevelState = false } = {}) {
     const filtersArr = this.#collectRuntimeFiltersScratch();
     if (!filtersArr.length) return;
+    if (this._sceneMasksOwnedByCompositor && this.#canDelegateSceneMasks(filtersArr)) return;
 
     const anyBelow = filtersArr.some((f) => isBelowTokensFilter(f));
     const anyBelowTiles = filtersArr.some((f) => isBelowTilesFilter(f));
@@ -612,6 +694,21 @@ export class FilterEffectsSceneManager {
     const hasAny = filtersArr.length > 0;
     const anyBelow = hasAny ? filtersArr.some((f) => isBelowTokensFilter(f)) : false;
     const anyBelowTiles = hasAny ? filtersArr.some((f) => isBelowTilesFilter(f)) : false;
+    const delegated = this.#canDelegateSceneMasks(filtersArr);
+    this.#setCompositorMaskOwnership(filtersArr, delegated);
+    if (delegated) {
+      this.#clearSuppressMaskUniforms();
+      const manager = SceneMaskManager.instance;
+      manager.setBelowTokensNeeded("filters", anyBelow);
+      manager.setBelowTilesNeeded("filters", anyBelowTiles);
+      manager.setKindActive("filters", false);
+      this._lastSceneSuppressionNeedsMasking = false;
+      this._lastSuppressionOverlaySignature = "";
+      this._lastBelowTokenCoverageSignature = null;
+      this._lastBelowTileCoverageSignature = null;
+      this._lastCamFrac = undefined;
+      return;
+    }
     const hasRelevantSuppression = hasAny ? _hasRelevantSuppressionForSceneFilters(filtersArr) : false;
     const compositorHandlesSuppression = hasAny
       ? _sceneFilterSuppressionCanUseCompositor(filtersArr, { anyBelow, anyBelowTiles, hasRelevantSuppression })
@@ -671,6 +768,7 @@ export class FilterEffectsSceneManager {
     const hasAny = Object.keys(this.filters).length > 0 || this._dyingFilters.size > 0;
     if (hasAny) this.#applySuppressMaskToFilters(sync, { presyncedLiveLevelState });
     else {
+      this.#setCompositorMaskOwnership([], false);
       try {
         SceneMaskManager.instance.setBelowTokensNeeded?.("filters", false);
         SceneMaskManager.instance.setBelowTilesNeeded?.("filters", false);
@@ -763,11 +861,21 @@ export class FilterEffectsSceneManager {
       logger.debug("FXMaster:", err);
     }
 
+    if (this.#canDelegateSceneMasks(filtersArr)) {
+      if (!this._sceneMasksOwnedByCompositor) this.#applySuppressMaskToFilters(true, { presyncedLiveLevelState: true });
+      return;
+    }
+    if (this._sceneMasksOwnedByCompositor) {
+      this.#refreshSceneFilterSuppressionMasks(true, { presyncedLiveLevelState: true });
+      return;
+    }
+
     const M = snappedStageMatrix();
     if (!M) return;
 
     const L = this._lastRegionsMatrix;
-    const changed = cameraMatrixChanged(M, L);
+    const viewportKey = getCssViewportMetrics().key;
+    const changed = cameraMatrixChanged(M, L) || viewportKey !== this._lastMaskViewportKey;
     const hasAny = filtersArr.length > 0;
     const anyBelowTokens = hasAny ? filtersArr.some((f) => isBelowTokensFilter(f)) : false;
     const anyBelowTiles = hasAny ? filtersArr.some((f) => isBelowTilesFilter(f)) : false;
@@ -807,6 +915,7 @@ export class FilterEffectsSceneManager {
 
     this._lastSceneSuppressionNeedsMasking = !!needsMasking;
     this._lastSuppressionOverlaySignature = tracksLiveSurfaceState ? overlaySignature : "";
+    this._lastMaskViewportKey = viewportKey;
 
     try {
       if (!anyBelowTokens && !anyBelowTiles) {
@@ -855,10 +964,10 @@ export class FilterEffectsSceneManager {
       const worldAtlasCoverage = SceneMaskManager.instance.usesWorldAtlasCoverage?.() === true;
       const cameraCoverageChanged = !worldAtlasCoverage && fracMoved;
       if (tokenMotionChanged || tileCoverageChanged) {
-        SceneMaskManager.instance.refreshTokensSync?.({ force: true });
+        SceneMaskManager.instance.refreshTokensSync?.({ presyncedCoreState: true });
         this.#bindSuppressMaskUniforms();
       } else if (!changed && cameraCoverageChanged) {
-        SceneMaskManager.instance.refreshTokensSync?.();
+        SceneMaskManager.instance.refreshTokensSync?.({ presyncedCoreState: true });
         this.#bindSuppressMaskUniforms();
       } else if ((changed || fracMoved) && worldAtlasCoverage) {
         this.#bindSuppressMaskUniforms();

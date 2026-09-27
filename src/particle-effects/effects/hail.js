@@ -1,5 +1,5 @@
-import { FXMasterParticleEffect } from "./effect.js";
-import { withSteppedGradientColor } from "./helpers/with-stepped-gradient-color.js";
+import { FXMasterParticleEffect } from "../effect.js";
+import { withSteppedGradientColor } from "../mixins/with-stepped-gradient-color.js";
 import { logger } from "../../logger.js";
 
 /**
@@ -15,7 +15,7 @@ export class HailParticleEffect extends FXMasterParticleEffect {
 
   /** @override */
   static get icon() {
-    return "modules/fxmaster/assets/particle-effects/icons/hail.webp";
+    return "modules/fxmaster/assets/particle-effects/icons/hail.svg";
   }
 
   /** @override */

@@ -1,5 +1,5 @@
-import { FXMasterParticleEffect } from "./effect.js";
-import { DefaultRectangleSpawnMixin } from "./mixins/default-rectangle-spawn.js";
+import { FXMasterParticleEffect } from "../effect.js";
+import { DefaultRectangleSpawnMixin } from "../mixins/default-rectangle-spawn.js";
 
 /**
  * A full-screen particle effect which renders swirling fog.
@@ -10,7 +10,7 @@ export class FogParticleEffect extends DefaultRectangleSpawnMixin(FXMasterPartic
 
   /** @override */
   static get icon() {
-    return "modules/fxmaster/assets/particle-effects/icons/fog.webp";
+    return "modules/fxmaster/assets/particle-effects/icons/fog.svg";
   }
 
   /** @override */

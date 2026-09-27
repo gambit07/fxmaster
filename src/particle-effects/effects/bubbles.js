@@ -1,5 +1,5 @@
-import { FXMasterParticleEffect, fxmDeltaSeconds, fxmForEachEmitterParticle, fxmGetParticleAge } from "./effect.js";
-import { DefaultRectangleSpawnMixin } from "./mixins/default-rectangle-spawn.js";
+import { FXMasterParticleEffect, fxmDeltaSeconds, fxmForEachEmitterParticle, fxmGetParticleAge } from "../effect.js";
+import { DefaultRectangleSpawnMixin } from "../mixins/default-rectangle-spawn.js";
 import { logger } from "../../logger.js";
 
 const BUBBLE_TRAIL_SAMPLE_INTERVAL_MS = 33;
@@ -159,7 +159,7 @@ export class BubblesParticleEffect extends DefaultRectangleSpawnMixin(FXMasterPa
 
   /** @override */
   static get icon() {
-    return "modules/fxmaster/assets/particle-effects/icons/bubbles.webp";
+    return "modules/fxmaster/assets/particle-effects/icons/bubbles.svg";
   }
 
   /** @override */
@@ -238,7 +238,7 @@ export class BubblesParticleEffect extends DefaultRectangleSpawnMixin(FXMasterPa
         step: 0.05,
         decimals: 2,
         showWhen: { tokenTrailsEnabled: true },
-        tooltip: "FXMASTER.ParamTooltips.BubbleTokenTrailWidth",
+        tooltip: "FXMASTER.ParamTooltips.TokenTrailWidth",
       },
       tokenTrailStrength: {
         label: "FXMASTER.Params.TokenTrailStrength",

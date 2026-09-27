@@ -1,4 +1,4 @@
-import { FXMasterParticleEffect } from "./effect.js";
+import { FXMasterParticleEffect } from "../effect.js";
 import { logger } from "../../logger.js";
 
 /**
@@ -10,7 +10,7 @@ export class SnowParticleEffect extends FXMasterParticleEffect {
 
   /** @override */
   static get icon() {
-    return "modules/fxmaster/assets/particle-effects/icons/snow.webp";
+    return "modules/fxmaster/assets/particle-effects/icons/snow.svg";
   }
 
   /** @override */
@@ -117,7 +117,7 @@ export class SnowParticleEffect extends FXMasterParticleEffect {
         tooltip: "FXMASTER.ParamTooltips.BackgroundDriftScale",
       },
       backgroundTrailsEnabled: {
-        label: "FXMASTER.Params.BackgroundTrails",
+        label: "FXMASTER.Params.TokenTrails",
         type: "checkbox",
         value: false,
         showWhen: { backgroundEnabled: true },
@@ -143,7 +143,7 @@ export class SnowParticleEffect extends FXMasterParticleEffect {
         tooltip: "FXMASTER.ParamTooltips.BackgroundTrailRefillDuration",
       },
       backgroundTrailWidth: {
-        label: "FXMASTER.Params.BackgroundTrailWidth",
+        label: "FXMASTER.Params.TokenTrailWidth",
         type: "range",
         min: 0,
         value: 0.5,
@@ -151,10 +151,10 @@ export class SnowParticleEffect extends FXMasterParticleEffect {
         step: 0.05,
         decimals: 2,
         showWhen: { backgroundEnabled: true, backgroundTrailsEnabled: true },
-        tooltip: "FXMASTER.ParamTooltips.BackgroundTrailWidth",
+        tooltip: "FXMASTER.ParamTooltips.TokenTrailWidth",
       },
       backgroundTrailStrength: {
-        label: "FXMASTER.Params.BackgroundTrailStrength",
+        label: "FXMASTER.Params.TokenTrailStrength",
         type: "range",
         min: 0,
         value: 0.25,
@@ -173,7 +173,7 @@ export class SnowParticleEffect extends FXMasterParticleEffect {
         step: 0.5,
         decimals: 1,
         showWhen: { backgroundEnabled: true, backgroundTrailsEnabled: true },
-        tooltip: "FXMASTER.ParamTooltips.BackgroundTrailElevationThreshold",
+        tooltip: "FXMASTER.ParamTooltips.BackgroundInteractionElevationThreshold",
       },
     };
   }

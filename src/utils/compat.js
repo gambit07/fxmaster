@@ -6,6 +6,7 @@
 
 import { ALL_LEVELS_SELECTION, packageId } from "../constants.js";
 import { logger } from "../logger.js";
+import { localTransformChainKey, textureContentKey } from "./render-state.js";
 import { applyRegionBehaviorsToOverheadLevels, disableGridMovementHighlighting } from "../settings-access.js";
 import {
   fxmCollectionValues,
@@ -1188,23 +1189,7 @@ function nextElevationUp(value) {
  * @returns {{min:number,max:number}|null}
  */
 function getDocumentElevationWindow(document) {
-  const publicWindow = fxmGetDocumentElevationWindow(document);
-  if (publicWindow) return publicWindow;
-
-  const sourceElevation = document?.elevation ?? fxmReadDocumentSnapshotValue(document, "elevation") ?? null;
-  const scalarElevation = Number(sourceElevation);
-  if (Number.isFinite(scalarElevation)) return { min: scalarElevation, max: scalarElevation };
-
-  const bottom = sourceElevation?.bottom ?? fxmReadDocumentSnapshotValue(document, ["elevation", "bottom"]);
-  const top = sourceElevation?.top ?? fxmReadDocumentSnapshotValue(document, ["elevation", "top"]);
-  const hasBottom = bottom !== undefined && bottom !== null && String(bottom).trim() !== "";
-  const hasTop = top !== undefined && top !== null && String(top).trim() !== "";
-  if (!hasBottom && !hasTop) return null;
-
-  return {
-    min: hasBottom ? Number(bottom) : Number.NEGATIVE_INFINITY,
-    max: hasTop ? Number(top) : Number.POSITIVE_INFINITY,
-  };
+  return fxmGetDocumentElevationWindow(document);
 }
 
 /**
@@ -2296,7 +2281,7 @@ export function getCanvasLiveLevelSurfaceState(
   for (const [index, mesh] of fxmGetPrimaryLevelTextureMeshes().entries()) {
     if (!mesh) continue;
     const object = mesh?.object ?? null;
-    const liveMesh = object?.mesh ?? object?.primaryMesh ?? object?.sprite ?? mesh;
+    const liveMesh = object === canvas?.primary ? mesh : object?.mesh ?? object?.primaryMesh ?? object?.sprite ?? mesh;
     /**
      * Foundry v14 exposes Define Surface hover and token membership through CanvasOcclusionMask#occludedSurfaces. Full-scene Level textures require per-frame sampling only for live fade state and rendered mesh properties, without repeated geometric mouse or controlled-token hit tests.
      */
@@ -2348,7 +2333,9 @@ export function getCanvasLiveLevelSurfaceState(
     parts.push(
       `lt:${levelId}:${textureId}:${visible}:${renderable}:${alphaKey}:${fadeKey}:${
         includeTransientFades && fading ? 1 : 0
-      }:${faded ? 1 : 0}`,
+      }:${faded ? 1 : 0}:${localTransformChainKey(liveMesh, canvas?.stage)}:${textureContentKey(
+        liveMesh?.texture ?? mesh?.texture,
+      )}:${liveMesh?.anchor?.x ?? 0}:${liveMesh?.anchor?.y ?? 0}`,
     );
   }
 
@@ -2408,7 +2395,14 @@ export function getCanvasLiveLevelSurfaceState(
     parts.push(
       `tile:${tileId}:${levelId}:${visible}:${renderable}:${alphaKey}:${fadeKey}:${revealState.revealed ? 1 : 0}:${
         revealState.hovered ? 1 : 0
-      }:${revealState.explicit ? 1 : 0}:${revealState.faded ? 1 : 0}`,
+      }:${revealState.explicit ? 1 : 0}:${revealState.faded ? 1 : 0}:${localTransformChainKey(
+        liveMesh,
+        canvas?.stage,
+      )}:${textureContentKey(liveMesh?.texture ?? mesh?.texture)}:${elevation}:${Array.from(
+        fxmGetDocumentLevelIds(document) ?? [],
+      )
+        .sort()
+        .join(",")}:${liveMesh?.anchor?.x ?? 0}:${liveMesh?.anchor?.y ?? 0}`,
     );
   }
 

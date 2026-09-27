@@ -10,8 +10,66 @@ import { fxmGetRegionBehaviorEventGate } from "./foundry-public.js";
 /** Circle constant (`2π`). */
 export const TAU = Math.PI * 2;
 
-/** @type {WeakMap<object, string>} */
+/** Cached signatures retain primitive geometry values so in-place edits remain observable. */
 const _regionMaskShapeSignatureCache = new WeakMap();
+const REGION_MASK_SHAPE_FIELDS = [
+  "type",
+  "x",
+  "y",
+  "width",
+  "height",
+  "radius",
+  "radiusX",
+  "radiusY",
+  "rotation",
+  "hole",
+];
+const REGION_MASK_SHAPE_TYPES = new Set(["rectangle", "ellipse", "circle", "polygon"]);
+
+/** Return whether a shape supports direct geometry comparison. */
+function canCacheRegionMaskShape(shape) {
+  if (typeof shape?.drawShape === "function" && typeof shape?.toObject === "function" && Array.isArray(shape.polygons))
+    return true;
+  return (
+    REGION_MASK_SHAPE_TYPES.has(shape?.type) &&
+    typeof shape.drawShape !== "function" &&
+    !shape.polygons &&
+    REGION_MASK_SHAPE_FIELDS.every((key) => shape[key] == null || typeof shape[key] !== "object") &&
+    (shape.points == null || Array.isArray(shape.points))
+  );
+}
+
+/** Compare live geometry with a detached snapshot, including polygon point edits. */
+function regionMaskShapeMatches(shape, cached) {
+  if (shape !== cached.shape || shape.drawShape !== cached.drawShape || shape.polygons !== cached.polygons)
+    return false;
+  for (let i = 0; i < REGION_MASK_SHAPE_FIELDS.length; i++) {
+    if (!Object.is(shape[REGION_MASK_SHAPE_FIELDS[i]], cached.values[i])) return false;
+  }
+  const points = shape.points ?? [];
+  if (!Array.isArray(points)) return false;
+  if (points.length !== cached.points.length) return false;
+  for (let i = 0; i < points.length; i++) {
+    const point = points[i];
+    const previous = cached.points[i];
+    if (point && typeof point === "object") {
+      if (!Array.isArray(previous) || !Object.is(point.x, previous[0]) || !Object.is(point.y, previous[1]))
+        return false;
+    } else if (!Object.is(point, previous)) return false;
+  }
+  return true;
+}
+
+/** Retain only the geometry fields used by built-in region shapes. */
+function snapshotRegionMaskShape(shape) {
+  return {
+    shape,
+    drawShape: shape.drawShape,
+    polygons: shape.polygons,
+    values: REGION_MASK_SHAPE_FIELDS.map((key) => shape[key]),
+    points: (shape.points ?? []).map((point) => (point && typeof point === "object" ? [point.x, point.y] : point)),
+  };
+}
 
 /**
  * Rotate a point around a center by radians.
@@ -393,22 +451,46 @@ export function regionMaskGeometrySignature(region) {
   const restriction = doc?.restriction ?? {};
   if (!restriction.enabled) {
     const source = region?.animationState?.shapes ?? doc?.shapes;
-    if (!region?.isAnimating && source && typeof source === "object") {
+    let shapes;
+    try {
+      shapes = Array.isArray(source) ? source : Array.from(source ?? []);
+    } catch (err) {
+      logger.debug("FXMaster:", err);
+      return "";
+    }
+    const cacheable = !region?.isAnimating && source && typeof source === "object";
+    if (cacheable) {
       const cached = _regionMaskShapeSignatureCache.get(source);
-      if (cached != null) return cached;
+      if (
+        cached &&
+        cached.shapes.length === shapes.length &&
+        shapes.every((shape, index) => regionMaskShapeMatches(shape, cached.shapes[index]))
+      )
+        return cached.signature;
     }
 
     let signature = "";
+    let snapshots = null;
     try {
-      const shapes = Array.from(source ?? []);
+      snapshots = shapes.map((shape) => (canCacheRegionMaskShape(shape) ? snapshotRegionMaskShape(shape) : null));
       signature =
-        JSON.stringify(shapes.map((shape) => (typeof shape?.toObject === "function" ? shape.toObject() : shape))) ?? "";
+        JSON.stringify(
+          shapes.map((shape, index) => {
+            const snapshot = snapshots[index];
+            if (snapshot)
+              return [snapshot.values, snapshot.points, snapshot.polygons?.map((polygon) => polygon.points)];
+            return typeof shape?.toObject === "function" ? shape.toObject() : shape;
+          }),
+        ) ?? "";
     } catch (err) {
       logger.debug("FXMaster:", err);
     }
 
-    if (!region?.isAnimating && source && typeof source === "object")
-      _regionMaskShapeSignatureCache.set(source, signature);
+    if (cacheable) {
+      if (signature && snapshots?.every(Boolean))
+        _regionMaskShapeSignatureCache.set(source, { signature, shapes: snapshots });
+      else _regionMaskShapeSignatureCache.delete(source);
+    }
     return signature;
   }
 

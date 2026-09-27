@@ -1890,8 +1890,9 @@ export const API_EFFECTS = {
       normal: {
         particles: [
           {
-            type: "sakurabloom",
+            type: "sakurablossoms",
             options: {
+              directionalMovement: true,
               belowTokens: false,
               soundFxEnabled: false,
               tint: {
@@ -1930,8 +1931,9 @@ export const API_EFFECTS = {
       topDown: {
         particles: [
           {
-            type: "sakurabloom",
+            type: "sakurablossoms",
             options: {
+              directionalMovement: true,
               belowTokens: false,
               soundFxEnabled: false,
               tint: {

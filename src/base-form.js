@@ -1,6 +1,7 @@
 import { getDialogColors } from "./utils.js";
 import { ALL_LEVELS_SELECTION, packageId } from "./constants.js";
 import { logger } from "./logger.js";
+import { wireRangeInputBehavior } from "./common/range-input.js";
 import { updateCompassDirectionOutput, wireCompassDirectionOutputs } from "./common/compass-direction.js";
 import {
   formatRangeOutputValue,
@@ -80,12 +81,14 @@ export class FXMasterBaseFormV2 extends Base {
   }
 
   /**
-   * Persist a finite ApplicationV2 position to the current user's FXMaster flags.
+   * Queue the latest window position for persistence after movement settles.
    *
    * @param {object|null|undefined} position
+   * @param {object} [options]
+   * @param {boolean} [options.immediate=false] Flush the final position when closing.
    * @returns {void}
    */
-  _persistPositionFlag(position) {
+  _persistPositionFlag(position, { immediate = false } = {}) {
     const key = this._getPositionFlagKey();
     if (!key || !position || this._fxmShouldSkipPositionPersistence()) return;
 
@@ -95,10 +98,48 @@ export class FXMasterBaseFormV2 extends Base {
     if (Number.isFinite(position.width)) next.width = position.width;
     if (!Object.keys(next).length) return;
 
+    this._fxmPendingPosition = { user: game.user, key, position: next };
+    this._fxmClearPositionSaveTimer();
+    if (immediate) {
+      void this._fxmFlushPositionFlag();
+      return;
+    }
+
+    const element = this.element?.[0] ?? this.element;
+    if (!element?.classList?.contains("fxmaster-window-moving")) element?.classList?.add("fxmaster-window-moving");
+    const win = this._fxmHostWindow();
+    this._fxmPositionSaveTimer = {
+      win,
+      id: win.setTimeout(() => void this._fxmFlushPositionFlag(), 300),
+    };
+  }
+
+  /** Cancel the pending position-save timer. */
+  _fxmClearPositionSaveTimer() {
+    const timer = this._fxmPositionSaveTimer;
+    if (timer) timer.win.clearTimeout(timer.id);
+    this._fxmPositionSaveTimer = null;
+  }
+
+  /** Save the latest settled position and serialize writes to preserve their order. */
+  async _fxmFlushPositionFlag() {
+    this._fxmClearPositionSaveTimer();
+    const element = this.element?.[0] ?? this.element;
+    element?.classList?.remove("fxmaster-window-moving");
+    if (this._fxmPositionSaveActive || !this._fxmPendingPosition) return;
+
+    const { user, key, position } = this._fxmPendingPosition;
+    this._fxmPendingPosition = null;
+    this._fxmPositionSaveActive = true;
     try {
-      game.user.setFlag(packageId, key, next);
+      const previous = user.getFlag(packageId, key);
+      const changed = Object.entries(position).some(([name, value]) => previous?.[name] !== value);
+      if (changed) await user.setFlag(packageId, key, position);
     } catch (err) {
       logger.debug("FXMaster:", err);
+    } finally {
+      this._fxmPositionSaveActive = false;
+      if (this._fxmPendingPosition && !this._fxmPositionSaveTimer) void this._fxmFlushPositionFlag();
     }
   }
 
@@ -1238,6 +1279,7 @@ export class FXMasterBaseFormV2 extends Base {
 
   /** @override */
   _onDetach(from, to) {
+    void this._fxmFlushPositionFlag();
     super._onDetach?.(from, to);
     this._fxmUpdateDetachedWindowFit();
     this.animateTitleBar(this);
@@ -1252,6 +1294,7 @@ export class FXMasterBaseFormV2 extends Base {
   }
 
   _onClose(...args) {
+    void this._fxmFlushPositionFlag();
     this._fxmDisableDetachedWindowFit();
     try {
       const animation = this._fxmTitleBarAnimation;
@@ -1309,195 +1352,17 @@ export class FXMasterBaseFormV2 extends Base {
   }
 
   /**
-   * Prevent wheel and keyboard adjustments on unfocused sliders, while keeping focused slider changes synchronized with the rendered output and backing data model.
+   * Preserve native scrolling over unfocused sliders and synchronize focused wheel and keyboard adjustments with the rendered output and backing data model.
    */
-  _wireRangeWheelBehavior({ getScrollWrapper, onInput } = {}) {
-    try {
-      this._fxmRangeBehaviorAbort?.abort();
-    } catch (err) {
-      logger.debug("FXMaster:", err);
-    }
-    this._fxmRangeBehaviorAbort = null;
-
-    const root = this.element;
-    if (!root) return;
-
-    const content = root.querySelector(".window-content") ?? root;
-    const getWrapper = getScrollWrapper ?? ((slider) => slider.closest(".window-content") ?? content);
-    const ac = new AbortController();
-    this._fxmRangeBehaviorAbort = ac;
-
-    const doc = root.ownerDocument ?? globalThis.document;
-    const isFocusedSlider = (slider) => slider && (doc.activeElement === slider || slider.matches?.(":focus"));
-    const clampToStep = (slider, rawValue) => {
-      const min = Number.parseFloat(slider.min);
-      const max = Number.parseFloat(slider.max);
-      const stepAttr = Number.parseFloat(slider.step);
-      const hasMin = Number.isFinite(min);
-      const hasMax = Number.isFinite(max);
-      const step = Number.isFinite(stepAttr) && stepAttr > 0 ? stepAttr : 1;
-      const base = hasMin ? min : 0;
-      let next = Number.isFinite(rawValue) ? rawValue : Number.parseFloat(slider.value || "0") || 0;
-      if (hasMin) next = Math.max(min, next);
-      if (hasMax) next = Math.min(max, next);
-      next = base + Math.round((next - base) / step) * step;
-      if (hasMin) next = Math.max(min, next);
-      if (hasMax) next = Math.min(max, next);
-      const decimals = (() => {
-        const source = slider.step && slider.step !== "any" ? slider.step : `${step}`;
-        const idx = source.indexOf(".");
-        return idx >= 0 ? Math.max(0, source.length - idx - 1) : 0;
-      })();
-      return decimals > 0 ? Number(next.toFixed(decimals)) : next;
-    };
-    const syncSlider = (slider, event = null) => {
-      if (!slider) return;
-      this.constructor.syncDualRangeInput(slider);
-      this.constructor.updateRangeOutput(slider);
-      onInput?.(event, slider);
-    };
-    const resolveScrollWrapper = (slider) => {
-      const preferred = getWrapper(slider) ?? content;
-      const isScrollable = (element) => {
-        if (!element) return false;
-        const { scrollHeight, clientHeight } = element;
-        return scrollHeight > clientHeight + 1;
-      };
-
-      if (isScrollable(preferred)) return preferred;
-
-      let current = preferred?.parentElement ?? null;
-      while (current && current !== root) {
-        if (isScrollable(current)) return current;
-        current = current.parentElement;
-      }
-
-      return isScrollable(content) ? content : preferred;
-    };
-    const applySliderValue = (slider, nextValue, { dispatchChange = true } = {}) => {
-      const next = clampToStep(slider, nextValue);
-      const cur = Number.parseFloat(slider.value || "0");
-      if (Number.isFinite(cur) && Math.abs(cur - next) <= 1e-9) {
+  _wireRangeWheelBehavior({ onInput } = {}) {
+    this._fxmRangeBehaviorAbort?.abort();
+    this._fxmRangeBehaviorAbort = wireRangeInputBehavior(this.element, {
+      onInput,
+      onSync: (slider) => {
         this.constructor.syncDualRangeInput(slider);
         this.constructor.updateRangeOutput(slider);
-        return;
-      }
-
-      slider.value = String(next);
-      this.constructor.syncDualRangeInput(slider);
-      this.constructor.updateRangeOutput(slider);
-      slider.dispatchEvent(new Event("input", { bubbles: true }));
-      if (dispatchChange) slider.dispatchEvent(new Event("change", { bubbles: true }));
-    };
-
-    root.querySelectorAll('input[type="range"]').forEach((slider) => {
-      slider.addEventListener(
-        "pointerdown",
-        () => {
-          try {
-            slider.focus({ preventScroll: true });
-          } catch {
-            slider.focus();
-          }
-        },
-        { passive: true, signal: ac.signal },
-      );
+      },
     });
-
-    root.addEventListener(
-      "wheel",
-      (event) => {
-        const slider = event.target?.closest?.('input[type="range"]');
-        if (!slider || !root.contains(slider)) return;
-
-        event.preventDefault();
-        event.stopImmediatePropagation();
-
-        if (isFocusedSlider(slider)) {
-          const step = Number.parseFloat(slider.step || "1") || 1;
-          const cur = Number.parseFloat(slider.value || "0") || 0;
-          const dir = event.deltaY < 0 ? 1 : -1;
-          applySliderValue(slider, cur + dir * step);
-          return;
-        }
-
-        try {
-          slider.blur?.();
-        } catch (err) {
-          logger.debug("FXMaster:", err);
-        }
-        const wrapper = resolveScrollWrapper(slider);
-        wrapper.scrollTop += event.deltaY;
-      },
-      { passive: false, capture: true, signal: ac.signal },
-    );
-
-    root.addEventListener(
-      "keydown",
-      (event) => {
-        const slider = event.target?.closest?.('input[type="range"]');
-        if (!slider || !root.contains(slider) || !isFocusedSlider(slider)) return;
-
-        const key = String(event.key || "");
-        const cur = Number.parseFloat(slider.value || "0") || 0;
-        const step = Number.parseFloat(slider.step || "1") || 1;
-        const pageStep = step * 10;
-        const min = Number.parseFloat(slider.min);
-        const max = Number.parseFloat(slider.max);
-
-        let next = null;
-        switch (key) {
-          case "ArrowLeft":
-          case "ArrowDown":
-            next = cur - step;
-            break;
-          case "ArrowRight":
-          case "ArrowUp":
-            next = cur + step;
-            break;
-          case "PageDown":
-            next = cur - pageStep;
-            break;
-          case "PageUp":
-            next = cur + pageStep;
-            break;
-          case "Home":
-            next = Number.isFinite(min) ? min : cur;
-            break;
-          case "End":
-            next = Number.isFinite(max) ? max : cur;
-            break;
-          default:
-            return;
-        }
-
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        applySliderValue(slider, next);
-      },
-      { capture: true, signal: ac.signal },
-    );
-
-    root.addEventListener(
-      "input",
-      (event) => {
-        const slider = event.target?.closest?.('input[type="range"]');
-        if (!slider || !root.contains(slider)) return;
-        syncSlider(slider, event);
-      },
-      { capture: true, signal: ac.signal },
-    );
-
-    root.addEventListener(
-      "change",
-      (event) => {
-        const slider = event.target?.closest?.('input[type="range"]');
-        if (!slider || !root.contains(slider)) return;
-        this.constructor.syncDualRangeInput(slider);
-        this.constructor.updateRangeOutput(slider);
-      },
-      { capture: true, signal: ac.signal },
-    );
   }
 
   /**
@@ -1928,6 +1793,7 @@ export class FXMasterBaseFormV2 extends Base {
 
     const duration = 20000;
     let startTime = null;
+    let lastPaintTime = -Infinity;
     const animation = { win, frame: null };
     app._fxmTitleBarAnimation = animation;
 
@@ -1941,13 +1807,16 @@ export class FXMasterBaseFormV2 extends Base {
         if (app._fxmTitleBarAnimation === animation) app._fxmTitleBarAnimation = null;
         return;
       }
-      if (!startTime) startTime = timestamp;
+      animation.frame = win.requestAnimationFrame(step);
+      if (app._fxmPositionSaveTimer || app.minimized || titleBackground.ownerDocument.hidden) return;
+      if (timestamp - lastPaintTime < 50) return;
+      lastPaintTime = timestamp;
+      if (startTime === null) startTime = timestamp;
       const elapsed = timestamp - startTime;
       const progress = (elapsed % duration) / duration;
       const angle = 360 * progress;
 
       titleBackground.style.borderImage = `linear-gradient(${angle}deg, ${baseColor}, ${highlightColor}, ${baseColor}) 1`;
-      animation.frame = win.requestAnimationFrame(step);
     };
 
     animation.frame = win.requestAnimationFrame(step);

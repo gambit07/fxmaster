@@ -22,12 +22,12 @@
               {{#if effect.icon}}
                 <img class="fxmaster-particle-icon"
                      src="{{effect.icon}}"
-                     width="30" height="30"
+                     width="50" height="50"
                      alt="{{localize effect.label}} Icon">
               {{else}}
-                <i class="fa-solid fa-circle-notch"></i>
+                <i class="fxmaster-filter-icon fa-solid fa-circle-notch" aria-hidden="true"></i>
               {{/if}}
-              {{localize effect.label}}
+              <span class="fxmaster-particle-label">{{localize effect.label}}</span>
             </div>
 
             <span class="fxmaster-collapse-arrow fxmaster-arrow-row">
