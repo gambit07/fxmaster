@@ -1,5 +1,22 @@
 # Changelog
 
+## [v8.4.0] - 2026-09-27
+Welcome to FXMaster v8.4! I've been focused on performance for this release, to be fair it's something that never really feels done. Thankfully performance has seen some huge improvements that should be noticeable for all users (I hope). In my own personal testing I saw gains of 100-150 fps on a 240 fps monitor for performance testing scenes that had previously (purposefully) struggled. This pass also cleaned up some existing masking bugs I came across during testing that had not been reported
+- The compositor has been cleaned up to avoid building duplicate (equivalent) suppression masks and cutouts wherever found
+- Reduced CPU work (especially on leveled scenes) by improving the rendering operations tree
+- Reduced total rendering passes by avoiding unnecessary intermediate filter captures
+- Improved the masking system by reusing compatible allocations from previous camera positions. This especially improves panning performance on Levels scenes by avoiding repeatedly destroying and recreating large textures in many instances
+- Worked with an artist to create a consistent set of FXMaster and FXMaster+ particle effect icons. Because the icons have been added piecemeal over time I wasn't happy with the mish-mash of styles, finally took the time to have that cleaned up.
+- Increased the size of particle and filter effect icons in the managers for better visibility
+- Added icons to the particle and filter effect region behavior lists
+- Added a Region Boundary Avoidance parameter to Animal type particles deployed within Regions. This setting will cause those particles to avoid the region border, which can solve issues like a bat flying directly through a wall, fish swimming directly into a beach, etc
+- Updated particle and filter effects to consistently fade in and out when turned on or off at the scene level
+- Updated particle effects to consistently fade in and out when parameter changes are made at the scene level
+- Updated the Predator filter with a Token Heat Seek mode, which will highlight tokens with a heat map effect
+- Resolved a bug where using the Below Tiles parameter in a region could cause an effect to crash
+- Cleaned up a few region lifecycle issues introduced when effect parameters were allowed to be adjusted in real time within region behaviors
+- Cleaned up and added localizations for the September FXMaster+ Fireworks effect
+
 ## [v8.3.6] - 2026-08-30
 - Added additional parameters to the Predator effect. Now includes Thermal options to make the Predator effect more realistic.
 - Added new Above Darkness parameter to Filter Effects to allow them to play above Foundry darkness. This applies to Lightning, Lightning Bolts, Aurora Borealis, Fire, Neon, and Sunlight
