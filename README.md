@@ -22,8 +22,20 @@
     playsinline
     loop
     preload="auto"
+    src="https://github.com/user-attachments/assets/b24d6bd3-cef2-4c1f-a49c-0a9d10ec1c13">
+  </video>
+
+<details>
+    <summary>Neon (click to expand - Map: <a href="https://www.czepeku.com/" target="_blank" rel="nofollow noopener">Cze & Peku</a>)</summary>
+  <video
+    autoplay
+    muted
+    playsinline
+    loop
+    preload="auto"
     src="https://github.com/user-attachments/assets/93803fcc-8df0-41eb-8bd5-8295ae96d9b8">
   </video>
+</details>
 
 <details>
     <summary>Summer Leaves (click to expand - Map: <a href="https://www.czepeku.com/" target="_blank" rel="nofollow noopener">Cze & Peku</a>)</summary>
