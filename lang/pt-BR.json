@@ -885,7 +885,7 @@
       "NeonFlicker": "Adiciona variação irregular de brilho ao Preenchimento, ao Contorno e ao Halo.",
       "NeonFlickerSpeed": "Controla a rapidez com que o padrão de cintilação muda.",
       "NeonFlickerAmount": "Controla a profundidade da cintilação. 0 desativa a variação; 1 aplica o escurecimento mais forte.",
-      "AboveDarkness": "Exibe a contribuição luminosa do filtro acima da escuridão da cena.",
+      "AboveDarkness": "Exibe a contribuição luminosa do efeito acima da escuridão da cena.",
       "PredatorThermalStrength": "Mescla a paleta térmica de cores falsas à imagem de origem. 0 mantém as cores originais; 1 usa a cor térmica completa.",
       "PredatorThermalContrast": "Separa os valores frios e quentes na paleta térmica. Valores mais altos criam diferenças de temperatura mais fortes.",
       "PredatorEdgeDefinition": "Realça os limites locais de temperatura para silhuetas térmicas mais nítidas.",
@@ -1349,7 +1349,7 @@
       "EnableLoggerHint": "Escreve mensagens de depuração, aviso e erro do FXMaster no console do navegador.",
       "PatreonSupportHint": "Se você quiser me apoiar, Aposte! Assinar ajuda a financiar o desenvolvimento deste e de meus outros módulos gratuitos, além de dar acesso aos meus módulos premium: Gambit's FXMaster+, Gambit's Asset Previewer e Gambit's Image Viewer!",
       "ApplyRegionBehaviorsToOverheadLevels": "Aplicar Comportamentos de Região aos Níveis Superiores",
-      "ApplyRegionBehaviorsToOverheadLevelsHint": "Quando uma Região é atribuída a múltiplos Níveis de Cena, permite que sobreposições de Nível superior exibam os efeitos de partículas, efeitos de filtro e supressão de cena dessa Região. Isso pode ter um grande impacto no desempenho em cenas com múltiplos níveis. Teste cuidadosamente antes de usar em uma sessão de mesa.",
+      "ApplyRegionBehaviorsToOverheadLevelsHint": "Quando uma Região é atribuída a múltiplos Andares de Cena, permite que sobreposições de Andares superiores exibam os efeitos de partículas, efeitos de filtro e supressão de cena dessa Região. Isso pode ter um grande impacto no desempenho em cenas com múltiplos andares. Teste cuidadosamente antes de usar em uma sessão de mesa.",
       "CompositeGridInFxStack": "Incluir Grade do Foundry na Pilha de Efeitos",
       "CompositeGridInFxStackHint": "Renderiza as linhas normais da grade do Foundry na entrada do compositor do FXMaster, permitindo que partículas e filtros da cena apareçam sobre a grade. Os realces da grade e os controles permanecem acima do FXMaster.",
       "DisplayEffectsOverVision": "Exibir Efeitos Acima da Névoa/Visão",
@@ -1440,8 +1440,8 @@
           "Text": "A densidade de partículas pode afetar o desempenho, especialmente em cenas grandes. O FXMaster utiliza a configuração Modo de Desempenho do Foundry para permitir a limitação da densidade por usuário: Baixa = 25% da densidade de partículas atual, Média = 50%, Alta = 75% e Máxima = 100%."
         }
       },
-      "FooterText": "Para obter notas de configuração completas, opções detalhadas de comportamento de Região e exemplos da API para desenvolvedores, leia o",
-      "FooterReadmeLink": "README completo no GitHub",
+      "FooterText": "Para obter instruções completas de configuração, opções detalhadas de comportamento de Região e exemplos da API para desenvolvedores, consulte a",
+      "FooterReadmeLink": "Wiki",
       "Actions": {
         "OpenParticleEffects": "Abrir Efeitos de Partícula",
         "OpenFilterEffects": "Abrir Efeitos de Filtro",
