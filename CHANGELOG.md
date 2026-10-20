@@ -1,5 +1,8 @@
 # Changelog
 
+## [v8.4.2] - 2026-10-20
+- Added localizations for the October Halloween FXMaster+ release, Living Shadows
+
 ## [v8.4.1] - 2026-09-27
 Welcome to FXMaster v8.4! I've been focused on performance for this release, to be fair it's something that never really feels done. Thankfully performance has seen some huge improvements that should be noticeable for all users (I hope). In my own personal testing I saw gains of 100-150 fps on a 240 fps monitor for performance testing scenes that had previously (purposefully) struggled. This pass also cleaned up some existing masking bugs I came across during testing that had not been reported
 - The compositor has been cleaned up to avoid building duplicate (equivalent) suppression masks and cutouts wherever found
