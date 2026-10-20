@@ -141,6 +141,65 @@
       "ShadowOpacity": "Shadow Opacity",
       "BelowTokens": "Below Tokens",
       "ShadowOnly": "Shadow Only",
+      "LivingShadows": {
+        "LingerTime": "Visible Time (Seconds)",
+        "FadeTime": "Fade Time (Seconds)",
+        "Movement": "Movement",
+        "Reach": "Shadow Reach",
+        "Softness": "Edge Softness",
+        "Sway": "Sway",
+        "Tendrils": "Tendrils",
+        "TendrilStyles": {
+          "Name": "Tendril Styles",
+          "Creeping": "Creeping Tendrils",
+          "Roots": "Branching Roots",
+          "Hooks": "Hooked Tentacles",
+          "Wisps": "Shadow Wisps"
+        },
+        "Branching": "Branching",
+        "Creepiness": "Tendril Creepiness",
+        "Thickness": "Tendril Thickness",
+        "Humanoids": "Humanoid Silhouettes",
+        "HumanoidStyles": {
+          "Name": "Humanoid Styles",
+          "Slender": "Slender",
+          "Gaunt": "Gaunt",
+          "Hunched": "Hunched",
+          "Broad": "Broad",
+          "Cloaked": "Cloaked",
+          "Wraith": "Wraith"
+        },
+        "SmileWidth": "Mouth Width",
+        "ApparitionFrequency": "Appearance Frequency",
+        "TokenInteraction": "Token Interaction",
+        "TokenInteractionRadius": "Interaction Radius",
+        "TokenInteractionFrequency": "Reach Frequency",
+        "TokenInteractionStrength": "Reach Strength",
+        "PlacementDirection": "Placement Direction",
+        "TendrilEyes": {
+          "Name": "Glowing Tendril Eyes",
+          "Intensity": "Tendril Eyes Intensity",
+          "Frequency": "Tendril Eyes Frequency",
+          "Duration": "Tendril Eyes Duration (Seconds)"
+        },
+        "HumanoidEyes": {
+          "Name": "Glowing Humanoid Eyes",
+          "Intensity": "Humanoid Eyes Intensity",
+          "Frequency": "Humanoid Eyes Frequency",
+          "Duration": "Humanoid Eyes Duration (Seconds)"
+        },
+        "HumanoidMouth": {
+          "Name": "Glowing Mouth",
+          "Intensity": "Mouth Intensity",
+          "Frequency": "Mouth Frequency",
+          "Duration": "Mouth Duration (Seconds)"
+        },
+        "MouthStyles": {
+          "Name": "Mouth Style",
+          "Smile": "Smile",
+          "Frown": "Frown"
+        }
+      },
       "Splash": "Splash",
       "Orbit": "Orbit",
       "OrbitDistance": "Orbit Distance",
@@ -153,7 +212,6 @@
       "GreenY": "Green Y",
       "BlueX": "Blue X",
       "BlueY": "Blue Y",
-      "Seed": "Seed",
       "RefreshRate": "Refresh Rate",
       "SliceEnable": "Enable Slices",
       "SliceCrosshatch": "Slice Crosshatch",
@@ -602,6 +660,54 @@
       "ShadowOpacity": "Opacity of the drop shadow. 0 = invisible; 1 = fully opaque.",
       "BelowTokens": "Renders effects underneath tokens visually.",
       "ShadowOnly": "Render only the drop shadow and hide the base particle sprites.",
+      "LivingShadows": {
+        "Tint": "Colors the shadows while preserving the underlying scene texture. Disable Apply for neutral black shadows.",
+        "Scale": "Increases the size and spacing of automatic shadow clusters. In Manual Placement mode, sets the size of newly placed shadows.",
+        "Density": "Controls how many shadow clusters appear. 0 hides all shadows; 1 fills all available cluster positions.",
+        "Opacity": "Controls how strongly shadows darken the scene. 0 makes them invisible; 1 applies full shadow opacity.",
+        "Speed": "Controls the pace of shadow movement and limb actions without shortening Visible Time or Fade Time. 0 freezes the current pose and appearance timers.",
+        "LingerTime": "How many seconds each shadow remains fully visible, in addition to its fade-in and fade-out. Applies to both tendrils and humanoid silhouettes.",
+        "FadeTime": "How many seconds each shadow takes to fade into view and fade away. Each fade uses this duration separately.",
+        "Movement": "Adds short shifts, stepping, and independent limb actions. Tendrils flex with travelling waves and separately moving tips and branches. Higher values produce larger movements. Token Interaction controls reaching separately.",
+        "Reach": "Sets the maximum tendril length and elongation of humanoid silhouettes.",
+        "Softness": "Softens shadow boundaries. Lower values produce crisp silhouettes; higher values produce diffuse edges.",
+        "Sway": "Controls the depth of tendril curves and tip curls, and how far humanoid silhouettes bend.",
+        "Tendrils": "Adds varied shadow tendrils and tentacles that hesitate, extend, curl, and retreat around each cluster.",
+        "TendrilStyles": "Choose which tendril shapes can appear. Styles stay consistent during an appearance and include creeping strands, angular roots, hooked tentacles, and fine wisps. Empty or invalid selections use all styles.",
+        "Branching": "Adds independently flexing side shoots and, at higher settings, smaller secondary forks that follow the parent tendril's curve. 0 keeps only the main stems.",
+        "Creepiness": "Adds tense pauses, uneven extensions, slower withdrawals, and brief shudders to tendril movement. 0 uses smoother motion. Movement controls the overall amount of motion.",
+        "Thickness": "Controls the width of shadow tendrils and their smaller branches.",
+        "Humanoids": "Adds humanoid shadows with articulated arms and stepping legs. Automatic appearances use Visible Time; manual placements remain visible while enabled.",
+        "HumanoidStyles": "Choose which humanoid builds can appear: slender, gaunt, hunched, broad, cloaked, or a trailing wraith. Each appearance keeps its build while moving. Empty or invalid selections use all styles.",
+        "SmileWidth": "Sets the maximum width of the animated smile or frown relative to the head.",
+        "ApparitionFrequency": "Higher values shorten the gap between automatic shadow appearances. When both types are enabled, each automatic appearance has an equal chance of becoming a humanoid or tendril cluster. 0 hides automatic humanoids; tendrils can still appear.",
+        "TokenInteraction": "Makes nearby shadows occasionally reach toward visible tokens within the effect's Region and level scope. Automatic shadows can also turn toward tokens. Manually placed humanoids retain their chosen facing direction. Reaching does not move tokens.",
+        "TokenInteractionRadius": "Maximum distance from a shadow to a token, measured in grid spaces, that can trigger a reach. Shadow Reach and Reach Strength control how far the limbs extend.",
+        "TokenInteractionFrequency": "Controls how often shadows reach toward nearby tokens. Each reach includes an extension, a held pose, and a retreat. 0 disables reaching.",
+        "TokenInteractionStrength": "Controls how strongly shadows turn toward tokens and extend their arms or tendrils. 0 disables reaching.",
+        "ManualPlacement": "Places persistent shadows at saved map positions. Each placement keeps its type, size, facing, tint, opacity, styles, movement, glows, and token interaction settings. Controls configure new placements. Humanoids and Tendrils show or hide saved shadows of that type. Layer and scene/Region display controls remain shared.",
+        "PlacementDirection": "Facing direction for new shadows: 0 points right, 90 up, 180 left, and 270 down. Click to use this direction, or drag from a placement anchor toward the desired facing direction.",
+        "PlacementActions": "Place shadows using the current settings, delete individual placements, or clear the current scene or Region behavior placements. Right-click or press Escape to leave the placement tool.",
+        "TendrilEyes": {
+          "Name": "Adds single eyes at random points along tendrils and side branches. Eyes blink sideways during each appearance. The switch turns the eyes on or off; the picker sets their color.",
+          "Intensity": "Controls the brightness of tendril eyes and their soft glow. 0 hides the glow. Effect opacity and fades also apply.",
+          "Frequency": "Higher values increase the eye count and shorten the gaps between openings. Each cycle chooses a random count from zero to a limit set by frequency, up to five eyes per tendril cluster. 0 disables tendril eyes.",
+          "Duration": "How many seconds each tendril eye remains present, including opening and closing. Eyes blink sporadically during this time and reopen at the same point on their moving strand."
+        },
+        "HumanoidEyes": {
+          "Name": "Adds paired glowing eyes with sporadic blinks. When Glowing Mouth is enabled, both use the mouth frequency and duration. The switch turns the eyes on or off; the picker sets their color.",
+          "Intensity": "Controls the brightness of humanoid eyes and their soft glow. 0 hides the glow. Effect opacity and fades also apply.",
+          "Frequency": "Controls how often humanoid eyes appear when Glowing Mouth is disabled. Higher values shorten the gaps; 0 disables eye-only appearances.",
+          "Duration": "How many seconds humanoid eyes remain present when Glowing Mouth is disabled, including fading in and out. Eyes blink sporadically during each appearance."
+        },
+        "HumanoidMouth": {
+          "Name": "Adds a glowing mouth to humanoid silhouettes using the selected mouth styles. Enabled humanoid eyes share the mouth timing. The switch turns the mouth on or off; the picker sets its color.",
+          "Intensity": "Controls the brightness of the mouth and its soft glow. 0 hides the glow. Effect opacity and fades also apply.",
+          "Frequency": "Controls how often humanoid mouths appear. Enabled humanoid eyes share this timing. Higher values shorten the gaps; 0 disables both synchronized glows.",
+          "Duration": "How many seconds each mouth glow lasts, including fading in and out and the smile or frown animation. Enabled humanoid eyes remain throughout this window, with sporadic blinks."
+        },
+        "MouthStyles": "Choose Smile, Frown, or both. Selecting both gives each mouth appearance an equal chance of either expression."
+      },
       "Splash": "Enable rain splash effects alongside raindrops.",
       "Orbit": "Enables orbit around center of a container instead of an outward spread.",
       "OrbitDistance": "Distance from the center of a container for orbiting particles.",
@@ -614,7 +720,6 @@
       "GreenY": "Green channel vertical offset.",
       "BlueX": "Blue channel horizontal offset.",
       "BlueY": "Blue channel vertical offset.",
-      "Seed": "Random seed used to vary the generated pattern.",
       "RefreshRate": "How often the generated pattern re-randomizes.",
       "SliceEnable": "Enables slice displacement and RGB split.",
       "SliceCrosshatch": "Adds a second slice band pattern at a different phase for a crosshatch look.",
@@ -1078,6 +1183,7 @@
         "Ice": "Ice",
         "Lightning": "Lightning",
         "LightningBolts": "Lightning Bolts",
+        "LivingShadows": "Living Shadows",
         "Neon": "Neon",
         "OldFilm": "Old Film",
         "Predator": "Predator",
@@ -1086,6 +1192,16 @@
         "Underwater": "Underwater",
         "Water": "Water",
         "Wind": "Wind"
+      },
+      "LivingShadows": {
+        "ShaderLoadFailed": "The Living Shadows shader could not be loaded ({status}).",
+        "Placement": {
+          "PlaceHint": "Click to place a shadow using Placement Direction, or drag to aim it. Right-click or press Escape to finish.",
+          "EraseHint": "Click near a shadow anchor to remove that placement from the current scene or Region behavior.",
+          "ClearHint": "Removes all saved shadow placements for the current scene or Region behavior.",
+          "SaveFailed": "Living Shadows placements could not be saved.",
+          "Limit": "Living Shadows supports up to {limit} manual placements per scene. Remove an existing placement before adding another."
+        }
       },
       "TypeErrors": {
         "TypeUnknown": "Filter effect '{id}' is of unknown type '{type}', skipping it.",
