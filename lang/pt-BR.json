@@ -141,6 +141,65 @@
       "ShadowOpacity": "Opacidade da Sombra",
       "BelowTokens": "Abaixo dos Tokens",
       "ShadowOnly": "Somente Sombra",
+      "LivingShadows": {
+        "LingerTime": "Tempo de Visibilidade (Segundos)",
+        "FadeTime": "Tempo de Desvanecimento (Segundos)",
+        "Movement": "Movimento",
+        "Reach": "Alcance das Sombras",
+        "Softness": "Suavidade das Bordas",
+        "Sway": "Oscilação",
+        "Tendrils": "Tentáculos",
+        "TendrilStyles": {
+          "Name": "Estilos de Tentáculos",
+          "Creeping": "Tentáculos Rastejantes",
+          "Roots": "Raízes Ramificadas",
+          "Hooks": "Tentáculos com Ganchos",
+          "Wisps": "Fiapos de Sombra"
+        },
+        "Branching": "Ramificação",
+        "Creepiness": "Aspecto dos Tentáculos Rastejantes",
+        "Thickness": "Espessura dos Tentáculos",
+        "Humanoids": "Silhuetas Humanoides",
+        "HumanoidStyles": {
+          "Name": "Estilos Humanoides",
+          "Slender": "Esbelto",
+          "Gaunt": "Esquelético",
+          "Hunched": "Corcunda",
+          "Broad": "Robusto",
+          "Cloaked": "Encapuzado",
+          "Wraith": "Espectro"
+        },
+        "SmileWidth": "Largura da Boca",
+        "ApparitionFrequency": "Frequência de Aparição",
+        "TokenInteraction": "Interação com Tokens",
+        "TokenInteractionRadius": "Raio de Interação",
+        "TokenInteractionFrequency": "Frequência de Alcance",
+        "TokenInteractionStrength": "Intensidade do Alcance",
+        "PlacementDirection": "Direção do Posicionamento",
+        "TendrilEyes": {
+          "Name": "Olhos Brilhantes dos Tentáculos",
+          "Intensity": "Intensidade dos Olhos dos Tentáculos",
+          "Frequency": "Frequência dos Olhos dos Tentáculos",
+          "Duration": "Duração dos Olhos dos Tentáculos (Segundos)"
+        },
+        "HumanoidEyes": {
+          "Name": "Olhos Brilhantes dos Humanoides",
+          "Intensity": "Intensidade dos Olhos dos Humanoides",
+          "Frequency": "Frequência dos Olhos dos Humanoides",
+          "Duration": "Duração dos Olhos dos Humanoides (Segundos)"
+        },
+        "HumanoidMouth": {
+          "Name": "Boca Brilhante",
+          "Intensity": "Intensidade da Boca",
+          "Frequency": "Frequência da Boca",
+          "Duration": "Duração da Boca (Segundos)"
+        },
+        "MouthStyles": {
+          "Name": "Estilo da Boca",
+          "Smile": "Sorriso",
+          "Frown": "Expressão Carrancuda"
+        }
+      },
       "Splash": "Respingo",
       "Orbit": "Órbita",
       "OrbitDistance": "Distância da Órbita",
@@ -153,7 +212,6 @@
       "GreenY": "Verde Y",
       "BlueX": "Azul X",
       "BlueY": "Azul Y",
-      "Seed": "Semente",
       "RefreshRate": "Taxa de Atualização",
       "SliceEnable": "Habilitar Fatias",
       "SliceCrosshatch": "Fatia Hachurada",
@@ -602,6 +660,54 @@
       "ShadowOpacity": "Opacidade da sombra projetada. 0 = invisível; 1 = totalmente opaca.",
       "BelowTokens": "Renderiza visualmente os efeitos abaixo dos tokens.",
       "ShadowOnly": "Renderiza apenas a sombra projetada e oculta as sprites de partículas base.",
+      "LivingShadows": {
+        "Tint": "Coloriza as sombras preservando a textura da cena subjacente. Desative Aplicar para usar sombras pretas neutras.",
+        "Scale": "Aumenta o tamanho e o espaçamento dos agrupamentos automáticos de sombras. No modo Posicionamento Manual, define o tamanho das novas sombras posicionadas.",
+        "Density": "Controla quantos agrupamentos de sombras aparecem. 0 oculta todas as sombras e 1 preenche todas as posições disponíveis para os agrupamentos.",
+        "Opacity": "Controla a intensidade com que as sombras escurecem a cena. 0 as torna invisíveis e 1 aplica a opacidade máxima das sombras.",
+        "Speed": "Controla a velocidade do movimento das sombras e das ações dos membros sem reduzir o Tempo de Visibilidade ou o Tempo de Desvanecimento. 0 congela a pose atual e os temporizadores de aparição.",
+        "LingerTime": "Quantidade de segundos que cada sombra permanece totalmente visível, além dos períodos de aparecimento e desaparecimento gradual. Aplica-se tanto aos tentáculos quanto às silhuetas humanoides.",
+        "FadeTime": "Quantidade de segundos que cada sombra leva para aparecer e desaparecer gradualmente. Essa duração é aplicada separadamente a cada transição.",
+        "Movement": "Adiciona pequenos deslocamentos, passos e movimentos independentes dos membros. Os tentáculos se flexionam com ondas de movimento, enquanto suas pontas e ramificações se movem separadamente. Valores mais altos produzem movimentos mais amplos. A Interação com Tokens controla os movimentos de alcance separadamente.",
+        "Reach": "Define o comprimento máximo dos tentáculos e o alongamento das silhuetas humanoides.",
+        "Softness": "Suaviza os contornos das sombras. Valores menores produzem silhuetas bem definidas e valores maiores produzem bordas difusas.",
+        "Sway": "Controla a profundidade das curvas dos tentáculos, a curvatura de suas pontas e o quanto as silhuetas humanoides se inclinam.",
+        "Tendrils": "Adiciona tentáculos e filamentos de sombra variados que hesitam, se estendem, se enrolam e recuam ao redor de cada agrupamento.",
+        "TendrilStyles": "Escolha quais formatos de tentáculos podem aparecer. Os estilos permanecem consistentes durante cada aparição e incluem filamentos rastejantes, raízes angulares, tentáculos com ganchos e fiapos finos. Seleções vazias ou inválidas utilizam todos os estilos.",
+        "Branching": "Adiciona ramificações laterais que se flexionam independentemente e, em configurações mais altas, bifurcações secundárias menores que acompanham a curvatura do tentáculo principal. 0 mantém apenas os tentáculos principais.",
+        "Creepiness": "Adiciona pausas tensas, extensões irregulares, recuos mais lentos e breves tremores ao movimento dos tentáculos. 0 utiliza movimentos mais suaves. Movement controla a intensidade geral dos movimentos.",
+        "Thickness": "Controla a espessura dos tentáculos de sombra e de suas ramificações menores.",
+        "Humanoids": "Adiciona sombras humanoides com braços articulados e pernas que realizam movimentos de caminhada. As aparições automáticas utilizam o Tempo de Visibilidade e as sombras posicionadas manualmente permanecem visíveis enquanto estiverem ativadas.",
+        "HumanoidStyles": "Escolha quais tipos humanoides podem aparecer: Esbelto, Esquelético, Corcunda, Robusto, Encapuzado ou um Espectro com rastro. Cada aparição mantém seu tipo durante o movimento. Seleções vazias ou inválidas utilizam todos os estilos.",
+        "SmileWidth": "Define a largura máxima do sorriso ou da expressão carrancuda animada em relação à cabeça.",
+        "ApparitionFrequency": "Valores mais altos reduzem o intervalo entre as aparições automáticas das sombras. Quando ambos os tipos estão ativados, cada aparição automática tem a mesma chance de se tornar uma silhueta humanoide ou um agrupamento de tentáculos. 0 oculta os humanoides automáticos, porém os tentáculos ainda podem aparecer.",
+        "TokenInteraction": "Faz com que as sombras próximas ocasionalmente se estendam em direção aos tokens visíveis dentro da Região e dos andares abrangidos pelo efeito. As sombras automáticas também podem se virar em direção aos tokens. Humanoides posicionados manualmente mantêm a direção escolhida. Esses movimentos não deslocam os tokens.",
+        "TokenInteractionRadius": "Distância máxima entre uma sombra e um token, medida em espaços da grade, que pode acionar um movimento de alcance. O Alcance das Sombras e a Intensidade do Alcance controlam até onde os membros se estendem.",
+        "TokenInteractionFrequency": "Controla a frequência com que as sombras se estendem em direção aos tokens próximos. Cada movimento inclui uma extensão, uma pose mantida e um recuo. 0 desativa esses movimentos.",
+        "TokenInteractionStrength": "Controla a intensidade com que as sombras se viram em direção aos tokens e estendem seus braços ou tentáculos. 0 desativa esses movimentos.",
+        "ManualPlacement": "Posiciona sombras persistentes em locais salvos do mapa. Cada sombra posicionada mantém seu tipo, tamanho, orientação, tonalidade, opacidade, estilos, movimento, brilhos e configurações de interação com tokens. Os controles configuram os novos posicionamentos. Humanoides e Tentáculos exibem ou ocultam as sombras salvas de cada tipo. Os controles de camada e exibição da cena/Região permanecem compartilhados.",
+        "PlacementDirection": "Direção para a qual as novas sombras ficam voltadas: 0 aponta para a direita, 90 para cima, 180 para a esquerda e 270 para baixo. Clique para utilizar essa direção ou arraste a partir do ponto de posicionamento em direção à orientação desejada.",
+        "PlacementActions": "Posicione sombras usando as configurações atuais, exclua posicionamentos individuais ou limpe os posicionamentos do comportamento atual da cena ou Região. Clique com o botão direito ou pressione Escape para sair da ferramenta de posicionamento.",
+        "TendrilEyes": {
+          "Name": "Adiciona olhos individuais em pontos aleatórios ao longo dos tentáculos e de suas ramificações laterais. Os olhos piscam lateralmente durante cada aparição. O interruptor ativa ou desativa os olhos e o seletor define sua cor.",
+          "Intensity": "Controla o brilho dos olhos dos tentáculos e sua luminosidade suave. 0 oculta o brilho. A opacidade e as transições de aparecimento e desaparecimento do efeito também são aplicadas.",
+          "Frequency": "Valores mais altos aumentam a quantidade de olhos e reduzem os intervalos entre suas aberturas. Cada ciclo escolhe uma quantidade aleatória entre zero e um limite definido pela frequência, com até cinco olhos por agrupamento de tentáculos. 0 desativa os olhos dos tentáculos.",
+          "Duration": "Quantidade de segundos que cada olho dos tentáculos permanece presente, incluindo sua abertura e seu fechamento. Os olhos piscam esporadicamente durante esse período e voltam a se abrir no mesmo ponto do filamento em movimento."
+        },
+        "HumanoidEyes": {
+          "Name": "Adiciona pares de olhos brilhantes que piscam esporadicamente. Quando Boca Brilhante estiver ativada, ambos utilizam a frequência e a duração da boca. O interruptor ativa ou desativa os olhos e o seletor define sua cor.",
+          "Intensity": "Controla o brilho dos olhos dos humanoides e sua luminosidade suave. 0 oculta o brilho. A opacidade e as transições de aparecimento e desaparecimento do efeito também são aplicadas.",
+          "Frequency": "Controla a frequência com que os olhos dos humanoides aparecem quando Boca Brilhante estiver desativada. Valores mais altos reduzem os intervalos e 0 desativa as aparições apenas dos olhos.",
+          "Duration": "Quantidade de segundos que os olhos dos humanoides permanecem presentes quando Boca Brilhante estiver desativada, incluindo o aparecimento e o desaparecimento gradual. Os olhos piscam esporadicamente durante cada aparição."
+        },
+        "HumanoidMouth": {
+          "Name": "Adiciona uma boca brilhante às silhuetas humanoides utilizando os estilos de boca selecionados. Os olhos humanoides ativados compartilham os mesmos intervalos de aparição da boca. O interruptor ativa ou desativa a boca e o seletor define sua cor.",
+          "Intensity": "Controla o brilho da boca e sua luminosidade suave. 0 oculta o brilho. A opacidade e as transições de aparecimento e desaparecimento do efeito também são aplicadas.",
+          "Frequency": "Controla a frequência com que as bocas dos humanoides aparecem. Os olhos humanoides ativados compartilham esses mesmos intervalos. Valores mais altos reduzem os intervalos e 0 desativa ambos os brilhos sincronizados.",
+          "Duration": "Quantidade de segundos que cada brilho da boca dura, incluindo o aparecimento e o desaparecimento gradual e a animação do sorriso ou da expressão carrancuda. Os olhos humanoides ativados permanecem visíveis durante todo esse período, piscando esporadicamente."
+        },
+        "MouthStyles": "Escolha Sorriso, Expressão Carrancuda ou ambos. Selecionar ambos concede a cada aparição da boca a mesma chance de apresentar qualquer uma das expressões."
+      },
       "Splash": "Ativa os efeitos de respingos de chuva junto com as gotas de chuva.",
       "Orbit": "Permite orbitar em torno do centro de um recipiente em vez de se espalhar para fora.",
       "OrbitDistance": "Distância do centro de um recipiente para partículas em órbita.",
@@ -614,7 +720,6 @@
       "GreenY": "Deslocamento vertical do canal verde.",
       "BlueX": "Deslocamento horizontal do canal azul.",
       "BlueY": "Deslocamento vertical do canal azul.",
-      "Seed": "Semente aleatória usada para variar o padrão gerado.",
       "RefreshRate": "Com que frequência o padrão gerado é re-aleatorizado.",
       "SliceEnable": "Permite o deslocamento de fatias e a divisão RGB.",
       "SliceCrosshatch": "Adiciona um segundo padrão de faixa de corte em uma fase diferente para um efeito quadriculado.",
@@ -1068,24 +1173,35 @@
     },
     "Filters": {
       "Effects": {
+        "AuroraBorealis": "Aurora Boreal",
         "Bloom": "Bloom",
         "Color": "Cor",
+        "Duststorm": "Tempestade de Poeira",
+        "Fire": "Fogo",
         "Fog": "Névoa",
+        "Glitch": "Glitch",
+        "Ice": "Gelo",
         "Lightning": "Relâmpago",
-        "ScreenShake": "Tremulação da Tela",
+        "LightningBolts": "Raios de Relâmpagos",
+        "LivingShadows": "Sombras Vivas",
+        "Neon": "Neon",
         "OldFilm": "Filme Antigo",
         "Predator": "Predador",
+        "ScreenShake": "Tremulação da Tela",
+        "Sunlight": "Luz do Sol",
         "Underwater": "Subaquático",
         "Water": "Água",
-        "Sunlight": "Luz do Sol",
-        "Duststorm": "Tempestade de Poeira",
-        "Ice": "Gelo",
-        "Glitch": "Glitch",
-        "LightningBolts": "Raios de Relâmpagos",
-        "AuroraBorealis": "Aurora Boreal",
-        "Fire": "Fogo",
-        "Wind": "Vento",
-        "Neon": "Neon"
+        "Wind": "Vento"
+      },
+      "LivingShadows": {
+        "ShaderLoadFailed": "O shader das Sombras Vivas não pôde ser carregado ({status}).",
+        "Placement": {
+          "PlaceHint": "Clique para posicionar uma sombra usando a Direção do Posicionamento ou arraste para definir sua orientação. Clique com o botão direito ou pressione Escape para finalizar.",
+          "EraseHint": "Clique próximo ao ponto de ancoragem de uma sombra para remover esse posicionamento da cena atual ou do comportamento da Região.",
+          "ClearHint": "Remove todos os posicionamentos de sombras salvos para a cena atual ou para o comportamento da Região.",
+          "SaveFailed": "Não foi possível salvar os posicionamentos das Sombras Vivas.",
+          "Limit": "Sombras Vivas permite até {limit} posicionamentos manuais por cena. Remova um posicionamento existente antes de adicionar outro."
+        }
       },
       "TypeErrors": {
         "TypeUnknown": "O efeito de filtro \"{id}\" é de tipo desconhecido \"{type}\". Ignorado.",
